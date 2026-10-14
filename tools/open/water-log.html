@@ -1,0 +1,544 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>喝水提醒</title>
+<style>
+:root{
+  --bg:#eef6f8; --paper:#ffffff; --ink:#0f2a33; --muted:#46636c; --faint:#7a939a; --line:#cfe1e6; --rule:#e0edf0;
+  --water:#2a9fc4; --water2:#7fd0e6; --deep:#0b6f8f; --deep-ink:#ffffff; --soft:#d9eef4;
+  --glass:#b9d4dc; --bar:#c3d6dc; --goal:#d0802a; --danger:#b3261e; --danger-soft:#fbe4e2;
+  --warn-bg:#fff1cc; --warn-ink:#5c4300; --shadow:0 12px 40px rgba(10,50,65,.18);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0a161a; --paper:#112127; --ink:#dcecf0; --muted:#9ab5bd; --faint:#6f8b93; --line:#22383f; --rule:#1a2d33;
+  --water:#2b8fb0; --water2:#56b6d3; --deep:#7fd0e6; --deep-ink:#062029; --soft:#16323b;
+  --glass:#3d5a63; --bar:#2a3f46; --goal:#f0a65a; --danger:#f2b8b5; --danger-soft:#3b1e1c;
+  --warn-bg:#382c0d; --warn-ink:#f4d98e; --shadow:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0a161a; --paper:#112127; --ink:#dcecf0; --muted:#9ab5bd; --faint:#6f8b93; --line:#22383f; --rule:#1a2d33;
+  --water:#2b8fb0; --water2:#56b6d3; --deep:#7fd0e6; --deep-ink:#062029; --soft:#16323b;
+  --glass:#3d5a63; --bar:#2a3f46; --goal:#f0a65a; --danger:#f2b8b5; --danger-soft:#3b1e1c;
+  --warn-bg:#382c0d; --warn-ink:#f4d98e; --shadow:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));overflow-x:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--deep);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:980px;margin:0 auto}
+
+.top{display:flex;align-items:center;gap:8px;padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:6px}
+.top .t{flex:1;min-width:0}
+.top h1{margin:0;font-size:13px;font-weight:700;letter-spacing:.24em;color:var(--deep)}
+.top .date{font-size:19px;font-weight:700}
+.ib{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;cursor:pointer;flex:none}
+.ib svg{width:20px;height:20px}
+
+.banner{display:flex;align-items:center;gap:8px;border-radius:12px;padding:6px 6px 6px 14px;margin:6px 0;font-size:13.5px;background:var(--warn-bg);color:var(--warn-ink)}
+.banner span{flex:1;min-width:0}
+.banner button{min-height:40px;border:0;background:transparent;font-weight:700;cursor:pointer;padding:0 10px;text-decoration:underline;color:inherit;white-space:nowrap}
+.banner.remind{background:var(--deep);color:var(--deep-ink)}
+
+.layout{display:block}
+.cupwrap{position:relative;height:min(44vh,360px);min-height:230px;display:flex;justify-content:center;align-items:center;touch-action:none;user-select:none;-webkit-user-select:none;cursor:ns-resize}
+.cupwrap svg{height:100%;width:auto;max-width:100%;overflow:visible}
+@media (prefers-reduced-motion:no-preference){#waterG{transition:transform .6s ease-out}}
+.readout{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);text-align:center;padding:6px 14px;pointer-events:none;white-space:nowrap;text-shadow:0 0 3px var(--paper),0 0 8px var(--paper),0 0 14px var(--paper)}
+.readout .big{font-size:26px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums;line-height:1.2}
+.readout .big small{font-size:15px;font-weight:600;color:var(--muted)}
+.readout .pct{font-size:14px;color:var(--deep);font-weight:700}
+.over{position:absolute;left:50%;top:0;transform:translateX(-50%);background:var(--goal);color:#fff;font-weight:800;font-size:13px;padding:3px 10px;border-radius:12px;white-space:nowrap}
+.drag{position:absolute;left:50%;top:22%;transform:translateX(-50%);background:var(--deep);color:var(--deep-ink);font-weight:800;padding:4px 12px;border-radius:14px;font-size:16px}
+.drop{fill:var(--water)}
+@media (prefers-reduced-motion:no-preference){
+  .drop{animation:drip 1.6s ease-in infinite}
+  .drop:nth-of-type(2){animation-delay:.5s}.drop:nth-of-type(3){animation-delay:1s}
+  @keyframes drip{0%{transform:translateY(0);opacity:0}15%{opacity:1}100%{transform:translateY(26px);opacity:0}}
+}
+.hintline{text-align:center;font-size:12px;color:var(--faint);margin:2px 0 6px}
+
+.quick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:8px 0 4px}
+.qb{min-height:64px;border-radius:16px;border:1.5px solid var(--line);background:var(--paper);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:4px 2px;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums}
+.qb small{font-size:11.5px;font-weight:600;color:var(--muted)}
+.qb.custom{background:var(--soft);border-style:dashed}
+@media (hover:hover){.qb:hover{border-color:var(--water)}.ib:hover{border-color:var(--muted)}}
+.qb:active{transform:scale(.97)}
+.customrow{display:flex;gap:8px;margin:8px 0}
+.customrow input{flex:1;min-width:0}
+input[type=number],input[type=time],input[type=text],select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px 10px;font-size:15px;width:100%}
+.btn{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--paper);padding:0 14px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--deep);border-color:var(--deep);color:var(--deep-ink)}
+.btn.dan{color:var(--danger);border-color:var(--danger)}
+.err{color:var(--danger);font-size:13px;min-height:0;margin:2px 0}
+
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:12px}
+.card h2{margin:0 0 6px;font-size:12px;letter-spacing:.2em;color:var(--muted);font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.card h2 span{letter-spacing:0;font-weight:600;color:var(--faint)}
+.log{list-style:none;margin:0;padding:0}
+.log li{position:relative;overflow:hidden;border-bottom:1px solid var(--rule)}
+.log li:last-child{border-bottom:0}
+.log .row{display:flex;align-items:center;gap:10px;min-height:48px;background:var(--paper);position:relative;z-index:1;touch-action:pan-y;transition:transform .2s}
+.log .row.dragging{transition:none}
+.log .tm{font-variant-numeric:tabular-nums;color:var(--muted);width:48px}
+.log .ml{flex:1;font-weight:700;font-variant-numeric:tabular-nums}
+.log .del{width:44px;height:44px;border:0;background:none;color:var(--faint);cursor:pointer;border-radius:50%}
+.log .bgdel{position:absolute;inset:0;background:var(--danger);color:#fff;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;font-weight:700}
+.empty{color:var(--faint);font-size:14px;padding:10px 0}
+
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;height:150px;position:relative;align-items:end;margin-top:8px;padding-bottom:22px}
+.week .goal{position:absolute;left:0;right:0;border-top:2px dashed var(--goal);pointer-events:none}
+.week .goal span{position:absolute;right:0;top:-18px;font-size:11px;color:var(--goal);font-weight:700}
+.bcol{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative}
+.bar{width:100%;max-width:34px;border-radius:6px 6px 2px 2px;background:var(--bar);min-height:2px}
+.bar.hit{background:var(--water)}
+.bcol .lab{position:absolute;bottom:-22px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.bcol.today .lab{color:var(--ink);font-weight:800}
+.bcol .v{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin-bottom:2px}
+
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:6px 6px 6px 16px;border-radius:12px;font-size:14px;z-index:50;display:flex;align-items:center;gap:8px;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
+.toast button{min-height:40px;border:0;background:none;color:var(--water2);font-weight:800;cursor:pointer;padding:0 12px}
+
+dialog{border:0;padding:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(5,25,32,.5)}
+dialog.sheet{width:100%;max-width:520px;margin:auto auto 0;border-radius:18px 18px 0 0;max-height:90%;overflow:auto;padding:16px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.dh{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.dh h3{margin:0;flex:1;font-size:18px}
+.lbl{display:block;font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--muted);margin:14px 0 6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{min-height:44px;border-radius:22px;border:1px solid var(--line);background:var(--bg);padding:0 14px;cursor:pointer;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--deep);color:var(--deep-ink);border-color:var(--deep)}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.switch{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font-weight:600}
+.switch input{width:22px;height:22px}
+.row{display:flex;gap:8px;align-items:center}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;background:var(--bg);padding:8px;font:12px/1.4 ui-monospace,monospace}
+
+@media (min-width:880px){
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+  .cupwrap{height:440px}
+  .left{position:sticky;top:10px}
+}
+@media (max-height:500px) and (orientation:landscape){
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;align-items:start}
+  .cupwrap{height:calc(100vh - 140px);min-height:200px}
+  .quick{margin-top:0}
+  .qb{min-height:64px}
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="t"><h1>喝水提醒</h1><div class="date num" id="dateLbl"></div></div>
+    <button class="ib" id="openSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+  </header>
+  <div id="banners"></div>
+
+  <div class="layout">
+    <div class="left">
+      <div class="cupwrap" id="cup" role="img" aria-label="今日飲水進度">
+        <svg viewBox="-10 -40 220 285" aria-hidden="true">
+          <defs>
+            <clipPath id="cupClip"><path d="M28 18 L172 18 L158 214 Q156 228 142 228 L58 228 Q44 228 42 214 Z"/></clipPath>
+            <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--water2)"/><stop offset="1" stop-color="var(--water)"/></linearGradient>
+          </defs>
+          <g id="drops"></g>
+          <g clip-path="url(#cupClip)">
+            <rect x="0" y="0" width="200" height="240" fill="var(--paper)"/>
+            <g id="waterG" style="transform:translateY(228px)">
+              <path id="wave2" fill="var(--water2)" opacity=".55" d=""/>
+              <path id="wave" fill="url(#wg)" d=""/>
+            </g>
+            <g stroke="var(--glass)" stroke-width="1.2" opacity=".9">
+              <line x1="150" y1="68" x2="164" y2="68"/><line x1="152" y1="118" x2="164" y2="118"/><line x1="154" y1="168" x2="164" y2="168"/>
+            </g>
+          </g>
+          <path d="M28 18 L172 18 L158 214 Q156 228 142 228 L58 228 Q44 228 42 214 Z" fill="none" stroke="var(--glass)" stroke-width="5" stroke-linejoin="round"/>
+          <path d="M22 18 L178 18" stroke="var(--glass)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M50 40 L60 200" stroke="var(--paper)" stroke-width="6" stroke-linecap="round" opacity=".55"/>
+        </svg>
+        <div class="readout" id="readout"><div class="big" id="amt">0 <small>/ 2,000 ml</small></div><div class="pct" id="pct">0%</div></div>
+        <div class="over" id="over" hidden></div>
+        <div class="drag" id="dragLbl" hidden></div>
+      </div>
+      <p class="hintline">在杯子上往上滑，每 24px 加 50 ml，放開即記錄</p>
+    </div>
+    <div>
+      <div class="quick" id="quick"></div>
+      <div class="customrow" id="customRow" hidden>
+        <input type="number" id="customIn" inputmode="numeric" min="1" placeholder="輸入容量" aria-label="自訂容量">
+        <button class="btn pri" id="customAdd">加入</button>
+        <button class="btn" id="customCancel">取消</button>
+      </div>
+      <p class="err" id="addErr" role="alert"></p>
+
+      <section class="card" aria-labelledby="logH">
+        <h2 id="logH">今日紀錄 <span id="logCount"></span></h2>
+        <ul class="log" id="log"></ul>
+        <p class="hint">往左滑可刪除單筆。</p>
+      </section>
+
+      <section class="card" aria-labelledby="weekH">
+        <h2 id="weekH">近 7 天 <span id="weekSum"></span></h2>
+        <div class="week" id="week"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<dialog class="sheet" id="setDlg" aria-labelledby="setTitle">
+  <div class="dh"><h3 id="setTitle">設定</h3><button class="ib" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+
+  <label class="lbl" for="goalIn">每日目標（<span class="unitTxt">ml</span>）</label>
+  <input type="number" id="goalIn" inputmode="numeric">
+  <div class="row" style="margin-top:8px">
+    <input type="number" id="kgIn" inputmode="decimal" placeholder="體重 kg" aria-label="體重（公斤）" style="flex:1">
+    <button class="btn" id="kgApply">依體重計算</button>
+  </div>
+  <p class="hint">體重 × 30 ml，四捨五入到 50 ml，範圍 500～6,000 ml。</p>
+
+  <span class="lbl">單位</span>
+  <div class="seg" id="unitSeg"><button type="button" id="unit-ml" data-u="ml">毫升 ml</button><button type="button" id="unit-oz" data-u="oz">盎司 oz</button></div>
+
+  <span class="lbl">快速按鈕容量（<span class="unitTxt">ml</span>）</span>
+  <div class="grid4"><input type="number" id="pre0" inputmode="numeric" aria-label="按鈕 1"><input type="number" id="pre1" inputmode="numeric" aria-label="按鈕 2"><input type="number" id="pre2" inputmode="numeric" aria-label="按鈕 3"><input type="number" id="pre3" inputmode="numeric" aria-label="按鈕 4"></div>
+
+  <span class="lbl">提醒</span>
+  <label class="switch" for="remOn"><input type="checkbox" id="remOn"> 頁面開著時提醒我喝水</label>
+  <div class="grid2">
+    <div><label class="lbl" for="remEvery" style="margin-top:4px">間隔</label><select id="remEvery"><option value="30">30 分鐘</option><option value="60">60 分鐘</option><option value="90">90 分鐘</option><option value="120">120 分鐘</option></select></div>
+    <div></div>
+    <div><label class="lbl" for="remFrom" style="margin-top:4px">開始</label><input type="time" id="remFrom"></div>
+    <div><label class="lbl" for="remTo" style="margin-top:4px">結束</label><input type="time" id="remTo"></div>
+  </div>
+  <p class="hint">提醒只會在這個頁面開著時以頁面上方的橫幅出現；距離上次喝水超過間隔才會提醒。</p>
+
+  <span class="lbl">外觀</span>
+  <div class="seg" id="themeSeg"><button type="button" id="theme-auto" data-t="auto">跟隨系統</button><button type="button" id="theme-light" data-t="light">淺色</button><button type="button" id="theme-dark" data-t="dark">深色</button></div>
+
+  <span class="lbl">備份</span>
+  <div class="actions" style="margin-top:0">
+    <button class="btn" id="expDl" hidden>下載 JSON</button>
+    <button class="btn" id="expCopy">複製 JSON</button>
+    <button class="btn" id="impBtn">匯入 JSON</button>
+    <input type="file" id="impFile" accept=".json,application/json" hidden>
+  </div>
+  <textarea id="expText" hidden readonly aria-label="備份內容"></textarea>
+  <p class="err" id="setErr" role="alert"></p>
+  <div class="actions"><button class="btn pri" id="setSave">儲存</button><button class="btn" data-close>取消</button></div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'water-log:v1:data', TKEY = 'water-log:v1:theme';
+const OZ = 29.5735;
+const $ = s => document.querySelector(s);
+const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); if (attrs) for (const k in attrs) { if (k === 'class') n.className = attrs[k]; else if (k === 'text') n.textContent = attrs[k]; else if (k.startsWith('on')) n.addEventListener(k.slice(2), attrs[k]); else if (attrs[k] != null && attrs[k] !== false) n.setAttribute(k, attrs[k]); } for (const c of kids) if (c != null) n.append(c); return n; };
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const dayKey = (t = Date.now()) => new Date(t).toLocaleDateString('sv-SE');
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+
+const DEF = () => ({ goal: 2000, unit: 'ml', presets: [150, 250, 350, 500], remind: { on: false, every: 60, from: '09:00', to: '21:00' } });
+function sample() {
+  const now = Date.now(), d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const days = {};
+  const past = [[250, 350, 250, 500, 300, 400, 250], [350, 250, 500, 250, 300], [250, 250, 500, 350, 250, 500], [500, 350, 250], [250, 500, 350, 500, 250, 350], [350, 250, 250, 500]];
+  past.forEach((arr, i) => {
+    const base = new Date(d0); base.setDate(base.getDate() - (6 - i)); base.setHours(8, 0, 0, 0);
+    days[dayKey(base.getTime())] = arr.map((ml, k) => ({ t: base.getTime() + k * 95 * 60000, ml }));
+  });
+  const today = [];
+  for (const [mins, ml] of [[270, 250], [160, 350], [70, 250]]) { const t = Math.max(d0.getTime() + 60000 * (today.length + 1), now - mins * 60000); if (t < now) today.push({ t, ml }); }
+  days[dayKey(now)] = today;
+  return { sample: true, settings: DEF(), days };
+}
+function valid(d) {
+  if (!d || typeof d !== 'object' || !d.settings || typeof d.days !== 'object' || Array.isArray(d.days)) return false;
+  const s = d.settings;
+  if (!Number.isFinite(s.goal) || s.goal < 500 || s.goal > 6000) return false;
+  if (!['ml', 'oz'].includes(s.unit)) return false;
+  if (!Array.isArray(s.presets) || s.presets.length !== 4 || !s.presets.every(x => Number.isInteger(x) && x >= 10 && x <= 2000)) return false;
+  if (!s.remind || typeof s.remind !== 'object') return false;
+  for (const k in d.days) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !Array.isArray(d.days[k])) return false;
+    if (!d.days[k].every(e => e && Number.isFinite(e.t) && Number.isInteger(e.ml) && e.ml >= 10 && e.ml <= 2000)) return false;
+  }
+  return true;
+}
+let data = lsGet(KEY, null);
+if (!valid(data)) data = sample();
+let theme = lsGet(TKEY, 'auto');
+const applyTheme = () => theme === 'auto' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', theme);
+applyTheme();
+function prune() {
+  const cut = new Date(); cut.setDate(cut.getDate() - 365); const ck = dayKey(cut.getTime());
+  for (const k in data.days) if (k < ck || !data.days[k].length && k !== dayKey()) delete data.days[k];
+}
+prune();
+const save = () => lsSet(KEY, data);
+
+const S = () => data.settings;
+const toUnit = ml => S().unit === 'oz' ? Math.round(ml / OZ) : Math.round(ml);
+const fromUnit = v => S().unit === 'oz' ? Math.round(v * OZ) : Math.round(v);
+const fmt = ml => toUnit(ml).toLocaleString('en-US') + ' ' + S().unit;
+const total = k => (data.days[k] || []).reduce((a, e) => a + e.ml, 0);
+
+/* ---------- wave ---------- */
+const wave = $('#wave'), wave2 = $('#wave2'), waterG = $('#waterG');
+let phase = 0, raf = 0, lastT = 0;
+function wavePath(ph, amp) {
+  let d = `M -10 ${Math.sin(ph) * amp}`;
+  for (let x = -10; x <= 210; x += 10) d += ` L ${x} ${(Math.sin(ph + (x / 200) * Math.PI * 2) * amp).toFixed(2)}`;
+  return d + ' L 210 260 L -10 260 Z';
+}
+function frame(t) {
+  if (lastT) phase += (t - lastT) / 2000 * Math.PI * 2; lastT = t;
+  wave.setAttribute('d', wavePath(phase, 4)); wave2.setAttribute('d', wavePath(-phase * .8 + 1.4, 3.2));
+  raf = requestAnimationFrame(frame);
+}
+function startWave() { cancelAnimationFrame(raf); lastT = 0; if (reduce.matches || document.hidden) { wave.setAttribute('d', wavePath(0, 0)); wave2.setAttribute('d', wavePath(0, 0)); return; } raf = requestAnimationFrame(frame); }
+document.addEventListener('visibilitychange', () => { if (document.hidden) cancelAnimationFrame(raf); else { startWave(); render(); checkRemind(); } });
+reduce.addEventListener?.('change', startWave);
+
+/* ---------- render ---------- */
+let curDay = dayKey();
+function levelY(ml) { const r = Math.min(ml / S().goal, 1); return 228 - r * 204; } // interior 24..228
+function render() {
+  curDay = dayKey();
+  const k = curDay, tot = total(k), g = S().goal;
+  const d = new Date();
+  $('#dateLbl').textContent = `${d.getMonth() + 1} 月 ${d.getDate()} 日 星期${WD[d.getDay()]}`;
+  waterG.style.transform = `translateY(${levelY(tot + (dragAdd || 0))}px)`;
+  $('#amt').textContent = ''; $('#amt').append(toUnit(tot).toLocaleString('en-US') + ' ', el('small', { text: `/ ${toUnit(g).toLocaleString('en-US')} ${S().unit}` }));
+  const pct = Math.round(tot / g * 100);
+  $('#pct').textContent = pct + '%' + (pct >= 100 ? '　達標' : '');
+  $('#cup').setAttribute('aria-label', `今日已喝 ${fmt(tot)}，目標 ${fmt(g)}，${pct}%`);
+  const over = tot - g;
+  $('#over').hidden = over <= 0; $('#over').textContent = `超標 +${fmt(over)}`;
+  const drops = $('#drops'); drops.textContent = '';
+  if (over > 0) for (const x of [70, 100, 130]) drops.append(svgEl('circle', { class: 'drop', cx: x, cy: -6, r: 4 }));
+  // quick
+  const q = $('#quick'); q.textContent = '';
+  S().presets.forEach((ml, i) => q.append(el('button', { class: 'qb', id: 'q' + i, type: 'button', 'aria-label': `加入 ${fmt(ml)}`, onclick: () => add(ml) }, '+' + toUnit(ml), el('small', { text: S().unit }))));
+  q.append(el('button', { class: 'qb custom', id: 'qCustom', type: 'button', onclick: openCustom }, '自訂', el('small', { text: S().unit })));
+  // log
+  const list = data.days[k] || [];
+  const log = $('#log'); log.textContent = '';
+  $('#logCount').textContent = list.length ? `${list.length} 筆` + (data.sample ? '・範例' : '') : '';
+  if (!list.length) log.append(el('li', { class: 'empty', text: '今天還沒有紀錄，按上方按鈕加入第一杯。' }));
+  list.slice().reverse().forEach(e => {
+    const t = new Date(e.t);
+    const row = el('div', { class: 'row' },
+      el('span', { class: 'tm', text: `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` }),
+      el('span', { class: 'ml', text: '＋' + fmt(e.ml) }),
+      el('button', { class: 'del', type: 'button', 'aria-label': '刪除這筆', onclick: () => remove(e) }, '✕'));
+    const li = el('li', null, el('div', { class: 'bgdel', 'aria-hidden': 'true', text: '刪除' }), row);
+    swipeDelete(row, () => remove(e));
+    log.append(li);
+  });
+  // week
+  const wk = $('#week'); wk.textContent = '';
+  const cap = 1.3; let sum = 0, hits = 0;
+  for (let i = 6; i >= 0; i--) {
+    const dd = new Date(); dd.setHours(12, 0, 0, 0); dd.setDate(dd.getDate() - i);
+    const key = dayKey(dd.getTime()), v = total(key); sum += v; if (v >= g) hits++;
+    const h = Math.min(v / g, cap) / cap * 100;
+    wk.append(el('div', { class: 'bcol' + (i === 0 ? ' today' : ''), title: `${key} ${fmt(v)}` },
+      el('span', { class: 'v', text: v ? (S().unit === 'oz' ? toUnit(v) : (v / 1000).toFixed(1) + 'L') : '' }),
+      el('div', { class: 'bar' + (v >= g ? ' hit' : ''), style: `height:${h}%` }),
+      el('span', { class: 'lab', text: i === 0 ? '今天' : `${dd.getMonth() + 1}/${dd.getDate()}` })));
+  }
+  const gl = el('div', { class: 'goal' }, el('span', { text: '目標' }));
+  gl.style.bottom = `calc(22px + (100% - 22px) * ${(1 / cap).toFixed(4)})`;
+  wk.append(gl);
+  $('#weekSum').textContent = `達標 ${hits}/7 天・日均 ${fmt(Math.round(sum / 7))}`;
+  // banners
+  renderBanners();
+}
+const svgEl = (tag, attrs) => { const n = document.createElementNS('http://www.w3.org/2000/svg', tag); for (const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+let remindMsg = '';
+function renderBanners() {
+  const b = $('#banners'); b.textContent = '';
+  if (remindMsg) b.append(el('div', { class: 'banner remind', role: 'status', id: 'remindBanner' }, el('span', { text: remindMsg }),
+    el('button', { type: 'button', text: '喝了 ' + fmt(S().presets[1]), onclick: () => add(S().presets[1]) }),
+    el('button', { type: 'button', text: '稍後', onclick: () => { remindMsg = ''; lastRemind = Date.now(); renderBanners(); } })));
+  if (data.sample) b.append(el('div', { class: 'banner', id: 'sampleBanner' }, el('span', { text: '目前顯示的是範例紀錄。加入第一杯時會自動清除。' }),
+    el('button', { type: 'button', text: '清除範例', onclick: clearSample })));
+}
+function clearSample() { data = { settings: data.settings, days: {} }; save(); render(); }
+
+/* ---------- actions ---------- */
+let undoTimer = 0;
+function add(ml) {
+  $('#addErr').textContent = '';
+  ml = Math.round(ml);
+  if (!(ml >= 10 && ml <= 2000)) { $('#addErr').textContent = `單筆需介於 ${fmt(10)}～${fmt(2000)}。`; return false; }
+  if (data.sample) { data = { settings: data.settings, days: {} }; }
+  const k = dayKey(); const list = data.days[k] || (data.days[k] = []);
+  if (list.length >= 100) { $('#addErr').textContent = '一天最多 100 筆。'; return false; }
+  const e = { t: Date.now(), ml }; list.push(e);
+  save(); remindMsg = ''; lastRemind = 0; render();
+  showToast(`已加入 ${fmt(ml)}`, () => { const l = data.days[k]; const i = l ? l.indexOf(e) : -1; if (i >= 0) { l.splice(i, 1); save(); render(); } });
+  return true;
+}
+function remove(e) {
+  const k = dayKey(e.t), l = data.days[k]; if (!l) return; const i = l.indexOf(e); if (i < 0) return;
+  l.splice(i, 1); save(); render();
+  showToast(`已刪除 ${fmt(e.ml)}`, () => { l.splice(i, 0, e); data.days[k] = l; save(); render(); });
+}
+function showToast(msg, undo) {
+  document.querySelectorAll('.toast').forEach(t => t.remove()); clearTimeout(undoTimer);
+  const t = el('div', { class: 'toast', role: 'status' }, el('span', { text: msg }));
+  if (undo) t.append(el('button', { type: 'button', id: 'undoBtn', text: '復原', onclick: () => { undo(); t.remove(); } }));
+  document.body.append(t); undoTimer = setTimeout(() => t.remove(), 5000);
+}
+function openCustom() { $('#customRow').hidden = false; $('#customIn').value = ''; $('#customIn').placeholder = `容量（${S().unit}）`; $('#customIn').focus(); }
+$('#customCancel').onclick = () => { $('#customRow').hidden = true; $('#addErr').textContent = ''; };
+const doCustom = () => { const v = Number($('#customIn').value); if (!v) { $('#addErr').textContent = '請輸入容量。'; return; } if (add(fromUnit(v))) $('#customRow').hidden = true; };
+$('#customAdd').onclick = doCustom;
+$('#customIn').addEventListener('keydown', e => { if (e.key === 'Enter') doCustom(); });
+
+function swipeDelete(row, onDel) {
+  let sx = 0, sy = 0, dx = 0, on = false, locked = null;
+  row.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; sx = e.clientX; sy = e.clientY; dx = 0; on = true; locked = null; });
+  row.addEventListener('pointermove', e => {
+    if (!on) return; const mx = e.clientX - sx, my = e.clientY - sy;
+    if (locked == null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) { locked = Math.abs(mx) > Math.abs(my) ? 'x' : 'y'; if (locked === 'x') { row.setPointerCapture(e.pointerId); row.classList.add('dragging'); } }
+    if (locked === 'x') { dx = Math.min(0, mx); row.style.transform = `translateX(${dx}px)`; }
+  });
+  const end = () => { if (!on) return; on = false; row.classList.remove('dragging'); if (locked === 'x' && dx < -90) { row.style.transform = 'translateX(-110%)'; setTimeout(onDel, 160); } else row.style.transform = ''; };
+  row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+}
+
+/* cup swipe-up: +50 ml per 24px */
+let dragAdd = 0;
+(() => {
+  const cup = $('#cup'); let sy = null, pid = null;
+  cup.addEventListener('pointerdown', e => { sy = e.clientY; pid = e.pointerId; dragAdd = 0; cup.setPointerCapture(e.pointerId); });
+  cup.addEventListener('pointermove', e => {
+    if (sy == null || e.pointerId !== pid) return;
+    const steps = Math.max(0, Math.min(40, Math.floor((sy - e.clientY) / 24)));
+    const v = steps * 50; if (v === dragAdd) return; dragAdd = v;
+    $('#dragLbl').hidden = !v; $('#dragLbl').textContent = '+' + fmt(v);
+    waterG.style.transform = `translateY(${levelY(total(dayKey()) + v)}px)`;
+  });
+  const end = e => { if (sy == null) return; sy = null; const v = dragAdd; dragAdd = 0; $('#dragLbl').hidden = true; if (v >= 50) add(v); else render(); };
+  cup.addEventListener('pointerup', end); cup.addEventListener('pointercancel', () => { sy = null; dragAdd = 0; $('#dragLbl').hidden = true; render(); });
+})();
+
+/* ---------- reminders (in-page only) ---------- */
+let lastRemind = 0, remTimer = 0;
+const hm = s => { const [h, m] = (s || '0:0').split(':').map(Number); return h * 60 + m; };
+function checkRemind() {
+  clearTimeout(remTimer);
+  if (dayKey() !== curDay) render();
+  const r = S().remind;
+  if (r && r.on) {
+    const now = new Date(), mins = now.getHours() * 60 + now.getMinutes();
+    const inWin = mins >= hm(r.from) && mins < hm(r.to);
+    const list = data.days[dayKey()] || [];
+    const last = list.length ? Math.max(...list.map(e => e.t)) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime() + hm(r.from) * 60000; })();
+    const gap = Date.now() - Math.max(last, lastRemind), every = r.every * 60000;
+    if (inWin && !remindMsg && gap >= every) {
+      const since = Math.round((Date.now() - last) / 60000);
+      remindMsg = list.length ? `該喝水了，距離上一杯已經 ${since >= 60 ? Math.floor(since / 60) + ' 小時 ' + (since % 60) + ' 分' : since + ' 分鐘'}。` : '該喝水了，今天還沒喝第一杯。';
+      lastRemind = Date.now();
+      try { navigator.vibrate && navigator.vibrate([120, 80, 120]); } catch (e) {}
+      renderBanners();
+    }
+  }
+  remTimer = setTimeout(checkRemind, 30000);
+}
+
+/* ---------- settings ---------- */
+let dl = null;
+(async () => { try { dl = await window.claude?.use?.('downloads'); } catch (e) { dl = null; } if (dl) $('#expDl').hidden = false; })();
+let draftUnit = 'ml', draftTheme = 'auto';
+function fillSettings() {
+  const s = S(); draftUnit = s.unit; draftTheme = theme;
+  $('#setErr').textContent = ''; $('#expText').hidden = true;
+  setUnitInputs(s.goal, s.presets);
+  $('#remOn').checked = !!s.remind.on; $('#remEvery').value = String(s.remind.every); $('#remFrom').value = s.remind.from; $('#remTo').value = s.remind.to;
+  segState();
+}
+function setUnitInputs(goalMl, presetsMl) {
+  const cv = ml => draftUnit === 'oz' ? Math.round(ml / OZ) : ml;
+  $('#goalIn').value = cv(goalMl); presetsMl.forEach((v, i) => $('#pre' + i).value = cv(v));
+  document.querySelectorAll('.unitTxt').forEach(x => x.textContent = draftUnit);
+}
+function readMl(id) { const v = Number($(id).value); if (!Number.isFinite(v) || v <= 0) return NaN; return draftUnit === 'oz' ? Math.round(v * OZ) : Math.round(v); }
+function segState() {
+  document.querySelectorAll('#unitSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.u === draftUnit)));
+  document.querySelectorAll('#themeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === draftTheme)));
+}
+document.querySelectorAll('#unitSeg button').forEach(b => b.onclick = () => {
+  if (b.dataset.u === draftUnit) return;
+  // keep the exact ml values when the inputs are untouched-equivalent
+  const prev = draftUnit, s = S();
+  const back = id => { const v = Number($(id).value); return prev === 'oz' ? Math.round(v * OZ) : v; };
+  const keep = (id, orig) => { const shown = prev === 'oz' ? Math.round(orig / OZ) : orig; return Number($(id).value) === shown ? orig : back(id); };
+  const g = keep('#goalIn', s.goal), p = [0, 1, 2, 3].map(i => keep('#pre' + i, s.presets[i]));
+  draftUnit = b.dataset.u; setUnitInputs(g, p); segState();
+});
+document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => { draftTheme = b.dataset.t; theme = draftTheme; lsSet(TKEY, theme); applyTheme(); segState(); });
+$('#kgApply').onclick = () => {
+  const kg = Number($('#kgIn').value);
+  if (!(kg >= 20 && kg <= 300)) { $('#setErr').textContent = '請輸入 20～300 kg 的體重。'; return; }
+  const ml = Math.min(6000, Math.max(500, Math.round(kg * 30 / 50) * 50));
+  $('#setErr').textContent = ''; $('#goalIn').value = draftUnit === 'oz' ? Math.round(ml / OZ) : ml;
+  $('#goalIn').dataset.exact = ml;
+};
+$('#goalIn').addEventListener('input', () => { delete $('#goalIn').dataset.exact; });
+$('#openSet').onclick = () => { fillSettings(); $('#setDlg').showModal(); };
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); }));
+$('#setSave').onclick = () => {
+  const s = S(), err = m => { $('#setErr').textContent = m; };
+  const keep = (id, orig) => { const shown = draftUnit === 'oz' ? Math.round(orig / OZ) : orig; return Number($(id).value) === shown ? orig : readMl(id); };
+  let goal = $('#goalIn').dataset.exact ? Number($('#goalIn').dataset.exact) : keep('#goalIn', s.goal);
+  if (!(goal >= 500 && goal <= 6000)) return err('每日目標需介於 500～6,000 ml（約 17～203 oz）。');
+  const pre = [0, 1, 2, 3].map(i => keep('#pre' + i, s.presets[i]));
+  if (pre.some(v => !(v >= 10 && v <= 2000))) return err('快速按鈕容量需介於 10～2,000 ml。');
+  const from = $('#remFrom').value || '09:00', to = $('#remTo').value || '21:00';
+  if (hm(from) >= hm(to)) return err('提醒的結束時間要晚於開始時間。');
+  data.settings = { goal, unit: draftUnit, presets: pre, remind: { on: $('#remOn').checked, every: Number($('#remEvery').value), from, to } };
+  save(); lastRemind = 0; remindMsg = ''; $('#setDlg').close(); render(); checkRemind();
+};
+const exportStr = () => JSON.stringify({ app: 'water-log', version: 1, exportedAt: new Date().toISOString(), data: { settings: data.settings, days: data.days } }, null, 1);
+$('#expDl').onclick = async () => {
+  try { await dl.save({ filename: `water-log-${dayKey()}.json`, data: exportStr() }); $('#setErr').textContent = ''; }
+  catch (e) { if (!/declin/i.test(String(e && (e.message || e)))) $('#setErr').textContent = '下載失敗，請改用複製。'; }
+};
+$('#expCopy').onclick = () => {
+  const s = exportStr();
+  const fallback = () => { const t = $('#expText'); t.hidden = false; t.value = s; t.focus(); t.select(); $('#setErr').textContent = '無法自動複製，已選取下方文字，請手動複製。'; };
+  try { navigator.clipboard.writeText(s).then(() => { $('#setErr').textContent = ''; showToast('已複製備份 JSON'); }, fallback); } catch (e) { fallback(); }
+};
+$('#impBtn').onclick = () => $('#impFile').click();
+$('#impFile').onchange = async () => {
+  const f = $('#impFile').files[0]; $('#impFile').value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text()); const d = j && j.data ? j.data : j;
+    if (!valid(d)) throw new Error('bad');
+    data = { settings: d.settings, days: d.days }; prune(); save(); $('#setDlg').close(); render(); showToast('已匯入備份');
+  } catch (e) { $('#setErr').textContent = '檔案格式不正確，未變更現有資料。'; }
+};
+
+window.__wl = { levelY, toUnit, fromUnit, total, get data() { return data; }, OZ, checkRemind };
+render(); startWave(); checkRemind();
+})();
+</script>
+</body></html>

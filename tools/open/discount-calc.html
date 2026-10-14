@@ -1,0 +1,617 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>折扣計算</title>
+<style>
+/* 小費與折扣計算：超市貨架價格標籤的語彙——黃色價籤、粗黑數字、虛線撕口；最划算用綠色標籤 */
+:root {
+  --bg: #eceeea;
+  --surface: #ffffff;
+  --surface-2: #f5f6f3;
+  --ink: #151515;
+  --muted: #5f625c;
+  --line: #d8dad4;
+  --line-strong: #b4b8ae;
+  --tag: #ffd338;
+  --tag-ink: #141414;
+  --tag-edge: #e2b70f;
+  --btn: #151515;
+  --btn-ink: #ffffff;
+  --chip-on: #151515;
+  --chip-on-ink: #ffd338;
+  --best: #1b7f45;
+  --best-ink: #ffffff;
+  --best-soft: #e2f3e8;
+  --err: #b42318;
+  --err-soft: #fde7e4;
+  --warn: #8a5a00;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --num: "DIN Alternate", "Bahnschrift", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111211; --surface: #1b1c1a; --surface-2: #161715; --ink: #eeefe9; --muted: #a3a69c; --line: #2e302b; --line-strong: #454840;
+    --tag: #f1c935; --tag-ink: #141414; --tag-edge: #b8960f; --btn: #eeefe9; --btn-ink: #151515; --chip-on: #f1c935; --chip-on-ink: #141414;
+    --best: #4fcf83; --best-ink: #0b2415; --best-soft: #15301f; --err: #ff8f84; --err-soft: #3a1915; --warn: #f2c464;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111211; --surface: #1b1c1a; --surface-2: #161715; --ink: #eeefe9; --muted: #a3a69c; --line: #2e302b; --line-strong: #454840;
+  --tag: #f1c935; --tag-ink: #141414; --tag-edge: #b8960f; --btn: #eeefe9; --btn-ink: #151515; --chip-on: #f1c935; --chip-on-ink: #141414;
+  --best: #4fcf83; --best-ink: #0b2415; --best-soft: #15301f; --err: #ff8f84; --err-soft: #3a1915; --warn: #f2c464;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45;
+  padding-block: 12px calc(96px + env(safe-area-inset-bottom));
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  overflow-x: hidden;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tag-edge); outline-offset: 2px; }
+.wrap { max-width: 1060px; margin: 0 auto; }
+header.top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+header.top h1 { flex: 1; margin: 0; font-size: 21px; font-weight: 900; letter-spacing: .02em; display: flex; align-items: center; gap: 8px; }
+header.top h1 i { width: 14px; height: 22px; background: var(--tag); border: 2px solid var(--ink); border-radius: 3px 3px 3px 3px; display: inline-block; transform: rotate(-8deg); }
+.icon-btn { min-width: 44px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1.5px solid var(--line-strong); background: var(--surface); font-size: 13px; font-weight: 700; color: var(--muted); }
+
+nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); border: 2px solid var(--ink); border-radius: 10px; overflow: hidden; margin-bottom: 14px; background: var(--surface); }
+nav.tabs button { min-height: 46px; border: 0; background: transparent; font-weight: 800; font-size: 14px; color: var(--ink); padding: 4px 2px; }
+nav.tabs button + button { border-left: 2px solid var(--ink); }
+nav.tabs button[aria-selected="true"] { background: var(--tag); color: var(--tag-ink); }
+@media (hover: hover) { nav.tabs button:not([aria-selected="true"]):hover { background: var(--surface-2); } }
+
+.panel { display: grid; gap: 12px; }
+.panel[hidden] { display: none !important; }
+.card { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 14px; }
+.card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 900; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card h2 small { font-size: 12px; font-weight: 600; color: var(--muted); }
+.field { display: grid; gap: 6px; margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+.field > label, .lbl { font-size: 13px; font-weight: 700; color: var(--muted); }
+.money { position: relative; }
+.money::before { content: "$"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-weight: 800; color: var(--muted); pointer-events: none; }
+
+input[type="text"], input[type="number"], select {
+  width: 100%; min-width: 0; min-height: 48px; border: 1.5px solid var(--line-strong); border-radius: 8px; background: var(--surface-2);
+  padding: 8px 12px; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+select { font-size: 16px; }
+.money input[type="text"] { padding-left: 28px; }
+input[type="text"], input[type="number"], select { height: 48px; }
+input.bad { border-color: var(--err); background: var(--err-soft); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chips { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; margin-bottom: 8px; }
+#t-chips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.chip { min-height: 44px; min-width: 44px; padding: 0 2px; white-space: nowrap; border-radius: 8px; border: 1.5px solid var(--line-strong); background: var(--surface); font-weight: 800; font-size: 15px; }
+.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); border-color: var(--chip-on); }
+@media (hover: hover) { .chip:not([aria-pressed="true"]):hover { border-color: var(--ink); } }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1.5px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.seg button { min-height: 44px; border: 0; background: var(--surface); font-weight: 700; font-size: 14px; color: var(--muted); padding: 0 6px; }
+.seg button + button { border-left: 1.5px solid var(--line-strong); }
+.seg button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 700; cursor: pointer; }
+.check input { width: 22px; height: 22px; margin: 0; accent-color: var(--best); flex: none; }
+.msg { font-size: 13px; font-weight: 700; color: var(--err); margin: 4px 0 0; min-height: 0; }
+.msg.info { color: var(--warn); }
+.msg:empty { display: none; }
+.sample { font-size: 11px; font-weight: 800; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 4px; padding: 0 5px; }
+
+/* 價籤 */
+.tagbox { position: relative; background: var(--tag); color: var(--tag-ink); border-radius: 6px; padding: 14px 16px 12px; box-shadow: 0 2px 0 var(--tag-edge); }
+.tagbox .k { font-size: 12px; font-weight: 800; letter-spacing: .1em; opacity: .75; }
+.price { font-family: var(--num); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; display: flex; align-items: flex-start; gap: 2px; margin: 4px 0 12px; overflow-wrap: anywhere; }
+.price .cur { font-size: 22px; margin-top: 6px; }
+.price .int { font-size: 54px; letter-spacing: -.02em; }
+.price .dec { font-size: 22px; margin-top: 6px; }
+.tagbox .foot { border-top: 2px dashed rgba(20,20,20,.35); padding-top: 10px; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 800; flex-wrap: wrap; }
+.tagbox .foot span { white-space: nowrap; }
+.tagbox.err { background: var(--err-soft); color: var(--err); box-shadow: none; }
+.lines { display: grid; gap: 0; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.lines div { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line-strong); font-size: 14px; }
+.lines div:last-child { border-bottom: 0; }
+.lines b { font-weight: 800; }
+.items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.items span { font-size: 13px; font-weight: 700; border: 1.5px solid var(--line-strong); border-radius: 6px; padding: 3px 7px; font-variant-numeric: tabular-nums; }
+.items span.off { border-color: var(--best); color: var(--best); }
+.hint-box { margin-top: 10px; background: var(--best-soft); color: var(--best); border-radius: 8px; padding: 10px 12px; font-weight: 800; font-size: 15px; }
+
+.stepper { display: grid; grid-template-columns: 48px 1fr 48px; gap: 6px; }
+.stepper button { min-height: 48px; border-radius: 8px; border: 1.5px solid var(--line-strong); background: var(--surface); font-size: 22px; font-weight: 800; }
+.stepper input { text-align: center; }
+
+/* 比價 */
+.cmp-list { display: grid; gap: 10px; }
+.pcard { background: var(--surface); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; position: relative; }
+.pcard.is-best { border-color: var(--best); box-shadow: inset 0 0 0 1px var(--best); }
+.pcard .top { display: flex; gap: 8px; align-items: center; }
+.pcard .top input { font-size: 16px; font-weight: 800; }
+.pcard .del { min-width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; flex: none; }
+.pcard .del.armed { background: var(--err); color: var(--surface); padding: 0 8px; }
+.pcard .grid { display: grid; grid-template-columns: 1.2fr 1fr .9fr; gap: 6px; }
+.pcard .grid label { font-size: 12px; font-weight: 700; color: var(--muted); display: grid; gap: 4px; min-width: 0; }
+.pcard .res { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px dashed var(--line-strong); padding-top: 8px; min-height: 36px; }
+.pcard .unit { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.badge { font-size: 13px; font-weight: 900; padding: 4px 9px; border-radius: 5px; white-space: nowrap; }
+.badge.best { background: var(--best); color: var(--best-ink); }
+.badge.more { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line-strong); }
+.badge.na { color: var(--muted); font-weight: 700; }
+.add-card { min-height: 52px; border: 2px dashed var(--line-strong); border-radius: 10px; background: transparent; font-weight: 800; font-size: 15px; color: var(--muted); width: 100%; }
+@media (hover: hover) { .add-card:hover { border-color: var(--ink); color: var(--ink); } }
+
+/* 底部列 */
+.bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--surface); border-top: 2px solid var(--ink);
+  padding: 10px max(16px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+.bar .in { max-width: 1060px; margin: 0 auto; display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.btn { min-height: 50px; border-radius: 8px; border: 2px solid var(--ink); background: var(--surface); font-weight: 900; font-size: 15px; }
+.btn.primary { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+.btn.armed { background: var(--err); border-color: var(--err); color: var(--surface); }
+@media (hover: hover) { .btn.primary:hover { filter: brightness(1.15); } }
+.toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translate(-50%, 10px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 20; max-width: calc(100% - 32px); }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.copy-src { position: absolute; left: -9999px; top: 0; white-space: pre; }
+
+@media (max-width: 370px) { .price .int { font-size: 46px; } nav.tabs button { font-size: 13px; } .chip { font-size: 14px; } }
+@media (min-width: 700px) { .panel.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } .panel.split > .full { grid-column: 1 / -1; } .cmp-list { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 960px) {
+  .layout { display: grid; grid-template-columns: 170px 1fr; gap: 20px; align-items: start; }
+  nav.tabs { grid-template-columns: 1fr; }
+  nav.tabs button { text-align: left; padding: 0 16px; min-height: 52px; }
+  nav.tabs button + button { border-left: 0; border-top: 2px solid var(--ink); }
+  .cmp-list { grid-template-columns: repeat(3, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1><i aria-hidden="true"></i>折扣計算</h1>
+    <button class="icon-btn" id="theme-btn" type="button" aria-label="切換主題">主題：<span id="theme-label">自動</span></button>
+  </header>
+  <div class="layout">
+    <nav class="tabs" role="tablist" aria-label="功能分頁">
+      <button role="tab" id="tab-disc" data-tab="disc" aria-selected="true" aria-controls="p-disc">折扣</button>
+      <button role="tab" id="tab-spend" data-tab="spend" aria-selected="false" aria-controls="p-spend">滿額</button>
+      <button role="tab" id="tab-tip" data-tab="tip" aria-selected="false" aria-controls="p-tip">小費</button>
+      <button role="tab" id="tab-cmp" data-tab="cmp" aria-selected="false" aria-controls="p-cmp">比價</button>
+    </nav>
+    <main>
+      <!-- 折扣 -->
+      <section class="panel split" id="p-disc" role="tabpanel" aria-labelledby="tab-disc">
+        <div class="card">
+          <h2>打折後多少？<span class="sample" id="disc-sample">範例</span></h2>
+          <div class="field">
+            <label for="d-price">原價</label>
+            <div class="money"><input type="text" id="d-price" inputmode="decimal" autocomplete="off"></div>
+            <p class="msg" id="d-price-msg"></p>
+          </div>
+          <div class="field">
+            <label for="d-rate1">折數（可輸入 85、8.5 或 15% off）</label>
+            <div class="chips" data-for="d-rate1"></div>
+            <input type="text" id="d-rate1" autocomplete="off">
+            <p class="msg" id="d-rate1-msg"></p>
+          </div>
+          <label class="check"><input type="checkbox" id="d-stack"> 再疊加第二層折扣</label>
+          <div class="field" id="d-rate2-field">
+            <label for="d-rate2">第二層折數</label>
+            <div class="chips" data-for="d-rate2"></div>
+            <input type="text" id="d-rate2" autocomplete="off">
+            <p class="msg" id="d-rate2-msg"></p>
+          </div>
+        </div>
+        <div class="card" aria-live="polite"><div id="d-out"></div></div>
+
+        <div class="card">
+          <h2>第 N 件 M 折<small>例：第二件 6 折</small></h2>
+          <div class="two">
+            <div class="field"><label for="n-price">單價</label><div class="money"><input type="text" id="n-price" inputmode="decimal" autocomplete="off"></div></div>
+            <div class="field"><label for="n-qty">件數（1–99）</label><input type="number" id="n-qty" inputmode="numeric" min="1" max="99"></div>
+            <div class="field"><label for="n-from">第幾件起打折</label><input type="number" id="n-from" inputmode="numeric" min="1" max="99"></div>
+            <div class="field"><label for="n-rate">折數</label><input type="text" id="n-rate" autocomplete="off"></div>
+          </div>
+          <label class="check"><input type="checkbox" id="n-cycle"> 每組循環（買滿一組再重新計算）</label>
+          <p class="msg" id="n-msg"></p>
+        </div>
+        <div class="card" aria-live="polite"><div id="n-out"></div></div>
+      </section>
+
+      <!-- 滿額 -->
+      <section class="panel split" id="p-spend" role="tabpanel" aria-labelledby="tab-spend" hidden>
+        <div class="card">
+          <h2>滿額折抵<span class="sample">範例</span></h2>
+          <div class="field">
+            <label for="s-amount">購物金額</label>
+            <div class="money"><input type="text" id="s-amount" inputmode="decimal" autocomplete="off"></div>
+          </div>
+          <div class="two">
+            <div class="field"><label for="s-x">滿</label><div class="money"><input type="text" id="s-x" inputmode="decimal" autocomplete="off"></div></div>
+            <div class="field"><label for="s-y">折</label><div class="money"><input type="text" id="s-y" inputmode="decimal" autocomplete="off"></div></div>
+          </div>
+          <div class="field">
+            <span class="lbl" id="s-mode-lbl">規則</span>
+            <div class="seg" role="group" aria-labelledby="s-mode-lbl">
+              <button type="button" id="s-mode-each" data-v="each" aria-pressed="true">每滿就折（累計）</button>
+              <button type="button" id="s-mode-once" data-v="once" aria-pressed="false">只折一次</button>
+            </div>
+          </div>
+          <p class="msg" id="s-msg"></p>
+        </div>
+        <div class="card" aria-live="polite"><div id="s-out"></div></div>
+      </section>
+
+      <!-- 小費 -->
+      <section class="panel split" id="p-tip" role="tabpanel" aria-labelledby="tab-tip" hidden>
+        <div class="card">
+          <h2>服務費／小費<span class="sample">範例</span></h2>
+          <div class="field">
+            <label for="t-amount">消費金額</label>
+            <div class="money"><input type="text" id="t-amount" inputmode="decimal" autocomplete="off"></div>
+          </div>
+          <div class="field">
+            <label for="t-pct">比例 %</label>
+            <div class="chips" id="t-chips"></div>
+            <input type="text" id="t-pct" inputmode="decimal" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="t-people">人數（1–99）</label>
+            <div class="stepper"><button type="button" id="t-minus" aria-label="減少一人">−</button><input type="number" id="t-people" inputmode="numeric" min="1" max="99"><button type="button" id="t-plus" aria-label="增加一人">+</button></div>
+          </div>
+          <div class="field">
+            <span class="lbl" id="t-round-lbl">每人金額進位</span>
+            <div class="seg" role="group" aria-labelledby="t-round-lbl">
+              <button type="button" id="t-round-0" data-v="0" aria-pressed="false">不進位</button>
+              <button type="button" id="t-round-1" data-v="1" aria-pressed="true">到元</button>
+              <button type="button" id="t-round-10" data-v="10" aria-pressed="false">到 10 元</button>
+            </div>
+          </div>
+          <p class="msg" id="t-msg"></p>
+        </div>
+        <div class="card" aria-live="polite"><div id="t-out"></div></div>
+      </section>
+
+      <!-- 比價 -->
+      <section class="panel" id="p-cmp" role="tabpanel" aria-labelledby="tab-cmp" hidden>
+        <p class="msg info" id="cmp-msg"></p>
+        <div class="cmp-list" id="cmp-list"></div>
+        <button type="button" class="add-card" id="cmp-add">＋ 新增商品</button>
+      </section>
+    </main>
+  </div>
+</div>
+
+<template id="cmp-tpl">
+  <article class="pcard">
+    <div class="top"><input type="text" class="c-name" maxlength="20" aria-label="商品名稱" placeholder="商品名稱"><button type="button" class="del">刪除</button></div>
+    <div class="grid">
+      <label>價格<div class="money"><input type="text" class="c-price" inputmode="decimal" autocomplete="off"></div></label>
+      <label>數量<input type="text" class="c-qty" inputmode="decimal" autocomplete="off"></label>
+      <label>單位<select class="c-unit"><option>g</option><option>kg</option><option>斤</option><option>mL</option><option>L</option><option>個</option></select></label>
+    </div>
+    <div class="res"><span class="unit"></span><span class="badge"></span></div>
+  </article>
+</template>
+
+<div class="bar"><div class="in">
+  <button type="button" class="btn" id="reset-btn">重設</button>
+  <button type="button" class="btn primary" id="copy-btn">複製結果</button>
+</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="copy-src" id="copy-src" aria-hidden="true"></div>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'discount-calc:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) {} }
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const MAX_CENTS = 9999999900;
+
+/* ---------- 解析 ---------- */
+function parseMoney(str, opt = {}) {
+  const s = String(str == null ? '' : str).replace(/[,\s$＄元]/g, '');
+  if (s === '') return { err: opt.allowEmpty ? '' : '請輸入金額', empty: true };
+  if (!/^\d*\.?\d*$/.test(s) || s === '.') return { err: '金額格式不正確' };
+  const [i, f = ''] = s.split('.');
+  const truncated = f.length > 2;
+  const cents = Number(i || '0') * 100 + Number((f + '00').slice(0, 2));
+  if (cents > MAX_CENTS) return { err: '金額上限 99,999,999 元' };
+  if (!opt.allowZero && cents === 0) return { err: '金額需大於 0', cents };
+  return { cents, truncated };
+}
+function parseRate(str) {
+  let s = String(str == null ? '' : str).trim().toLowerCase().replace(/\s+/g, '').replace(/折$/, '');
+  if (s === '') return { err: '請輸入折數' };
+  if (/%|off/.test(s)) {
+    const p = Number(s.replace(/%|off/g, ''));
+    if (!isFinite(p) || p <= 0 || p >= 100) return { err: '折讓百分比需介於 0 與 100 之間' };
+    return { r: Math.round((1 - p / 100) * 10000) / 10000 };
+  }
+  const n = Number(s);
+  if (!isFinite(n) || s.startsWith('-')) return { err: '折數不能是負數或文字' };
+  if (n <= 0) return { err: '折數需大於 0' };
+  if (n < 10) return { r: Math.round(n * 1000) / 10000 };
+  if (n === 10) return { r: 1 };
+  if (n < 20) return { err: n + ' 折無法判讀：1.1 折請輸入 1.1，折讓 11% 請輸入 11% off' };
+  if (n < 100) return { r: Math.round(n * 100) / 10000 };
+  return { err: '折數需小於 10（或兩位數寫法 20–99）' };
+}
+function rateLabel(r) {
+  const x = Math.round(r * 1000) / 100; // 以「十分位」為單位 (0.85 → 8.5)
+  if (Number.isInteger(x)) return x + ' 折';
+  return String(Math.round(r * 1000) / 10).replace(/\.0$/, '') + ' 折';
+}
+const fmtMoney = (c, dec) => { const neg = c < 0; c = Math.abs(c); const s = '$' + Math.floor(c / 100).toLocaleString('zh-TW') + (c % 100 || dec ? '.' + String(c % 100).padStart(2, '0') : ''); return (neg ? '−' : '') + s; };
+function priceHTML(c) { const i = Math.floor(c / 100), d = c % 100; return '<div class="price"><span class="cur">$</span><span class="int">' + i.toLocaleString('zh-TW') + '</span>' + (d ? '<span class="dec">.' + String(d).padStart(2, '0') + '</span>' : '') + '</div>'; }
+const mulRates = (cents, ...rs) => { let num = BigInt(cents), den = 1n; rs.forEach(r => { num *= BigInt(Math.round(r * 10000)); den *= 10000n; }); return Number((num * 2n + den) / (2n * den)); };
+
+/* ---------- 狀態 ---------- */
+const DEF = {
+  disc: { price: '1000', r1: '85', stack: true, r2: '9' },
+  nth: { price: '350', qty: 4, from: 2, rate: '6', cycle: true },
+  spend: { amount: '2350', x: '1000', y: '100', mode: 'each' },
+  tip: { amount: '1280', pct: '10', people: 4, round: '1' }
+};
+const DEF_CMP = () => [{ id: 'c1', name: '範例：小包 500g', price: '89', qty: '500', unit: 'g' }, { id: 'c2', name: '範例：大包 1kg', price: '169', qty: '1', unit: 'kg' }];
+const clone = o => JSON.parse(JSON.stringify(o));
+let S = clone(DEF);
+const saved = store.get('inputs', null);
+if (saved && typeof saved === 'object') for (const k in DEF) if (saved[k] && typeof saved[k] === 'object') S[k] = Object.assign({}, DEF[k], saved[k]);
+let cmp = store.get('compare', null);
+if (!Array.isArray(cmp)) cmp = DEF_CMP();
+cmp = cmp.filter(c => c && typeof c === 'object').slice(0, 10).map(c => ({ id: String(c.id || Math.random()), name: String(c.name || ''), price: String(c.price || ''), qty: String(c.qty || ''), unit: ['g', 'kg', '斤', 'mL', 'L', '個'].includes(c.unit) ? c.unit : 'g' }));
+let tipPresets = store.get('tipPresets', null);
+if (!Array.isArray(tipPresets) || tipPresets.length !== 4 || !tipPresets.every(x => typeof x === 'number' && x > 0 && x < 100)) tipPresets = [10, 15, 18, 20];
+let saveT = 0;
+const flush = () => { clearTimeout(saveT); store.set('inputs', S); store.set('compare', cmp); store.set('tipPresets', tipPresets); };
+const save = () => { clearTimeout(saveT); saveT = setTimeout(flush, 300); };
+addEventListener('pagehide', flush);
+const texts = { disc: '', spend: '', tip: '', cmp: '' };
+
+/* ---------- 共用 ---------- */
+let toastT = 0;
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+const setMsg = (id, m, info) => { const el = $(id); el.textContent = m || ''; el.classList.toggle('info', !!info); };
+const setSeg = (btns, v) => btns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === String(v))));
+const errTag = m => '<div class="tagbox err"><b>' + esc(m) + '</b></div>';
+
+/* 主題 */
+const THEMES = ['auto', 'light', 'dark'], TL = { auto: '自動', light: '淺色', dark: '深色' };
+let theme = store.get('theme', 'auto'); if (!THEMES.includes(theme)) theme = 'auto';
+const applyTheme = () => { if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', theme); $('#theme-label').textContent = TL[theme]; };
+$('#theme-btn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; store.set('theme', theme); applyTheme(); });
+applyTheme();
+
+/* 分頁 */
+let tab = store.get('tab', 'disc'); if (!['disc', 'spend', 'tip', 'cmp'].includes(tab)) tab = 'disc';
+function showTab(t) { tab = t; store.set('tab', t); document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t))); document.querySelectorAll('.panel').forEach(p => p.hidden = p.id !== 'p-' + t); }
+document.querySelector('nav.tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+
+/* ---------- 折扣 ---------- */
+const RATE_CHIPS = [['9 折', 0.9], ['85 折', 0.85], ['8 折', 0.8], ['75 折', 0.75], ['7 折', 0.7], ['5 折', 0.5]];
+document.querySelectorAll('.chips[data-for]').forEach(box => {
+  box.innerHTML = RATE_CHIPS.map(([l, r]) => '<button type="button" class="chip" data-rate="' + r + '" id="' + box.dataset.for + '-chip-' + String(r).replace('.', '') + '" aria-pressed="false">' + l + '</button>').join('');
+});
+function rateToInput(r) { const x = Math.round(r * 100); return x % 10 === 0 ? String(x / 10) : String(x); }
+function renderDisc() {
+  const D = S.disc, out = $('#d-out');
+  $('#d-rate2-field').hidden = !D.stack;
+  const p = parseMoney(D.price), a = parseRate(D.r1), b = D.stack ? parseRate(D.r2) : { r: 1 };
+  setMsg('#d-price-msg', p.err || (p.truncated ? '小數第三位起已捨去' : ''), !p.err && p.truncated);
+  setMsg('#d-rate1-msg', a.err); setMsg('#d-rate2-msg', D.stack ? b.err : '');
+  $('#d-price').classList.toggle('bad', !!p.err); $('#d-rate1').classList.toggle('bad', !!a.err); $('#d-rate2').classList.toggle('bad', !!(D.stack && b.err));
+  document.querySelectorAll('.chips[data-for="d-rate1"] .chip').forEach(c => c.setAttribute('aria-pressed', String(!a.err && Math.abs(+c.dataset.rate - a.r) < 1e-9)));
+  document.querySelectorAll('.chips[data-for="d-rate2"] .chip').forEach(c => c.setAttribute('aria-pressed', String(!b.err && Math.abs(+c.dataset.rate - b.r) < 1e-9)));
+  $('#disc-sample').hidden = !(D.price === DEF.disc.price && D.r1 === DEF.disc.r1 && D.r2 === DEF.disc.r2);
+  if (p.err || a.err || b.err) { out.innerHTML = errTag(p.err || a.err || b.err); texts.disc = ''; return; }
+  const fin = mulRates(p.cents, a.r, b.r), save$ = p.cents - fin, eq = fin / p.cents;
+  const chain = rateLabel(a.r) + (D.stack ? '再 ' + rateLabel(b.r) : '');
+  texts.disc = '原價 ' + fmtMoney(p.cents) + ' → ' + chain + ' → ' + fmtMoney(fin) + '（省 ' + fmtMoney(save$) + '）';
+  out.innerHTML = '<div class="tagbox"><div class="k">折後價</div>' + priceHTML(fin).replace('class="price"', 'class="price" id="d-final"') +
+    '<div class="foot"><span>省 <b id="d-save">' + fmtMoney(save$) + '</b></span><span id="d-eq">相當於 ' + rateLabel(Math.round(eq * 1000) / 1000) + '</span></div></div>' +
+    '<div class="lines"><div><span>原價</span><b>' + fmtMoney(p.cents) + '</b></div><div><span>第一層 ' + rateLabel(a.r) + '</span><b>' + fmtMoney(mulRates(p.cents, a.r)) + '</b></div>' +
+    (D.stack ? '<div><span>再打 ' + rateLabel(b.r) + '</span><b>' + fmtMoney(fin) + '</b></div>' : '') + '</div>';
+  renderNth();
+}
+function renderNth() {
+  const N = S.nth, out = $('#n-out');
+  const p = parseMoney(N.price), q = Number(N.qty), f = Number(N.from), r = parseRate(N.rate);
+  let err = p.err || r.err || '';
+  if (!err && (!Number.isInteger(q) || q < 1 || q > 99)) err = '件數需為 1–99 的整數';
+  if (!err && (!Number.isInteger(f) || f < 1 || f > 99)) err = '起折件數需為 1–99 的整數';
+  setMsg('#n-msg', err);
+  if (err) { out.innerHTML = errTag(err); return; }
+  const disc = mulRates(p.cents, r.r); let total = 0; const items = [];
+  for (let i = 1; i <= q; i++) {
+    const pos = N.cycle ? ((i - 1) % f) + 1 : i, off = N.cycle ? pos === f : i >= f;
+    const c = off ? disc : p.cents; total += c; items.push('<span class="' + (off ? 'off' : '') + '">第' + i + '件 ' + fmtMoney(c) + '</span>');
+  }
+  const avg = Math.round(total / q), orig = p.cents * q;
+  texts.nth = '單價 ' + fmtMoney(p.cents) + ' × ' + q + ' 件，第 ' + f + ' 件 ' + rateLabel(r.r) + (N.cycle ? '（每組循環）' : '（之後都折）') + ' → 共 ' + fmtMoney(total) + '，平均每件 ' + fmtMoney(avg);
+  out.innerHTML = '<div class="tagbox"><div class="k">' + q + ' 件總價</div>' + priceHTML(total).replace('class="price"', 'class="price" id="n-total"') +
+    '<div class="foot"><span>平均每件 <b id="n-avg">' + fmtMoney(avg) + '</b></span><span>省 ' + fmtMoney(orig - total) + '</span></div></div><div class="items">' + items.join('') + '</div>';
+}
+
+/* ---------- 滿額 ---------- */
+function renderSpend() {
+  const P = S.spend, out = $('#s-out');
+  const a = parseMoney(P.amount), x = parseMoney(P.x), y = parseMoney(P.y);
+  let err = a.err || x.err || y.err || '';
+  if (!err && y.cents >= x.cents) err = '折抵金額需小於門檻';
+  setMsg('#s-msg', err || (a.truncated ? '小數第三位起已捨去' : ''), !err);
+  setSeg(document.querySelectorAll('#p-spend .seg button'), P.mode);
+  if (err) { out.innerHTML = errTag(err); texts.spend = ''; return; }
+  let off, hint = '';
+  if (P.mode === 'each') {
+    off = Math.floor(a.cents / x.cents) * y.cents;
+    const need = x.cents - (a.cents % x.cents);
+    hint = '再買 ' + fmtMoney(need) + ' 可再折 ' + fmtMoney(y.cents);
+  } else {
+    off = a.cents >= x.cents ? y.cents : 0;
+    if (a.cents < x.cents) hint = '再買 ' + fmtMoney(x.cents - a.cents) + ' 可折 ' + fmtMoney(y.cents);
+  }
+  const fin = a.cents - off;
+  texts.spend = '購物 ' + fmtMoney(a.cents) + '，滿 ' + fmtMoney(x.cents) + ' 折 ' + fmtMoney(y.cents) + (P.mode === 'each' ? '（每滿）' : '（單次）') + ' → 折 ' + fmtMoney(off) + '，實付 ' + fmtMoney(fin) + (hint ? '；' + hint : '');
+  out.innerHTML = '<div class="tagbox"><div class="k">實付金額</div>' + priceHTML(fin).replace('class="price"', 'class="price" id="s-final"') +
+    '<div class="foot"><span>折抵 <b id="s-off">' + fmtMoney(off) + '</b></span><span>相當於 ' + rateLabel(Math.round(fin / a.cents * 1000) / 1000) + '</span></div></div>' +
+    (hint ? '<div class="hint-box" id="s-hint">' + hint + '</div>' : '');
+}
+
+/* ---------- 小費 ---------- */
+function renderTipChips() { $('#t-chips').innerHTML = tipPresets.map(v => '<button type="button" class="chip" id="t-chip-' + v + '" data-pct="' + v + '" aria-pressed="false">' + v + '%</button>').join(''); }
+function renderTip() {
+  const T = S.tip, out = $('#t-out');
+  const a = parseMoney(T.amount), pct = Number(String(T.pct).replace('%', '')), n = Number(T.people);
+  let err = a.err || '';
+  if (!err && (!isFinite(pct) || pct < 0 || pct > 100 || String(T.pct).trim() === '')) err = '比例需介於 0–100%';
+  if (!err && (!Number.isInteger(n) || n < 1 || n > 99)) err = '人數需為 1–99';
+  setMsg('#t-msg', err || (a.truncated ? '小數第三位起已捨去' : ''), !err);
+  document.querySelectorAll('#t-chips .chip').forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.pct === pct)));
+  setSeg(document.querySelectorAll('#p-tip .seg button'), T.round);
+  if (err) { out.innerHTML = errTag(err); texts.tip = ''; return; }
+  const tip = Math.round(a.cents * Math.round(pct * 100) / 10000), total = a.cents + tip;
+  const step = T.round === '10' ? 1000 : T.round === '1' ? 100 : 1;
+  const per = Math.ceil(Math.ceil(total / n) / step) * step, extra = per * n - total;
+  const roundName = { '0': '不進位', '1': '進位到元', '10': '進位到 10 元' }[T.round];
+  texts.tip = '消費 ' + fmtMoney(a.cents) + ' + ' + pct + '% ' + fmtMoney(tip) + ' = ' + fmtMoney(total) + (n > 1 ? '，' + n + ' 人每人 ' + fmtMoney(per) + '（' + roundName + '）' : '');
+  out.innerHTML = '<div class="tagbox"><div class="k">' + (n > 1 ? '每人應付' : '應付總額') + '</div>' + priceHTML(n > 1 ? per : total).replace('class="price"', 'class="price" id="t-main"') +
+    '<div class="foot"><span>' + n + ' 人 · ' + roundName + '</span><span>' + pct + '%</span></div></div>' +
+    '<div class="lines"><div><span>消費金額</span><b>' + fmtMoney(a.cents) + '</b></div><div><span>小費／服務費</span><b id="t-tip">' + fmtMoney(tip) + '</b></div><div><span>總額</span><b id="t-total">' + fmtMoney(total) + '</b></div>' +
+    (n > 1 ? '<div><span>每人 × ' + n + '</span><b>' + fmtMoney(per * n) + '</b></div><div><span>進位多收</span><b id="t-extra">' + fmtMoney(extra) + '</b></div>' : '') + '</div>';
+}
+
+/* ---------- 比價 ---------- */
+const UNITS = { g: ['w', 1], kg: ['w', 1000], '斤': ['w', 600], mL: ['v', 1], L: ['v', 1000], '個': ['c', 1] };
+const CAT_LABEL = { w: '每 100g', v: '每 100mL', c: '每個' };
+function computeCompare(list) {
+  const rows = list.map(c => {
+    const p = parseMoney(c.price, { allowZero: true, allowEmpty: true }), q = Number(String(c.qty).replace(/,/g, ''));
+    const [cat, f] = UNITS[c.unit];
+    if (p.err !== undefined || !p.cents || !(q > 0)) return { id: c.id, cat, valid: false };
+    const per = p.cents / (q * f) * (cat === 'c' ? 1 : 100);
+    return { id: c.id, cat, valid: true, per };
+  });
+  const cats = {};
+  rows.filter(r => r.valid).forEach(r => (cats[r.cat] = cats[r.cat] || []).push(r));
+  Object.values(cats).forEach(g => {
+    if (g.length < 2) { g.forEach(r => r.alone = true); return; }
+    const min = Math.min(...g.map(r => r.per));
+    g.forEach(r => { r.best = Math.abs(r.per - min) < 1e-9; r.more = Math.round((r.per / min - 1) * 100); });
+  });
+  return { rows, catCount: Object.keys(cats).length };
+}
+function buildCards() {
+  const list = $('#cmp-list'), tpl = $('#cmp-tpl');
+  list.innerHTML = '';
+  cmp.forEach((c, i) => {
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    el.dataset.id = c.id;
+    const set = (cls, key) => { const inp = el.querySelector(cls); inp.id = 'cmp-' + key + '-' + (i + 1); inp.value = c[key]; };
+    set('.c-name', 'name'); set('.c-price', 'price'); set('.c-qty', 'qty'); set('.c-unit', 'unit');
+    el.querySelector('.del').id = 'cmp-del-' + (i + 1);
+    list.appendChild(el);
+  });
+  $('#cmp-add').hidden = cmp.length >= 10;
+  renderCompare();
+}
+function renderCompare() {
+  const r = computeCompare(cmp);
+  r.rows.forEach(row => {
+    const el = document.querySelector('.pcard[data-id="' + CSS.escape(row.id) + '"]'); if (!el) return;
+    const u = el.querySelector('.unit'), b = el.querySelector('.badge');
+    el.classList.toggle('is-best', !!row.best);
+    if (!row.valid) { u.textContent = '價格或數量未填'; b.className = 'badge na'; b.textContent = '不參與比較'; return; }
+    u.textContent = CAT_LABEL[row.cat] + ' $' + (row.per / 100).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (row.alone) { b.className = 'badge na'; b.textContent = '無同類可比'; }
+    else if (row.best) { b.className = 'badge best'; b.textContent = '最划算'; }
+    else { b.className = 'badge more'; b.textContent = '貴 ' + row.more + '%'; }
+  });
+  setMsg('#cmp-msg', r.catCount > 1 ? '重量、體積、個數的單位不能互相比較，已分組各自標出最划算的。' : (cmp.length < 2 ? '至少需要 2 個商品才會標示最划算。' : ''), true);
+  const best = r.rows.filter(x => x.best).map(x => cmp.find(c => c.id === x.id));
+  texts.cmp = cmp.map((c, i) => { const row = r.rows[i]; return (c.name || '商品' + (i + 1)) + '：' + (row.valid ? CAT_LABEL[row.cat] + ' $' + (row.per / 100).toFixed(2) + (row.best ? '（最划算）' : row.more != null ? '（貴 ' + row.more + '%）' : '') : '未填完整'); }).join('\n');
+}
+const cmpList = $('#cmp-list');
+cmpList.addEventListener('input', e => {
+  const card = e.target.closest('.pcard'); if (!card) return;
+  const c = cmp.find(x => x.id === card.dataset.id); if (!c) return;
+  const key = e.target.classList.contains('c-name') ? 'name' : e.target.classList.contains('c-price') ? 'price' : e.target.classList.contains('c-qty') ? 'qty' : 'unit';
+  c[key] = e.target.value; renderCompare(); save();
+});
+cmpList.addEventListener('click', e => {
+  const d = e.target.closest('.del'); if (!d) return;
+  if (!d.classList.contains('armed')) { d.classList.add('armed'); d.textContent = '確定？'; setTimeout(() => { if (d.isConnected) { d.classList.remove('armed'); d.textContent = '刪除'; } }, 3000); return; }
+  const id = d.closest('.pcard').dataset.id; cmp = cmp.filter(c => c.id !== id); buildCards(); save();
+});
+$('#cmp-add').addEventListener('click', () => {
+  if (cmp.length >= 10) return;
+  const last = cmp[cmp.length - 1];
+  cmp.push({ id: 'c' + Date.now().toString(36) + cmp.length, name: '', price: '', qty: '', unit: last ? last.unit : 'g' });
+  buildCards(); save();
+  const inp = document.querySelector('.pcard:last-child .c-name'); if (inp) inp.focus();
+});
+
+/* ---------- 綁定 ---------- */
+const bind = (id, obj, key, fn, num) => $(id).addEventListener('input', e => { S[obj][key] = num ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value; fn(); save(); });
+bind('#d-price', 'disc', 'price', renderDisc); bind('#d-rate1', 'disc', 'r1', renderDisc); bind('#d-rate2', 'disc', 'r2', renderDisc);
+$('#d-stack').addEventListener('change', e => { S.disc.stack = e.target.checked; renderDisc(); save(); });
+document.querySelectorAll('.chips[data-for]').forEach(box => box.addEventListener('click', e => {
+  const c = e.target.closest('[data-rate]'); if (!c) return;
+  const inp = document.getElementById(box.dataset.for); inp.value = rateToInput(+c.dataset.rate); inp.dispatchEvent(new Event('input', { bubbles: true }));
+}));
+bind('#n-price', 'nth', 'price', renderNth); bind('#n-qty', 'nth', 'qty', renderNth, true); bind('#n-from', 'nth', 'from', renderNth, true); bind('#n-rate', 'nth', 'rate', renderNth);
+$('#n-cycle').addEventListener('change', e => { S.nth.cycle = e.target.checked; renderNth(); save(); });
+bind('#s-amount', 'spend', 'amount', renderSpend); bind('#s-x', 'spend', 'x', renderSpend); bind('#s-y', 'spend', 'y', renderSpend);
+document.querySelectorAll('#p-spend .seg button').forEach(b => b.addEventListener('click', () => { S.spend.mode = b.dataset.v; renderSpend(); save(); }));
+bind('#t-amount', 'tip', 'amount', renderTip); bind('#t-pct', 'tip', 'pct', renderTip); bind('#t-people', 'tip', 'people', renderTip, true);
+$('#t-chips').addEventListener('click', e => { const c = e.target.closest('[data-pct]'); if (!c) return; S.tip.pct = c.dataset.pct; $('#t-pct').value = S.tip.pct; renderTip(); save(); });
+const stepPeople = d => { const n = Math.min(99, Math.max(1, (Number(S.tip.people) || 1) + d)); S.tip.people = n; $('#t-people').value = n; renderTip(); save(); };
+$('#t-minus').addEventListener('click', () => stepPeople(-1)); $('#t-plus').addEventListener('click', () => stepPeople(1));
+document.querySelectorAll('#p-tip .seg button').forEach(b => b.addEventListener('click', () => { S.tip.round = b.dataset.v; renderTip(); save(); }));
+
+function syncInputs() {
+  $('#d-price').value = S.disc.price; $('#d-rate1').value = S.disc.r1; $('#d-rate2').value = S.disc.r2; $('#d-stack').checked = S.disc.stack;
+  $('#n-price').value = S.nth.price; $('#n-qty').value = S.nth.qty; $('#n-from').value = S.nth.from; $('#n-rate').value = S.nth.rate; $('#n-cycle').checked = S.nth.cycle;
+  $('#s-amount').value = S.spend.amount; $('#s-x').value = S.spend.x; $('#s-y').value = S.spend.y;
+  $('#t-amount').value = S.tip.amount; $('#t-pct').value = S.tip.pct; $('#t-people').value = S.tip.people;
+}
+
+/* 底部列 */
+$('#copy-btn').addEventListener('click', async () => {
+  const t = tab === 'disc' ? [texts.disc, texts.nth].filter(Boolean).join('\n') : texts[tab];
+  if (!t) { toast('目前沒有可複製的結果'); return; }
+  try { await navigator.clipboard.writeText(t); toast('已複製結果'); }
+  catch (e) {
+    const src = $('#copy-src'); src.textContent = t; src.style.left = '0'; src.style.position = 'fixed'; src.style.opacity = '0';
+    const r = document.createRange(); r.selectNodeContents(src); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    toast('無法自動複製，結果已選取，請用系統選單複製');
+  }
+});
+let resetT = 0;
+$('#reset-btn').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = '確定重設？'; clearTimeout(resetT); resetT = setTimeout(() => { b.classList.remove('armed'); b.textContent = '重設'; }, 3000); return; }
+  b.classList.remove('armed'); b.textContent = '重設';
+  if (tab === 'disc') { S.disc = clone(DEF.disc); S.nth = clone(DEF.nth); }
+  else if (tab === 'cmp') cmp = DEF_CMP();
+  else S[tab] = clone(DEF[tab]);
+  syncInputs(); renderAll(); buildCards(); save(); toast('已重設為範例數值');
+});
+
+const renderAll = () => { renderDisc(); renderNth(); renderSpend(); renderTip(); };
+renderTipChips(); syncInputs(); showTab(tab); renderAll(); buildCards();
+window.__discountCalc = { parseRate, parseMoney, rateLabel, mulRates, computeCompare };
+})();
+</script>
+</body></html>

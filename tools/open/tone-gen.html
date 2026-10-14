@@ -1,0 +1,774 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>頻率產生器</title>
+<style>
+/* Bench signal-generator look: cool instrument grey, engraved small-caps labels, LCD-style readout, instrument blue */
+:root {
+  --bg: #e4e7ea;
+  --surface: #f6f7f8;
+  --surface-2: #eceef1;
+  --ink: #161b22;
+  --ink-2: #39424d;
+  --muted: #5a6470;
+  --line: #cdd2d8;
+  --line-strong: #9aa3ad;
+  --accent: #1f4fb8;
+  --accent-ink: #ffffff;
+  --accent-soft: #dbe4f7;
+  --lcd: #d9e2dc;
+  --lcd-ink: #13261c;
+  --lcd-dim: #5f7368;
+  --trace: #1f4fb8;
+  --grid: #b9c6bd;
+  --warn: #8a4b00;
+  --warn-bg: #fbecc9;
+  --warn-line: #d9a441;
+  --danger: #a32020;
+  --shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 1px 2px rgba(20,30,40,.12);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121519; --surface: #1b1f25; --surface-2: #232830; --ink: #e5e9ee; --ink-2: #c3cad3; --muted: #8f99a5;
+    --line: #2d333c; --line-strong: #4a535f; --accent: #86a8ff; --accent-ink: #0b1430; --accent-soft: #1c2944;
+    --lcd: #0f1915; --lcd-ink: #d3eadb; --lcd-dim: #7f9a8b; --trace: #9fc0ff; --grid: #22322b;
+    --warn: #f2c26b; --warn-bg: #33270f; --warn-line: #8a6420; --danger: #ff8a80;
+    --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 1px 2px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121519; --surface: #1b1f25; --surface-2: #232830; --ink: #e5e9ee; --ink-2: #c3cad3; --muted: #8f99a5;
+  --line: #2d333c; --line-strong: #4a535f; --accent: #86a8ff; --accent-ink: #0b1430; --accent-soft: #1c2944;
+  --lcd: #0f1915; --lcd-ink: #d3eadb; --lcd-dim: #7f9a8b; --trace: #9fc0ff; --grid: #22322b;
+  --warn: #f2c26b; --warn-bg: #33270f; --warn-line: #8a6420; --danger: #ff8a80;
+  --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 1px 2px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45;
+  padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+header.top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+header.top h1 { font-size: 19px; margin: 0; letter-spacing: .02em; font-weight: 700; }
+header.top .model { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .12em; border: 1px solid var(--line-strong); padding: 4px 6px; border-radius: 3px; }
+header.top .sp { flex: 1; }
+.iconbtn { min-width: 44px; min-height: 44px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; padding: 0 10px; color: var(--warn); font-size: 13px; font-weight: 600; }
+.iconbtn svg { width: 20px; height: 20px; }
+
+.grid { display: grid; gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; box-shadow: var(--shadow); }
+.lbl { font: 600 11px/1.2 var(--sans); letter-spacing: .14em; color: var(--muted); margin: 0 0 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.lbl b { font-weight: 600; color: var(--ink-2); letter-spacing: .02em; font-family: var(--mono); font-size: 12px; }
+
+/* readout */
+.readout { background: var(--lcd); border-radius: 8px; padding: 10px 12px 8px; border: 1px solid var(--line-strong); box-shadow: inset 0 2px 6px rgba(0,0,0,.12); color: var(--lcd-ink); position: relative; }
+.readout .row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#freq-display { all: unset; cursor: ns-resize; touch-action: none; font: 600 clamp(44px, 14vw, 64px)/1.05 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--lcd-ink); border-radius: 4px; min-height: 44px; user-select: none; -webkit-user-select: none; }
+#freq-display:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.unit { font: 600 18px var(--mono); color: var(--lcd-dim); margin-left: 4px; }
+#freq-input { font: 600 40px/1.1 var(--mono); width: 100%; background: transparent; color: var(--lcd-ink); border: 0; border-bottom: 2px solid var(--accent); padding: 2px 0; font-variant-numeric: tabular-nums; }
+#freq-input:focus { outline: none; }
+.sub { display: flex; justify-content: space-between; gap: 8px; font: 500 13px var(--mono); color: var(--lcd-dim); margin-top: 4px; flex-wrap: wrap; }
+#note { color: var(--lcd-ink); }
+.hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+
+#scope { display: block; width: 100%; height: 80px; margin-top: 8px; border-top: 1px dashed var(--grid); }
+
+/* sliders */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--accent) 0 var(--p, 50%), var(--line) var(--p, 50%) 100%); }
+input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--line); }
+input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.ticks { display: flex; justify-content: space-between; font: 500 11px var(--mono); color: var(--muted); margin-top: -4px; padding: 0 2px; }
+.steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.btn { min-height: 44px; border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 7px; cursor: pointer; font-weight: 600; font-size: 15px; padding: 0 12px; }
+.btn.mono { font-family: var(--mono); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+@media (hover: hover) { .btn:not(:disabled):hover { border-color: var(--accent); } .iconbtn:hover { border-color: var(--warn-line); } }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+.seg { display: grid; gap: 0; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+.seg.c4 { grid-template-columns: repeat(4, 1fr); }
+.seg.c3 { grid-template-columns: repeat(3, 1fr); }
+.seg.c2 { grid-template-columns: repeat(2, 1fr); }
+.seg button { min-height: 52px; border: 0; border-left: 1px solid var(--line); background: var(--surface-2); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 4px 2px; }
+.seg.c3 button, .seg.c2 button { min-height: 44px; flex-direction: row; gap: 6px; font-size: 14px; }
+.seg button:first-child { border-left: 0; }
+.seg button svg { width: 34px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+.volrow { display: flex; align-items: center; gap: 10px; }
+.volrow input { flex: 1; }
+#vol-val { font: 600 15px var(--mono); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+.warnbox { background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); border-radius: 7px; padding: 8px 10px; font-size: 13px; margin-top: 8px; }
+.capline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 44px; }
+.capline input { width: 20px; height: 20px; accent-color: var(--accent); }
+.capline label { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 44px; }
+
+/* transport */
+.transport { display: flex; align-items: center; gap: 16px; }
+#play { width: 88px; height: 88px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; box-shadow: 0 0 0 5px var(--accent-soft), 0 3px 8px rgba(0,0,0,.18); }
+#play svg { width: 34px; height: 34px; fill: currentColor; }
+#play[aria-pressed="true"] { background: var(--danger); box-shadow: 0 0 0 5px var(--warn-bg), 0 3px 8px rgba(0,0,0,.18); color: #fff; }
+.tstate { font-size: 13px; color: var(--muted); }
+.tstate strong { display: block; font-size: 16px; color: var(--ink); }
+
+details.panel { padding: 0; }
+details.panel > summary { list-style: none; cursor: pointer; padding: 0 14px; min-height: 52px; display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 15px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-top: -4px; }
+details[open].panel > summary::after { transform: rotate(-135deg); margin-top: 4px; }
+details.panel > summary small { font-weight: 500; color: var(--muted); font-size: 12px; margin-left: 8px; }
+.dbody { padding: 0 14px 14px; }
+.fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.field input { width: 100%; min-height: 44px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-2); color: var(--ink); padding: 0 8px; font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
+.field input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+.rowgap { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; flex-wrap: wrap; }
+.rowgap .seg { flex: 1 1 160px; }
+.rowgap .btn { flex: 1 1 120px; }
+.progress { height: 4px; background: var(--line); border-radius: 2px; margin-top: 10px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); }
+#sweep-now, #ht-now { font: 600 13px var(--mono); color: var(--ink-2); margin-top: 6px; min-height: 18px; }
+
+.ht-big { font: 700 34px var(--mono); font-variant-numeric: tabular-nums; margin: 8px 0 0; }
+.ht-big small { font-size: 15px; color: var(--muted); margin-left: 4px; }
+table.ref { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+table.ref th, table.ref td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--line); }
+table.ref td:last-child, table.ref th:last-child { text-align: right; font-family: var(--mono); }
+table.ref tr.me td { color: var(--accent); font-weight: 700; }
+.note-s { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+#ht-go { font-size: 17px; min-height: 56px; }
+
+/* dialog */
+.scrim { position: fixed; inset: 0; background: rgba(8,12,18,.55); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.dialog { background: var(--surface); color: var(--ink); border-radius: 12px; max-width: 420px; width: 100%; padding: 18px; border: 1px solid var(--line-strong); box-shadow: 0 10px 40px rgba(0,0,0,.3); max-height: calc(100% - 32px); overflow: auto; }
+.dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.dialog p, .dialog li { font-size: 14px; color: var(--ink-2); }
+.dialog ul { padding-left: 20px; margin: 8px 0; }
+.dialog .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+@media (max-height: 600px) { .scrim { align-items: flex-start; overflow: auto; } }
+#toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); z-index: 60; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#toast.show { opacity: 1; }
+#unsupported { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); padding: 12px; border-radius: 8px; margin-bottom: 12px; }
+.kbd { font: 500 12px var(--mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; }
+.desk-kb { display: none; }
+
+@media (min-width: 860px) {
+  .grid.main { grid-template-columns: 1.05fr 1fr; align-items: start; }
+  #scope { height: 160px; }
+  .desk-kb { display: inline; }
+}
+@media (min-width: 700px) and (max-height: 500px) {
+  .grid.main { grid-template-columns: 1fr 1fr; align-items: start; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>頻率產生器</h1>
+    <span class="model">FG-20K</span>
+    <span class="sp"></span>
+    <button class="iconbtn" id="safety-btn" type="button" aria-label="聽力安全說明">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01" stroke-linecap="round"/></svg>
+      安全
+    </button>
+  </header>
+  <div id="unsupported" hidden>此瀏覽器不支援 Web Audio，無法發聲。</div>
+
+  <div class="grid main">
+    <div class="grid">
+      <section class="panel">
+        <div class="readout">
+          <div class="row">
+            <div style="min-width:0;flex:1">
+              <button id="freq-display" type="button" aria-label="頻率，點一下直接輸入，上下拖曳微調">1,000</button><span class="unit" id="unit">Hz</span>
+              <input id="freq-input" type="text" inputmode="decimal" autocomplete="off" aria-label="輸入頻率（Hz）" hidden>
+            </div>
+          </div>
+          <div class="sub"><span>最接近音名 <span id="note">B5 +21 cents</span></span><span id="wave-name">正弦波</span></div>
+          <canvas id="scope" aria-label="示波器" role="img"></canvas>
+        </div>
+        <p class="hint">點數字可直接輸入；在數字上下拖曳微調<span class="desk-kb">，鍵盤 <span class="kbd">←</span><span class="kbd">→</span> 微調、<span class="kbd">空白鍵</span> 播放</span>。</p>
+      </section>
+
+      <section class="panel">
+        <div class="transport">
+          <button id="play" type="button" aria-pressed="false" aria-label="播放">
+            <svg viewBox="0 0 24 24" id="play-ico"><path d="M7 4.5v15l13-7.5z"/></svg>
+          </button>
+          <div class="tstate" id="tstate"><strong>已停止</strong>按下播放，聲音會在 0.3 秒內漸入</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <p class="lbl">頻率 <b>20 Hz – 20 kHz · 對數</b></p>
+        <input type="range" id="freq-slider" min="0" max="1000" step="1" value="566" aria-label="頻率滑桿（對數刻度）">
+        <div class="ticks"><span>20</span><span>100</span><span>1k</span><span>10k</span><span>20k</span></div>
+        <div class="steps">
+          <button class="btn mono" type="button" id="oct-down" aria-label="降八度">×½</button>
+          <button class="btn mono" type="button" id="minus1" aria-label="減 1 Hz">−1</button>
+          <button class="btn mono" type="button" id="plus1" aria-label="加 1 Hz">+1</button>
+          <button class="btn mono" type="button" id="oct-up" aria-label="升八度">×2</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <p class="lbl">波形</p>
+        <div class="seg c4" id="wave-seg" role="group" aria-label="波形">
+          <button type="button" id="wave-sine" data-w="sine" aria-pressed="true"><svg viewBox="0 0 34 16"><path d="M1 8c4-9 8-9 8 0s4 9 8 0 4-9 8 0 4 9 8 0"/></svg>正弦</button>
+          <button type="button" id="wave-square" data-w="square" aria-pressed="false"><svg viewBox="0 0 34 16"><path d="M1 13V3h8v10h8V3h8v10h8"/></svg>方波</button>
+          <button type="button" id="wave-triangle" data-w="triangle" aria-pressed="false"><svg viewBox="0 0 34 16"><path d="M1 8l4-6 8 12 8-12 8 12 4-6"/></svg>三角</button>
+          <button type="button" id="wave-sawtooth" data-w="sawtooth" aria-pressed="false"><svg viewBox="0 0 34 16"><path d="M1 13 11 3v10L21 3v10L31 3v10"/></svg>鋸齒</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <p class="lbl">音量 <b id="cap-tag">上限 70%</b></p>
+        <div class="volrow">
+          <input type="range" id="volume" min="0" max="100" step="1" value="30" aria-label="音量">
+          <span id="vol-val">30%</span>
+        </div>
+        <div class="capline">
+          <label for="unlock"><input type="checkbox" id="unlock"> 解除 70% 安全上限（本次開啟有效）</label>
+        </div>
+        <div class="warnbox" id="vol-warn" hidden>音量已超過 70%。高頻與長時間大音量可能造成永久聽力損傷，請縮短聆聽時間。</div>
+        <p class="lbl" style="margin-top:12px">聲道</p>
+        <div class="seg c3" id="ch-seg" role="group" aria-label="聲道">
+          <button type="button" id="ch-left" data-c="-1" aria-pressed="false">左</button>
+          <button type="button" id="ch-both" data-c="0" aria-pressed="true">雙</button>
+          <button type="button" id="ch-right" data-c="1" aria-pressed="false">右</button>
+        </div>
+      </section>
+
+      <details class="panel" id="sweep-panel">
+        <summary><span>掃頻<small>連續改變頻率</small></span></summary>
+        <div class="dbody">
+          <div class="fields">
+            <div class="field"><label for="sw-from">起始 Hz</label><input id="sw-from" type="text" inputmode="decimal" value="100"></div>
+            <div class="field"><label for="sw-to">結束 Hz</label><input id="sw-to" type="text" inputmode="decimal" value="10000"></div>
+            <div class="field"><label for="sw-sec">秒（5–120）</label><input id="sw-sec" type="text" inputmode="numeric" value="20"></div>
+          </div>
+          <div class="rowgap">
+            <div class="seg c2" id="sw-mode" role="group" aria-label="掃頻方式">
+              <button type="button" id="sw-lin" data-m="lin" aria-pressed="false">線性</button>
+              <button type="button" id="sw-log" data-m="log" aria-pressed="true">對數</button>
+            </div>
+            <button class="btn primary" type="button" id="sw-start">開始掃頻</button>
+          </div>
+          <div class="progress"><i id="sw-bar"></i></div>
+          <div id="sweep-now">範例：100 → 10,000 Hz，對數 20 秒</div>
+        </div>
+      </details>
+
+      <details class="panel" id="ht-panel">
+        <summary><span>聽力上限小測驗<small>非醫療診斷</small></span></summary>
+        <div class="dbody">
+          <p class="note-s" style="margin-top:0">從 8,000 Hz 開始，每 1.5 秒升高 500 Hz。戴上耳機、音量維持舒適，聽不到聲音時立刻按下按鈕。</p>
+          <div class="rowgap">
+            <button class="btn primary" type="button" id="ht-start">開始測驗</button>
+            <button class="btn" type="button" id="ht-go" disabled>聽不到了</button>
+          </div>
+          <div class="progress"><i id="ht-bar"></i></div>
+          <div id="ht-now"></div>
+          <div id="ht-result" hidden>
+            <div class="ht-big" id="ht-val">—</div>
+            <table class="ref" aria-label="年齡參考">
+              <thead><tr><th>年齡（一般參考）</th><th>可聽上限約</th></tr></thead>
+              <tbody id="ht-ref">
+                <tr data-f="17000"><td>20 歲</td><td>17,000 Hz</td></tr>
+                <tr data-f="14000"><td>40 歲</td><td>14,000 Hz</td></tr>
+                <tr data-f="11000"><td>60 歲</td><td>11,000 Hz</td></tr>
+              </tbody>
+            </table>
+            <p class="note-s">結果受耳機、喇叭頻響與音量影響，僅供參考，不能取代專業聽力檢查。</p>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-safety" hidden role="dialog" aria-modal="true" aria-labelledby="dlg-safety-h">
+  <div class="dialog">
+    <h2 id="dlg-safety-h">聽力安全</h2>
+    <ul>
+      <li>播放前先把手機或電腦的系統音量調低，再慢慢往上加。</li>
+      <li>本工具音量每次開啟都重設為 30%，預設上限 70%，並且聲音會在 0.3 秒內漸入，不會突然變大。</li>
+      <li>高頻（8 kHz 以上）在大音量下容易造成耳鳴與聽力損傷，即使聽起來不大聲也要小心。</li>
+      <li>戴耳機時請勿長時間連續播放；感到不適、耳鳴就立刻停止。</li>
+      <li>方波與鋸齒波諧波多，已自動減半音量以接近正弦波的響度。</li>
+    </ul>
+    <div class="acts"><button class="btn primary" type="button" id="dlg-safety-ok">知道了</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="dlg-first" hidden role="dialog" aria-modal="true" aria-labelledby="dlg-first-h">
+  <div class="dialog">
+    <h2 id="dlg-first-h">請先調低系統音量</h2>
+    <p>第一次播放前，請把裝置音量調到偏低，特別是戴著耳機時。聲音會從靜音開始慢慢漸入。</p>
+    <div class="acts">
+      <button class="btn" type="button" id="dlg-first-cancel">取消</button>
+      <button class="btn primary" type="button" id="dlg-first-ok">已調低，開始播放</button>
+    </div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const KEY = 'tone-gen:v1:settings';
+  const KEY_WARNED = 'tone-gen:v1:warned';
+  const MIN_F = 1, ABS_MAX_F = 22000;
+  const MAX_GAIN = 0.5;          // gain at 100% volume (hard ceiling)
+  const CAP = 70;                 // default volume cap (%)
+  const FADE_IN = 0.3, FADE_OUT = 0.03;
+  const WAVE_NAMES = { sine: '正弦波', square: '方波', triangle: '三角波', sawtooth: '鋸齒波' };
+  const WAVE_COMP = { sine: 1, triangle: 1, square: 0.5, sawtooth: 0.5 };
+  const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } };
+
+  const state = { freq: 1000, type: 'sine', volume: 30, channel: 0, unlocked: false, sweep: { from: 100, to: 10000, sec: 20, mode: 'log' } };
+  try {
+    const s = JSON.parse(lsGet(KEY) || 'null');
+    if (s && typeof s === 'object') {
+      if (isFinite(s.freq) && s.freq >= MIN_F && s.freq <= ABS_MAX_F) state.freq = +s.freq;
+      if (WAVE_NAMES[s.type]) state.type = s.type;
+      if ([-1, 0, 1].includes(s.channel)) state.channel = s.channel;
+      if (s.sweep && typeof s.sweep === 'object') {
+        const w = s.sweep;
+        if (isFinite(w.from)) state.sweep.from = +w.from;
+        if (isFinite(w.to)) state.sweep.to = +w.to;
+        if (isFinite(w.sec)) state.sweep.sec = +w.sec;
+        if (w.mode === 'lin' || w.mode === 'log') state.sweep.mode = w.mode;
+      }
+    }
+  } catch (e) { /* ignore bad data */ }
+  // volume is never persisted: always opens at 30%
+  const save = () => lsSet(KEY, JSON.stringify({ freq: state.freq, type: state.type, volume: 0.3, channel: state.channel, sweep: state.sweep }));
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) { $('unsupported').hidden = false; $('play').disabled = true; $('sw-start').disabled = true; $('ht-start').disabled = true; }
+
+  let ctx = null, osc = null, waveGain, volGain, panner, limiter, analyser, buf;
+  let playing = false, sweep = null, ht = null;
+  const maxF = () => Math.min(ABS_MAX_F, ctx ? ctx.sampleRate / 2 : ABS_MAX_F);
+
+  // ---------- helpers ----------
+  const sliderToF = (v) => 20 * Math.pow(1000, v / 1000);
+  const fToSlider = (f) => Math.round(1000 * Math.log(Math.max(20, Math.min(20000, f)) / 20) / Math.log(1000));
+  const fmtF = (f) => f < 100 ? f.toFixed(1) : Math.round(f).toLocaleString('en-US');
+  const roundF = (f) => f < 100 ? Math.round(f * 10) / 10 : Math.round(f);
+  function noteOf(f) {
+    const m = 69 + 12 * Math.log2(f / 440);
+    const n = Math.round(m);
+    const cents = Math.round((m - n) * 100);
+    const name = NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+    return name + ' ' + (cents === 0 ? '±0' : (cents > 0 ? '+' : '−') + Math.abs(cents)) + ' cents';
+  }
+  const stepFor = (f) => f < 1000 ? 1 : f < 10000 ? 10 : 100;
+  const volToGain = (v) => Math.pow(v / 100, 2) * MAX_GAIN;   // perceptual curve, hard ceiling MAX_GAIN
+  let toastT;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+  const setP = (el) => el.style.setProperty('--p', ((el.value - el.min) / (el.max - el.min) * 100) + '%');
+
+  // ---------- render ----------
+  function renderFreq(f, fromSlider) {
+    $('freq-display').textContent = fmtF(f);
+    $('note').textContent = noteOf(f);
+    if (!fromSlider) { $('freq-slider').value = fToSlider(f); }
+    setP($('freq-slider'));
+  }
+  function renderAll() {
+    renderFreq(state.freq);
+    $('wave-name').textContent = WAVE_NAMES[state.type];
+    document.querySelectorAll('#wave-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.w === state.type)));
+    document.querySelectorAll('#ch-seg button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.c === state.channel)));
+    const v = $('volume'); v.value = state.volume; setP(v);
+    $('vol-val').textContent = state.volume + '%';
+    $('vol-warn').hidden = state.volume <= 70;
+    $('cap-tag').textContent = state.unlocked ? '上限已解除' : '上限 70%';
+    $('sw-from').value = state.sweep.from; $('sw-to').value = state.sweep.to; $('sw-sec').value = state.sweep.sec;
+    document.querySelectorAll('#sw-mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === state.sweep.mode)));
+  }
+
+  // ---------- audio ----------
+  function ensureCtx() {
+    if (!AC) return null;
+    if (!ctx) {
+      ctx = new AC();
+      waveGain = ctx.createGain();
+      volGain = ctx.createGain(); volGain.gain.value = 0;
+      panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      limiter = ctx.createDynamicsCompressor();      // safety limiter against any overshoot
+      limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = 0.002; limiter.release.value = 0.1;
+      analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
+      buf = new Float32Array(analyser.fftSize);
+      waveGain.connect(analyser);
+      waveGain.connect(volGain);
+      if (panner) { volGain.connect(panner); panner.connect(limiter); } else volGain.connect(limiter);
+      limiter.connect(ctx.destination);
+      if (panner) panner.pan.value = state.channel;
+      if (state.freq > maxF()) setFreq(maxF());
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function start() {
+    if (!ensureCtx()) return;
+    const t = ctx.currentTime;
+    osc = ctx.createOscillator();
+    osc.type = state.type;
+    osc.frequency.value = state.freq;
+    waveGain.gain.setValueAtTime(WAVE_COMP[state.type], t);
+    osc.connect(waveGain);
+    volGain.gain.cancelScheduledValues(t);
+    volGain.gain.setValueAtTime(0, t);
+    volGain.gain.linearRampToValueAtTime(volToGain(state.volume), t + FADE_IN);   // gentle fade-in, never a sudden blast
+    osc.start(t);
+    playing = true;
+    renderTransport();
+    loop();
+  }
+  function stop() {
+    sweepEnd(false);
+    if (ht) htStop(false);
+    if (!playing || !ctx) { playing = false; renderTransport(); return; }
+    const t = ctx.currentTime;
+    const g = volGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0, t + FADE_OUT);
+    const o = osc; osc = null;
+    o.stop(t + FADE_OUT + 0.02);
+    o.onended = () => { try { o.disconnect(); } catch (e) {} };
+    playing = false;
+    renderTransport();
+  }
+  function renderTransport() {
+    const p = $('play');
+    p.setAttribute('aria-pressed', String(playing));
+    p.setAttribute('aria-label', playing ? '停止' : '播放');
+    $('play-ico').innerHTML = playing ? '<rect x="6" y="6" width="12" height="12" rx="1.5"/>' : '<path d="M7 4.5v15l13-7.5z"/>';
+    $('tstate').innerHTML = playing
+      ? '<strong>播放中</strong>' + WAVE_NAMES[state.type] + ' · ' + ['左聲道', '雙聲道', '右聲道'][state.channel + 1]
+      : '<strong>已停止</strong>按下播放，聲音會在 0.3 秒內漸入';
+  }
+
+  function setFreq(f, opts = {}) {
+    const hi = maxF();
+    if (!isFinite(f)) return false;
+    let clamped = false;
+    if (f < MIN_F) { f = MIN_F; clamped = true; }
+    if (f > hi) { f = hi; clamped = true; }
+    f = roundF(f);
+    if (clamped && opts.notify) toast('頻率範圍為 1 – ' + Math.floor(hi).toLocaleString('en-US') + ' Hz，已調整為 ' + fmtF(f) + ' Hz');
+    if (!opts.keepSweep) sweepEnd(false);
+    state.freq = f;
+    if (osc) osc.frequency.setTargetAtTime(f, ctx.currentTime, 0.01);
+    renderFreq(f, opts.fromSlider);
+    if (!opts.noSave) save();
+    return true;
+  }
+
+  // ---------- oscilloscope ----------
+  const scope = $('scope');
+  const sctx = scope.getContext('2d');
+  let raf = 0;
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function sizeScope() {
+    const r = scope.getBoundingClientRect(); const d = window.devicePixelRatio || 1;
+    scope.width = Math.max(1, Math.round(r.width * d)); scope.height = Math.max(1, Math.round(r.height * d));
+  }
+  function idleShape(type, x) { // x in cycles
+    const p = x - Math.floor(x);
+    if (type === 'sine') return Math.sin(2 * Math.PI * p);
+    if (type === 'square') return p < .5 ? 1 : -1;
+    if (type === 'triangle') return p < .25 ? 4 * p : p < .75 ? 2 - 4 * p : 4 * p - 4;
+    return p < .5 ? 2 * p : 2 * p - 2;
+  }
+  function drawScope() {
+    const W = scope.width, H = scope.height; if (!W || !H) return;
+    sctx.clearRect(0, 0, W, H);
+    sctx.strokeStyle = cssVar('--grid'); sctx.lineWidth = 1;
+    sctx.beginPath();
+    for (let i = 1; i < 8; i++) { const x = Math.round(W * i / 8) + .5; sctx.moveTo(x, 0); sctx.lineTo(x, H); }
+    sctx.moveTo(0, Math.round(H / 2) + .5); sctx.lineTo(W, Math.round(H / 2) + .5);
+    sctx.stroke();
+    sctx.strokeStyle = cssVar('--trace'); sctx.lineWidth = Math.max(1.5, (window.devicePixelRatio || 1) * 1.5);
+    sctx.lineJoin = 'round';
+    sctx.beginPath();
+    const amp = H * 0.4;
+    if (playing && analyser) {
+      analyser.getFloatTimeDomainData(buf);
+      let peak = 0.0001; for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
+      // trigger on rising zero crossing so the trace stays still
+      let start = 0;
+      for (let i = 1; i < buf.length / 2; i++) if (buf[i - 1] < 0 && buf[i] >= 0) { start = i; break; }
+      const span = Math.min(buf.length / 2, Math.max(64, Math.round((ctx.sampleRate / state.freq) * 3)));
+      for (let i = 0; i <= span; i++) {
+        const x = i / span * W, y = H / 2 - (buf[start + i] / peak) * amp;
+        i ? sctx.lineTo(x, y) : sctx.moveTo(x, y);
+      }
+      sctx.globalAlpha = 1;
+    } else {
+      sctx.globalAlpha = .45;
+      for (let i = 0; i <= 240; i++) { const x = i / 240 * W, y = H / 2 - idleShape(state.type, i / 240 * 3) * amp; i ? sctx.lineTo(x, y) : sctx.moveTo(x, y); }
+    }
+    sctx.stroke();
+    sctx.globalAlpha = 1;
+  }
+  function loop() {
+    cancelAnimationFrame(raf);
+    const tick = () => {
+      if (sweep) sweepTick();
+      if (!document.hidden) drawScope();
+      if (playing) raf = requestAnimationFrame(tick); else drawScope();
+    };
+    raf = requestAnimationFrame(tick);
+  }
+
+  // ---------- sweep ----------
+  function parseField(id, lo, hi, fallback) {
+    const v = parseFloat(String($(id).value).replace(/,/g, ''));
+    if (!isFinite(v)) { $(id).value = fallback; return fallback; }
+    const c = Math.min(hi, Math.max(lo, v));
+    if (c !== v) toast('已將數值調整到範圍內：' + c);
+    $(id).value = c; return c;
+  }
+  function sweepStart() {
+    if (!ensureCtx()) return;
+    if (ht) htStop(false);
+    const hi = maxF();
+    const from = parseField('sw-from', MIN_F, hi, state.sweep.from);
+    const to = parseField('sw-to', MIN_F, hi, state.sweep.to);
+    const sec = parseField('sw-sec', 5, 120, state.sweep.sec);
+    state.sweep = { from, to, sec, mode: state.sweep.mode }; save();
+    if (!playing) { state.freq = from; start(); }
+    const t = ctx.currentTime;
+    const p = osc.frequency;
+    p.cancelScheduledValues(t);
+    p.setValueAtTime(from, t);
+    if (state.sweep.mode === 'log') p.exponentialRampToValueAtTime(to, t + sec); else p.linearRampToValueAtTime(to, t + sec);
+    sweep = { t0: t, from, to, sec, mode: state.sweep.mode };
+    $('sw-start').textContent = '停止掃頻';
+    loop();
+  }
+  function sweepFreqAt(s, p) { return s.mode === 'log' ? s.from * Math.pow(s.to / s.from, p) : s.from + (s.to - s.from) * p; }
+  function sweepTick() {
+    const p = Math.min(1, (ctx.currentTime - sweep.t0) / sweep.sec);
+    const f = sweepFreqAt(sweep, p);
+    state.freq = roundF(f);
+    renderFreq(f);
+    $('sw-bar').style.width = (p * 100) + '%';
+    $('sweep-now').textContent = '目前 ' + fmtF(f) + ' Hz · ' + Math.max(0, sweep.sec * (1 - p)).toFixed(1) + ' 秒後結束';
+    if (p >= 1) sweepEnd(true);
+  }
+  function sweepEnd(done) {
+    if (!sweep) return;
+    const s = sweep; sweep = null;
+    $('sw-start').textContent = '開始掃頻';
+    if (osc && !done) { const t = ctx.currentTime; const f = sweepFreqAt(s, Math.min(1, (t - s.t0) / s.sec)); osc.frequency.cancelScheduledValues(t); osc.frequency.setValueAtTime(f, t); }
+    if (done) { state.freq = roundF(s.to); renderFreq(s.to); $('sweep-now').textContent = '掃頻完成，停在 ' + fmtF(s.to) + ' Hz'; }
+    else $('sweep-now').textContent = '掃頻已停止';
+    save();
+  }
+
+  // ---------- hearing test ----------
+  const HT_START = 8000, HT_STEP = 500, HT_INTERVAL = 1.5;
+  function htBegin() {
+    if (!ensureCtx()) return;
+    if (playing) stop();
+    $('ht-result').hidden = true;
+    state.type = 'sine'; renderAll();
+    state.freq = HT_START; renderFreq(HT_START);
+    start();
+    ht = { t0: ctx.currentTime, top: Math.min(20000, Math.floor(maxF() / HT_STEP) * HT_STEP) };
+    $('ht-start').textContent = '中止'; $('ht-go').disabled = false; $('ht-go').focus();
+    htTick();
+  }
+  function htLevel() { return Math.floor((ctx.currentTime - ht.t0) / HT_INTERVAL); }
+  function htTick() {
+    if (!ht) return;
+    const lvl = htLevel();
+    const f = Math.min(ht.top, HT_START + lvl * HT_STEP);
+    if (Math.abs(f - state.freq) > 0.5) { state.freq = f; if (osc) osc.frequency.setTargetAtTime(f, ctx.currentTime, 0.01); renderFreq(f); }
+    const steps = (ht.top - HT_START) / HT_STEP + 1;
+    $('ht-bar').style.width = Math.min(100, (lvl + 1) / steps * 100) + '%';
+    $('ht-now').textContent = '目前 ' + fmtF(f) + ' Hz';
+    if (HT_START + lvl * HT_STEP > ht.top + HT_STEP * 1) { htFinish(null); return; }
+    ht.timer = setTimeout(htTick, 100);
+  }
+  function htFinish(heard) {
+    const top = ht.top;
+    clearTimeout(ht.timer); ht = null;
+    stop();
+    $('ht-start').textContent = '重新測驗'; $('ht-go').disabled = true;
+    $('ht-result').hidden = false;
+    const v = heard == null ? top : heard < 0 ? HT_START : heard;
+    $('ht-val').innerHTML = (heard == null ? '≥ ' : heard < 0 ? '< ' : '') + v.toLocaleString('en-US') + '<small>Hz</small>';
+    $('ht-now').textContent = heard == null ? '到達測試上限仍聽得到' : '最後聽得到的頻率';
+    let best = null, bd = Infinity;
+    document.querySelectorAll('#ht-ref tr').forEach(tr => { const d = Math.abs(+tr.dataset.f - v); tr.classList.remove('me'); if (d < bd) { bd = d; best = tr; } });
+    if (best) best.classList.add('me');
+  }
+  function htHeardNo() {
+    if (!ht) return;
+    const lvl = htLevel();
+    const prev = Math.max(HT_START, Math.min(ht.top, HT_START + (lvl - 1) * HT_STEP));
+    htFinish(lvl === 0 ? -1 : prev);
+  }
+  function htStop(user) {
+    if (!ht) return;
+    clearTimeout(ht.timer); ht = null;
+    $('ht-start').textContent = '開始測驗'; $('ht-go').disabled = true; $('ht-bar').style.width = '0';
+    $('ht-now').textContent = user ? '測驗已中止' : '';
+    if (user) stop();
+  }
+
+  // ---------- events ----------
+  let firstWarned = false;   // in-memory fallback so the reminder isn't repeated if storage is blocked
+  const warned = () => firstWarned || !!lsGet(KEY_WARNED);
+  let firstNext = null;   // what to start once the first-use volume warning is confirmed (play, sweep or hearing test)
+  const firstGate = fn => { if (!playing && !warned()) { firstNext = fn; openDlg('dlg-first'); return; } fn(); };
+  $('play').addEventListener('click', () => { if (playing) { stop(); return; } firstGate(start); });
+  $('dlg-first-ok').addEventListener('click', () => { firstWarned = true; lsSet(KEY_WARNED, '1'); closeDlg('dlg-first'); const f = firstNext || start; firstNext = null; f(); });
+  $('dlg-first-cancel').addEventListener('click', () => { firstNext = null; closeDlg('dlg-first'); });
+
+  let lastFocus = null;
+  function openDlg(id) { lastFocus = document.activeElement; $(id).hidden = false; const b = $(id).querySelector('.btn.primary'); b && b.focus(); }
+  function closeDlg(id) { $(id).hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  $('safety-btn').addEventListener('click', () => openDlg('dlg-safety'));
+  $('dlg-safety-ok').addEventListener('click', () => closeDlg('dlg-safety'));
+  document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', (e) => { if (e.target === s) closeDlg(s.id); }));
+
+  $('freq-slider').addEventListener('input', (e) => { const f = sliderToF(+e.target.value); setFreq(f, { fromSlider: true }); });
+  $('oct-down').addEventListener('click', () => setFreq(state.freq / 2, { notify: true }));
+  $('oct-up').addEventListener('click', () => setFreq(state.freq * 2, { notify: true }));
+  $('minus1').addEventListener('click', () => setFreq(state.freq - 1, { notify: true }));
+  $('plus1').addEventListener('click', () => setFreq(state.freq + 1, { notify: true }));
+
+  document.querySelectorAll('#wave-seg button').forEach(b => b.addEventListener('click', () => {
+    state.type = b.dataset.w;
+    if (osc) {
+      const t = ctx.currentTime;
+      // dip volume briefly so the waveform switch is click-free
+      const g = volGain.gain, target = volToGain(state.volume);
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.015);
+      setTimeout(() => { if (!osc) return; osc.type = state.type; const t2 = ctx.currentTime; waveGain.gain.setValueAtTime(WAVE_COMP[state.type], t2); g.cancelScheduledValues(t2); g.setValueAtTime(0, t2); g.linearRampToValueAtTime(volToGain(state.volume), t2 + 0.06); }, 20);
+    }
+    renderAll(); renderTransport(); if (!playing) drawScope(); save();
+  }));
+  document.querySelectorAll('#ch-seg button').forEach(b => b.addEventListener('click', () => {
+    state.channel = +b.dataset.c;
+    if (panner) panner.pan.setTargetAtTime(state.channel, ctx.currentTime, 0.02);
+    renderAll(); renderTransport(); save();
+  }));
+
+  let volCapToast = false;
+  $('volume').addEventListener('input', (e) => {
+    let v = +e.target.value;
+    if (!state.unlocked && v > CAP) { v = CAP; e.target.value = CAP; if (!volCapToast) { toast('已達安全上限 70%，需要更大聲請勾選「解除上限」'); volCapToast = true; } }
+    else if (v <= CAP) volCapToast = false;
+    state.volume = v;
+    if (playing) volGain.gain.setTargetAtTime(volToGain(v), ctx.currentTime, 0.05);
+    renderAll();
+  });
+  $('unlock').addEventListener('change', (e) => {
+    state.unlocked = e.target.checked;
+    if (!state.unlocked && state.volume > CAP) {
+      state.volume = CAP; if (playing) volGain.gain.setTargetAtTime(volToGain(CAP), ctx.currentTime, 0.05);
+    }
+    renderAll();
+  });
+
+  // freq readout: tap to type, vertical drag to nudge
+  const disp = $('freq-display'), inp = $('freq-input');
+  let drag = null;
+  disp.addEventListener('pointerdown', (e) => { drag = { y: e.clientY, acc: 0, moved: false, id: e.pointerId }; try { disp.setPointerCapture(e.pointerId); } catch (_) {} });
+  disp.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dy = drag.y - e.clientY;
+    if (Math.abs(dy) >= 8) {
+      const n = Math.trunc(dy / 8);
+      drag.y -= n * 8; drag.moved = true;
+      setFreq(state.freq + n * stepFor(state.freq), { notify: true });
+    }
+  });
+  const endDrag = () => { if (drag) { if (drag.moved) disp.dataset.suppress = '1'; drag = null; } };
+  disp.addEventListener('pointerup', endDrag);
+  disp.addEventListener('pointercancel', endDrag);
+  disp.addEventListener('click', () => {
+    if (disp.dataset.suppress) { delete disp.dataset.suppress; return; }
+    disp.hidden = true; $('unit').hidden = true; inp.hidden = false;
+    inp.value = String(state.freq); inp.focus(); inp.select();
+  });
+  function commitInput(apply) {
+    if (inp.hidden) return;
+    if (apply) {
+      const v = parseFloat(inp.value.replace(/,/g, '').trim());
+      if (isFinite(v) && /^\s*[\d.,]+\s*$/.test(inp.value)) setFreq(v, { notify: true });
+      else toast('不是有效的數字，已還原為 ' + fmtF(state.freq) + ' Hz');
+    }
+    inp.hidden = true; disp.hidden = false; $('unit').hidden = false;
+    renderFreq(state.freq);
+  }
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitInput(true); disp.focus(); } else if (e.key === 'Escape') { commitInput(false); disp.focus(); } });
+  inp.addEventListener('blur', () => commitInput(true));
+
+  document.querySelectorAll('#sw-mode button').forEach(b => b.addEventListener('click', () => { state.sweep.mode = b.dataset.m; renderAll(); save(); }));
+  $('sw-start').addEventListener('click', () => { if (sweep) sweepEnd(false); else firstGate(sweepStart); });
+  ['sw-from', 'sw-to', 'sw-sec'].forEach(id => $(id).addEventListener('change', () => {
+    const hi = maxF();
+    state.sweep.from = parseField('sw-from', MIN_F, hi, state.sweep.from);
+    state.sweep.to = parseField('sw-to', MIN_F, hi, state.sweep.to);
+    state.sweep.sec = parseField('sw-sec', 5, 120, state.sweep.sec);
+    save();
+  }));
+  $('ht-start').addEventListener('click', () => { if (ht) htStop(true); else firstGate(htBegin); });
+  $('ht-go').addEventListener('click', htHeardNo);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('input, textarea, select')) return;
+    if (!$('dlg-first').hidden || !$('dlg-safety').hidden) { if (e.key === 'Escape') { closeDlg(!$('dlg-first').hidden ? 'dlg-first' : 'dlg-safety'); } return; }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const d = e.key === 'ArrowRight' ? 1 : -1;
+      setFreq(state.freq + d * stepFor(state.freq) * (e.shiftKey ? 10 : 1), { notify: true });
+    } else if (e.key === ' ' && !(e.target.closest && e.target.closest('button, summary'))) {
+      e.preventDefault(); $('play').click();
+    }
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && playing) loop(); });
+  window.addEventListener('resize', () => { sizeScope(); drawScope(); });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => drawScope());
+
+  sizeScope(); renderAll(); renderTransport(); drawScope();
+  // test hook
+  window.__tone = { get ctx() { return ctx; }, get osc() { return osc; }, get volGain() { return volGain; }, get panner() { return panner; }, get analyser() { return analyser; }, state, sliderToF, fToSlider, noteOf, get playing() { return playing; }, get sweep() { return sweep; } };
+})();
+</script>
+</body></html>

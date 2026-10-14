@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>播棋</title>
+<style>
+:root {
+  --bg: #f6ead2; --bg2: #efdcb8; --ink: #2d1c10; --sub: #7a6048; --card: #fffaf0; --card2: #fbf0dc;
+  --line: rgba(60, 35, 15, .14); --accent: #b4511f; --accent-ink: #fff; --gold: #e0a43a; --good: #1f8a5b; --bad: #c8412f;
+  --shadow: 0 6px 18px rgba(70, 40, 10, .14); --chip: #f1e2c6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #120b07; --bg2: #1a110b; --ink: #f6e9d6; --sub: #b59e85; --card: #241812; --card2: #2f2018;
+    --line: rgba(255, 230, 200, .12); --accent: #f08a4b; --accent-ink: #1a0f08; --gold: #f2bf5e; --good: #4fd394; --bad: #ff8070;
+    --shadow: 0 6px 22px rgba(0, 0, 0, .5); --chip: #33241a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #120b07; --bg2: #1a110b; --ink: #f6e9d6; --sub: #b59e85; --card: #241812; --card2: #2f2018;
+  --line: rgba(255, 230, 200, .12); --accent: #f08a4b; --accent-ink: #1a0f08; --gold: #f2bf5e; --good: #4fd394; --bad: #ff8070;
+  --shadow: 0 6px 22px rgba(0, 0, 0, .5); --chip: #33241a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  background-image: radial-gradient(120% 70% at 50% 0%, var(--bg2), transparent 70%), repeating-linear-gradient(135deg, transparent 0 22px, rgba(128, 80, 30, .035) 22px 44px);
+  color: var(--ink); overflow: hidden; user-select: none; -webkit-user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", "Segoe UI", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+#app {
+  height: 100%; height: 100dvh; max-width: 560px; margin: 0 auto; display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
+}
+.top { display: flex; align-items: center; gap: 6px; height: 52px; flex: 0 0 auto; }
+.ttl { flex: 1; min-width: 0; text-align: center; line-height: 1.15; }
+.ttl h1 { margin: 0; font-size: 21px; letter-spacing: 4px; font-weight: 900; color: var(--accent); }
+.ttl .sub { font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.ibtn { width: 44px; height: 44px; border-radius: 14px; border: 0; background: var(--card); box-shadow: var(--shadow);
+  display: grid; place-items: center; flex: 0 0 44px; }
+.ibtn svg, .tb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.1; stroke-linecap: round; stroke-linejoin: round; }
+.stage { flex: 1 1 auto; position: relative; min-height: 0; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.status { flex: 0 0 auto; height: 30px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--sub); white-space: nowrap; overflow: hidden; }
+.status b { color: var(--accent); }
+.dots i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin: 0 1.5px; animation: dot 1s infinite; }
+.dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 50% { transform: translateY(-4px); opacity: .4; } }
+.tools { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 4px 0 10px; }
+.tb { height: 54px; border: 0; border-radius: 16px; background: var(--card); box-shadow: var(--shadow); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700; color: var(--ink); }
+.tb:disabled { opacity: .4; }
+.tb.on { background: var(--accent); color: var(--accent-ink); }
+@media (hover: hover) { .tb:not(:disabled):hover, .ibtn:hover, .chip:hover, .btn:hover { filter: brightness(1.05); } }
+.tb:active, .ibtn:active, .btn:active, .chip:active { transform: scale(.96); }
+@media (orientation: landscape) and (max-height: 560px) {
+  #app { max-width: none; display: grid; grid-template-columns: 1fr 64px; grid-template-rows: 44px 1fr 26px; grid-template-areas: "top tools" "stage tools" "status tools"; column-gap: 8px; }
+  .top { grid-area: top; height: 44px; } .stage { grid-area: stage; } .status { grid-area: status; height: 26px; font-size: 13px; }
+  .tools { grid-area: tools; grid-template-columns: 1fr; grid-auto-rows: 1fr; padding: 8px 0; align-content: center; }
+  .tb { height: auto; min-height: 48px; }
+}
+@media (orientation: landscape) and (min-height: 561px) { #app { max-width: 1100px; } }
+.toast { position: fixed; left: 50%; top: 16%; transform: translate(-50%, -10px); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 99px;
+  font-weight: 800; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+.toast.show { opacity: .94; transform: translate(-50%, 0); }
+.ov { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 14px;
+  background: rgba(20, 10, 4, .45); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); overflow-y: auto; }
+.sheet { width: 100%; max-width: 440px; background: var(--card); border-radius: 24px; box-shadow: 0 20px 50px rgba(0, 0, 0, .35); padding: 18px 16px 16px;
+  animation: pop .32s cubic-bezier(.2, 1.4, .4, 1); margin: auto; }
+@keyframes pop { from { transform: scale(.86) translateY(16px); opacity: 0; } }
+@media (max-height: 600px) { .ov { align-items: flex-start; } }
+.sheet h2 { margin: 0 0 6px; font-size: 21px; text-align: center; }
+.logo { text-align: center; margin: 0 0 6px; }
+.logo .big { font-size: 34px; font-weight: 900; letter-spacing: 8px; color: var(--accent); }
+.logo .tag { font-size: 13px; color: var(--sub); margin-top: 2px; }
+.beans { display: flex; justify-content: center; gap: 6px; margin: 2px 0 6px; }
+.beans span { width: 15px; height: 13px; border-radius: 50%; animation: hop 1.6s ease-in-out infinite; box-shadow: inset -2px -3px 0 rgba(0, 0, 0, .2), inset 2px 2px 0 rgba(255, 255, 255, .45); }
+.beans span:nth-child(2) { animation-delay: .1s; } .beans span:nth-child(3) { animation-delay: .2s; } .beans span:nth-child(4) { animation-delay: .3s; } .beans span:nth-child(5) { animation-delay: .4s; }
+@keyframes hop { 30% { transform: translateY(-7px); } 60% { transform: none; } }
+.sec { margin-top: 12px; }
+.sec > .lab { display: block; font-size: 12px; font-weight: 800; color: var(--sub); margin: 0 2px 6px; letter-spacing: 1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 44px; padding: 6px 10px; border-radius: 14px; border: 2px solid transparent; background: var(--chip); font-size: 14px; font-weight: 700; flex: 1 1 auto; }
+.chip small { display: block; font-size: 11px; font-weight: 600; color: var(--sub); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--card2); color: var(--accent); }
+.chip[aria-pressed="true"] small { color: inherit; }
+.chip:disabled { opacity: .4; }
+.lv .chip { flex: 1 1 18%; padding: 6px 2px; }
+.row { display: flex; align-items: center; justify-content: space-between; min-height: 48px; gap: 10px; border-top: 1px solid var(--line); font-size: 15px; }
+.row small { display: block; color: var(--sub); font-size: 12px; }
+.sw { width: 52px; height: 32px; border-radius: 99px; border: 0; background: var(--line); position: relative; flex: 0 0 52px; transition: background .2s; }
+.sw::before { content: ""; position: absolute; inset: -6px; }
+.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .25); transition: transform .2s; }
+.sw[aria-checked="true"] { background: var(--good); }
+.sw[aria-checked="true"]::after { transform: translateX(20px); }
+.sw:disabled { opacity: .4; }
+.btns { display: flex; gap: 8px; margin-top: 14px; }
+.btn { flex: 1; min-height: 50px; border-radius: 16px; border: 0; background: var(--chip); font-weight: 800; font-size: 16px; }
+.btn.pri { background: var(--accent); color: var(--accent-ink); box-shadow: 0 4px 0 rgba(0, 0, 0, .2); }
+.note { font-size: 12px; color: var(--sub); line-height: 1.6; margin-top: 10px; }
+.res { text-align: center; }
+.res .rt { font-size: 34px; font-weight: 900; letter-spacing: 4px; margin: 4px 0 2px; }
+.res .rt.win { color: var(--good); } .res .rt.lose { color: var(--bad); } .res .rt.draw { color: var(--gold); }
+.res .sc { font-size: 44px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: 2px; }
+.res .sc small { font-size: 14px; color: var(--sub); font-weight: 700; letter-spacing: 0; display: block; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.facts div { background: var(--chip); border-radius: 12px; padding: 8px 4px; font-size: 11px; color: var(--sub); }
+.facts b { display: block; font-size: 20px; color: var(--ink); }
+.ach { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.ach span { font-size: 12px; font-weight: 800; padding: 6px 10px; border-radius: 99px; background: var(--chip); color: var(--sub); }
+.ach span.got { background: var(--gold); color: #3a2208; }
+table.st { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+table.st th, table.st td { padding: 7px 4px; text-align: center; border-bottom: 1px solid var(--line); }
+table.st th { color: var(--sub); font-size: 12px; }
+.rules { font-size: 14px; line-height: 1.7; }
+.rules h3 { font-size: 15px; margin: 12px 0 2px; color: var(--accent); }
+.rules p { margin: 0 0 4px; }
+.sharebox { width: 100%; min-height: 84px; font: inherit; font-size: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); padding: 10px; resize: none; user-select: text; -webkit-user-select: text; }
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <button class="ibtn" id="bMenu" aria-label="新對局"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <div class="ttl"><h1>播棋</h1><div class="sub" id="sub">卡拉哈</div></div>
+    <button class="ibtn" id="bStats" aria-label="戰績"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/></svg></button>
+    <button class="ibtn" id="bSet" aria-label="設定"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </header>
+  <div class="stage" id="stage"><canvas id="cv" aria-label="播棋棋盤"></canvas></div>
+  <div class="status" id="status"><span id="stTxt">&nbsp;</span><span class="dots" id="dots" hidden><i></i><i></i><i></i></span></div>
+  <nav class="tools">
+    <button class="tb" id="tUndo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>悔棋</button>
+    <button class="tb" id="tHint"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>提示</button>
+    <button class="tb" id="tNew"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>新局</button>
+    <button class="tb" id="tRule"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></svg>規則</button>
+  </nav>
+</div>
+
+<div class="ov" id="ovMenu" hidden>
+  <div class="sheet">
+    <div class="logo"><div class="beans"><span style="background:#1fa774"></span><span style="background:#f2a516"></span><span style="background:#2f6fdc"></span><span style="background:#ff6f61"></span><span style="background:#efe4cf"></span></div>
+      <div class="big">播棋</div><div class="tag">一把彩豆撒過去，連動、搶收、算到最後一顆</div></div>
+    <div class="sec"><span class="lab">對手</span><div class="chips" id="cMode"><button class="chip" data-v="ai">對電腦</button><button class="chip" data-v="2p">同機雙人</button></div></div>
+    <div class="sec" id="secLv"><span class="lab">電腦等級</span><div class="chips lv" id="cLevel"></div></div>
+    <div class="sec" id="secFirst"><span class="lab">先手</span><div class="chips" id="cFirst"><button class="chip" data-v="me">我先</button><button class="chip" data-v="ai">電腦先</button><button class="chip" data-v="rand">隨機</button></div></div>
+    <div class="sec"><span class="lab">規則</span><div class="chips" id="cRule"><button class="chip" data-v="kalah">卡拉哈<small>有倉・可再動</small></button><button class="chip" data-v="oware">Oware 播棋<small>無倉・先得 25 顆</small></button></div></div>
+    <div class="sec" id="secSeeds"><span class="lab">每坑初始種子</span><div class="chips" id="cSeeds"><button class="chip" data-v="3">3 顆</button><button class="chip" data-v="4">4 顆</button><button class="chip" data-v="5">5 顆</button><button class="chip" data-v="6">6 顆</button></div></div>
+    <div class="row" id="rowEc" style="margin-top:8px"><div>對面為空也收<small>最後一顆落在己方空坑時，即使對面沒有種子也收那一顆</small></div><button class="sw" id="swEc" role="switch" aria-checked="false" aria-label="對面為空也收"></button></div>
+    <div class="btns"><button class="btn" id="mResume">繼續對局</button><button class="btn pri" id="mStart">開始新局</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovSet" hidden>
+  <div class="sheet">
+    <h2>設定</h2>
+    <div class="sec"><span class="lab">播撒動畫</span><div class="chips" id="cSpeed"><button class="chip" data-v="normal">一般<small>90ms／顆</small></button><button class="chip" data-v="fast">快速<small>40ms／顆</small></button><button class="chip" data-v="instant">立即</button></div></div>
+    <div class="sec"><span class="lab">主題</span><div class="chips" id="cTheme"><button class="chip" data-v="auto">跟隨系統</button><button class="chip" data-v="light">金合歡木</button><button class="chip" data-v="dark">烏木</button></div></div>
+    <div class="sec">
+      <div class="row"><div>長按／懸停預覽<small>長按坑 0.3 秒看落點，放開取消</small></div><button class="sw" id="swPrev" role="switch" aria-label="長按預覽"></button></div>
+      <div class="row"><div>新手模式<small>點一下顯示預覽線，再點一下才播撒</small></div><button class="sw" id="swBeg" role="switch" aria-label="新手模式"></button></div>
+      <div class="row"><div>音效</div><button class="sw" id="swSnd" role="switch" aria-label="音效"></button></div>
+      <div class="row"><div>震動</div><button class="sw" id="swVib" role="switch" aria-label="震動"></button></div>
+    </div>
+    <div class="note">鍵盤：1–6 選坑（由遠到近）、U 悔棋、H 提示。動畫進行中點任意處可加速。</div>
+    <div class="btns"><button class="btn pri" data-close>完成</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovStats" hidden>
+  <div class="sheet">
+    <h2>戰績</h2>
+    <table class="st"><thead><tr><th>對手</th><th>勝</th><th>負</th><th>和</th><th>勝率</th></tr></thead><tbody id="stBody"></tbody></table>
+    <div class="facts" id="stFacts"></div>
+    <div class="ach" id="stAch"></div>
+    <div class="btns"><button class="btn" id="stReset">清除戰績</button><button class="btn pri" data-close>關閉</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovRule" hidden>
+  <div class="sheet rules">
+    <h2>規則</h2>
+    <h3>卡拉哈 Kalah</h3>
+    <p>每方 6 坑，自己的倉在播撒方向的盡頭。點自己一個坑，抓起全部種子，逆時針一坑一顆撒出去，經過自己的倉放一顆，跳過對手的倉。</p>
+    <p><b>再動：</b>最後一顆落進自己的倉，再走一次，可以連續。</p>
+    <p><b>收取：</b>最後一顆落在自己這邊原本空的坑，而且對面坑有種子，就把這顆和對面全部收進自己的倉。</p>
+    <p><b>結束：</b>任一方六坑全空時結束，另一方剩下的種子歸該方的倉；倉裡多的勝。</p>
+    <h3>Oware 播棋（Abapa）</h3>
+    <p>沒有倉。撒滿一圈時跳過起點坑。最後一顆落在對方坑、使它變成 2 或 3 顆就收走，並往回連收相鄰同樣是 2、3 顆的對方坑。</p>
+    <p>對手沒子時必須餵他；一次收光對手所有種子則不收。先收到 25 顆的勝；無法餵子時遊戲結束，各自收回自己這邊的種子。</p>
+    <h3>操作</h3>
+    <p>點坑播撒；長按 0.3 秒看預覽線（放開取消）；動畫中點任意處加速。</p>
+    <div class="btns"><button class="btn pri" data-close>知道了</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovResult" hidden>
+  <div class="sheet res">
+    <div class="rt" id="rTitle">勝利！</div>
+    <div class="sc" id="rScore">30 : 18</div>
+    <div class="facts" id="rFacts"></div>
+    <div class="ach" id="rAch"></div>
+    <div class="btns"><button class="btn" id="rShare">分享比分</button><button class="btn" id="rBoard">看棋盤</button></div>
+    <div class="btns" style="margin-top:8px"><button class="btn pri" id="rAgain">再來一局</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovShare" hidden>
+  <div class="sheet">
+    <h2>比分卡</h2>
+    <textarea class="sharebox" id="shareTxt" readonly></textarea>
+    <div class="note">長按或選取文字即可複製。</div>
+    <div class="btns"><button class="btn pri" data-close>關閉</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script id="mccore">
+/*CORE-START*/
+var MC = (function () {
+  'use strict';
+  // Board: Int8Array(14).
+  //  kalah: 0..5 = side 0 pits, 6 = side 0 store, 7..12 = side 1 pits, 13 = side 1 store (sowing goes 0→1→…→13→0, counter-clockwise)
+  //  oware: 0..5 = side 0 pits, 6..11 = side 1 pits, 12 = side 0 captured, 13 = side 1 captured
+  var EXTRA = 1, OVER = 2;
+  var LEVELS = [
+    { name: '撒豆子', depth: 1, ms: 30, err: 0.35 },
+    { name: '村童', depth: 3, ms: 100, err: 0.18 },
+    { name: '長老', depth: 7, ms: 400, err: 0.06 },
+    { name: '部落智者', depth: 12, ms: 1200, err: 0.01 },
+    { name: '祖靈', depth: 60, ms: 3000, err: 0 }
+  ];
+  function pitCell(rule, side, p) { return rule === 'oware' ? side * 6 + p : side * 7 + p; }
+  function storeCell(rule, side) { return rule === 'oware' ? 12 + side : (side ? 13 : 6); }
+  function newBoard(rule, seeds) {
+    var b = new Int8Array(14), s, p;
+    for (s = 0; s < 2; s++) for (p = 0; p < 6; p++) b[pitCell(rule, s, p)] = seeds;
+    return b;
+  }
+  function sideSum(B, o, rule, side) { var t = 0, base = o + (rule === 'oware' ? side * 6 : side * 7); for (var i = 0; i < 6; i++) t += B[base + i]; return t; }
+
+  // ---- Kalah sowing on B at offset o. info (optional) receives details for animation. ----
+  function kSow(B, o, side, p, ec, info) {
+    var start = side * 7 + p, n = B[o + start], skip = side ? 6 : 13, my = side ? 13 : 6, i = start, code = 0;
+    B[o + start] = 0;
+    if (info) { info.path = []; info.cap = null; info.sweep = null; info.start = start; }
+    while (n > 0) { i++; if (i === 14) i = 0; if (i === skip) continue; B[o + i]++; n--; if (info) info.path.push(i); }
+    if (info) info.last = i;
+    if (i === my) code = EXTRA;
+    else if (B[o + i] === 1 && (side ? (i >= 7 && i <= 12) : i < 6)) {
+      var op = 12 - i;
+      if (B[o + op] > 0 || ec) {
+        var got = B[o + op] + 1;
+        if (info) info.cap = { cells: [i, op], n: got, to: my, opp: B[o + op] };
+        B[o + my] += got; B[o + op] = 0; B[o + i] = 0;
+      }
+    }
+    var s0 = 0, s1 = 0, k;
+    for (k = 0; k < 6; k++) { s0 += B[o + k]; s1 += B[o + 7 + k]; }
+    if (s0 === 0 || s1 === 0) {
+      if (info) info.sweep = [s0, s1];
+      B[o + 6] += s0; B[o + 13] += s1;
+      for (k = 0; k < 6; k++) { B[o + k] = 0; B[o + 7 + k] = 0; }
+      code = OVER;
+    }
+    return code;
+  }
+  // ---- Oware (Abapa) ----
+  function oCanMove(B, o, side, p) {
+    var n = B[o + side * 6 + p];
+    if (n === 0) return false;
+    var oppSum = 0, base = o + (1 - side) * 6;
+    for (var i = 0; i < 6; i++) oppSum += B[base + i];
+    return oppSum > 0 || n >= 6 - p; // must feed a starving opponent
+  }
+  function oSow(B, o, side, p, info) {
+    var start = side * 6 + p, n = B[o + start], i = start;
+    B[o + start] = 0;
+    if (info) { info.path = []; info.cap = null; info.sweep = null; info.start = start; info.grandSlam = false; }
+    while (n > 0) { i++; if (i === 12) i = 0; if (i === start) continue; B[o + i]++; n--; if (info) info.path.push(i); }
+    if (info) info.last = i;
+    var lo = side ? 0 : 6, hi = lo + 5;
+    if (i >= lo && i <= hi && (B[o + i] === 2 || B[o + i] === 3)) {
+      var j = i, tot = 0, cells = [], oppSum = 0, k;
+      while (j >= lo && (B[o + j] === 2 || B[o + j] === 3)) { tot += B[o + j]; cells.push(j); j--; }
+      for (k = lo; k <= hi; k++) oppSum += B[o + k];
+      if (oppSum - tot > 0) {
+        for (k = 0; k < cells.length; k++) B[o + cells[k]] = 0;
+        B[o + 12 + side] += tot;
+        if (info) info.cap = { cells: cells, n: tot, to: 12 + side };
+      } else if (info) info.grandSlam = true; // capturing everything would starve the opponent: no capture
+    }
+    return oEnd(B, o, side, info);
+  }
+  // after side moved: decide whether the game is over (captures >= 25, 24:24, or next player has no legal move)
+  function oEnd(B, o, side, info) {
+    if (B[o + 12] >= 25 || B[o + 13] >= 25 || (B[o + 12] === 24 && B[o + 13] === 24)) return oSweep(B, o, info);
+    var nx = 1 - side, p;
+    for (p = 0; p < 6; p++) if (oCanMove(B, o, nx, p)) return 0;
+    return oSweep(B, o, info);
+  }
+  function oSweep(B, o, info) { // each player takes the seeds left on their own side
+    var s0 = 0, s1 = 0, k;
+    for (k = 0; k < 6; k++) { s0 += B[o + k]; s1 += B[o + 6 + k]; B[o + k] = 0; B[o + 6 + k] = 0; }
+    if (info) info.sweep = [s0, s1];
+    B[o + 12] += s0; B[o + 13] += s1;
+    return OVER;
+  }
+  function sow(rule, B, o, side, p, ec, info) { return rule === 'oware' ? oSow(B, o, side, p, info) : kSow(B, o, side, p, ec, info); }
+  function legal(rule, B, o, side, p) { return rule === 'oware' ? oCanMove(B, o, side, p) : B[o + side * 7 + p] > 0; }
+  function moves(rule, b, side) { var r = []; for (var p = 0; p < 6; p++) if (legal(rule, b, 0, side, p)) r.push(p); return r; }
+
+  // ---- game object ----
+  function newGame(opt) {
+    var rule = opt.rule === 'oware' ? 'oware' : 'kalah', seeds = rule === 'oware' ? 4 : (opt.seeds || 4);
+    return { rule: rule, seeds: seeds, ec: !!opt.ec && rule === 'kalah', b: newBoard(rule, seeds), side: opt.first || 0, over: false, stall: 0, plies: 0, hist: [] };
+  }
+  // simulate a move without changing g (used by the long-press preview)
+  function simulate(g, p) {
+    var B = new Int8Array(g.b), info = {};
+    info.code = sow(g.rule, B, 0, g.side, p, g.ec, info);
+    info.extra = !!(info.code & EXTRA); info.over = !!(info.code & OVER); info.board = B;
+    return info;
+  }
+  function play(g, p) {
+    if (g.over || !legal(g.rule, g.b, 0, g.side, p)) return null;
+    var info = { side: g.side, pit: p }, before = Array.prototype.slice.call(g.b);
+    info.code = sow(g.rule, g.b, 0, g.side, p, g.ec, info);
+    info.extra = !!(info.code & EXTRA); info.over = !!(info.code & OVER);
+    g.hist.push({ side: g.side, p: p, before: before });
+    g.plies++;
+    if (g.rule === 'oware' && !info.over) { // long-game rule: 100 plies without a capture ends the game
+      g.stall = info.cap ? 0 : g.stall + 1;
+      if (g.stall >= 100) { info.code = oSweep(g.b, 0, info); info.over = true; info.stallEnd = true; }
+    }
+    if (info.over) { g.over = true; info.score = score(g); }
+    else if (!info.extra) g.side = 1 - g.side;
+    info.next = g.side;
+    return info;
+  }
+  function score(g) { var a = g.b[storeCell(g.rule, 0)], c = g.b[storeCell(g.rule, 1)]; return [a, c]; }
+  function winner(g) { var s = score(g); return s[0] > s[1] ? 0 : s[1] > s[0] ? 1 : -1; }
+
+  // ---- search ----
+  var MAXPLY = 160, STK = new Int8Array(14 * (MAXPLY + 2));
+  var TTBITS = 20, TTN = 1 << TTBITS, TTM = TTN - 1;
+  var ttK = null, ttV, ttD, ttF, ttM;
+  var Z1 = new Int32Array(14 * 128 + 2), Z2 = new Int32Array(14 * 128 + 2);
+  (function () { var s = 0x2545F491; function r() { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return s | 0; } for (var i = 0; i < Z1.length; i++) { Z1[i] = r(); Z2[i] = r(); } })();
+  function ttInit() { if (!ttK) { ttK = new Int32Array(TTN); ttV = new Int32Array(TTN); ttD = new Int8Array(TTN); ttF = new Int8Array(TTN); ttM = new Int8Array(TTN); } else { ttD.fill(0); ttF.fill(0); } }
+  var R, EC, nodes, deadline, stopped, hitLimit, H1, H2;
+  var WIN = 10000;
+  function hashAt(o, side) {
+    var a = side ? Z1[1792] : 0, c = side ? Z2[1792] : 0, i, v;
+    for (i = 0; i < 14; i++) { v = STK[o + i]; if (v) { a ^= Z1[i * 128 + v]; c ^= Z2[i * 128 + v]; } }
+    H1 = a; H2 = c;
+  }
+  // static evaluation in quarter-seeds, from `side`'s point of view
+  function evalAt(o, side) {
+    var me, op, i, ms = 0, os = 0, mx = 0, ox = 0;
+    if (R === 'oware') {
+      for (i = 0; i < 6; i++) { ms += STK[o + side * 6 + i]; os += STK[o + (1 - side) * 6 + i]; }
+      return 4 * (STK[o + 12 + side] - STK[o + 13 - side]) + (ms - os);
+    }
+    me = side * 7; op = (1 - side) * 7;
+    for (i = 0; i < 6; i++) {
+      ms += STK[o + me + i]; os += STK[o + op + i];
+      if (STK[o + me + i] === 6 - i) mx++;
+      if (STK[o + op + i] === 6 - i) ox++;
+    }
+    return 4 * (STK[o + me + 6] - STK[o + op + 6]) + (ms - os) + 2 * (mx - ox);
+  }
+  function termAt(o, side) {
+    var d = R === 'oware' ? STK[o + 12 + side] - STK[o + 13 - side] : STK[o + side * 7 + 6] - STK[o + (1 - side) * 7 + 6];
+    return d > 0 ? WIN + d : d < 0 ? -WIN + d : 0;
+  }
+  var ORD = new Int32Array(MAXPLY * 8);
+  function order(o, side, ply, ttmove) {
+    // fill ORD[ply*8 ..] with legal pits, best first; returns count
+    var base = ply * 8, n = 0, sc = [0, 0, 0, 0, 0, 0], p, k, cell, c, j, t;
+    for (p = 0; p < 6; p++) {
+      if (!legal(R, STK, o, side, p)) continue;
+      if (p === ttmove) c = 100000;
+      else if (R === 'kalah') {
+        cell = side * 7 + p; c = STK[o + cell];
+        var dist = 6 - p;
+        if (c === dist) c = 5000 + p * 10; // extra turn, nearest store first
+        else {
+          var q, land;
+          if (side) { q = (cell - 7 + c) % 13; land = q <= 6 ? 7 + q : q - 7; } else land = (cell + c) % 13; // exact when c < 13
+          if (c < 13 && STK[o + land] === 0 && (side ? land >= 7 && land <= 12 : land < 6) && STK[o + 12 - land] > 0) c = 1000 + STK[o + 12 - land];
+          else c = p;
+        }
+      } else {
+        cell = side * 6 + p; c = STK[o + cell];
+        var l2 = (cell + c + Math.floor((c - 1) / 11)) % 12, lo = side ? 0 : 6;
+        if (c < 12 && l2 >= lo && l2 <= lo + 5 && (STK[o + l2] === 1 || STK[o + l2] === 2)) c = 1000 + STK[o + l2]; else c = p;
+      }
+      sc[n] = c; ORD[base + n] = p; n++;
+    }
+    for (k = 1; k < n; k++) { t = ORD[base + k]; c = sc[k]; j = k - 1; while (j >= 0 && sc[j] < c) { sc[j + 1] = sc[j]; ORD[base + j + 1] = ORD[base + j]; j--; } sc[j + 1] = c; ORD[base + j + 1] = t; }
+    return n;
+  }
+  function nm(ply, side, depth, alpha, beta) {
+    var o = ply * 14;
+    if ((++nodes & 511) === 0 && Date.now() > deadline) stopped = true;
+    if (stopped) return 0;
+    if (depth <= 0 || ply >= MAXPLY) { hitLimit = true; return evalAt(o, side); }
+    hashAt(o, side);
+    var h = H1 & TTM, h2 = H2, ttmove = -1, a0 = alpha;
+    if (ttF[h] && ttK[h] === h2) {
+      ttmove = ttM[h];
+      if (ttD[h] >= depth) {
+        var v0 = ttV[h], f = ttF[h];
+        if (f === 1) return v0;
+        if (f === 2 && v0 >= beta) return v0;
+        if (f === 3 && v0 <= alpha) return v0;
+      }
+    }
+    var n = order(o, side, ply, ttmove), base = ply * 8, best = -100000, bm = -1, k, p, v, code, c = o + 14, i;
+    if (n === 0) return termAt(o, side); // (oware) cannot happen: oEnd already finished the game
+    for (k = 0; k < n; k++) {
+      p = ORD[base + k];
+      for (i = 0; i < 14; i++) STK[c + i] = STK[o + i];
+      code = sow(R, STK, c, side, p, EC, null);
+      if (code & OVER) v = termAt(c, side);
+      else if (code & EXTRA) v = nm(ply + 1, side, depth - 1, alpha, beta);
+      else v = -nm(ply + 1, 1 - side, depth - 1, -beta, -alpha);
+      if (stopped) return 0;
+      if (v > best) { best = v; bm = p; }
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    // store
+    if (!(ttF[h] && ttK[h] === h2 && ttD[h] > depth)) {
+      ttK[h] = h2; ttV[h] = best; ttD[h] = depth; ttM[h] = bm;
+      ttF[h] = best <= a0 ? 3 : best >= beta ? 2 : 1;
+    }
+    return best;
+  }
+  var BOOK = {}; // filled by loadBook: key "seeds|movesSoFar" -> pit (kalah, standard capture, side 0 to move first)
+  function loadBook(s) { if (!s) return; s.split(';').forEach(function (e) { var kv = e.split('='); if (kv.length === 2) BOOK[kv[0]] = +kv[1]; }); }
+  // req: {rule, ec, b:[14], side, level (1..5) | depth/ms/err, hist: 'pits so far' for the book, rnd}
+  function think(req) {
+    var lv = LEVELS[(req.level || 5) - 1], depthMax = req.depth || lv.depth, ms = req.ms || lv.ms, err = req.err != null ? req.err : lv.err;
+    var t0 = Date.now(), i, side = req.side, b = req.b;
+    R = req.rule === 'oware' ? 'oware' : 'kalah'; EC = !!req.ec;
+    for (i = 0; i < 14; i++) STK[i] = b[i];
+    var legalP = []; for (i = 0; i < 6; i++) if (legal(R, STK, 0, side, i)) legalP.push(i);
+    if (!legalP.length) return { pit: -1 };
+    if (legalP.length === 1) return { pit: legalP[0], score: 0, depth: 0, nodes: 0, ms: Date.now() - t0, forced: true };
+    if (req.level === 5 && R === 'kalah' && !EC && req.hist != null) {
+      var bk = BOOK[req.seeds + '|' + req.hist];
+      if (bk != null && legalP.indexOf(bk) >= 0) return { pit: bk, score: 0, depth: 0, nodes: 0, ms: Date.now() - t0, book: true };
+    }
+    ttInit(); nodes = 0; stopped = false; deadline = t0 + ms;
+    var bestP = legalP[0], bestV = 0, done = 0, exact = false, d, scores = {};
+    for (d = 1; d <= depthMax; d++) {
+      hitLimit = false;
+      // root: search each move with a full-ish window to know every move's value (cheap: 6 moves)
+      var n = order(0, side, 0, d > 1 ? bestP : -1), alpha = -100000, curBest = -1, curV = -100000, k, p, v, code, sc = {};
+      for (k = 0; k < n; k++) {
+        p = ORD[k];
+        for (i = 0; i < 14; i++) STK[14 + i] = STK[i];
+        code = sow(R, STK, 14, side, p, EC, null);
+        if (code & OVER) v = termAt(14, side);
+        else if (code & EXTRA) v = nm(1, side, d - 1, alpha, 100000);
+        else v = -nm(1, 1 - side, d - 1, -100000, -alpha);
+        if (stopped) break;
+        sc[p] = v;
+        if (v > curV) { curV = v; curBest = p; }
+        if (v > alpha) alpha = v;
+      }
+      if (stopped) { if (curBest >= 0 && d > 1) { bestP = curBest; bestV = curV; } break; } // previous best is searched first, so a different curBest beat it
+      bestP = curBest; bestV = curV; done = d; scores = sc;
+      if (!hitLimit) { exact = true; break; }
+      if (Math.abs(bestV) >= WIN && d >= 2) { /* forced result found */ }
+    }
+    var pit = bestP, mistake = false;
+    var rnd = req.rnd != null ? req.rnd : Math.random();
+    if (err > 0 && rnd < err && legalP.length > 1) {
+      var others = legalP.filter(function (x) { return x !== bestP; });
+      pit = others[Math.floor((req.rnd2 != null ? req.rnd2 : Math.random()) * others.length)]; mistake = true;
+    }
+    return { pit: pit, best: bestP, score: bestV, depth: done, nodes: nodes, ms: Date.now() - t0, exact: exact, mistake: mistake, scores: scores };
+  }
+  function perft(rule, seeds, depth) { // counts sowings: an extra turn is its own ply
+    R = rule; EC = false; var b = newBoard(rule, seeds); for (var i = 0; i < 14; i++) STK[i] = b[i];
+    function rec(ply, side, d) {
+      if (d === 0) return 1;
+      var o = ply * 14, c = o + 14, t = 0, p, k, code;
+      for (p = 0; p < 6; p++) {
+        if (!legal(R, STK, o, side, p)) continue;
+        for (k = 0; k < 14; k++) STK[c + k] = STK[o + k];
+        code = sow(R, STK, c, side, p, false, null);
+        if (code & OVER) t += 1; else t += rec(ply + 1, code & EXTRA ? side : 1 - side, d - 1);
+      }
+      return t;
+    }
+    return rec(0, 0, depth);
+  }
+  // how many seeds `side` could capture with its best single move right now (for hints)
+  function threat(rule, b, side, ec) {
+    var best = 0, B = new Int8Array(14), info;
+    for (var p = 0; p < 6; p++) {
+      if (!legal(rule, b, 0, side, p)) continue;
+      B.set(b); info = {}; sow(rule, B, 0, side, p, ec, info);
+      if (info.cap && info.cap.n > best) best = info.cap.n;
+    }
+    return best;
+  }
+  return { LEVELS: LEVELS, EXTRA: EXTRA, OVER: OVER, newBoard: newBoard, newGame: newGame, play: play, simulate: simulate, moves: moves, legal: legal,
+    score: score, winner: winner, pitCell: pitCell, storeCell: storeCell, sideSum: sideSum, sow: sow, think: think, perft: perft, threat: threat, loadBook: loadBook, BOOK: BOOK };
+})();
+var MC_BOOK = "3|=4;3|0=3;3|1=3;3|2=5;3|3=4;3|4=5;3|5=5;4|=2;4|0=2;4|1=2;4|2=5;4|3=2;4|4=2;4|5=1;5|=1;5|0=1;5|1=2;5|2=1;5|3=0;5|4=0;5|5=0;6|=0;6|0=2;6|1=2;6|2=2;6|3=2;6|4=1;6|5=1";
+MC.loadBook(MC_BOOK);
+/*CORE-END*/
+
+</script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d'), stage = $('stage');
+// ---------- storage ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('mancala.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('mancala.' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+  del(k) { try { localStorage.removeItem('mancala.' + k); } catch (e) { /* ignore */ } }
+};
+const DEF = { mode: 'ai', level: 3, first: 'me', rule: 'kalah', seeds: 4, ec: false, speed: 'normal', theme: 'auto', preview: true, beginner: false, sound: true, vib: true };
+const settings = Object.assign({}, DEF, store.get('settings', {}));
+const saveSettings = () => store.set('settings', settings);
+const emptyStats = () => ({ lv: {}, p2: 0, games: 0, marginSum: 0, maxCap: 0, maxChain: 0, ach: {} });
+let stats = Object.assign(emptyStats(), store.get('stats', {}));
+const saveStats = () => store.set('stats', stats);
+// ---------- theme ----------
+const isDark = () => document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+function applyTheme() {
+  if (settings.theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = settings.theme;
+  boardDirty = true;
+}
+// ---------- audio ----------
+let actx = null;
+function ac() {
+  if (!settings.sound) return null;
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
+function tone(f, dur, type, vol, slide, delay = 0, att = 0.004) {
+  const a = ac(); if (!a) return;
+  const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t); if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + att); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+let noiseBuf = null;
+function noise(dur, vol, freq, q, delay = 0, sweep) {
+  const a = ac(); if (!a) return;
+  if (!noiseBuf) { noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const t = a.currentTime + delay, s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.setValueAtTime(freq, t); if (sweep) f.frequency.exponentialRampToValueAtTime(sweep, t + dur); f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+}
+const SFX = {
+  knock() { const f = 820 + Math.random() * 520; tone(f, 0.07, 'triangle', 0.16, f * 0.8); noise(0.03, 0.12, 2600 + Math.random() * 800, 2); },
+  storeKnock() { const f = 230 + Math.random() * 60; tone(f, 0.14, 'sine', 0.26, f * 0.7); noise(0.05, 0.1, 900, 1.5); },
+  pick() { for (let i = 0; i < 4; i++) noise(0.03, 0.08, 3000 + Math.random() * 1500, 3, i * 0.035); },
+  extra() { [1319, 1976].forEach((f, i) => tone(f, 0.5, 'sine', 0.14, null, i * 0.07)); tone(2637, 0.3, 'sine', 0.05, null, 0.14); },
+  capture() { noise(0.42, 0.34, 2200, 0.9, 0, 380); tone(130, 0.3, 'sine', 0.32, 70); for (let i = 0; i < 6; i++) noise(0.03, 0.08, 3200, 3, 0.05 + i * 0.04); },
+  sweep() { noise(0.6, 0.22, 1600, 0.8, 0, 300); },
+  click() { tone(660, 0.04, 'triangle', 0.08); },
+  win() { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => { tone(f, 0.2, 'triangle', 0.13, null, i * 0.1); }); [1047, 1319, 1568].forEach(f => tone(f, 0.8, 'sine', 0.08, null, 0.75, 0.02)); },
+  lose() { [392, 370, 349, 294].forEach((f, i) => tone(f, i === 3 ? 0.7 : 0.28, 'sawtooth', 0.06, i === 3 ? 220 : null, i * 0.28, 0.03)); },
+  draw() { tone(523, 0.25, 'triangle', 0.12); tone(523, 0.45, 'triangle', 0.12, null, 0.28); }
+};
+const vib = p => { if (settings.vib && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) { /* ignore */ } } };
+// ---------- AI worker ----------
+let worker = null, useSync = false, reqSeq = 0;
+const pending = new Map();
+(function initWorker() {
+  try {
+    const src = $('mccore').textContent;
+    const glue = '\n;onmessage=function(e){var d=e.data;try{postMessage({id:d.id,res:MC[d.fn](d.req)});}catch(err){postMessage({id:d.id,err:String(err&&err.message||err)});}};';
+    worker = new Worker(URL.createObjectURL(new Blob([src + glue], { type: 'text/javascript' })));
+    worker.onmessage = e => { const p = pending.get(e.data.id); if (!p) return; pending.delete(e.data.id); if (e.data.err) p.rej(e.data.err); else p.res(e.data.res); };
+    worker.onerror = () => { useSync = true; const list = [...pending.values()]; pending.clear(); list.forEach(runSync); };
+  } catch (e) { useSync = true; }
+})();
+function runSync(p) { setTimeout(() => { try { p.res(MC[p.fn](p.req)); } catch (e) { p.rej(e); } }, 30); }
+function ask(fn, req) {
+  return new Promise((res, rej) => {
+    const id = ++reqSeq, p = { fn, req, res, rej };
+    if (useSync || !worker) return runSync(p);
+    pending.set(id, p); worker.postMessage({ id, fn, req });
+  });
+}
+// ---------- session ----------
+let S = null;            // { g, mode, level, human, snaps, chain, maxChain, maxCap, hints, undos, recorded }
+let busy = false;        // animation running
+let inputOK = false, aiTok = 0, thinking = false;
+let preview = null, hintPit = null, hintTxt = '', selected = null;
+const K = (rule, c) => rule === 'oware' ? (c < 6 ? c : c < 12 ? c + 1 : c === 12 ? 6 : 13) : c; // logical cell -> kalah-layout cell
+const isAI = side => S && S.mode === 'ai' && side !== S.human;
+const LV = MC.LEVELS;
+function sideName(side) {
+  if (!S) return '';
+  if (S.mode === '2p') return side === 0 ? '玩家一' : '玩家二';
+  return side === S.human ? '你' : LV[S.level - 1].name;
+}
+function ruleLabel(s = S) { return s.g.rule === 'oware' ? 'Oware 播棋' : `卡拉哈(6,${s.g.seeds})${s.g.ec ? '・空也收' : ''}`; }
+function newSession(opt) {
+  const g = MC.newGame({ rule: opt.rule, seeds: opt.seeds, ec: opt.ec });
+  let first = 0;
+  if (opt.mode === 'ai') first = opt.first === 'ai' ? 1 : opt.first === 'rand' ? (Math.random() < 0.5 ? 0 : 1) : 0;
+  g.side = first;
+  return { g, mode: opt.mode, level: opt.level, human: 0, first, snaps: [], chain: 0, maxChain: 0, maxCap: 0, hints: 0, undos: 0, recorded: false, started: Date.now() };
+}
+function saveGame() {
+  if (!S) return;
+  const g = S.g;
+  store.set('game', { v: 1, rule: g.rule, seeds: g.seeds, ec: g.ec, b: Array.from(g.b), side: g.side, over: g.over, stall: g.stall, plies: g.plies, hist: g.hist.map(h => h.p),
+    mode: S.mode, level: S.level, human: S.human, first: S.first, snaps: S.snaps, chain: S.chain, maxChain: S.maxChain, maxCap: S.maxCap, hints: S.hints, undos: S.undos, recorded: S.recorded });
+}
+function loadGame() {
+  const d = store.get('game', null);
+  if (!d || d.v !== 1 || !Array.isArray(d.b) || d.b.length !== 14) return null;
+  try {
+    const g = MC.newGame({ rule: d.rule, seeds: d.seeds, ec: d.ec });
+    g.b = Int8Array.from(d.b); g.side = d.side; g.over = d.over; g.stall = d.stall || 0; g.plies = d.plies || 0; g.hist = (d.hist || []).map(p => ({ p }));
+    const sum = g.b.reduce((a, x) => a + x, 0);
+    if (sum !== (g.rule === 'oware' ? 48 : g.seeds * 12)) return null;
+    return { g, mode: d.mode, level: d.level || 3, human: d.human || 0, first: d.first || 0, snaps: d.snaps || [], chain: d.chain || 0, maxChain: d.maxChain || 0, maxCap: d.maxCap || 0, hints: d.hints || 0, undos: d.undos || 0, recorded: !!d.recorded, started: Date.now() };
+  } catch (e) { return null; }
+}
+// ---------- geometry ----------
+let W = 0, H = 0, DPR = 1, vertical = true, geo = null, boardDirty = true, sr = 8;
+const boardCv = document.createElement('canvas'), bctx = boardCv.getContext('2d');
+const seedSprites = [];
+function layout() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(200, Math.round(r.width)); H = Math.max(200, Math.round(r.height));
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  vertical = H >= W * 1.05;
+  const cells = new Array(14);
+  let bx, by, bw, bh;
+  if (vertical) {
+    bw = Math.min(W - 8, 470, H * 0.7); bh = Math.min(H - 6, bw * 2.3);
+    bx = (W - bw) / 2; by = (H - bh) / 2;
+    const pad = Math.max(10, bw * 0.035), storeH = Math.max(56, Math.min(92, bh * 0.12)), gap = 6;
+    const y0 = by + pad + storeH + gap, y1 = by + bh - pad - storeH - gap, rowH = (y1 - y0) / 6, colW = (bw - pad * 2) / 2;
+    const ry = Math.min(rowH * 0.43, colW * 0.34), rx = Math.min(colW * 0.39, ry * 1.65);
+    for (let p = 0; p < 6; p++) {
+      cells[p] = { pit: true, x: bx + pad + colW * 0.5, y: y0 + rowH * (p + 0.5), rx, ry, out: -1 };
+      cells[7 + p] = { pit: true, x: bx + pad + colW * 1.5, y: y0 + rowH * (5 - p + 0.5), rx, ry, out: 1 };
+    }
+    cells[13] = { pit: false, x: bx + pad, y: by + pad, w: bw - pad * 2, h: storeH };
+    cells[6] = { pit: false, x: bx + pad, y: by + bh - pad - storeH, w: bw - pad * 2, h: storeH };
+  } else {
+    bh = Math.min(H - 6, W * 0.44, 420); bw = Math.min(W - 8, bh * 2.75);
+    bx = (W - bw) / 2; by = (H - bh) / 2;
+    const pad = Math.max(10, bh * 0.05), storeW = Math.max(64, Math.min(120, bw * 0.12)), gap = 6;
+    const x0 = bx + pad + storeW + gap, x1 = bx + bw - pad - storeW - gap, colW = (x1 - x0) / 6, rowH = (bh - pad * 2) / 2;
+    const rx = Math.min(colW * 0.42, rowH * 0.42), ry = Math.min(rowH * 0.36, rx * 1.05);
+    for (let p = 0; p < 6; p++) {
+      cells[p] = { pit: true, x: x0 + colW * (p + 0.5), y: by + pad + rowH * 1.5, rx, ry, out: 1 };
+      cells[7 + p] = { pit: true, x: x0 + colW * (5 - p + 0.5), y: by + pad + rowH * 0.5, rx, ry, out: -1 };
+    }
+    cells[13] = { pit: false, x: bx + pad, y: by + pad, w: storeW, h: bh - pad * 2 };
+    cells[6] = { pit: false, x: bx + bw - pad - storeW, y: by + pad, w: storeW, h: bh - pad * 2 };
+  }
+  const p0 = cells[0];
+  sr = Math.max(5, Math.min(13, Math.min(p0.rx, p0.ry) * 0.31));
+  for (const c of cells) if (!c.pit) {
+    // seeds use the part of the store away from its label
+    if (vertical) { c.lx = c.x + c.w - Math.min(64, c.w * 0.22); c.ly = c.y + c.h / 2; c.sa = { x: c.x + c.w * 0.04, y: c.y, w: c.w * 0.74, h: c.h }; }
+    else { const top = c === cells[13]; c.lx = c.x + c.w / 2; c.ly = top ? c.y + c.h - Math.min(46, c.h * 0.16) : c.y + Math.min(46, c.h * 0.16); c.sa = { x: c.x, y: top ? c.y + c.h * 0.03 : c.y + c.h * 0.3, w: c.w, h: c.h * 0.67 }; }
+  }
+  geo = { cells, bx, by, bw, bh };
+  boardDirty = true;
+  makeSprites();
+}
+// slot k inside a cell: sunflower packing, extra layers heap up toward the middle
+function slotPos(cell, k) {
+  const c = geo.cells[cell];
+  let cx, cy, ax, ay;
+  if (c.pit) { cx = c.x; cy = c.y + c.ry * 0.06; ax = c.rx - sr * 1.15; ay = c.ry - sr * 1.15; }
+  else { const a = c.sa; cx = a.x + a.w / 2; cy = a.y + a.h / 2; ax = a.w / 2 - sr * 1.4; ay = a.h / 2 - sr * 1.4; }
+  ax = Math.max(ax, sr * 0.5); ay = Math.max(ay, sr * 0.5);
+  const cap = Math.max(5, Math.floor(0.82 * ax * ay / (sr * sr)) + 1);
+  const layer = Math.floor(k / cap), i = k % cap, sc = Math.pow(0.68, layer);
+  const rr = Math.sqrt((i + 0.5) / cap), th = i * 2.39996 + layer * 1.3;
+  return [cx + Math.cos(th) * rr * ax * sc, cy + Math.sin(th) * rr * ay * sc - layer * sr * 0.32];
+}
+// ---------- board art ----------
+function woodColors() {
+  return isDark() ? { a: '#4a2d1a', b: '#2a170c', rim: '#1a0d05', edge: '#6b4428', pit: '#160b04', grain: 'rgba(255,200,150,', label: '#f3dcc0', badge: 'rgba(20,10,4,.82)', badgeInk: '#f6e2c4' }
+    : { a: '#e2b674', b: '#c48a48', rim: '#8a5726', edge: '#f3d29b', pit: '#6e4019', grain: 'rgba(90,45,10,', label: '#3a2210', badge: 'rgba(255,248,232,.92)', badgeInk: '#4a2a12' };
+}
+function rrect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function drawBoard() {
+  boardCv.width = cv.width; boardCv.height = cv.height;
+  const c = bctx, { bx, by, bw, bh } = geo, col = woodColors();
+  c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, W, H);
+  const rad = Math.min(bw, bh) * 0.09;
+  // drop shadow
+  c.save(); c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 22; c.shadowOffsetY = 10; rrect(c, bx, by, bw, bh, rad); c.fillStyle = col.b; c.fill(); c.restore();
+  const gr = c.createLinearGradient(bx, by, bx + bw, by + bh); gr.addColorStop(0, col.a); gr.addColorStop(0.55, col.b); gr.addColorStop(1, col.a);
+  rrect(c, bx, by, bw, bh, rad); c.fillStyle = gr; c.fill();
+  // wood grain
+  c.save(); rrect(c, bx, by, bw, bh, rad); c.clip();
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const along = vertical ? bh : bw, across = vertical ? bw : bh;
+  for (let i = 0; i < 46; i++) {
+    const off = rnd() * across, amp = 2 + rnd() * 7, fq = 0.004 + rnd() * 0.01, ph = rnd() * 6;
+    c.beginPath();
+    for (let t = 0; t <= along; t += 8) { const w = off + Math.sin(t * fq + ph) * amp + Math.sin(t * fq * 3.1) * amp * 0.3; if (vertical) c.lineTo(bx + w, by + t); else c.lineTo(bx + t, by + w); }
+    c.strokeStyle = col.grain + (0.04 + rnd() * 0.07) + ')'; c.lineWidth = 0.6 + rnd() * 1.6; c.stroke();
+  }
+  c.restore();
+  // carved rim: border lines and a band of small triangles
+  const inset = Math.max(5, Math.min(bw, bh) * 0.018);
+  rrect(c, bx + 1, by + 1, bw - 2, bh - 2, rad); c.strokeStyle = col.rim; c.lineWidth = 2; c.stroke();
+  rrect(c, bx + inset, by + inset, bw - inset * 2, bh - inset * 2, rad * 0.8); c.strokeStyle = col.edge; c.globalAlpha = 0.5; c.lineWidth = 1; c.stroke(); c.globalAlpha = 1;
+  c.save(); c.fillStyle = col.rim; c.globalAlpha = 0.45;
+  const tri = inset * 0.75, step = tri * 2.2;
+  const band = (x0, y0, x1, y1, nx, ny) => { const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len; for (let s = rad; s < len - rad; s += step) { const px = x0 + ux * s, py = y0 + uy * s; c.beginPath(); c.moveTo(px, py); c.lineTo(px + ux * tri, py + uy * tri); c.lineTo(px + ux * tri / 2 + nx * tri * 0.8, py + uy * tri / 2 + ny * tri * 0.8); c.fill(); } };
+  const e = inset * 0.15;
+  band(bx, by + e, bx + bw, by + e, 0, 1); band(bx, by + bh - e, bx + bw, by + bh - e, 0, -1);
+  band(bx + e, by, bx + e, by + bh, 1, 0); band(bx + bw - e, by, bx + bw - e, by + bh, -1, 0);
+  c.restore();
+  // pits and stores: concave grooves
+  for (let i = 0; i < 14; i++) {
+    const g = geo.cells[i];
+    c.save();
+    if (g.pit) { c.beginPath(); c.ellipse(g.x, g.y, g.rx, g.ry, 0, 0, Math.PI * 2); }
+    else rrect(c, g.x, g.y, g.w, g.h, Math.min(g.w, g.h) * 0.45);
+    const path = new Path2D(); if (g.pit) path.ellipse(g.x, g.y, g.rx, g.ry, 0, 0, Math.PI * 2); else { const r = Math.min(g.w, g.h) * 0.45, x = g.x, y = g.y, w = g.w, h = g.h; path.moveTo(x + r, y); path.arcTo(x + w, y, x + w, y + h, r); path.arcTo(x + w, y + h, x, y + h, r); path.arcTo(x, y + h, x, y, r); path.arcTo(x, y, x + w, y, r); path.closePath(); }
+    // lit lower lip outside
+    c.save(); c.translate(0, 1.5); c.strokeStyle = col.edge; c.globalAlpha = 0.55; c.lineWidth = 2; c.stroke(path); c.restore();
+    c.clip(path);
+    const cx = g.pit ? g.x : g.x + g.w / 2, cy = g.pit ? g.y : g.y + g.h / 2, R = g.pit ? Math.max(g.rx, g.ry) : Math.max(g.w, g.h) / 2;
+    const rg = c.createRadialGradient(cx, cy + (g.pit ? g.ry : g.h / 2) * 0.35, R * 0.1, cx, cy, R * 1.1);
+    rg.addColorStop(0, isDark() ? 'rgba(90,55,30,1)' : 'rgba(150,95,45,1)'); rg.addColorStop(1, col.pit);
+    c.fillStyle = rg; c.fill(path);
+    // inner shadow at the top edge
+    c.save(); c.shadowColor = 'rgba(0,0,0,.7)'; c.shadowBlur = 10; c.shadowOffsetY = 5; c.lineWidth = 8; c.strokeStyle = 'rgba(0,0,0,.6)'; c.translate(0, -3); c.stroke(path); c.restore();
+    c.restore();
+  }
+  boardDirty = false;
+}
+const SEEDCOL = [['#1fa774', '#7ff0bf', '#0b5e3f'], ['#f2a516', '#ffe08a', '#9a5a00'], ['#2f6fdc', '#9cc2ff', '#163e8a'], ['#ff6f61', '#ffc2b8', '#a8352b'], ['#efe4cf', '#ffffff', '#a8977a']];
+function makeSprites() {
+  seedSprites.length = 0;
+  const s = Math.ceil(sr * 2.9 * DPR);
+  for (let k = 0; k < 5; k++) {
+    const can = document.createElement('canvas'); can.width = can.height = s;
+    const c = can.getContext('2d'), m = s / 2, r = sr * DPR, [base, hi, lo] = SEEDCOL[k];
+    c.translate(m, m);
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(r * 0.18, r * 0.42, r * 1.0, r * 0.62, 0, 0, Math.PI * 2); c.fill();
+    c.save(); c.scale(1.08, 0.9);
+    const g = c.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.1, 0, 0, r * 1.05);
+    g.addColorStop(0, hi); g.addColorStop(0.45, base); g.addColorStop(1, lo);
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.85; c.fillStyle = '#fff'; c.beginPath(); c.ellipse(-r * 0.35, -r * 0.42, r * 0.32, r * 0.2, -0.6, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.35; c.beginPath(); c.arc(r * 0.35, r * 0.4, r * 0.18, 0, Math.PI * 2); c.fill();
+    c.restore();
+    seedSprites.push(can);
+  }
+}
+// ---------- seeds (visual) ----------
+let seeds = [], vc = [], hand = [], handFrom = -1;
+let T = 0;               // animation clock (ms), advances only while visible
+let speedMul = 1;
+const timers = [];
+function sleep(ms) { return new Promise(res => { if (ms <= 0) return res(); timers.push({ t: T + ms / speedMul, res }); }); }
+function rebuildSeeds(b, rule) {
+  seeds = []; vc = []; hand = []; handFrom = -1;
+  let id = 0;
+  for (let i = 0; i < 14; i++) vc.push([]);
+  for (let i = 0; i < 14; i++) for (let k = 0; k < b[i]; k++) { const s = mkSeed(id++); s.cell = K(rule, i); vc[s.cell].push(s); }
+}
+function mkSeed(id) { return { id, col: Math.floor(Math.random() * 5), jx: (Math.random() - 0.5) * 0.5, jy: (Math.random() - 0.5) * 0.5, cell: 0, fly: null, x: 0, y: 0 }; }
+function restPos(s, k) { const p = slotPos(s.cell, k); return [p[0] + s.jx * sr * 0.6, p[1] + s.jy * sr * 0.6]; }
+// redistribute existing seed objects to match board b (used by undo / resume), gliding to their new homes
+function regroup(b, rule) {
+  const all = []; vc.forEach(l => all.push(...l)); all.push(...hand); hand = [];
+  all.forEach(s => { const p = s.fly ? flyPos(s) : [s.x, s.y]; s.x = p[0]; s.y = p[1]; });
+  if (all.length !== b.reduce((a, x) => a + x, 0)) { rebuildSeeds(b, rule); return; }
+  vc = []; for (let i = 0; i < 14; i++) vc.push([]);
+  let n = 0;
+  for (let i = 0; i < 14; i++) for (let k = 0; k < b[i]; k++) { const s = all[n++]; s.cell = K(rule, i); vc[s.cell].push(s); }
+  for (let i = 0; i < 14; i++) vc[i].forEach(s => { s.fly = { x0: s.x, y0: s.y, t0: T, dur: 320, h: 10 }; });
+}
+function flyPos(s) {
+  const f = s.fly, u = Math.min(1, (T - f.t0) / f.dur), e = u < 0 ? 0 : 1 - Math.pow(1 - u, 2.2);
+  let tx, ty;
+  if (f.hand) { tx = f.tx; ty = f.ty; } else { const k = vc[s.cell].indexOf(s); [tx, ty] = restPos(s, k < 0 ? 0 : k); }
+  return [f.x0 + (tx - f.x0) * e, f.y0 + (ty - f.y0) * e - Math.sin(Math.max(0, u) * Math.PI) * f.h];
+}
+function curPos(s) { return s.fly ? flyPos(s) : [s.x, s.y]; }
+function cellCenter(i) { const c = geo.cells[i]; return c.pit ? [c.x, c.y] : [c.sa.x + c.sa.w / 2, c.sa.y + c.sa.h / 2]; }
+function handSpot(i) { const c = geo.cells[i]; return [c.x, c.y - c.ry * 0.25]; }
+// ---------- effects ----------
+const floats = [], parts = [], glows = [];
+function floatText(text, x, y, color, size = 20, dur = 1100) { floats.push({ text, x, y, color, size, t0: T, dur }); }
+function burst(x, y, n, colors, spd = 2.4, grav = 0.12, life = 700) {
+  for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = spd * (0.4 + Math.random()); parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - spd * 0.6, g: grav, r: 1.5 + Math.random() * 2.5, c: colors[i % colors.length], t0: T, life: life * (0.6 + Math.random() * 0.6) }); }
+}
+function glow(cell, color, dur = 900) { glows.push({ cell, color, t0: T, dur }); }
+// ---------- move animation ----------
+function speeds() {
+  const m = settings.speed;
+  return m === 'fast' ? { step: 40, fly: 170, pick: 110, h: 22 } : m === 'instant' ? { step: 0, fly: 140, pick: 0, h: 6 } : { step: 90, fly: 270, pick: 190, h: 30 };
+}
+async function animateMove(info, rule) {
+  const sp = speeds(), start = K(rule, info.start), myStore = rule === 'oware' ? -1 : K(rule, info.side ? 13 : 6);
+  hand = vc[start].splice(0); handFrom = start;
+  const [hx, hy] = handSpot(start);
+  hand.forEach((s, i) => { const p = curPos(s); s.x = p[0]; s.y = p[1]; const a = i * 2.4, r = sr * 0.9 * Math.sqrt(i); s.fly = { x0: s.x, y0: s.y, t0: T, dur: sp.pick || 60, h: 4, hand: true, tx: hx + Math.cos(a) * r, ty: hy - sr * 1.2 + Math.sin(a) * r * 0.6 }; });
+  if (sp.pick) { SFX.pick(); await sleep(sp.pick); }
+  let n = 0;
+  for (const raw of info.path) {
+    const c = K(rule, raw), s = hand.shift(); if (!s) break;
+    const p = curPos(s); s.x = p[0]; s.y = p[1];
+    s.cell = c; vc[c].push(s);
+    s.fly = { x0: s.x, y0: s.y, t0: T, dur: sp.fly / speedMul, h: sp.h };
+    const isStore = !geo.cells[c].pit;
+    if (sp.step) { n++; const delay = (sp.fly / speedMul) * 0.85; landFx(c, isStore, delay); await sleep(sp.step); }
+  }
+  if (!sp.step) SFX.knock();
+  hand = []; handFrom = -1;
+  await sleep(sp.fly * 0.9);
+  const last = K(rule, info.last), lc = cellCenter(last);
+  if (info.extra) {
+    glow(myStore, '#ffd36b', 1300); SFX.extra(); vib(12);
+    S.chain++;
+    floatText(S.chain >= 2 ? `再一次！連動 ×${S.chain}` : '再一次！', lc[0], lc[1] - sr * 2, '#ffd36b', 21, 1300);
+    burst(lc[0], lc[1], 16, ['#ffd36b', '#fff2c2', '#ffb347'], 2.6);
+    await sleep(settings.speed === 'normal' ? 380 : 200);
+  }
+  if (info.grandSlam) { floatText('全收無效', lc[0], lc[1] - sr * 2, '#ffb3a6', 18, 1300); await sleep(300); }
+  if (info.cap) {
+    await sleep(settings.speed === 'normal' ? 160 : 60);
+    const to = K(rule, info.cap.to), movers = [];
+    info.cap.cells.forEach(raw => { const c = K(rule, raw); movers.push(...vc[c].splice(0)); glow(c, '#ff8a5c', 700); });
+    SFX.capture(); vib(25);
+    movers.forEach((s, i) => { const p = curPos(s); s.x = p[0]; s.y = p[1]; s.cell = to; vc[to].push(s); s.fly = { x0: s.x, y0: s.y, t0: T + i * 28, dur: 420, h: 16 }; });
+    const tc = cellCenter(to);
+    floatText(`收取 ${info.cap.n} 顆！`, lc[0], lc[1] - sr * 2, '#ff9c6b', 22, 1300);
+    await sleep(420 + movers.length * 28);
+    burst(tc[0], tc[1], 22, ['#ff9c6b', '#ffd36b', '#ffffff'], 3);
+    glow(to, '#ff9c6b', 900);
+    if (S.mode === '2p' || info.side === S.human) S.maxCap = Math.max(S.maxCap, info.cap.n);
+  }
+  if (info.sweep) {
+    await sleep(250);
+    SFX.sweep();
+    for (let side = 0; side < 2; side++) {
+      const to = side ? 13 : 6;
+      for (let p = 0; p < 6; p++) {
+        const c = side * 7 + p, movers = vc[c].splice(0);
+        movers.forEach((s, i) => { const q = curPos(s); s.x = q[0]; s.y = q[1]; s.cell = to; vc[to].push(s); s.fly = { x0: s.x, y0: s.y, t0: T + p * 60 + i * 20, dur: 520, h: 12 }; });
+      }
+    }
+    await sleep(900);
+  }
+}
+function landFx(c, isStore, delay) {
+  timers.push({ t: T + delay, res: () => { isStore ? SFX.storeKnock() : SFX.knock(); const p = cellCenter(c); if (isStore) burst(p[0], p[1], 4, ['#ffe6b0'], 1.2, 0.05, 400); } });
+}
+// ---------- game flow ----------
+function curTurnHuman() { return S && !S.g.over && !isAI(S.g.side); }
+function setStatus(html, dots = false) { $('stTxt').innerHTML = html; $('dots').hidden = !dots; }
+function turnStatus() {
+  if (!S) return;
+  const g = S.g;
+  if (g.over) { const s = MC.score(g); setStatus(`終局 <b>${s[0]} : ${s[1]}</b>`); return; }
+  if (isAI(g.side)) return;
+  const where = vertical ? (g.side === 0 ? '左欄' : '右欄') : (g.side === 0 ? '下排' : '上排');
+  const who = S.mode === '2p' ? `<b>${sideName(g.side)}</b> 的回合` : '<b>輪到你</b>';
+  setStatus(S.chain > 0 ? `${who} · 再一次！` : `${who} · 點${where}的坑`);
+}
+function updateButtons() {
+  const can = S && !busy;
+  $('tUndo').disabled = !(can && S.snaps.length);
+  $('tHint').disabled = !(can && curTurnHuman() && !thinking);
+  $('sub').textContent = S ? `${ruleLabel()} · ${S.mode === '2p' ? '同機雙人' : '對電腦 ' + LV[S.level - 1].name}` : '';
+}
+function snapshot() { const g = S.g; return { b: Array.from(g.b), side: g.side, stall: g.stall, plies: g.plies, hl: g.hist.length, chain: S.chain }; }
+function startTurn() {
+  updateButtons();
+  saveGame();
+  if (!S) return;
+  if (S.g.over) { finishGame(); return; }
+  if (isAI(S.g.side)) aiMove();
+  else { inputOK = true; turnStatus(); if (settings.beginner && selected == null) { /* wait for tap */ } }
+}
+async function aiMove() {
+  const tok = ++aiTok, g = S.g, t0 = performance.now();
+  thinking = true; inputOK = false; updateButtons();
+  setStatus(`<b>${sideName(g.side)}</b> 思考中`, true);
+  const hist = g.hist.length <= 1 ? g.hist.map(h => h.p).join('') : null;
+  let res;
+  try { res = await ask('think', { rule: g.rule, ec: g.ec, b: Array.from(g.b), side: g.side, level: S.level, seeds: g.seeds, hist }); }
+  catch (e) { res = { pit: MC.moves(g.rule, g.b, g.side)[0] }; }
+  if (tok !== aiTok || !S || S.g !== g) return;
+  window.__lastThink = res;
+  const el = performance.now() - t0, minT = S.chain > 0 ? 380 : 520;
+  if (el < minT) await new Promise(r => setTimeout(r, minT - el));
+  if (tok !== aiTok || !S || S.g !== g) return;
+  thinking = false;
+  await doMove(res.pit, false);
+}
+async function doMove(pit, human) {
+  const g = S.g;
+  if (busy || g.over || !MC.legal(g.rule, g.b, 0, g.side, pit)) return false;
+  if (human) { aiTok++; thinking = false; S.snaps.push(snapshot()); if (S.snaps.length > 200) S.snaps.shift(); }
+  busy = true; inputOK = false; preview = null; hintPit = null; selected = null; speedMul = 1;
+  updateButtons();
+  setStatus(`<b>${sideName(g.side)}</b> 播撒第 ${pit + 1} 坑`);
+  const side = g.side, info = MC.play(g, pit);
+  window.__lastMove = info;
+  await animateMove(info, g.rule);
+  if (S.g !== g) { busy = false; return true; }
+  if (S.mode === '2p' || side === S.human) S.maxChain = Math.max(S.maxChain, S.chain);
+  if (!info.extra) S.chain = 0;
+  busy = false; speedMul = 1;
+  startTurn();
+  return true;
+}
+function humanTap(pit) {
+  if (!inputOK || busy || !curTurnHuman()) return;
+  const g = S.g;
+  if (!MC.legal(g.rule, g.b, 0, g.side, pit)) { SFX.click(); vib(5); toast(g.rule === 'oware' && g.b[g.side * 6 + pit] ? '對手沒子了，必須餵他種子' : '這個坑是空的'); return; }
+  if (settings.beginner && selected !== pit) { selected = pit; preview = pit; setStatus('<b>再點一次</b>確認播撒'); SFX.click(); return; }
+  doMove(pit, true);
+}
+function undo() {
+  if (!S || busy || !S.snaps.length) return;
+  aiTok++; thinking = false;
+  const s = S.snaps.pop(), g = S.g;
+  g.b = Int8Array.from(s.b); g.side = s.side; g.over = false; g.stall = s.stall; g.plies = s.plies; g.hist.length = s.hl; S.chain = s.chain; S.undos++;
+  if (S.recorded) unrecord();
+  S.shown = false;
+  closeOv('ovResult');
+  preview = null; hintPit = null; selected = null;
+  regroup(g.b, g.rule); SFX.click();
+  toast('已悔棋');
+  startTurn();
+}
+async function hint() {
+  if (!S || busy || !curTurnHuman() || thinking) return;
+  const g = S.g, tok = aiTok;
+  setStatus('提示計算中', true); thinking = true; updateButtons();
+  let res;
+  try { res = await ask('think', { rule: g.rule, ec: g.ec, b: Array.from(g.b), side: g.side, level: 4, err: 0, seeds: g.seeds, hist: null }); } catch (e) { res = null; }
+  if (tok !== aiTok) return;   // a move, undo or new game superseded this hint
+  thinking = false;
+  if (!res || busy || S.g !== g) { updateButtons(); turnStatus(); return; }
+  S.hints++;
+  const p = res.pit, sim = MC.simulate(g, p);
+  let why;
+  if (sim.extra) why = '再動';
+  else if (sim.cap) why = `收取 ${sim.cap.n} 顆`;
+  else {
+    const before = MC.threat(g.rule, g.b, 1 - g.side, g.ec), after = sim.over ? 0 : MC.threat(g.rule, sim.board, 1 - g.side, g.ec);
+    why = before > 0 && after < before ? '防守：避免對手收取' : '穩住局面';
+  }
+  hintPit = p; hintTxt = why; preview = p;
+  setStatus(`提示：第 <b>${p + 1}</b> 坑 · ${why}`);
+  updateButtons(); SFX.click();
+}
+function recordResult() {
+  if (S.recorded) return;
+  const g = S.g, sc = MC.score(g), w = MC.winner(g);
+  S.recorded = true;
+  stats.games++;
+  if (S.mode === 'ai') {
+    const k = (g.rule === 'oware' ? 'o' : 'k') + S.level, r = stats.lv[k] = stats.lv[k] || [0, 0, 0];
+    r[w === S.human ? 0 : w === -1 ? 2 : 1]++;
+    stats.marginSum += sc[S.human] - sc[1 - S.human];
+  } else stats.p2++;
+  stats.maxCap = Math.max(stats.maxCap, S.maxCap); stats.maxChain = Math.max(stats.maxChain, S.maxChain);
+  S.newAch = [];
+  const gain = (k) => { if (!stats.ach[k]) { stats.ach[k] = 1; S.newAch.push(k); } };
+  if (S.maxChain >= 5) gain('chain5');
+  if (S.maxCap >= 15) gain('cap15');
+  if (S.mode === 'ai' && w === S.human && sc[1 - S.human] < 10) gain('shut');
+  S.lastRec = { k: S.mode === 'ai' ? (g.rule === 'oware' ? 'o' : 'k') + S.level : null, w, margin: sc[S.human] - sc[1 - S.human] };
+  saveStats();
+}
+function unrecord() {
+  const r = S.lastRec; if (!r) { S.recorded = false; return; }
+  stats.games--;
+  if (r.k) { const a = stats.lv[r.k]; if (a) a[r.w === S.human ? 0 : r.w === -1 ? 2 : 1]--; stats.marginSum -= r.margin; } else stats.p2--;
+  S.recorded = false; S.lastRec = null; saveStats();
+}
+const ACH = { chain5: '一回合連動 5 次', cap15: '單次收取 15 顆', shut: '完封：對手不到 10 顆' };
+function finishGame() {
+  inputOK = false; updateButtons(); turnStatus();
+  if (S.shown) return;
+  S.shown = true;
+  recordResult(); saveGame();
+  const g = S.g, sc = MC.score(g), w = MC.winner(g);
+  let title, cls;
+  if (S.mode === '2p') { title = w === -1 ? '和局' : `${sideName(w)} 勝！`; cls = w === -1 ? 'draw' : 'win'; }
+  else { title = w === S.human ? '勝利！' : w === -1 ? '和局' : '惜敗'; cls = w === S.human ? 'win' : w === -1 ? 'draw' : 'lose'; }
+  setTimeout(() => {
+    if (!S || S.g !== g) return;
+    if (cls === 'win') { SFX.win(); vib([30, 60, 30]); confetti(); } else if (cls === 'lose') { SFX.lose(); vib(80); } else SFX.draw();
+    $('rTitle').textContent = title; $('rTitle').className = 'rt ' + cls;
+    $('rScore').innerHTML = `${sc[0]} : ${sc[1]}<small>${sideName(0)} ／ ${sideName(1)} · ${ruleLabel()}</small>`;
+    $('rFacts').innerHTML = `<div><b>${S.maxChain}</b>最長連動</div><div><b>${S.maxCap}</b>最大收取</div><div><b>${g.plies}</b>總手數</div>`;
+    $('rAch').innerHTML = (S.newAch || []).map(k => `<span class="got">成就：${ACH[k]}</span>`).join('');
+    openOv('ovResult');
+  }, 650);
+}
+function confetti() {
+  const cols = SEEDCOL.map(c => c[0]);
+  for (let i = 0; i < 4; i++) setTimeout(() => burst(W * (0.2 + 0.2 * i), H * 0.35, 30, cols, 5, 0.16, 1500), i * 160);
+}
+function startNew(opt) {
+  aiTok++; thinking = false; busy = false; timers.length = 0; speedMul = 1;
+  S = newSession(opt);
+  rebuildSeeds(S.g.b, S.g.rule);
+  preview = null; hintPit = null; selected = null;
+  floats.length = 0; parts.length = 0; glows.length = 0;
+  closeAll();
+  SFX.pick();
+  startTurn();
+}
+// ---------- input ----------
+let press = null, hoverPit = -1;
+function toLocal(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function hitPit(x, y, side) {
+  if (!geo || !S) return -1;
+  for (let p = 0; p < 6; p++) {
+    const c = geo.cells[side * 7 + p], ax = Math.max(c.rx + 6, 28), ay = Math.max(c.ry + 6, 28);
+    const dx = (x - c.x) / ax, dy = (y - c.y) / ay;
+    if (dx * dx + dy * dy <= 1) return p;
+  }
+  return -1;
+}
+cv.addEventListener('pointerdown', e => {
+  ac();
+  if (busy) { speedMul = 4; return; }
+  if (!inputOK || !curTurnHuman()) return;
+  const [x, y] = toLocal(e), p = hitPit(x, y, S.g.side);
+  if (p < 0) { if (selected != null || hintPit != null) { selected = null; preview = null; turnStatus(); } return; }
+  try { cv.setPointerCapture(e.pointerId); } catch (er) { /* ignore */ }
+  press = { p, x, y, id: e.pointerId, long: false, mouse: e.pointerType === 'mouse' };
+  if (!press.mouse && settings.preview && !settings.beginner) press.timer = setTimeout(() => { if (press) { press.long = true; preview = press.p; vib(6); SFX.click(); } }, 300);
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y] = toLocal(e);
+  if (press && press.id === e.pointerId) {
+    if (press.long) { const p = hitPit(x, y, S.g.side); if (p >= 0 && p !== preview) { preview = p; vib(4); } return; }
+    if (Math.hypot(x - press.x, y - press.y) > 16) { clearTimeout(press.timer); press = null; }
+    return;
+  }
+  if (e.pointerType === 'mouse' && settings.preview && inputOK && curTurnHuman() && !settings.beginner) {
+    const p = hitPit(x, y, S.g.side); if (p !== hoverPit) { hoverPit = p; preview = p >= 0 ? p : (hintPit != null ? hintPit : null); }
+  }
+});
+function endPress(e, cancel) {
+  if (!press || press.id !== e.pointerId) return;
+  clearTimeout(press.timer);
+  const p = press; press = null;
+  if (p.long) { preview = hintPit != null ? hintPit : null; return; }   // releasing a long-press only cancels the preview
+  if (!cancel) humanTap(p.p);
+}
+cv.addEventListener('pointerup', e => endPress(e, false));
+cv.addEventListener('pointercancel', e => endPress(e, true));
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && hoverPit >= 0) { hoverPit = -1; if (!settings.beginner) preview = hintPit != null ? hintPit : null; } });
+document.addEventListener('pointerdown', e => { if (busy && !e.target.closest('.ov') && e.target !== cv) speedMul = 4; }, true);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeAll(true); return; }
+  if (document.querySelector('.ov:not([hidden])')) return;
+  if (e.key >= '1' && e.key <= '6') { if (curTurnHuman()) humanTap(+e.key - 1); }
+  else if (e.key === 'u' || e.key === 'U') undo();
+  else if (e.key === 'h' || e.key === 'H') hint();
+  else if (busy && e.key === ' ') speedMul = 4;
+});
+// ---------- render ----------
+function drawFrame() {
+  if (!geo) return;
+  if (boardDirty) drawBoard();
+  const c = ctx, col = woodColors(), dark = isDark();
+  c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
+  c.drawImage(boardCv, 0, 0);
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const g = S && S.g, rule = g ? g.rule : 'kalah';
+  // turn / legal highlights
+  if (S && !g.over) {
+    const side = g.side, pulse = 0.5 + 0.5 * Math.sin(T / 260), st = geo.cells[side ? 13 : 6];
+    c.save(); c.strokeStyle = dark ? 'rgba(255,214,140,.55)' : 'rgba(255,240,200,.85)'; c.lineWidth = 2.5; c.setLineDash([6, 6]); c.lineDashOffset = -T / 60;
+    rrect(c, st.x - 3, st.y - 3, st.w + 6, st.h + 6, Math.min(st.w, st.h) * 0.45 + 3); c.stroke(); c.restore();
+    if (inputOK && curTurnHuman() && !busy) {
+      for (let p = 0; p < 6; p++) {
+        if (!MC.legal(rule, g.b, 0, side, p)) continue;
+        const q = geo.cells[side * 7 + p];
+        c.beginPath(); c.ellipse(q.x, q.y, q.rx + 3, q.ry + 3, 0, 0, Math.PI * 2);
+        c.strokeStyle = `rgba(255,${dark ? 200 : 236},${dark ? 120 : 170},${0.25 + pulse * 0.35})`; c.lineWidth = 2.5; c.stroke();
+      }
+    }
+    if (hintPit != null) {
+      const q = geo.cells[side * 7 + hintPit];
+      c.beginPath(); c.ellipse(q.x, q.y, q.rx + 5 + pulse * 3, q.ry + 5 + pulse * 3, 0, 0, Math.PI * 2);
+      c.strokeStyle = '#ffd36b'; c.lineWidth = 3.5; c.shadowColor = '#ffb020'; c.shadowBlur = 14; c.stroke(); c.shadowBlur = 0;
+    }
+  }
+  // glows
+  for (let i = glows.length - 1; i >= 0; i--) {
+    const gl = glows[i], u = (T - gl.t0) / gl.dur; if (u >= 1) { glows.splice(i, 1); continue; }
+    const q = geo.cells[gl.cell], a = Math.sin(Math.min(1, u) * Math.PI);
+    c.save(); c.globalAlpha = a * 0.9; c.shadowColor = gl.color; c.shadowBlur = 26; c.strokeStyle = gl.color; c.lineWidth = 4;
+    if (q.pit) { c.beginPath(); c.ellipse(q.x, q.y, q.rx + 2, q.ry + 2, 0, 0, Math.PI * 2); } else rrect(c, q.x, q.y, q.w, q.h, Math.min(q.w, q.h) * 0.45);
+    c.stroke(); c.globalAlpha = a * 0.18; c.fillStyle = gl.color; c.fill(); c.restore();
+  }
+  // seeds at rest / landing
+  const flying = [];
+  for (let i = 0; i < 14; i++) {
+    const list = vc[i]; if (!list) continue;
+    for (let k = 0; k < list.length; k++) {
+      const s = list[k];
+      if (s.fly) { if (T - s.fly.t0 >= s.fly.dur) { s.fly = null; } else { flying.push(s); continue; } }
+      const p = restPos(s, k); s.x = p[0]; s.y = p[1];
+      drawSeed(s, s.x, s.y, 1);
+    }
+  }
+  for (const s of flying) { const u = Math.max(0, Math.min(1, (T - s.fly.t0) / s.fly.dur)), p = flyPos(s); drawSeed(s, p[0], p[1], 1 + Math.sin(u * Math.PI) * 0.22); }
+  for (const s of hand) { const p = curPos(s); if (!s.fly || T - s.fly.t0 >= s.fly.dur) { s.x = p[0]; s.y = p[1]; } drawSeed(s, p[0], p[1] + Math.sin(T / 120 + s.id) * 1.2, 1.18); }
+  // counts
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (let side = 0; side < 2; side++) for (let p = 0; p < 6; p++) {
+    const i = side * 7 + p, q = geo.cells[i], n = vc[i] ? vc[i].length : 0;
+    let bx, by;
+    if (vertical) { bx = q.x + q.out * (q.rx + 4); by = q.y - q.ry * 0.62; } else { bx = q.x + q.rx * 0.78; by = q.y + q.out * (q.ry + 9); }
+    const br = 11;
+    c.beginPath(); c.arc(bx, by, br, 0, Math.PI * 2); c.fillStyle = col.badge; c.fill();
+    c.fillStyle = n ? col.badgeInk : (dark ? 'rgba(246,226,196,.4)' : 'rgba(74,42,18,.4)'); c.font = '800 12px system-ui, sans-serif'; c.fillText(n, bx, by + 0.5);
+  }
+  // store labels
+  for (const side of [0, 1]) {
+    const i = side ? 13 : 6, q = geo.cells[i], n = vc[i] ? vc[i].length : 0, on = S && !g.over && g.side === side;
+    c.fillStyle = col.label;
+    c.font = `900 ${Math.round(Math.min(34, Math.max(22, (vertical ? q.h : q.w) * 0.42)))}px system-ui, sans-serif`;
+    c.globalAlpha = 0.95; c.fillText(n, q.lx, q.ly - (vertical ? 6 : 0));
+    c.font = '700 12px system-ui, sans-serif'; c.globalAlpha = on ? 1 : 0.7;
+    const nm = S ? sideName(side) : '';
+    c.fillText((on ? '● ' : '') + nm, q.lx, q.ly + (vertical ? 17 : (side ? -24 : 24)));
+    c.globalAlpha = 1;
+  }
+  if (preview != null && S && !busy && !g.over) drawPreview(preview);
+  // particles + floating text
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i], age = T - p.t0; if (age > p.life) { parts.splice(i, 1); continue; }
+    const k = age / 16.67; const x = p.x + p.vx * k, y = p.y + p.vy * k + 0.5 * p.g * k * k;
+    c.globalAlpha = 1 - age / p.life; c.fillStyle = p.c; c.beginPath(); c.arc(x, y, p.r, 0, Math.PI * 2); c.fill();
+  }
+  c.globalAlpha = 1;
+  for (let i = floats.length - 1; i >= 0; i--) {
+    const f = floats[i], u = (T - f.t0) / f.dur; if (u >= 1) { floats.splice(i, 1); continue; }
+    const sc = u < 0.15 ? 0.6 + u / 0.15 * 0.5 : 1.1 - Math.min(0.1, (u - 0.15)); const y = f.y - u * 30;
+    c.save(); c.translate(Math.max(80, Math.min(W - 80, f.x)), y); c.scale(sc, sc); c.globalAlpha = u > 0.7 ? (1 - u) / 0.3 : 1;
+    c.font = `900 ${f.size}px system-ui, sans-serif`; c.lineWidth = 5; c.strokeStyle = 'rgba(30,14,4,.85)'; c.strokeText(f.text, 0, 0); c.fillStyle = f.color; c.fillText(f.text, 0, 0); c.restore();
+  }
+}
+function drawSeed(s, x, y, scale) {
+  const sp = seedSprites[s.col]; if (!sp) return;
+  const w = sp.width / DPR * scale;
+  ctx.drawImage(sp, x - w / 2, y - w / 2, w, w);
+}
+function drawPreview(p) {
+  const g = S.g, sim = MC.simulate(g, p), c = ctx, rule = g.rule;
+  window.__preview = { pit: p, last: sim.last, extra: sim.extra, cap: sim.cap ? sim.cap.n : 0, path: sim.path.slice() };
+  const pts = [cellCenter(K(rule, sim.start))], visits = {};
+  for (const raw of sim.path) { const i = K(rule, raw); visits[i] = (visits[i] || 0) + 1; const q = cellCenter(i), j = visits[i] - 1; pts.push([q[0] + j * 6, q[1] - j * 6]); }
+  c.save();
+  c.strokeStyle = isDark() ? 'rgba(255,230,180,.9)' : 'rgba(255,250,235,.95)'; c.lineWidth = 2.5; c.setLineDash([5, 6]); c.lineDashOffset = -T / 40;
+  c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 4;
+  c.beginPath(); pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.stroke();
+  c.setLineDash([]); c.shadowBlur = 0;
+  for (let i = 1; i < pts.length - 1; i++) { c.beginPath(); c.arc(pts[i][0], pts[i][1], 3.5, 0, Math.PI * 2); c.fillStyle = '#fff4d6'; c.fill(); }
+  const L = pts[pts.length - 1];
+  const tag = sim.extra ? '再動！' : sim.cap ? `收取 ${sim.cap.n} 顆` : sim.grandSlam ? '全收無效' : sim.over ? '終局' : '落點';
+  const tc = sim.extra ? '#ffd36b' : sim.cap ? '#ff9c6b' : '#fff4d6';
+  c.beginPath(); c.arc(L[0], L[1], 9, 0, Math.PI * 2); c.fillStyle = tc; c.fill(); c.lineWidth = 2.5; c.strokeStyle = 'rgba(40,20,5,.8)'; c.stroke();
+  if (sim.cap && rule === 'kalah') { const oc = cellCenter(K(rule, sim.cap.cells[1])); c.beginPath(); c.arc(oc[0], oc[1], 14, 0, Math.PI * 2); c.strokeStyle = '#ff9c6b'; c.lineWidth = 3; c.setLineDash([4, 4]); c.stroke(); c.setLineDash([]); }
+  if (sim.cap && rule === 'oware') sim.cap.cells.forEach(raw => { const oc = cellCenter(K(rule, raw)); c.beginPath(); c.arc(oc[0], oc[1], 14, 0, Math.PI * 2); c.strokeStyle = '#ff9c6b'; c.lineWidth = 3; c.stroke(); });
+  c.font = '900 15px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const tx = Math.max(50, Math.min(W - 50, L[0])), ty = L[1] - 22;
+  const tw = c.measureText(tag).width + 16;
+  rrect(c, tx - tw / 2, ty - 13, tw, 26, 13); c.fillStyle = 'rgba(30,14,4,.85)'; c.fill();
+  c.fillStyle = tc; c.fillText(tag, tx, ty + 1);
+  c.restore();
+}
+// ---------- loop ----------
+let last = 0, running = false;
+function frame(now) {
+  if (!running) return;
+  const dt = Math.min(50, last ? now - last : 16); last = now;
+  T += dt;
+  for (let i = timers.length - 1; i >= 0; i--) if (T >= timers[i].t) { const t = timers.splice(i, 1)[0]; t.res(); }
+  drawFrame();
+  requestAnimationFrame(frame);
+}
+function run() { if (running) return; running = true; last = 0; requestAnimationFrame(frame); }
+document.addEventListener('visibilitychange', () => { if (document.hidden) running = false; else run(); });
+// ---------- overlays ----------
+function openOv(id) { $(id).hidden = false; }
+function closeOv(id) { $(id).hidden = true; }
+function closeAll(esc) { document.querySelectorAll('.ov').forEach(o => { if (esc && o.id === 'ovMenu' && !S) return; o.hidden = true; }); }
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { b.closest('.ov').hidden = true; SFX.click(); }));
+document.querySelectorAll('.ov').forEach(o => o.addEventListener('click', e => { if (e.target === o && (o.id !== 'ovMenu' || S)) o.hidden = true; }));
+let toastT = 0;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 1500); }
+function chips(id, key, onChange) {
+  const box = $(id);
+  const sync = () => box.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', String(String(menuOpt[key]) === b.dataset.v)));
+  box.addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b || b.disabled) return; menuOpt[key] = /^\d+$/.test(b.dataset.v) ? +b.dataset.v : b.dataset.v; sync(); SFX.click(); if (onChange) onChange(); });
+  return sync;
+}
+const menuOpt = { mode: settings.mode, level: settings.level, first: settings.first, rule: settings.rule, seeds: settings.seeds, ec: settings.ec };
+$('cLevel').innerHTML = LV.map((l, i) => `<button class="chip" data-v="${i + 1}">${i + 1}<small>${l.name}</small></button>`).join('');
+const syncMenu = () => {
+  menuSyncs.forEach(f => f());
+  $('secLv').hidden = $('secFirst').hidden = menuOpt.mode !== 'ai';
+  const ow = menuOpt.rule === 'oware';
+  $('cSeeds').querySelectorAll('.chip').forEach(b => b.disabled = ow);
+  $('swEc').disabled = ow; $('swEc').setAttribute('aria-checked', String(!!menuOpt.ec));
+};
+const menuSyncs = [chips('cMode', 'mode', () => syncMenu()), chips('cLevel', 'level'), chips('cFirst', 'first'), chips('cRule', 'rule', () => syncMenu()), chips('cSeeds', 'seeds')];
+$('swEc').addEventListener('click', () => { menuOpt.ec = !menuOpt.ec; syncMenu(); SFX.click(); });
+function openMenu() { Object.assign(menuOpt, { mode: settings.mode, level: settings.level, first: settings.first, rule: settings.rule, seeds: settings.seeds, ec: settings.ec }); syncMenu(); $('mResume').hidden = !(S && !S.g.over); openOv('ovMenu'); }
+$('mStart').addEventListener('click', () => { Object.assign(settings, menuOpt); saveSettings(); startNew(menuOpt); });
+$('mResume').addEventListener('click', () => { closeOv('ovMenu'); SFX.click(); });
+$('bMenu').addEventListener('click', () => { SFX.click(); openMenu(); });
+$('tNew').addEventListener('click', () => { SFX.click(); openMenu(); });
+$('tUndo').addEventListener('click', undo);
+$('tHint').addEventListener('click', hint);
+$('tRule').addEventListener('click', () => { SFX.click(); openOv('ovRule'); });
+// settings sheet
+const setSyncs = [];
+function setChips(id, key, after) {
+  const box = $(id);
+  const sync = () => box.querySelectorAll('.chip').forEach(b => b.setAttribute('aria-pressed', String(settings[key] === b.dataset.v)));
+  box.addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; settings[key] = b.dataset.v; saveSettings(); sync(); SFX.click(); if (after) after(); });
+  setSyncs.push(sync);
+}
+function setSwitch(id, key, after) {
+  const el = $(id);
+  const sync = () => el.setAttribute('aria-checked', String(!!settings[key]));
+  el.addEventListener('click', () => { settings[key] = !settings[key]; saveSettings(); sync(); SFX.click(); if (after) after(); });
+  setSyncs.push(sync);
+}
+setChips('cSpeed', 'speed'); setChips('cTheme', 'theme', applyTheme);
+setSwitch('swPrev', 'preview', () => { preview = null; }); setSwitch('swBeg', 'beginner', () => { selected = null; preview = null; turnStatus(); }); setSwitch('swSnd', 'sound'); setSwitch('swVib', 'vib');
+$('bSet').addEventListener('click', () => { setSyncs.forEach(f => f()); SFX.click(); openOv('ovSet'); });
+// stats sheet
+function renderStats() {
+  const rows = [];
+  for (const r of ['k', 'o']) for (let l = 1; l <= 5; l++) {
+    const a = stats.lv[r + l]; if (!a || !(a[0] + a[1] + a[2])) continue;
+    const n = a[0] + a[1] + a[2];
+    rows.push(`<tr><td>${r === 'o' ? 'Oware ' : ''}${l} ${LV[l - 1].name}</td><td>${a[0]}</td><td>${a[1]}</td><td>${a[2]}</td><td>${Math.round(a[0] / n * 100)}%</td></tr>`);
+  }
+  $('stBody').innerHTML = rows.join('') || '<tr><td colspan="5" style="color:var(--sub)">還沒有對電腦的紀錄</td></tr>';
+  let ai = 0; for (const k in stats.lv) ai += stats.lv[k][0] + stats.lv[k][1] + stats.lv[k][2];
+  const avg = ai ? (stats.marginSum / ai) : 0;
+  $('stFacts').innerHTML = `<div><b>${avg > 0 ? '+' : ''}${avg.toFixed(1)}</b>平均分差</div><div><b>${stats.maxCap}</b>最大單次收取</div><div><b>${stats.maxChain}</b>最長連動</div>`;
+  $('stAch').innerHTML = Object.keys(ACH).map(k => `<span class="${stats.ach[k] ? 'got' : ''}">${stats.ach[k] ? '★' : '☆'} ${ACH[k]}</span>`).join('') + (stats.p2 ? `<span>同機雙人 ${stats.p2} 局</span>` : '');
+}
+$('bStats').addEventListener('click', () => { renderStats(); SFX.click(); openOv('ovStats'); });
+$('stReset').addEventListener('click', () => { if (!confirm('清除所有戰績與成就？')) return; stats = emptyStats(); saveStats(); renderStats(); });
+// result sheet
+$('rAgain').addEventListener('click', () => { SFX.click(); startNew({ mode: S.mode, level: S.level, first: settings.first, rule: S.g.rule, seeds: S.g.seeds, ec: S.g.ec }); });
+$('rBoard').addEventListener('click', () => { closeOv('ovResult'); SFX.click(); });
+$('rShare').addEventListener('click', async () => {
+  const g = S.g, sc = MC.score(g), w = MC.winner(g);
+  const res = S.mode === '2p' ? (w === -1 ? '和局' : `${sideName(w)}勝`) : (w === S.human ? '我贏了！' : w === -1 ? '和局' : '惜敗');
+  const txt = `【播棋】${ruleLabel()}\n${sideName(0)} ${sc[0]} : ${sc[1]} ${sideName(1)}${S.mode === 'ai' ? `（等級 ${S.level}）` : ''}\n${res} 最長連動 ${S.maxChain}・最大收取 ${S.maxCap}・${g.plies} 手`;
+  if (navigator.share) { try { await navigator.share({ text: txt }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+  $('shareTxt').value = txt; openOv('ovShare');
+  try { await navigator.clipboard.writeText(txt); toast('已複製比分卡'); } catch (e) { /* show text instead */ }
+});
+// ---------- boot ----------
+window.addEventListener('resize', () => { layout(); });
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { boardDirty = true; }); } catch (e) { /* old browsers */ }
+applyTheme();
+layout();
+const resumed = loadGame();
+if (resumed && !resumed.g.over) {
+  S = resumed; rebuildSeeds(S.g.b, S.g.rule);
+  startTurn();
+} else { setStatus('選好對手，開始一局'); openMenu(); }
+updateButtons();
+run();
+// test hooks (used by demo/verify.js)
+window.__game = {
+  state: () => ({ b: S ? Array.from(S.g.b) : null, side: S ? S.g.side : 0, over: S ? S.g.over : false, busy, inputOK, thinking, human: S ? S.human : 0, rule: S ? S.g.rule : '', ec: S ? S.g.ec : false, seeds: S ? S.g.seeds : 4,
+    hist: S ? S.g.hist.map(h => h.p) : [], score: S ? MC.score(S.g) : null, resultVisible: !$('ovResult').hidden, vertical, preview: window.__preview || null, previewOn: preview, think: window.__lastThink || null }),
+  pitToClient: (side, p) => { const r = cv.getBoundingClientRect(), q = geo.cells[side * 7 + p]; return [r.left + q.x, r.top + q.y]; }
+};
+})();
+</script>
+</body>
+</html>

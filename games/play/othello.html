@@ -1,0 +1,1767 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>黑白棋</title>
+<style>
+:root{
+  --bg:#08130e; --bg2:#123224; --ink:#f3ecd8; --ink2:#b7c2b0; --card:#132a20f0; --card2:#1b3a2c; --line:#ffffff1a;
+  --felt:#0f5c3a; --brass:#d8b45e; --brass2:#a37b33; --accent:#e9c46a; --hot:#ff8a5c; --good:#7fd69b;
+  --btn:#1d4433; --btnInk:#f3ecd8; --shadow:#00000066; --dot:#ffffff40;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  --bs:300px; color-scheme:dark;
+}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#f5efe0; --bg2:#e7dcc2; --ink:#2c2a20; --ink2:#6d6956; --card:#fffaf0f2; --card2:#f1e8d4; --line:#2c2a2018;
+  --felt:#3f7d4f; --brass:#c9a24a; --brass2:#8e6a24; --accent:#b8862b; --hot:#d9603a; --good:#2f8a4f;
+  --btn:#ffffff; --btnInk:#2c2a20; --shadow:#5a4a2040; --dot:#ffffff55; color-scheme:light; } }
+:root[data-theme="light"]{
+  --bg:#f5efe0; --bg2:#e7dcc2; --ink:#2c2a20; --ink2:#6d6956; --card:#fffaf0f2; --card2:#f1e8d4; --line:#2c2a2018;
+  --felt:#3f7d4f; --brass:#c9a24a; --brass2:#8e6a24; --accent:#b8862b; --hot:#d9603a; --good:#2f8a4f;
+  --btn:#ffffff; --btnInk:#2c2a20; --shadow:#5a4a2040; --dot:#ffffff55; color-scheme:light; }
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);background:var(--bg);
+  font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-user-select:none;user-select:none}
+body{background:radial-gradient(120% 80% at 50% 35%,var(--bg2),var(--bg) 70%) fixed var(--bg)}
+button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;padding:0}
+svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.hidden{display:none !important}
+#app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr) auto;
+  grid-template-areas:"top" "status" "eval" "board" "tools";
+  padding:calc(var(--sat) + 8px) calc(var(--sar) + 8px) calc(var(--sab) + 8px) calc(var(--sal) + 8px);gap:6px;max-width:640px;margin:0 auto}
+body.land #app{max-width:none;grid-template-columns:var(--bs) minmax(0,1fr);grid-template-rows:auto auto auto 1fr auto;
+  grid-template-areas:"board top" "board status" "board eval" "board log" "board tools";column-gap:16px}
+.top{grid-area:top;display:flex;align-items:center;gap:8px}
+.ibtn{width:44px;height:44px;border-radius:14px;background:var(--card);box-shadow:0 3px 10px var(--shadow);display:grid;place-items:center;flex:none;color:var(--ink)}
+.ibtn:active{transform:scale(.93)}
+.score{flex:1;min-width:0;height:52px;border-radius:16px;background:var(--card);box-shadow:0 3px 12px var(--shadow);position:relative;display:flex;align-items:center;justify-content:space-between;padding:0 12px 6px;overflow:hidden}
+.side{display:flex;align-items:center;gap:7px;min-width:0;padding:4px 6px;border-radius:10px;transition:background .25s}
+.side.on{background:var(--line)}
+.side b{font-size:24px;font-variant-numeric:tabular-nums;line-height:1;display:inline-block;min-width:1.2em;text-align:center}
+.side b.bump{animation:bump .22s ease}
+@keyframes bump{0%{transform:translateY(-35%);opacity:.3}100%{transform:none;opacity:1}}
+.who{font-size:12px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px}
+.pc{width:20px;height:20px;border-radius:50%;flex:none;box-shadow:0 2px 0 #0006}
+.pc.k{background:radial-gradient(circle at 35% 30%,#6b6b72,#1a1a1d 55%,#000)}
+.pc.w{background:radial-gradient(circle at 35% 30%,#fff,#efe9dc 55%,#c7bfad)}
+.ratio{position:absolute;left:12px;right:12px;bottom:6px;height:4px;border-radius:2px;background:#efe9dc;overflow:hidden}
+.ratio i{display:block;height:100%;width:50%;background:#1a1a1d;transition:width .3s ease;border-right:1px solid var(--brass)}
+.ratio{box-shadow:0 0 0 1px #0003}
+.status{grid-area:status;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:28px;padding:0 4px;font-size:15px}
+.st{display:flex;align-items:center;gap:8px;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden}
+.dots i{display:inline-block;width:6px;height:6px;margin:0 2px;border-radius:50%;background:var(--accent);animation:dd 1s infinite ease-in-out}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dd{0%,80%,100%{transform:scale(.5);opacity:.4}40%{transform:scale(1);opacity:1}}
+.lvl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);white-space:nowrap}
+.pips{display:flex;gap:2px}.pips i{width:5px;height:11px;border-radius:2px;background:var(--line)}.pips i.on{background:var(--accent)}
+.evalbar{grid-area:eval;position:relative;height:16px;border-radius:8px;background:#efe9dc;overflow:hidden;box-shadow:inset 0 0 0 1px #0003}
+.evalbar i{position:absolute;left:0;top:0;bottom:0;width:50%;background:linear-gradient(180deg,#333,#111);transition:width .5s cubic-bezier(.3,.9,.3,1)}
+.evalbar span{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff;mix-blend-mode:difference}
+.evalbar:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--brass)}
+.mlog{display:none}
+body.land .mlog{grid-area:log;display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;overflow-y:auto;min-height:0;padding:8px;border-radius:14px;background:var(--card);font-size:12px;font-variant-numeric:tabular-nums}
+.mlog span{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:8px;background:var(--line)}
+.mlog span i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.mlog span i.k{background:#111;box-shadow:0 0 0 1px #fff5}.mlog span i.w{background:#f2ede2}
+.mlog span.last{outline:1px solid var(--accent)}
+#boardWrap{grid-area:board;display:grid;place-items:center;min-height:0;min-width:0;position:relative}
+#cv{display:block;touch-action:none;border-radius:16px;box-shadow:0 14px 34px var(--shadow),0 0 0 1px #0004}
+.tools{grid-area:tools;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tbtn{height:56px;border-radius:16px;background:var(--btn);color:var(--btnInk);box-shadow:0 3px 0 var(--shadow),0 6px 14px var(--shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:700}
+.tbtn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--shadow)}
+.tbtn[disabled]{opacity:.4;pointer-events:none}
+.review{grid-template-columns:56px 1fr 56px 72px}
+.revinfo{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:13px;line-height:1.35;background:var(--card);border-radius:16px;padding:4px 8px;min-width:0}
+.revinfo b{font-size:15px}
+.revinfo small{font-size:12px;color:var(--ink2)}
+.toast{position:fixed;left:50%;bottom:calc(var(--sab) + 96px);transform:translateX(-50%);z-index:40;background:#000c;color:#fff;padding:12px 20px;border-radius:16px;font-weight:700;font-size:16px;pointer-events:none;transition:opacity .3s;white-space:nowrap;box-shadow:0 8px 30px #0006}
+/* overlays */
+.ov{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 16px) 16px calc(var(--sab) + 16px);background:#02080599;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .25s ease;overflow-y:auto}
+@media (max-height:600px){.ov{align-items:flex-start}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{transform:scale(.88);opacity:0}70%{transform:scale(1.02)}100%{transform:none;opacity:1}}
+.card{background:var(--card);color:var(--ink);border-radius:24px;box-shadow:0 20px 60px #0008,inset 0 0 0 1px var(--line);padding:20px 18px;width:min(380px,100%);animation:pop .32s cubic-bezier(.2,.9,.3,1.2);margin:auto}
+.card h2{margin:0 0 10px;font-size:22px;text-align:center;letter-spacing:1px}
+.card h3{margin:14px 0 6px;font-size:13px;color:var(--ink2);font-weight:700;letter-spacing:1px}
+.card p{margin:6px 0;color:var(--ink2);line-height:1.6;font-size:14px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;border-radius:16px;margin-top:10px;font-weight:800;font-size:16px;color:#2a1d05;background:linear-gradient(180deg,#f2d27e,#d4a845);box-shadow:0 4px 0 #9b7426,0 8px 18px #0004}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #9b7426}
+.btn.sec{background:var(--card2);color:var(--ink);box-shadow:0 3px 0 var(--shadow)}
+.row2{display:flex;gap:10px}.row2>.btn{flex:1}
+.btn[hidden]{display:none}.btn small{font-size:12px;font-weight:600;opacity:.75}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1 1 0;min-width:44px;min-height:44px;border-radius:12px;background:var(--card2);font-size:14px;font-weight:700;padding:4px 6px;line-height:1.2;box-shadow:inset 0 0 0 1px var(--line)}
+.seg button small{display:block;font-size:11px;font-weight:600;color:var(--ink2)}
+.seg button.on{background:var(--accent);color:#24190a;box-shadow:0 2px 0 var(--brass2)}
+.seg button.on small{color:#3d2c0e}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;width:100%;text-align:left;font-size:15px;border-bottom:1px solid var(--line)}
+.sw small{display:block;font-size:12px;color:var(--ink2)}
+.sw .knob{width:46px;height:28px;border-radius:14px;background:var(--line);position:relative;flex:none;transition:background .2s;box-shadow:inset 0 0 0 1px var(--line)}
+.sw .knob:after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0005;transition:transform .2s}
+.sw[aria-checked="true"] .knob{background:var(--good)}
+.sw[aria-checked="true"] .knob:after{transform:translateX(18px)}
+/* title */
+.logo{display:flex;justify-content:center;gap:14px;margin:6px 0 14px;perspective:600px}
+.coin{width:62px;height:62px;position:relative;transform-style:preserve-3d;animation:spin 3.2s cubic-bezier(.6,0,.3,1) infinite}
+.coin:nth-child(2){animation-delay:.4s}.coin:nth-child(3){animation-delay:.8s}
+.coin i{position:absolute;inset:0;border-radius:50%;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.coin i:first-child{background:radial-gradient(circle at 35% 30%,#76767e,#1c1c1f 55%,#000);box-shadow:0 0 0 3px #3a3a3f inset}
+.coin i:last-child{background:radial-gradient(circle at 35% 30%,#fff,#f0eadc 55%,#c4bca8);transform:rotateY(180deg);box-shadow:0 0 0 3px #d9d0bd inset}
+@keyframes spin{0%,30%{transform:rotateY(0)}50%,80%{transform:rotateY(180deg)}100%{transform:rotateY(360deg)}}
+.ttl{text-align:center;font-size:34px;font-weight:900;letter-spacing:8px;margin:0;background:linear-gradient(180deg,var(--accent),var(--brass2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{text-align:center;color:var(--ink2);font-size:13px;margin:4px 0 8px;letter-spacing:2px}
+.big{font-size:44px;font-weight:900;text-align:center;margin:4px 0;font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:center;gap:12px}
+.big .pc{width:30px;height:30px}
+.res-t{font-size:36px;font-weight:900;text-align:center;margin:0;letter-spacing:4px}
+.res-t.win{color:var(--accent)}.res-t.lose{color:var(--hot)}
+.ach{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:8px 0}
+.ach span{font-size:12px;padding:6px 10px;border-radius:12px;background:var(--card2);box-shadow:inset 0 0 0 1px var(--line);color:var(--ink2)}
+.ach span.got{background:var(--accent);color:#24190a;font-weight:800}
+table.stt{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+table.stt th,table.stt td{padding:7px 4px;text-align:center;border-bottom:1px solid var(--line)}
+table.stt th{color:var(--ink2);font-weight:700;font-size:12px}
+textarea{width:100%;height:96px;border-radius:12px;border:1px solid var(--line);background:var(--card2);color:var(--ink);font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;padding:10px;resize:none;-webkit-user-select:text;user-select:text}
+.share-img{max-width:100%;border-radius:12px;margin-top:10px}
+.x{position:absolute;right:10px;top:10px}
+.card{position:relative}
+@media (hover:hover){.tbtn:hover,.ibtn:hover{filter:brightness(1.08)}.btn:hover{filter:brightness(1.05)}}
+body.land .tools{grid-template-columns:repeat(2,1fr)}
+body.land .review{grid-template-columns:56px 1fr 56px;grid-template-rows:auto auto}
+body.land .review .revinfo{grid-column:1/4;grid-row:1;min-height:52px}
+body.land .review #rvEnd{grid-column:1/4}
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<div id="app">
+  <div class="top">
+    <button class="ibtn" id="bMenu" aria-label="選單"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <div class="score">
+      <div class="side" id="sB"><i class="pc k"></i><b id="nB">2</b><span class="who" id="wB">你</span></div>
+      <div class="side" id="sW"><span class="who" id="wW">電腦</span><b id="nW">2</b><i class="pc w"></i></div>
+      <div class="ratio"><i id="rB"></i></div>
+    </div>
+    <button class="ibtn" id="bMute" aria-label="音效"><svg class="i" viewBox="0 0 24 24" id="muteIco"></svg></button>
+  </div>
+  <div class="status"><div class="st" id="stText">輪到你</div><div class="lvl" id="lvBadge"></div></div>
+  <div class="evalbar" id="evalBar" title="電腦評估（黑｜白）"><i id="evalFill"></i><span id="evalTxt">均勢</span></div>
+  <div class="mlog" id="mLog" aria-label="棋譜"></div>
+  <div id="boardWrap"><canvas id="cv" aria-label="黑白棋棋盤"></canvas></div>
+  <div class="tools" id="toolBar">
+    <button class="tbtn" id="bUndo" aria-label="悔棋"><svg class="i" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>悔棋</button>
+    <button class="tbtn" id="bHint" aria-label="提示"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/></svg>提示</button>
+    <button class="tbtn" id="bNew" aria-label="新局"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/></svg>新局</button>
+    <button class="tbtn" id="bSet" aria-label="設定"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>設定</button>
+  </div>
+  <div class="tools review hidden" id="revBar">
+    <button class="tbtn" id="rvPrev" aria-label="上一手"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <div class="revinfo" id="rvInfo"></div>
+    <button class="tbtn" id="rvNext" aria-label="下一手"><svg class="i" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="tbtn" id="rvEnd">結束覆盤</button>
+  </div>
+</div>
+<div class="toast hidden" id="toast"></div>
+
+<div class="ov" id="ovTitle">
+  <div class="card">
+    <div class="logo"><div class="coin"><i></i><i></i></div><div class="coin"><i></i><i></i></div><div class="coin"><i></i><i></i></div></div>
+    <h1 class="ttl">黑白棋</h1>
+    <div class="sub">翡翠賭桌 · 夾住就翻面</div>
+    <button class="btn" id="tCont">繼續對局</button>
+    <button class="btn" id="tNew">新對局</button>
+    <button class="btn sec" id="tNet" hidden>連線對戰 <small id="tNetInfo"></small></button>
+    <div class="row2"><button class="btn sec" id="tDaily">每日開局</button><button class="btn sec" id="tRules">玩法</button></div>
+    <div class="row2"><button class="btn sec" id="tStats">統計與成就</button><button class="btn sec" id="tSet">設定</button></div>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovSetup">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>新對局</h2>
+    <h3>對手</h3>
+    <div class="seg" id="sgMode"><button data-v="ai">對電腦</button><button data-v="2p">同機雙人</button></div>
+    <div id="aiOpts">
+      <h3>電腦難度</h3>
+      <div class="seg" id="sgLevel"></div>
+      <h3>執子</h3>
+      <div class="seg" id="sgColor"><button data-v="0">黑<small>先手</small></button><button data-v="1">白<small>後手</small></button><button data-v="r">隨機</button></div>
+      <h3>讓子（電腦讓你角落）</h3>
+      <div class="seg" id="sgHand"><button data-v="0">無</button><button data-v="1">1 角</button><button data-v="2">2 角</button><button data-v="3">3 角</button><button data-v="4">4 角</button></div>
+    </div>
+    <h3>開局</h3>
+    <div class="seg" id="sgOpen"><button data-v="std">標準</button><button data-v="rand">隨機<small>4–8 手</small></button><button data-v="daily">每日<small>全球同題</small></button></div>
+    <button class="btn" id="sStart">開始對局</button>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovSettings">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>設定</h2>
+    <div id="swList"></div>
+    <h3>外觀</h3>
+    <div class="seg" id="sgTheme"><button data-v="auto">跟隨系統</button><button data-v="light">亮</button><button data-v="dark">暗</button></div>
+    <button class="btn sec" id="setDone">完成</button>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovMenu">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>選單</h2>
+    <p id="mInfo" style="text-align:center"></p>
+    <button class="btn" id="mResume">繼續</button>
+    <button class="btn sec" id="mNew">新對局</button>
+    <div class="row2"><button class="btn sec" id="mRecord">棋譜</button><button class="btn sec" id="mStats">統計</button></div>
+    <div class="row2"><button class="btn sec" id="mRules">玩法</button><button class="btn sec" id="mHome">主畫面</button></div>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovRules">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>玩法</h2>
+    <p>・黑先。落子時必須在 8 個方向中至少一個方向<b>夾住</b>對手連續的棋子，被夾住的全部翻成你的顏色。</p>
+    <p>・沒有合法落點時自動 Pass；雙方都不能下時終局，子多者勝，空格全部算給勝方。</p>
+    <p>・訣竅：<b>角</b>永遠翻不掉；角旁斜對的 <b>X 格</b>很危險；讓對手可下的地方越少越好（行動力）。</p>
+    <p>・快捷鍵：U 悔棋、H 提示、N 新局。設定裡可開「長按預覽落子」防誤觸。</p>
+    <button class="btn" data-close>知道了</button>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovStats">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>統計與成就</h2>
+    <table class="stt" id="stTable"></table>
+    <p id="st2p" style="text-align:center"></p>
+    <h3>成就</h3>
+    <div class="ach" id="achList"></div>
+    <button class="btn sec" data-close>關閉</button>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovResult">
+  <div class="card">
+    <p class="res-t" id="rTitle">勝利！</p>
+    <div class="big"><i class="pc k"></i><span id="rScore">40 – 24</span><i class="pc w"></i></div>
+    <p id="rSub" style="text-align:center"></p>
+    <div class="ach" id="rAch"></div>
+    <button class="btn" id="rAgain">再來一局</button>
+    <div class="row2"><button class="btn sec" id="rReview">覆盤</button><button class="btn sec" id="rRecord">棋譜</button></div>
+    <div class="row2"><button class="btn sec" id="rBoard">看棋盤</button><button class="btn sec" id="rHome">主畫面</button></div>
+  </div>
+</div>
+
+<div class="ov hidden" id="ovRecord">
+  <div class="card">
+    <button class="ibtn x" data-close aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <h2>棋譜</h2>
+    <p id="recInfo"></p>
+    <textarea id="recText" readonly></textarea>
+    <div class="row2"><button class="btn sec" id="recCopy">複製</button><button class="btn" id="recShare">分享</button></div>
+    <img id="recImg" class="share-img hidden" alt="對局圖">
+  </div>
+</div>
+
+<!--NETPLAY-START--><script id="netplay">
+/* NETPLAY — two-player online play over the Artifact `room` capability (presence only, no db).
+   Each seated player publishes its whole move list as presence in a named room; the other side adopts the
+   longer list after checking every move with the game's own rules. Presence is re-sent on reconnect and handed
+   to late joiners, so a dropped message or a reload loses nothing. Works for Viewers (presence needs no topic
+   rights). The page must work without it: NET stays hidden when `room` is unavailable.
+
+   Adapter passed to NET.init:
+     game        id used in room names, e.g. 'gomoku'
+     title       shown in the panel
+     sides       [label of side 0 (moves first), label of side 1]
+     choices     [{key, label, items:[[value, text], ...], def}]  host options (rendered as segmented buttons)
+     start(o, side, mv)  reset into online mode with options o; side 0|1, or -1 to spectate; replay mv silently.
+                         return the number of moves that replayed legally
+     play(m)     apply one opponent move with normal feedback; return false if illegal
+     toMove()    0|1 for the side to move, -1 when the game is over
+     exit()      leave online mode (back to the game's title screen)
+     resigned(side)  optional: side resigned (called for the local player's own resignation too), show the result
+     busy()      optional: true while an animation must finish before the next local move
+     names(n0, n1)   optional: display names for side 0 and side 1 ('你' for the local player)
+     onStatus(text)  optional: where the status line goes (default: a small pill)
+     snapshot(), randomMove()  test hooks: board as a string, play one random legal move for the local side
+   Game calls: NET.moved(m) after a local move in online mode (never from inside play() or start(): the module appends
+   the opponent's move only after play() returns, so a pass owed after it must be sent a tick later); NET.open() from its 連線對戰 button;
+   NET.rematch() from its result screen; NET.active(), NET.mySide(), NET.canMove(). */
+var NET = (function () {
+  'use strict';
+  var A = null, room = null, user = null, lobby = null, rm = null, unsub = [], ok = false;
+  var S = null;           // session: {code, seat:'h'|'j'|'s', t, g, mv, o, f, want, rs}
+  var opp = null, host = null, myId = null, names = {}, lastStatus = '', waiting = false;
+  var CH = 'abcdefghjkmnpqrstuvwxyz23456789';
+  var LSK = function () { return 'netplay.' + A.game + (myId ? '.' + String(myId).slice(0, 40) : ''); };
+  function sget() { try { var v = JSON.parse(localStorage.getItem(LSK()) || 'null'); return v && typeof v === 'object' ? v : null; } catch (e) { return null; } }
+  function sset() { try { if (S && S.seat !== 's') localStorage.setItem(LSK(), JSON.stringify(S)); } catch (e) {} }
+  function sdel() { try { localStorage.removeItem(LSK()); } catch (e) {} }
+  function mkCode() { var s = ''; for (var i = 0; i < 4; i++) s += CH[(Math.random() * CH.length) | 0]; return s; }
+  function rname(code) { return (A.game + '-' + code).toLowerCase().replace(/[^a-z0-9_.-]/g, '').slice(0, 48); }
+  function validMv(mv) {
+    if (!Array.isArray(mv) || mv.length > 800) return false;
+    for (var i = 0; i < mv.length; i++) { var m = mv[i]; if (!(typeof m === 'number' && isFinite(m)) && !(typeof m === 'string' && m.length <= 16)) return false; }
+    return true;
+  }
+  function validOpts(o) {
+    if (!o || typeof o !== 'object') return false;
+    for (var i = 0; i < A.choices.length; i++) {
+      var c = A.choices[i], v = o[c.key];
+      if (!c.items.some(function (it) { return it[0] === v; })) return false;
+    }
+    return true;
+  }
+  function sideOf(seat, g) { if (seat === 's') return -1; var hs = (S.f ^ (g & 1)); return seat === 'h' ? hs : 1 - hs; }
+  function mySide() { return S ? sideOf(S.seat, S.g) : -1; }
+  function same(a, b, n) { for (var i = 0; i < n; i++) if (a[i] !== b[i]) return false; return true; }
+
+  /* ---------- styles + panel ---------- */
+  var css = '.np-ov{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,8,20,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;--np-bg:#161b2e;--np-ink:#eef1fb;--np-ink2:#9aa3c2;--np-line:rgba(255,255,255,.12);--np-chip:rgba(255,255,255,.07);--np-acc:#ffb347;--np-acc2:#ff7a45}' +
+    '@media (prefers-color-scheme:light){.np-ov{--np-bg:#fffdf8;--np-ink:#1e2338;--np-ink2:#5f6680;--np-line:rgba(20,30,60,.13);--np-chip:rgba(20,30,60,.06);--np-acc:#d9822b;--np-acc2:#e0562a;background:rgba(40,40,70,.3)}}' +
+    '.np-card{width:min(420px,100%);max-height:100%;overflow:auto;background:var(--np-bg);color:var(--np-ink);border:1px solid var(--np-line);border-radius:22px;padding:18px 16px;box-shadow:0 20px 60px rgba(0,0,0,.4);overscroll-behavior:contain}' +
+    '.np-card h2{margin:0 0 4px;font-size:21px;text-align:center;letter-spacing:2px}.np-card h3{margin:14px 0 6px;font-size:13px;color:var(--np-ink2);font-weight:600}' +
+    '.np-card p{margin:6px 0;font-size:13.5px;line-height:1.55;color:var(--np-ink2)}.np-card p b{color:var(--np-ink)}' +
+    '.np-seg{display:flex;gap:4px;background:var(--np-chip);border-radius:12px;padding:4px}.np-seg button{flex:1;min-width:0;min-height:42px;border:0;border-radius:9px;background:none;color:var(--np-ink2);font:inherit;font-size:14px;font-weight:600}' +
+    '.np-seg button.on{background:var(--np-bg);color:var(--np-ink);outline:2px solid var(--np-acc);outline-offset:-2px}' +
+    '.np-btn{display:block;width:100%;min-height:50px;margin-top:10px;border:0;border-radius:14px;font:inherit;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,var(--np-acc2),var(--np-acc));cursor:pointer}' +
+    '.np-btn.sec{background:var(--np-chip);color:var(--np-ink);font-size:15px}.np-btn[disabled]{opacity:.4}' +
+    '.np-row{display:flex;gap:8px}.np-row>*{flex:1;min-width:0}' +
+    '.np-code{font:800 40px/1.1 ui-monospace,Menlo,monospace;letter-spacing:10px;text-align:center;margin:8px 0 2px;color:var(--np-acc)}' +
+    '.np-in{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--np-line);background:var(--np-chip);color:var(--np-ink);font:700 22px ui-monospace,Menlo,monospace;letter-spacing:6px;text-align:center;text-transform:uppercase}' +
+    '.np-list{display:flex;flex-direction:column;gap:6px}.np-item{display:flex;align-items:center;gap:10px;min-height:52px;padding:6px 10px;border-radius:12px;background:var(--np-chip);border:0;color:var(--np-ink);font:inherit;text-align:left;width:100%;cursor:pointer}' +
+    '.np-item img{width:30px;height:30px;border-radius:50%;flex:none}.np-item span{flex:1;min-width:0}.np-item b{display:block;font-size:14.5px}.np-item small{display:block;font-size:12px;color:var(--np-ink2)}.np-item i{font-style:normal;font-weight:700;color:var(--np-acc)}' +
+    '.np-pl{display:flex;gap:8px;margin-top:6px}.np-pl div{flex:1;min-width:0;padding:8px;border-radius:12px;background:var(--np-chip);font-size:13px;text-align:center}.np-pl b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.np-x{float:right;width:44px;height:44px;margin:-10px -8px 0 0;border:0;background:none;color:var(--np-ink2);font-size:24px;cursor:pointer}' +
+    '.np-pill{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 4px);transform:translateX(-50%);z-index:2147482000;max-width:88vw;padding:5px 12px;border-radius:20px;background:rgba(12,16,34,.86);color:#eef3ff;font:600 12.5px system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;border:1px solid rgba(255,255,255,.18)}' +
+    '.np-pill.warn{background:rgba(120,60,10,.9)}';
+  var ov = null, pill = null;
+  function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+  function ensureCss() { if (document.getElementById('np-css')) return; var s = el('style'); s.id = 'np-css'; s.textContent = css; document.head.appendChild(s); }
+  function closePanel() { if (ov) { ov.remove(); ov = null; } lobbyFn = null; }
+  function panel(build) {
+    ensureCss(); closePanel();
+    ov = el('div', 'np-ov'); var c = el('div', 'np-card'); ov.appendChild(c);
+    ov.addEventListener('click', function (e) { if (e.target === ov) closePanel(); });
+    var x = el('button', 'np-x', '×'); x.setAttribute('aria-label', '關閉'); x.onclick = closePanel; c.appendChild(x);
+    c.appendChild(el('h2', null, '連線對戰'));
+    build(c); document.body.appendChild(ov);
+  }
+  function btn(parent, text, cls, fn) { var b = el('button', 'np-btn' + (cls ? ' ' + cls : ''), text); b.onclick = fn; parent.appendChild(b); return b; }
+  function seg(parent, items, cur, fn) {
+    var s = el('div', 'np-seg');
+    items.forEach(function (it) { var b = el('button', it[0] === cur ? 'on' : '', it[1]); b.onclick = function () { [].forEach.call(s.children, function (x) { x.className = ''; }); b.className = 'on'; fn(it[0]); }; s.appendChild(b); });
+    parent.appendChild(s); return s;
+  }
+  function optText(o) { return A.choices.map(function (c) { var it = c.items.filter(function (x) { return x[0] === o[c.key]; })[0]; return it ? it[1] : ''; }).filter(Boolean).join('・'); }
+
+  /* ---------- names ---------- */
+  function resolveNames(ids) {
+    if (!user || !user.profiles) return Promise.resolve();
+    ids = ids.filter(Boolean); if (!ids.length) return Promise.resolve();
+    return user.profiles(ids).then(function (ps) { ids.forEach(function (id) { if (ps[id]) names[id] = ps[id]; }); }).catch(function () {});
+  }
+  function nameOf(p, fb) { var id = p && (p.by || (p.presence && p.presence.id)); var n = id && names[id] && names[id].name; return n || fb; }
+
+  /* ---------- lobby: hosts waiting for an opponent ---------- */
+  var lobbyFn = null, lobbyUnsub = null;
+  function openRooms() {
+    if (!lobby) return [];
+    return lobby.peers().filter(function (p) {
+      var l = p.presence && p.presence.lob; return !p.sameTab && l && l.g === A.game && typeof l.c === 'string' && /^[a-z0-9]{4}$/.test(l.c);
+    });
+  }
+  function setLobby(on) { if (lobby) lobby.presence({ lob: on && S ? { g: A.game, c: S.code, o: optText(S.o).slice(0, 60), t: S.t } : null }).catch(function () {}); }
+
+  /* ---------- room ---------- */
+  function me() { return { nv: 1, seat: S.seat, t: S.t, g: S.g, mv: S.mv, o: S.seat === 'h' ? S.o : undefined, f: S.seat === 'h' ? S.f : undefined, want: S.want || 0, rs: S.rs == null ? -1 : S.rs, id: myId || undefined }; }
+  function push() { if (rm && S) { rm.presence(me()).catch(function () {}); sset(); } }
+  function seated(seat) {
+    var best = null;
+    rm.peers().forEach(function (p) {
+      var q = p.presence; if (!q || q.nv !== 1 || q.seat !== seat || typeof q.t !== 'number') return;
+      // equal claim times mean the same seat reopened (a reload leaves its old tab behind for a moment): this tab wins
+      if (!best || q.t < best.presence.t || (q.t === best.presence.t && (p.sameTab || (!best.sameTab && p.peer < best.peer)))) best = p;
+    });
+    return best;
+  }
+  function join(code, seat, saved) {
+    code = String(code || '').toLowerCase();
+    if (!/^[a-z0-9]{4}$/.test(code)) return Promise.reject(new Error('房間碼要 4 個字'));
+    return leaveRoom().then(function () { return room.join(rname(code)); }).then(function (r) {
+      rm = r;
+      S = saved || { code: code, seat: seat, t: Date.now(), g: 0, mv: [], o: null, f: 0, want: 0, rs: -1 };
+      if (seat === 'h' && !saved) { S.o = A._newOpts; S.f = A._newFirst; }
+      unsub.push(rm.onPeers(function () { sync(); }, function () { status('連線中斷，重新整理頁面後可回到房間', 'warn'); }));
+      unsub.push(rm.onConnection(function (c) { if (c) push(); sync(); }));
+      if (S.o) begin(false);
+      push(); setLobby(S.seat === 'h'); sync();
+    });
+  }
+  function leaveRoom() {
+    unsub.forEach(function (u) { try { u(); } catch (e) {} }); unsub = [];
+    var r = rm; rm = null; opp = host = null;
+    return r ? r.leave().catch(function () {}) : Promise.resolve();
+  }
+  var started = false;
+  function begin(fresh) {
+    var n = A.start(S.o, mySide(), S.mv.slice());
+    if (typeof n === 'number' && n < S.mv.length) S.mv.length = n;
+    started = true; if (fresh) push();
+    showNames();
+  }
+  function showNames() {
+    if (!A.names || !S) return;
+    var hs = sideOf('h', S.g), n = [];
+    n[hs] = S.seat === 'h' ? '你' : nameOf(host, '房主');
+    n[1 - hs] = S.seat === 'j' ? '你' : nameOf(seated('j'), S.seat === 'h' ? '對手' : '加入者');
+    A.names(n[0], n[1]);
+  }
+  function adopt(list) { // rebuild from a full list (spectators and divergence)
+    S.mv = list.slice(); begin(false);
+  }
+  function sync() {
+    if (!rm || !S) return;
+    host = seated('h');
+    var j = seated('j');
+    // seat contention: whoever claimed first keeps the seat
+    if (S.seat !== 's') {
+      var holder = S.seat === 'h' ? host : j;
+      if (holder && !holder.sameTab) { S.seat = 's'; status('座位已有人，改為觀戰'); push(); sdel(); }
+    }
+    opp = S.seat === 'h' ? j : S.seat === 'j' ? host : null;
+    var hp = host && host.presence;
+    // options come from the host
+    if (!S.o && hp && validOpts(hp.o) && (hp.f === 0 || hp.f === 1)) { S.o = hp.o; S.f = hp.f; begin(true); }
+    if (!S.o) { status(S.seat === 'j' ? '等房主連線…' : '連線中…'); return; }
+    if (S.seat === 'h') setLobby(!j);
+    if (waiting && opp) { waiting = false; closePanel(); resolveNames([opp.by || (opp.presence && opp.presence.id)]).then(function () { toastPill(nameOf(opp, '朋友') + ' 加入了'); }); }
+    var ids = rm.peers().map(function (p) { return p.by || (p.presence && p.presence.id); });
+    resolveNames(ids).then(showNames);
+    if (S.seat === 's') { spectate(host, j); return; }
+    var op = opp && opp.presence;
+    if (!op || op.nv !== 1 || !validMv(op.mv) || typeof op.g !== 'number') { report(); return; }
+    // rematch: both asked for the next game, or the opponent already moved on
+    if (op.g > S.g || (S.want > S.g && op.want > S.g)) {
+      S.g = op.g > S.g ? op.g : S.g + 1; S.mv = []; S.rs = -1; S.want = Math.max(S.want, S.g);
+      begin(true); toastPill('新的一局：你執' + A.sides[mySide()]);
+    }
+    if (op.g === S.g) {
+      if (op.rs === S.g && S.rs !== S.g && !S.oppRs) { S.oppRs = S.g; if (A.resigned) A.resigned(1 - mySide()); }
+      var om = op.mv, mm = S.mv;
+      if (om.length > mm.length && same(om, mm, mm.length)) {
+        var side = 1 - mySide();
+        for (var i = mm.length; i < om.length; i++) {
+          if (A.toMove() !== side) break;
+          if (A.play(om[i]) === false) break;
+          S.mv.push(om[i]);
+        }
+        push();
+      } else if (!same(om, mm, Math.min(om.length, mm.length)) && S.seat === 'j' && op.seat === 'h') {
+        adopt(om); push();
+      }
+    }
+    report();
+  }
+  function spectate(h, j) {
+    var best = null;
+    [h, j].forEach(function (p) { var q = p && p.presence; if (q && q.nv === 1 && validMv(q.mv) && typeof q.g === 'number' && (!best || q.g > best.g || (q.g === best.g && q.mv.length > best.mv.length))) best = q; });
+    if (best) {
+      if (best.g !== S.g || best.mv.length < S.mv.length || !same(best.mv, S.mv, S.mv.length)) { S.g = best.g; adopt(best.mv); }
+      else for (var i = S.mv.length; i < best.mv.length; i++) { if (A.play(best.mv[i]) === false) break; S.mv.push(best.mv[i]); }
+    }
+    [['h', h], ['j', j]].forEach(function (x) { var q = x[1] && x[1].presence; if (q && q.g === S.g && q.rs === S.g && S.oppRs !== S.g) { S.oppRs = S.g; if (A.resigned) A.resigned(sideOf(x[0], S.g)); } });
+    status('觀戰中：' + nameOf(h, '房主') + ' 對 ' + nameOf(j, '對手'));
+  }
+  function report() {
+    if (!S) return;
+    if (!opp) {
+      if (S.seat === 'h' && !S.mv.length && S.g === 0) status('房間 ' + S.code.toUpperCase() + '：等朋友加入…');
+      else status('對手離線，等他回來（房間 ' + S.code.toUpperCase() + '）', 'warn');
+      return;
+    }
+    var t = A.toMove(), side = mySide();
+    if (S.rs === S.g || S.oppRs === S.g || t < 0) {
+      var op = opp.presence || {};
+      if (S.want > S.g) status('等對手同意再來一局…');
+      else if (op.want > S.g) status('對手想再來一局', 'warn');
+      else status('對局結束');
+    } else status(t === side ? '輪到你（' + A.sides[side] + '）' : '等對手下（' + nameOf(opp, '對手') + '）');
+  }
+
+  /* ---------- status pill ---------- */
+  var pillT = 0;
+  function status(text, kind) {
+    lastStatus = text;
+    if (A.onStatus) { A.onStatus(text, kind || ''); return; }
+    ensureCss();
+    if (!pill) { pill = el('div', 'np-pill'); pill.onclick = function () { NET.open(); }; document.body.appendChild(pill); }
+    pill.textContent = '🌐 ' + text; pill.className = 'np-pill' + (kind ? ' ' + kind : ''); pill.hidden = false;
+  }
+  function toastPill(t) { status(t); clearTimeout(pillT); pillT = setTimeout(report, 2500); }
+
+  /* ---------- panels ---------- */
+  function homePanel() {
+    panel(function (c) {
+      c.appendChild(el('p', null, A.title + '：和同時開著這個頁面的朋友即時對下。朋友要能開啟這個頁面並登入 claude.ai（從分享選單邀請他）。'));
+      var saved = sget();
+      if (saved && saved.code && Date.now() - (saved.t || 0) < 864e5) btn(c, '回到房間 ' + String(saved.code).toUpperCase(), '', function () { closePanel(); join(saved.code, saved.seat, saved).catch(fail); });
+      var list = el('div', 'np-list'); c.appendChild(el('h3', null, '等人加入的房間')); c.appendChild(list);
+      function fill() {
+        list.textContent = '';
+        var rs = openRooms();
+        if (!rs.length) { list.appendChild(el('p', null, '目前沒有。可以自己建立一個，或輸入朋友給你的房間碼。')); return; }
+        rs.forEach(function (p) {
+          var l = p.presence.lob, it = el('button', 'np-item'), sp = el('span');
+          var id = p.by || ''; var pr = names[id];
+          if (pr && pr.avatarUrl) { var im = el('img'); im.src = pr.avatarUrl; im.alt = ''; it.appendChild(im); }
+          sp.appendChild(el('b', null, (pr && pr.name) || '有人')); sp.appendChild(el('small', null, String(l.o || '').slice(0, 60) + '・' + l.c.toUpperCase()));
+          it.appendChild(sp); it.appendChild(el('i', null, '加入'));
+          it.onclick = function () { closePanel(); join(l.c, 'j').catch(fail); };
+          list.appendChild(it);
+        });
+      }
+      fill();
+      if (lobby) { var ids = openRooms().map(function (p) { return p.by; }); resolveNames(ids).then(function () { if (ov) fill(); }); lobbyFn = function () { if (ov && ov.contains(list)) fill(); }; }
+      c.appendChild(el('h3', null, '用房間碼加入'));
+      var row = el('div', 'np-row'), inp = el('input', 'np-in'); inp.maxLength = 4; inp.autocomplete = 'off'; inp.autocapitalize = 'characters'; inp.placeholder = '房間碼'; inp.setAttribute('aria-label', '房間碼');
+      row.appendChild(inp); var jb = el('button', 'np-btn', '加入'); jb.style.marginTop = '0'; jb.style.flex = '0 0 96px'; row.appendChild(jb); c.appendChild(row);
+      jb.onclick = function () { var v = inp.value.trim().toLowerCase(); if (!/^[a-z0-9]{4}$/.test(v)) { inp.focus(); return; } closePanel(); join(v, 'j').catch(fail); };
+      c.appendChild(el('h3', null, '建立房間'));
+      var o = {}, saveO = {};
+      try { saveO = JSON.parse(localStorage.getItem('netplay.' + A.game + '.opts') || '{}') || {}; } catch (e) {}
+      A.choices.forEach(function (ch) {
+        var v = saveO[ch.key]; if (!ch.items.some(function (it) { return it[0] === v; })) v = ch.def;
+        o[ch.key] = v; c.appendChild(el('h3', null, ch.label)); seg(c, ch.items, v, function (nv) { o[ch.key] = nv; });
+      });
+      var first = saveO._f == null ? 0 : saveO._f;
+      c.appendChild(el('h3', null, '我執'));
+      seg(c, [[0, A.sides[0] + '（先手）'], [1, A.sides[1] + '（後手）'], [2, '隨機']], first, function (v) { first = v; });
+      btn(c, '建立房間', '', function () {
+        try { saveO = Object.assign({}, o, { _f: first }); localStorage.setItem('netplay.' + A.game + '.opts', JSON.stringify(saveO)); } catch (e) {}
+        A._newOpts = o; A._newFirst = first === 2 ? (Math.random() < 0.5 ? 0 : 1) : first;
+        closePanel(); join(mkCode(), 'h').then(function () { waitPanel(); }).catch(fail);
+      });
+    });
+  }
+  function waitPanel() {
+    waiting = true;
+    panel(function (c) {
+      c.appendChild(el('p', null, '把房間碼告訴朋友。他打開這個遊戲的「連線對戰」，在清單點你的房間或輸入房間碼就能加入。'));
+      c.appendChild(el('div', 'np-code', S.code.toUpperCase()));
+      c.appendChild(el('p', null, optText(S.o) + '・你執' + A.sides[mySide()])).style.textAlign = 'center';
+      btn(c, '取消房間', 'sec', function () { NET.leave(); });
+    });
+  }
+  function gamePanel() {
+    panel(function (c) {
+      c.appendChild(el('div', 'np-code', S.code.toUpperCase()));
+      c.appendChild(el('p', null, lastStatus)).style.textAlign = 'center';
+      var pl = el('div', 'np-pl'), a = el('div'), b = el('div');
+      a.appendChild(el('b', null, S.seat === 's' ? nameOf(host, '房主') : '你')); a.appendChild(document.createTextNode(S.seat === 's' ? A.sides[sideOf('h', S.g)] : A.sides[mySide()]));
+      var other = S.seat === 's' ? seated('j') : opp;
+      b.appendChild(el('b', null, nameOf(other, other ? '對手' : '（還沒有人）'))); b.appendChild(document.createTextNode(S.seat === 's' ? A.sides[sideOf('j', S.g)] : A.sides[1 - mySide()]));
+      pl.appendChild(a); pl.appendChild(b); c.appendChild(pl);
+      c.appendChild(el('p', null, '規則：' + optText(S.o || {})));
+      var over = A.toMove() < 0 || S.rs === S.g || S.oppRs === S.g;
+      if (S.seat !== 's' && over && !(S.want > S.g)) btn(c, '再來一局（換邊）', '', function () { NET.rematch(); closePanel(); });
+      var row = el('div', 'np-row'); c.appendChild(row);
+      if (S.seat !== 's' && A.toMove() >= 0 && S.rs !== S.g && S.oppRs !== S.g) btn(row, '認輸', 'sec', function () { NET.resign(); closePanel(); });
+      btn(row, '離開房間', 'sec', function () { NET.leave(); });
+      btn(c, '回到棋盤', '', closePanel);
+    });
+  }
+  function fail(e) { status((e && e.message) || '連不上房間', 'warn'); }
+
+  /* ---------- public ---------- */
+  var NET = {
+    init: function (adapter) {
+      A = adapter; var btns = [].concat(A.button || []);
+      btns.forEach(function (b) { if (b) b.hidden = true; });
+      if (!window.claude || typeof window.claude.use !== 'function') return;
+      Promise.all([window.claude.use('room'), window.claude.use('user').catch(function () { return null; })]).then(function (r) {
+        room = r[0]; user = r[1]; if (!room || typeof room.join !== 'function') return;
+        lobby = room;
+        // Inside the hub the room belongs to the hub page, so closing the game must leave explicitly (the saved
+        // session stays, so 回到房間 brings the player back).
+        window.addEventListener('pagehide', function () { setLobby(false); if (lobbyUnsub) lobbyUnsub(); leaveRoom(); });
+        lobbyUnsub = lobby.onPeers(function () { if (lobbyFn) lobbyFn(); }, function () {});
+        var idp = user && user.id ? user.id().then(function (id) { myId = id; }).catch(function () {}) : Promise.resolve();
+        idp.then(function () {
+          ok = true; btns.forEach(function (b) { if (b) b.hidden = false; });
+          var saved = sget();
+          if (saved && saved.code && Date.now() - (saved.t || 0) < 6 * 36e5 && A.resumeHint) A.resumeHint(String(saved.code).toUpperCase());
+        });
+      }).catch(function () {});
+    },
+    available: function () { return ok; },
+    open: function () { if (!ok) return; if (rm && S) { if (S.seat === 'h' && !opp && !S.mv.length && S.g === 0) waitPanel(); else gamePanel(); } else homePanel(); },
+    active: function () { return !!(rm && S && S.o && started); },
+    mySide: mySide,
+    canMove: function () { return NET.active() && S.seat !== 's' && A.toMove() === mySide() && S.rs !== S.g && S.oppRs !== S.g && !(A.busy && A.busy()); },
+    moved: function (m) { if (!NET.active() || S.seat === 's') return; S.mv.push(m); push(); report(); },
+    refresh: function () { report(); },
+    rematch: function () { if (!NET.active() || S.seat === 's') return; S.want = S.g + 1; push(); sync(); report(); },
+    resign: function () { if (!NET.active() || S.seat === 's') return; S.rs = S.g; push(); if (A.resigned) A.resigned(mySide()); report(); },
+    leave: function () {
+      closePanel(); setLobby(false); sdel(); started = false;
+      var wasActive = !!S; S = null; leaveRoom();
+      if (pill) pill.hidden = true;
+      if (wasActive && A.exit) A.exit();
+    },
+    state: function () { return S ? { code: S.code, seat: S.seat, side: mySide(), g: S.g, mv: S.mv.slice(), opp: !!opp, status: lastStatus } : null; },
+    _join: function (code, seat, opts, first) { A._newOpts = opts; A._newFirst = first || 0; return join(code, seat); },
+    _rooms: function () { return openRooms().map(function (p) { return p.presence.lob.c; }); },
+    _defaults: function () { var o = {}; A.choices.forEach(function (c) { o[c.key] = c.def; }); return o; },
+    _resume: function () { var s = sget(); return s ? join(s.code, s.seat, s) : Promise.reject(new Error('no saved room')); },
+    _random: function () { return NET.canMove() ? A.randomMove() : false; },
+    _over: function () { return A.toMove() < 0 || (S && (S.rs === S.g || S.oppRs === S.g)); },
+    _snap: function () { return A.snapshot(); }
+  };
+  return NET;
+})();
+</script><!--NETPLAY-END-->
+<script id="core">
+/*CORE-START*/
+// ===== 黑白棋核心：bitboard（兩組 32 位：lo = 格 0..31，hi = 格 32..63；格 = 列*8+行，a1 = 0，h8 = 63）=====
+var now = (typeof performance !== 'undefined' && performance.now) ? function () { return performance.now(); } : function () { return Date.now(); };
+function popc(x) { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return Math.imul((x + (x >>> 4)) & 0x0F0F0F0F, 0x01010101) >>> 24; }
+var RL = 0, RH = 0, ML = 0, MH = 0, FL = 0, FH = 0;
+// 方向：0 E(+1) 1 W(-1) 2 S(+8) 3 N(-8) 4 SE(+9) 5 NW(-9) 6 SW(+7) 7 NE(-7)
+var DX = [1, -1, 0, 0, 1, -1, -1, 1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+function shiftDir(l, h, d) {
+  switch (d) {
+    case 0: RH = (h << 1) | (l >>> 31); RL = l << 1; break;
+    case 1: RL = (l >>> 1) | (h << 31); RH = h >>> 1; break;
+    case 2: RH = (h << 8) | (l >>> 24); RL = l << 8; break;
+    case 3: RL = (l >>> 8) | (h << 24); RH = h >>> 8; break;
+    case 4: RH = (h << 9) | (l >>> 23); RL = l << 9; break;
+    case 5: RL = (l >>> 9) | (h << 23); RH = h >>> 9; break;
+    case 6: RH = (h << 7) | (l >>> 25); RL = l << 7; break;
+    default: RL = (l >>> 7) | (h << 25); RH = h >>> 7;
+  }
+}
+// 合法步：每方向以位移填充（夾住的對手連線），再位移一格落在空格
+function genMoves(pl, ph, ol, oh) {
+  var el = ~(pl | ol), eh = ~(ph | oh), ml = 0, mh = 0, il = ol & 0x7e7e7e7e, ih = oh & 0x7e7e7e7e, d, al, ah, xl, xh;
+  for (d = 0; d < 8; d++) {
+    if (d === 2 || d === 3) { al = ol; ah = oh; } else { al = il; ah = ih; }
+    shiftDir(pl, ph, d); xl = RL & al; xh = RH & ah;
+    shiftDir(xl, xh, d); xl |= RL & al; xh |= RH & ah;
+    shiftDir(xl, xh, d); xl |= RL & al; xh |= RH & ah;
+    shiftDir(xl, xh, d); xl |= RL & al; xh |= RH & ah;
+    shiftDir(xl, xh, d); xl |= RL & al; xh |= RH & ah;
+    shiftDir(xl, xh, d); xl |= RL & al; xh |= RH & ah;
+    shiftDir(xl, xh, d); ml |= RL & el; mh |= RH & eh;
+  }
+  ML = ml; MH = mh;
+}
+function mobCount(pl, ph, ol, oh) { genMoves(pl, ph, ol, oh); return popc(ML) + popc(MH); }
+var RAYS = [];
+(function () { for (var s = 0; s < 64; s++) for (var d = 0; d < 8; d++) { var r = [], x = (s & 7) + DX[d], y = (s >> 3) + DY[d]; while (x >= 0 && x < 8 && y >= 0 && y < 8) { r.push(y * 8 + x); x += DX[d]; y += DY[d]; } RAYS.push(r); } })();
+function calcFlips(pl, ph, ol, oh, sq) {
+  var fl = 0, fh = 0, d, ray, k, s, tl, th, b, base = sq * 8;
+  for (d = 0; d < 8; d++) {
+    ray = RAYS[base + d]; if (ray.length < 2) continue; tl = 0; th = 0;
+    for (k = 0; k < ray.length; k++) {
+      s = ray[k];
+      if (s < 32) { b = 1 << s; if (ol & b) { tl |= b; continue; } if ((pl & b) && k > 0) { fl |= tl; fh |= th; } break; }
+      b = 1 << (s - 32); if (oh & b) { th |= b; continue; } if ((ph & b) && k > 0) { fl |= tl; fh |= th; } break;
+    }
+  }
+  FL = fl; FH = fh;
+}
+function bitAt(l, h, i) { return i < 32 ? (l >>> i) & 1 : (h >>> (i - 32)) & 1; }
+function listSq(l, h) { var r = [], b; while (l) { b = l & -l; r.push(31 - Math.clz32(b)); l ^= b; } while (h) { b = h & -h; r.push(63 - Math.clz32(b)); h ^= b; } return r; }
+function sqName(s) { return 'abcdefgh'[s & 7] + ((s >> 3) + 1); }
+function parseSq(t) { t = t.toLowerCase(); var c = t.charCodeAt(0) - 97, r = +t.slice(1) - 1; return (c >= 0 && c < 8 && r >= 0 && r < 8) ? r * 8 + c : -1; }
+// 局面：{b:[lo,hi], w:[lo,hi], turn:0 黑 / 1 白}
+function initialPos() { var p = { b: [0, 0], w: [0, 0], turn: 0 }; setSq(p, 27, 1); setSq(p, 36, 1); setSq(p, 35, 0); setSq(p, 28, 0); return p; }
+function setSq(p, s, c) { var k = c ? 'w' : 'b', o = c ? 'b' : 'w'; if (s < 32) { p[k][0] |= 1 << s; p[o][0] &= ~(1 << s); } else { p[k][1] |= 1 << (s - 32); p[o][1] &= ~(1 << (s - 32)); } }
+function clonePos(p) { return { b: [p.b[0], p.b[1]], w: [p.w[0], p.w[1]], turn: p.turn }; }
+function sides(p) { return p.turn ? [p.w[0], p.w[1], p.b[0], p.b[1]] : [p.b[0], p.b[1], p.w[0], p.w[1]]; }
+function legalOf(p) { var s = sides(p); genMoves(s[0], s[1], s[2], s[3]); return listSq(ML, MH); }
+function flipsOf(p, sq) { var s = sides(p); calcFlips(s[0], s[1], s[2], s[3], sq); return listSq(FL, FH); }
+function cellAt(p, s) { return bitAt(p.b[0], p.b[1], s) ? 0 : bitAt(p.w[0], p.w[1], s) ? 1 : -1; }
+function counts(p) { return [popc(p.b[0]) + popc(p.b[1]), popc(p.w[0]) + popc(p.w[1])]; }
+// 落子：回傳新局面（輪到對方；是否需要 Pass 由呼叫端判斷）
+function playPos(p, sq) {
+  var s = sides(p); calcFlips(s[0], s[1], s[2], s[3], sq);
+  if (!(FL | FH)) return null;
+  var ml = sq < 32 ? 1 << sq : 0, mh = sq < 32 ? 0 : 1 << (sq - 32);
+  var npl = s[0] | FL | ml, nph = s[1] | FH | mh, nol = s[2] & ~FL, noh = s[3] & ~FH, q = { turn: p.turn ^ 1 };
+  if (p.turn) { q.w = [npl, nph]; q.b = [nol, noh]; } else { q.b = [npl, nph]; q.w = [nol, noh]; }
+  return q;
+}
+function seededRng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// 隨機／每日開局：從 p 起依 R 抽 n 手隨機合法步
+function openingMoves(p, n, R) { var out = [], q = p; for (var i = 0; i < n; i++) { if (isOver(q)) break; if (!legalOf(q).length) q = passPos(q); var L = legalOf(q), m = L[Math.floor(R() * L.length)]; out.push(m); q = playPos(q, m); } return out; }
+function dailySeed(ymd) { return Math.imul(ymd, 7919) ^ 0x5eed; }
+function passPos(p) { var q = clonePos(p); q.turn ^= 1; return q; }
+function isOver(p) { if (legalOf(p).length) return false; return legalOf(passPos(p)).length === 0; }
+// WOF 計分：空格全歸勝方
+function finalCounts(p) { var c = counts(p), e = 64 - c[0] - c[1]; if (c[0] > c[1]) c[0] += e; else if (c[1] > c[0]) c[1] += e; return c; }
+function finalDiff(pl, ph, ol, oh) { var a = popc(pl) + popc(ph), b = popc(ol) + popc(oh), e = 64 - a - b; return a > b ? a - b + e : a < b ? a - b - e : 0; }
+// perft（Pass 算一層；雙方皆無步為葉）
+function perft(pl, ph, ol, oh, depth, passed) {
+  if (depth === 0) return 1;
+  genMoves(pl, ph, ol, oh); var ml = ML, mh = MH;
+  if (!(ml | mh)) { if (passed) return 1; return perft(ol, oh, pl, ph, depth - 1, true); }
+  var n = 0, b, sq;
+  while (ml | mh) {
+    if (ml) { b = ml & -ml; sq = 31 - Math.clz32(b); ml ^= b; } else { b = mh & -mh; sq = 63 - Math.clz32(b); mh ^= b; }
+    calcFlips(pl, ph, ol, oh, sq);
+    var bl = sq < 32 ? 1 << sq : 0, bh = sq < 32 ? 0 : 1 << (sq - 32);
+    n += perft(ol & ~FL, oh & ~FH, pl | FL | bl, ph | FH | bh, depth - 1, false);
+  }
+  return n;
+}
+
+// ===== 評估 =====
+var WT = [
+  100, -20, 10, 5, 5, 10, -20, 100,
+  -20, -50, -2, -2, -2, -2, -50, -20,
+  10, -2, 3, 1, 1, 3, -2, 10,
+  5, -2, 1, 0, 0, 1, -2, 5,
+  5, -2, 1, 0, 0, 1, -2, 5,
+  10, -2, 3, 1, 1, 3, -2, 10,
+  -20, -50, -2, -2, -2, -2, -50, -20,
+  100, -20, 10, 5, 5, 10, -20, 100];
+var WT2 = WT.slice(); [9, 14, 49, 54, 1, 6, 8, 15, 48, 55, 57, 62].forEach(function (i) { WT2[i] = 0; }); // 入門：不懂避開 X/C 格
+var CORN = [[0, 9, 1, 8], [7, 14, 6, 15], [56, 49, 57, 48], [63, 54, 62, 55]];
+function wsum(l, h, T) { var s = 0, b; while (l) { b = l & -l; s += T[31 - Math.clz32(b)]; l ^= b; } while (h) { b = h & -h; s += T[63 - Math.clz32(b)]; h ^= b; } return s; }
+function frontierMask(el, eh) { // 與空格相鄰的格
+  var l = 0, h = 0, d;
+  for (d = 0; d < 8; d++) {
+    shiftDir(el, eh, d);
+    if (d === 0 || d === 4 || d === 7) { RL &= 0xfefefefe; RH &= 0xfefefefe; } else if (d !== 2 && d !== 3) { RL &= 0x7f7f7f7f; RH &= 0x7f7f7f7f; }
+    l |= RL; h |= RH;
+  }
+  ML = l; MH = h;
+}
+var EDGE_WALK = [[0, 1, 8], [7, -1, 8], [56, 1, -8], [63, -1, -8]];
+function stableEst(pl, ph, ol, oh) { // 由己方角沿邊連續同色的子（近似穩定子）
+  var n = 0, c, i, k, s, step, e;
+  for (c = 0; c < 4; c++) {
+    s = EDGE_WALK[c][0]; if (!bitAt(pl, ph, s)) continue; n++;
+    for (e = 1; e < 3; e++) { step = EDGE_WALK[c][e]; for (k = 1; k < 7; k++) { i = s + step * k; if (!bitAt(pl, ph, i)) break; n++; } }
+  }
+  return n;
+}
+var EVMODE = 2;
+function evaluate(pl, ph, ol, oh) {
+  if (EVMODE === 1) return wsum(pl, ph, WT2) - wsum(ol, oh, WT2);
+  var s = wsum(pl, ph, WT) - wsum(ol, oh, WT), c, k, q, x;
+  for (c = 0; c < 4; c++) { // 角已有子：其 X/C 格不再扣分
+    q = CORN[c]; if (!bitAt(pl | ol, ph | oh, q[0])) continue;
+    for (k = 1; k < 4; k++) { x = q[k]; if (bitAt(pl, ph, x)) s -= WT[x]; else if (bitAt(ol, oh, x)) s += WT[x]; }
+  }
+  var mm = mobCount(pl, ph, ol, oh), om = mobCount(ol, oh, pl, ph);
+  var empt = 64 - popc(pl) - popc(ph) - popc(ol) - popc(oh);
+  s += (empt > 20 ? 12 : 8) * (mm - om);
+  if (mm === 0) s -= 30; if (om === 0) s += 30;
+  frontierMask(~(pl | ol), ~(ph | oh));
+  s += 5 * ((popc(ML & ol) + popc(MH & oh)) - (popc(ML & pl) + popc(MH & ph)));
+  s += 18 * (stableEst(pl, ph, ol, oh) - stableEst(ol, oh, pl, ph));
+  if (empt < 14) s += (14 - empt) * 3 * ((popc(pl) + popc(ph)) - (popc(ol) + popc(oh)));
+  return s;
+}
+
+// ===== 搜尋：PVS + 迭代加深 + 置換表 + 走法排序；殘局完全讀 =====
+var TTB = 18, TTN = 1 << TTB, TK0 = new Int32Array(TTN), TK1 = new Int32Array(TTN), TK2 = new Int32Array(TTN), TK3 = new Int32Array(TTN),
+  TD = new Int8Array(TTN), TF = new Int8Array(TTN), TV = new Int32Array(TTN), TM = new Int8Array(TTN);
+function ttClear() { TD.fill(-1); }
+ttClear();
+function ttIdx(pl, ph, ol, oh) { var h = Math.imul(pl, 0x9E3779B1) ^ Math.imul(ph ^ 0x5bd1e995, 0x85EBCA6B) ^ Math.imul(ol, 0xC2B2AE35) ^ Math.imul(oh ^ 0x1b873593, 0x27D4EB2F); h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); return (h >>> (32 - TTB)); }
+var NODES = 0, DEADLINE = 1e18, ABORT = false, INF = 1e9, WIN = 10000;
+var MB = [], KB = [], FB = [], HB = [];
+for (var _i = 0; _i < 70; _i++) { MB.push(new Int8Array(34)); KB.push(new Int32Array(34)); FB.push(new Int32Array(34)); HB.push(new Int32Array(34)); }
+function fillList(ml, mh, buf) { var n = 0, b; while (ml) { b = ml & -ml; buf[n++] = 31 - Math.clz32(b); ml ^= b; } while (mh) { b = mh & -mh; buf[n++] = 63 - Math.clz32(b); mh ^= b; } return n; }
+function sortByKey(buf, keys, fb, hb, n) { for (var i = 1; i < n; i++) { var k = keys[i], m = buf[i], f = fb[i], h = hb[i], j = i - 1; while (j >= 0 && keys[j] < k) { keys[j + 1] = keys[j]; buf[j + 1] = buf[j]; fb[j + 1] = fb[j]; hb[j + 1] = hb[j]; j--; } keys[j + 1] = k; buf[j + 1] = m; fb[j + 1] = f; hb[j + 1] = h; } }
+function tick() { if ((++NODES & 255) === 0 && now() > DEADLINE) ABORT = true; return ABORT; }
+function termScore(pl, ph, ol, oh) { var d = finalDiff(pl, ph, ol, oh); return d > 0 ? WIN + d * 10 : d < 0 ? -WIN + d * 10 : 0; }
+
+function pvs(pl, ph, ol, oh, depth, alpha, beta, passed, ply) {
+  if (tick()) return 0;
+  if (depth <= 0) return evaluate(pl, ph, ol, oh);
+  genMoves(pl, ph, ol, oh); var ml = ML, mh = MH;
+  if (!(ml | mh)) {
+    if (passed) return termScore(pl, ph, ol, oh);
+    return -pvs(ol, oh, pl, ph, depth, -beta, -alpha, true, ply + 1);
+  }
+  var idx = -1, ttMove = -1, v, a0 = alpha;
+  if (depth >= 2) {
+    idx = ttIdx(pl, ph, ol, oh);
+    if (TD[idx] >= 0 && TK0[idx] === pl && TK1[idx] === ph && TK2[idx] === ol && TK3[idx] === oh) {
+      ttMove = TM[idx];
+      if (TD[idx] >= depth) { v = TV[idx]; var f = TF[idx]; if (f === 0) return v; if (f === 1 && v >= beta) return v; if (f === 2 && v <= alpha) return v; }
+    }
+  }
+  var buf = MB[ply], keys = KB[ply], fb = FB[ply], hb = HB[ply], n = fillList(ml, mh, buf), i, sq, k;
+  var T = EVMODE === 1 ? WT2 : WT;
+  for (i = 0; i < n; i++) {
+    sq = buf[i]; calcFlips(pl, ph, ol, oh, sq); fb[i] = FL; hb[i] = FH;
+    if (sq === ttMove) k = 1e8;
+    else {
+      k = T[sq] * 4;
+      if (depth >= 3) { var bl = sq < 32 ? 1 << sq : 0, bh = sq < 32 ? 0 : 1 << (sq - 32); k -= 60 * mobCount(ol & ~FL, oh & ~FH, pl | FL | bl, ph | FH | bh); }
+    }
+    keys[i] = k;
+  }
+  sortByKey(buf, keys, fb, hb, n);
+  var best = -INF, bestMove = buf[0];
+  for (i = 0; i < n; i++) {
+    sq = buf[i];
+    var cl = sq < 32 ? 1 << sq : 0, ch = sq < 32 ? 0 : 1 << (sq - 32), fl = fb[i], fh = hb[i];
+    var npl = pl | fl | cl, nph = ph | fh | ch, nol = ol & ~fl, noh = oh & ~fh;
+    if (i === 0) v = -pvs(nol, noh, npl, nph, depth - 1, -beta, -alpha, false, ply + 1);
+    else {
+      v = -pvs(nol, noh, npl, nph, depth - 1, -alpha - 1, -alpha, false, ply + 1);
+      if (v > alpha && v < beta && !ABORT) v = -pvs(nol, noh, npl, nph, depth - 1, -beta, -alpha, false, ply + 1);
+    }
+    if (ABORT) return 0;
+    if (v > best) { best = v; bestMove = sq; if (v > alpha) { alpha = v; if (v >= beta) break; } }
+  }
+  if (idx >= 0) { TK0[idx] = pl; TK1[idx] = ph; TK2[idx] = ol; TK3[idx] = oh; TD[idx] = depth; TV[idx] = best; TM[idx] = bestMove; TF[idx] = best >= beta ? 1 : best <= a0 ? 2 : 0; }
+  return best;
+}
+
+// 殘局完全讀：值 = 子數差（空格歸勝方）。排序：最快優先（留給對手最少步）＋奇偶（奇數空格區優先）
+function quadParity(el, eh) { return (popc(el & 0x0f0f0f0f) & 1) | ((popc(el & 0xf0f0f0f0) & 1) << 1) | ((popc(eh & 0x0f0f0f0f) & 1) << 2) | ((popc(eh & 0xf0f0f0f0) & 1) << 3); }
+function quadOf(sq) { return (sq >= 32 ? 2 : 0) + ((sq & 7) >= 4 ? 1 : 0); }
+function solve(pl, ph, ol, oh, alpha, beta, passed, ply) {
+  if (tick()) return 0;
+  genMoves(pl, ph, ol, oh); var ml = ML, mh = MH;
+  if (!(ml | mh)) {
+    if (passed) return finalDiff(pl, ph, ol, oh);
+    return -solve(ol, oh, pl, ph, -beta, -alpha, true, ply + 1);
+  }
+  var el = ~(pl | ol), eh = ~(ph | oh), empties = popc(el) + popc(eh);
+  var buf = MB[ply], keys = KB[ply], fb = FB[ply], hb = HB[ply], n = fillList(ml, mh, buf), i, sq, v, par = quadParity(el, eh);
+  if (empties === 1) { sq = buf[0]; calcFlips(pl, ph, ol, oh, sq); var a = popc(pl) + popc(ph) + popc(FL) + popc(FH) + 1; return 2 * a - 64; }
+  for (i = 0; i < n; i++) {
+    sq = buf[i]; calcFlips(pl, ph, ol, oh, sq); fb[i] = FL; hb[i] = FH;
+    var k = ((par >> quadOf(sq)) & 1) ? 4 : 0;
+    if (empties > 7) { var bl = sq < 32 ? 1 << sq : 0, bh = sq < 32 ? 0 : 1 << (sq - 32); k += -16 * mobCount(ol & ~FL, oh & ~FH, pl | FL | bl, ph | FH | bh) + (WT[sq] === 100 ? 8 : 0); }
+    keys[i] = k;
+  }
+  sortByKey(buf, keys, fb, hb, n);
+  var best = -INF;
+  for (i = 0; i < n; i++) {
+    sq = buf[i];
+    var cl = sq < 32 ? 1 << sq : 0, ch = sq < 32 ? 0 : 1 << (sq - 32), fl = fb[i], fh = hb[i];
+    var npl = pl | fl | cl, nph = ph | fh | ch, nol = ol & ~fl, noh = oh & ~fh;
+    if (i === 0) v = -solve(nol, noh, npl, nph, -beta, -alpha, false, ply + 1);
+    else {
+      v = -solve(nol, noh, npl, nph, -alpha - 1, -alpha, false, ply + 1);
+      if (v > alpha && v < beta && !ABORT) v = -solve(nol, noh, npl, nph, -beta, -alpha, false, ply + 1);
+    }
+    if (ABORT) return 0;
+    if (v > best) { best = v; if (v > alpha) { alpha = v; if (v >= beta) break; } }
+  }
+  return best;
+}
+
+// 根節點：full=true 時每一步都以全窗口取得精確分數（提示/覆盤/失誤用）
+function rootMoves(s) { genMoves(s[0], s[1], s[2], s[3]); var r = listSq(ML, MH); return r; }
+function child(s, sq) { calcFlips(s[0], s[1], s[2], s[3], sq); var cl = sq < 32 ? 1 << sq : 0, ch = sq < 32 ? 0 : 1 << (sq - 32); return [s[2] & ~FL, s[3] & ~FH, s[0] | FL | cl, s[1] | FH | ch]; }
+function rootSearch(s, order, depth, exact, full) {
+  var best = -INF, bestMove = order[0], alpha = -INF, scores = [], i, v, c;
+  for (i = 0; i < order.length; i++) {
+    c = child(s, order[i]);
+    var lo = full ? -INF : alpha;
+    if (exact) {
+      if (full || i === 0) v = -solve(c[0], c[1], c[2], c[3], -INF, full ? INF : -alpha, false, 1);
+      else { v = -solve(c[0], c[1], c[2], c[3], -alpha - 1, -alpha, false, 1); if (v > alpha && !ABORT) v = -solve(c[0], c[1], c[2], c[3], -INF, -alpha, false, 1); }
+    } else {
+      if (full || i === 0) v = -pvs(c[0], c[1], c[2], c[3], depth - 1, -INF, INF, false, 1);
+      else { v = -pvs(c[0], c[1], c[2], c[3], depth - 1, -alpha - 1, -alpha, false, 1); if (v > alpha && !ABORT) v = -pvs(c[0], c[1], c[2], c[3], depth - 1, -INF, -alpha, false, 1); }
+    }
+    if (ABORT) return null;
+    scores.push({ sq: order[i], v: v });
+    if (v > best) { best = v; bestMove = order[i]; }
+    if (v > alpha) alpha = v;
+  }
+  return { move: bestMove, score: best, scores: scores };
+}
+function empCount(s) { return 64 - popc(s[0]) - popc(s[1]) - popc(s[2]) - popc(s[3]); }
+// 迭代加深：回傳最後一次完整完成的結果
+function iterDeep(s, maxDepth, budget, t0, full, softFrac) {
+  var order = rootMoves(s), res = null, d;
+  for (d = 1; d <= maxDepth; d++) {
+    var r = rootSearch(s, order, d, false, full);
+    if (!r) break;
+    res = r; res.depth = d;
+    order = r.scores.slice().sort(function (a, b) { return b.v - a.v; }).map(function (x) { return x.sq; });
+    if (Math.abs(r.score) >= WIN) break;
+    if (d >= empCount(s)) break;
+    if (now() - t0 > budget * softFrac) break;
+  }
+  return res;
+}
+var LEVELS = [null,
+  { name: '初學', depth: 1, exact: 0, ms: 50, err: 0.30 },
+  { name: '入門', depth: 2, exact: 0, ms: 200, err: 0.15 },
+  { name: '中級', depth: 4, exact: 8, ms: 600, err: 0.06 },
+  { name: '高級', depth: 6, exact: 12, ms: 1500, err: 0.02 },
+  { name: '專家', depth: 14, exact: 16, ms: 3000, err: 0 }];
+var RNG = Math.random;
+function softPick(list, T) { // list 已依分數由高到低；從前 4 名以 softmax 抽
+  var top = list.slice(0, 4), mx = top[0].v, ws = top.map(function (x) { return Math.exp((x.v - mx) / T); }), sum = ws.reduce(function (a, b) { return a + b; }, 0), r = RNG() * sum;
+  for (var i = 0; i < top.length; i++) { r -= ws[i]; if (r <= 0) return top[i]; }
+  return top[0];
+}
+// 電腦思考：s = [自己lo, 自己hi, 對手lo, 對手hi]
+function think(s, level, opt) {
+  opt = opt || {};
+  var L = LEVELS[level], t0 = now(), budget = opt.ms || L.ms, order = rootMoves(s), res, exact = false;
+  NODES = 0; ABORT = false; DEADLINE = t0 + budget;
+  if (!order.length) return { move: -1 };
+  if (order.length === 1 && !opt.forceSearch) return { move: order[0], score: 0, depth: 0, nodes: 0, ms: now() - t0, only: true };
+  if (level === 1) { // 貪心：只看翻子數
+    var g = order.map(function (sq) { calcFlips(s[0], s[1], s[2], s[3], sq); return { sq: sq, v: popc(FL) + popc(FH) }; }).sort(function (a, b) { return b.v - a.v; });
+    var pick = RNG() < L.err ? softPick(g, 1.5) : g[0];
+    return { move: pick.sq, score: pick.v, depth: 1, nodes: order.length, ms: now() - t0, mistake: pick !== g[0] };
+  }
+  EVMODE = level === 2 ? 1 : 2; ttClear();
+  var emp = empCount(s);
+  if (L.exact && emp <= L.exact) {
+    var fall = iterDeep(s, Math.min(4, L.depth), budget * 0.15, t0, false, 1); // 先備好退路
+    ABORT = false;
+    var r = rootSearch(s, fall ? fall.scores.slice().sort(function (a, b) { return b.v - a.v; }).map(function (x) { return x.sq; }) : order, 0, true, false);
+    if (r) { res = r; res.depth = emp; exact = true; } else { res = fall; ABORT = false; }
+  }
+  if (!res) res = iterDeep(s, L.depth, budget, t0, false, level === 5 ? 0.33 : 1);
+  if (!res) { ABORT = false; DEADLINE = 1e18; res = iterDeep(s, 1, 1e9, t0, false, 1); }
+  var mv = res.move, mistake = false;
+  if (L.err && RNG() < L.err) {
+    ABORT = false; DEADLINE = now() + 200;
+    var sh = rootSearch(s, order, Math.min(L.depth, 2), false, true);
+    if (sh) { var list = sh.scores.sort(function (a, b) { return b.v - a.v; }), p2 = softPick(list, 40); mistake = p2.sq !== mv; mv = p2.sq; }
+  }
+  return { move: mv, score: res.score, depth: res.depth, exact: exact, nodes: NODES, ms: now() - t0, mistake: mistake };
+}
+// 分析（提示/覆盤/評估條）：每一步的分數
+function analyze(s, ms) {
+  var t0 = now(), order = rootMoves(s), res = null, exact = false;
+  NODES = 0; ABORT = false; DEADLINE = t0 + ms; EVMODE = 2; ttClear();
+  if (!order.length) return { scores: [], ms: 0 };
+  var emp = empCount(s);
+  if (emp <= 14) { var r = rootSearch(s, order, 0, true, true); if (r) { res = r; exact = true; res.depth = emp; } ABORT = false; }
+  if (!res) res = iterDeep(s, 20, ms, t0, true, 0.4);
+  if (!res) { DEADLINE = 1e18; ABORT = false; res = iterDeep(s, 1, 1e9, t0, true, 1); }
+  return { scores: res.scores.sort(function (a, b) { return b.v - a.v; }), exact: exact, depth: res.depth, nodes: NODES, ms: now() - t0 };
+}
+function handleMsg(m) {
+  var s = m.s, r;
+  if (m.type === 'think') r = think(s, m.level, m.opt);
+  else r = analyze(s, m.ms || 800);
+  r.id = m.id; r.type = m.type;
+  return r;
+}
+/*CORE-END*/
+</script>
+<script>
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+var nowT = function () { return performance.now(); };
+// ---------- storage (othello. prefix, try/catch) ----------
+function ld(k, d) { try { var v = localStorage.getItem('othello.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function sv(k, v) { try { if (v == null) localStorage.removeItem('othello.' + k); else localStorage.setItem('othello.' + k, JSON.stringify(v)); } catch (e) {} }
+var DEF = { dots: true, nums: false, longpress: false, fast: false, evalbar: true, sound: true, vib: true, theme: 'auto', setup: { mode: 'ai', level: 2, color: '0', hand: 0, open: 'std' } };
+var SET = Object.assign({}, DEF, ld('settings', {})); SET.setup = Object.assign({}, DEF.setup, SET.setup || {});
+var STATS = ld('stats', { lv: {}, pvp: 0, ach: {}, daily: {} });
+function saveSet() { sv('settings', SET); }
+function saveStats() { sv('stats', STATS); }
+function applyTheme() { if (SET.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', SET.theme); readColors(); feltCache = null; dirty = true; kick(); }
+
+// ---------- worker (Blob) with synchronous fallback ----------
+var coreSrc = $('core').textContent, WK = null, wkCb = {}, wkMsg = {}, wkSeq = 0;
+function makeWorker() {
+  try {
+    var src = coreSrc + '\nself.onmessage=function(e){self.postMessage(handleMsg(e.data));};';
+    WK = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    WK.onmessage = function (e) { var id = e.data.id, cb = wkCb[id]; delete wkCb[id]; delete wkMsg[id]; if (cb) cb(e.data); };
+    WK.onerror = function (e) { if (e && e.preventDefault) e.preventDefault(); WK = null; Object.keys(wkMsg).forEach(function (id) { runSync(wkMsg[id]); }); };
+  } catch (e) { WK = null; }
+}
+function runSync(msg) { setTimeout(function () { var r = handleMsg(msg), cb = wkCb[r.id]; delete wkCb[r.id]; delete wkMsg[r.id]; if (cb) cb(r); }, 30); }
+function ask(msg, cb) { msg.id = ++wkSeq; wkCb[msg.id] = cb; wkMsg[msg.id] = msg; if (WK) WK.postMessage(msg); else runSync(msg); return msg.id; }
+function cancelWork() { var busy = Object.keys(wkCb).length; wkCb = {}; wkMsg = {}; if (busy && WK) { WK.terminate(); makeWorker(); } }
+makeWorker();
+
+// ---------- audio ----------
+var AC = null, master = null;
+function audio() {
+  if (!SET.sound) return null;
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = 0.55; master.connect(AC.destination); } catch (e) { return null; } }
+  if (AC.state === 'suspended') AC.resume().catch(function () {});
+  return AC;
+}
+function tone(freq, t, dur, type, vol, f2) {
+  var a = audio(); if (!a) return; var o = a.createOscillator(), g = a.createGain(), st = a.currentTime + Math.max(0, t);
+  o.type = type || 'sine'; o.frequency.setValueAtTime(freq, st); if (f2) o.frequency.exponentialRampToValueAtTime(f2, st + dur);
+  g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(vol || 0.3, st + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, st + dur);
+  o.connect(g); g.connect(master); o.start(st); o.stop(st + dur + 0.02);
+}
+function noise(t, dur, vol, hp) {
+  var a = audio(); if (!a) return; var n = Math.floor(a.sampleRate * dur), b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
+  for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
+  var s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(), st = a.currentTime + Math.max(0, t);
+  f.type = 'bandpass'; f.frequency.value = hp || 2400; f.Q.value = 0.9; g.gain.value = vol || 0.4; s.buffer = b; s.connect(f); f.connect(g); g.connect(master); s.start(st);
+}
+var SFX = {
+  place: function () { noise(0, 0.05, 0.9, 1800); tone(320, 0, 0.07, 'triangle', 0.25, 140); },
+  flip: function (t, i) { tone(1100 * Math.pow(1.06, i), t, 0.05, 'triangle', 0.13); noise(t, 0.02, 0.25, 4200); },
+  corner: function () { tone(110, 0.02, 0.35, 'sine', 0.5, 70); tone(220, 0.02, 0.2, 'triangle', 0.12, 140); },
+  pass: function () { tone(660, 0, 0.18, 'sine', 0.12); tone(523, 0.16, 0.25, 'sine', 0.12); },
+  win: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, i * 0.12, 0.35, 'triangle', 0.2); }); tone(1319, 0.5, 0.6, 'sine', 0.12); },
+  lose: function () { [392, 330, 262].forEach(function (f, i) { tone(f, i * 0.18, 0.4, 'sine', 0.18); }); },
+  tick: function (t, i) { tone(500 + i * 9, t, 0.04, 'square', 0.04); },
+  ui: function () { tone(880, 0, 0.05, 'sine', 0.08); }
+};
+function vib(p) { if (SET.vib && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
+
+// ---------- game state ----------
+var G = null, P = null, posList = [], movers = [], phase = 'title', aiReq = 0, aiTimer = 0, hint = null, hintReq = 0, evalReq = 0, afterTimer = 0, cntTimer = 0;
+var NAMES = ['黑', '白'];
+function todayKey() { var d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function normalize(p) { if (!isOver(p) && !legalOf(p).length) return passPos(p); return p; }
+function replay() {
+  var p = G.start; posList = [p]; movers = [];
+  for (var i = 0; i < G.moves.length; i++) { p = normalize(p); movers.push(p.turn); p = playPos(p, G.moves[i]); posList.push(p); }
+  P = normalize(p);
+}
+function isHumanTurn() { return G && (G.mode === 'net' ? G.passDue < 0 && NET.canMove() : G.mode === '2p' || P.turn === G.human); }
+function buildGame(cfg) {
+  var g = { mode: cfg.mode, level: +cfg.level, human: 0, hand: cfg.mode === 'ai' ? +cfg.hand : 0, open: cfg.open, moves: [], pre: 0, hints: 0, undos: 0, day: 0 };
+  g.human = cfg.color === 'r' ? (Math.random() < 0.5 ? 0 : 1) : +cfg.color;
+  var p = initialPos();
+  [0, 63, 7, 56].slice(0, g.hand).forEach(function (s) { setSq(p, s, g.human); });
+  g.start = p;
+  var n = 0, R = Math.random;
+  if (cfg.open === 'rand') n = 4 + Math.floor(Math.random() * 5);
+  if (cfg.open === 'daily') { n = 6; g.day = todayKey(); R = seededRng(dailySeed(g.day)); }
+  g.moves = openingMoves(p, n, R);
+  g.pre = g.moves.length;
+  return g;
+}
+function saveGame() { if (G && G.mode !== 'net' && phase !== 'over' && phase !== 'count') sv('game', { mode: G.mode, level: G.level, human: G.human, hand: G.hand, open: G.open, moves: G.moves, pre: G.pre, hints: G.hints, undos: G.undos, day: G.day, start: G.start }); }
+function startGame(cfg) {
+  cancelWork(); clearTimeout(aiTimer); clearTimeout(afterTimer); clearTimeout(cntTimer);
+  G = buildGame(cfg); replay(); phase = 'play'; countAnim = null; shownPos = null; rvMark = null; $('toolBar').classList.remove('hidden'); $('revBar').classList.add('hidden'); hint = null; evalVal = null;
+  snapDisplay(true); closeAll(); updateHUD(); saveGame(); dirty = true; kick();
+  if (G.open === 'daily') toast('每日開局 ' + String(G.day).slice(4, 6) + '/' + String(G.day).slice(6));
+  else if (G.pre) toast('隨機開局：已下 ' + G.pre + ' 手');
+  setTimeout(nextTurn, 500);
+}
+function resumeGame(sg) {
+  G = sg; replay(); phase = 'play'; hint = null; evalVal = null;
+  if (isOver(P)) { G = null; sv('game', null); return false; }
+  snapDisplay(true); closeAll(); updateHUD(); dirty = true; kick(); setTimeout(nextTurn, 300); return true;
+}
+function nextTurn() {
+  if (!G || phase !== 'play') return;
+  updateHUD();
+  if (G.mode === 'ai' && P.turn !== G.human) requestAI();
+  else if (SET.evalbar && G.mode === '2p') requestEval();
+}
+function requestAI() {
+  var t0 = nowT(), pos = P;
+  setStatus('think');
+  aiReq = ask({ type: 'think', s: sides(pos), level: G.level }, function (r) {
+    if (!G || phase !== 'play' || P !== pos) return;
+    if (r.score != null && r.move >= 0 && !r.only) setEval(pos.turn, r.score, r.exact);
+    var wait = Math.max(0, t0 + 520 - nowT(), animEnd - nowT());
+    aiTimer = setTimeout(function () { aiReq = 0; if (G && P === pos && phase === 'play') doMove(r.move); }, wait);
+  });
+}
+function requestEval() {
+  var pos = P;
+  evalReq = ask({ type: 'analyze', s: sides(pos), ms: 250 }, function (r) { if (P !== pos || !r.scores.length) return; setEval(pos.turn, r.scores[0].v, r.exact); });
+}
+function doMove(sq) {
+  var p = P, fl = flipsOf(p, sq); if (!fl.length) return false;
+  var q = playPos(p, sq); G.moves.push(sq); movers.push(p.turn); posList.push(q);
+  hint = null; hover = -1; preview = -1;
+  animateMove(sq, fl, p.turn);
+  var passed = false;
+  if (!isOver(q) && !legalOf(q).length) { if (G.mode === 'net') G.passDue = q.turn; q = passPos(q); passed = true; }
+  P = q; saveGame(); updateHUD(true);
+  clearTimeout(afterTimer);
+  afterTimer = setTimeout(function () {
+    if (!G) return;
+    if (isOver(P)) { startCount(); return; }
+    if (passed && G.mode === 'net') netPass(); // online: only the passer's own device sends the pass
+    else if (passed) { toast(NAMES[p.turn ^ 1] + '方無處可下，Pass'); SFX.pass(); vib([10, 40, 10]); }
+    nextTurn();
+  }, Math.max(0, animEnd - nowT()) + (passed ? 150 : 0));
+  return true;
+}
+function canInput() { return G && phase === 'play' && isHumanTurn() && !aiReq && nowT() >= animEnd - 30; }
+function humanMove(sq) {
+  if (!canInput()) return;
+  if (legalOf(P).indexOf(sq) < 0) { if (cellAt(P, sq) < 0) { shake = nowT(); dirty = true; kick(); vib(6); } return; }
+  if (doMove(sq) && G.mode === 'net') NET.moved(sq);
+}
+function undo() {
+  if (!G || phase !== 'play' || G.mode === 'net') return;
+  var floor = G.pre, n = G.moves.length;
+  if (n <= floor) return;
+  cancelWork(); clearTimeout(aiTimer); clearTimeout(afterTimer); aiReq = 0;
+  if (G.mode === '2p') G.moves.pop();
+  else {
+    var hasHuman = false; for (var i = floor; i < n; i++) if (movers[i] === G.human) hasHuman = true;
+    if (!hasHuman) return;
+    while (G.moves.length > floor) { var m = movers[G.moves.length - 1]; G.moves.pop(); if (m === G.human) break; }
+  }
+  G.undos++; var old = P; replay(); hint = null; animateDiff(old, P); saveGame(); updateHUD(); SFX.ui(); vib(8);
+  setTimeout(nextTurn, 260);
+}
+function showHint() {
+  if (!G || phase !== 'play' || G.mode === 'net' || !isHumanTurn() || aiReq) return;
+  var pos = P; setStatus('hint');
+  hintReq = ask({ type: 'analyze', s: sides(pos), ms: 1000 }, function (r) {
+    if (P !== pos || phase !== 'play') return;
+    var best = r.scores[0], stars = {};
+    r.scores.forEach(function (x) { var loss = best.v - x.v; stars[x.sq] = r.exact ? (loss <= 2 ? 3 : loss <= 8 ? 2 : 1) : (loss <= 15 ? 3 : loss <= 60 ? 2 : 1); });
+    hint = { best: best.sq, stars: stars, t: nowT() }; G.hints++;
+    setEval(pos.turn, best.v, r.exact); updateHUD(); dirty = true; kick(); SFX.ui();
+  });
+}
+// ---------- end of game ----------
+var countAnim = null;
+function startCount() {
+  phase = 'count'; updateHUD();
+  var c = counts(P), list = [], i, bi = 0, wi = 0, t0 = nowT() + 250;
+  for (i = 0; i < 64; i++) { var col = cellAt(P, i); if (col >= 0) list.push({ c: col, from: i }); }
+  list.forEach(function (d, k) { d.to = d.c === 0 ? bi++ : 63 - (wi++); d.st = t0 + k * 14; });
+  countAnim = { list: list, t0: t0, end: t0 + list.length * 14 + 650 };
+  for (i = 0; i < 64; i++) disp[i] = null;
+  var hidden = list.length * 14 + 900;
+  list.forEach(function (d, k) { if (k % 3 === 0) SFX.tick((d.st - nowT()) / 1000 + 0.3, k / 3); });
+  dirty = true; kick();
+  cntTimer = setTimeout(finishGame, hidden + 300);
+}
+function finishGame() {
+  if (!G) return;
+  var net = G.mode === 'net';
+  phase = 'over'; if (!net) sv('game', null);
+  var fc = finalCounts(P), raw = counts(P), me = G.mode === 'ai' || net ? G.human : -1, winner = fc[0] > fc[1] ? 0 : fc[1] > fc[0] ? 1 : -1;
+  if (net && G.netRes != null) winner = G.netRes ^ 1;
+  var title, cls = '';
+  if (G.mode === 'ai') { title = winner === -1 ? '和局' : winner === me ? '勝利！' : '惜敗'; cls = winner === -1 ? '' : winner === me ? 'win' : 'lose'; }
+  else if (net && me >= 0) { title = winner === -1 ? '和局' : winner === me ? '你贏了！' : (NETN[me ^ 1] || '對手') + ' 獲勝'; cls = winner === -1 ? '' : winner === me ? 'win' : 'lose'; }
+  else title = winner === -1 ? '和局' : NAMES[winner] + '方勝';
+  $('rTitle').textContent = title; $('rTitle').className = 'res-t ' + cls;
+  $('rScore').textContent = fc[0] + ' – ' + fc[1];
+  var e = 64 - raw[0] - raw[1], sub = [];
+  if (net && G.netRes != null) sub.push(NAMES[G.netRes] + '方認輸');
+  else if (e && winner >= 0) sub.push('盤面 ' + raw[0] + ' – ' + raw[1] + '，空格 ' + e + ' 歸勝方');
+  if (G.mode === 'ai') sub.push('對手：' + LEVELS[G.level].name + '（難度 ' + G.level + '）' + (G.hand ? '・讓 ' + G.hand + ' 角' : ''));
+  sub.push('共 ' + G.moves.length + ' 手' + (G.hints ? '・提示 ' + G.hints + ' 次' : '') + (G.undos ? '・悔棋 ' + G.undos + ' 次' : ''));
+  $('rSub').innerHTML = sub.map(esc).join('<br>');
+  // stats + achievements
+  var newAch = [];
+  if (G.mode === 'ai') {
+    var s = STATS.lv[G.level] || (STATS.lv[G.level] = { p: 0, w: 0, l: 0, d: 0, diff: 0 });
+    s.p++; if (winner === -1) s.d++; else if (winner === me) s.w++; else s.l++; s.diff += fc[me] - fc[me ^ 1];
+    if (winner === me) {
+      var cw = [0, 7, 56, 63].every(function (q) { return cellAt(P, q) === me; });
+      if (raw[me ^ 1] === 0 && !STATS.ach.shutout) { STATS.ach.shutout = 1; newAch.push('完封'); }
+      if (cw && !STATS.ach.corners) { STATS.ach.corners = 1; newAch.push('四角全取'); }
+      if (G.level === 5 && !G.hand && !STATS.ach.expert) { STATS.ach.expert = 1; newAch.push('擊敗專家'); }
+      if (!STATS.ach.first) { STATS.ach.first = 1; newAch.push('初勝'); }
+      if (G.level >= 4 && G.hints === 0 && G.undos === 0 && !STATS.ach.pure) { STATS.ach.pure = 1; newAch.push('不靠提示勝高級'); }
+    }
+    if (G.open === 'daily' && G.day) STATS.daily[G.day] = { r: winner === -1 ? 'd' : winner === me ? 'w' : 'l', s: fc[me] + '-' + fc[me ^ 1] };
+  } else if (!net) STATS.pvp = (STATS.pvp || 0) + 1;
+  saveStats();
+  $('rAch').innerHTML = newAch.map(function (a) { return '<span class="got">🏅 ' + a + '</span>'; }).join('');
+  var good = G.mode === '2p' || (net && me < 0) || winner === me;
+  if (good && winner !== -1) { SFX.win(); vib([20, 60, 20, 60, 40]); burst(true); } else if (winner === -1) SFX.pass(); else { SFX.lose(); vib(60); }
+  $('rAgain').textContent = net ? '再來一局（換邊）' : '再來一局'; $('rAgain').classList.toggle('hidden', net && me < 0);
+  $('rReview').classList.toggle('hidden', net); $('rHome').textContent = net ? '離開房間' : '主畫面';
+  if (net) NET.refresh();
+  updateHUD();
+  setTimeout(function () { if (phase === 'over') show('ovResult'); }, 350);
+}
+function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+// ---------- review (覆盤) ----------
+var rv = { i: 0, cache: {}, req: 0 };
+function startReview() {
+  closeAll(); phase = 'review'; countAnim = null; rv.i = Math.max(1, G.pre + 1); rv.cache = {};
+  $('toolBar').classList.add('hidden'); $('revBar').classList.remove('hidden');
+  updateHUD(); reviewShow();
+}
+function reviewShow() {
+  var n = G.moves.length; rv.i = Math.max(1, Math.min(n + 1, rv.i));
+  var pos = rv.i <= n ? normalize(posList[rv.i - 1]) : posList[n];
+  var old = shownPos || P; shownPos = pos; animateDiff(old, pos);
+  $('rvPrev').disabled = rv.i <= 1; $('rvNext').disabled = rv.i > n;
+  var info = $('rvInfo');
+  if (rv.i > n) { var fc = finalCounts(P); info.innerHTML = '<b>終局 ' + fc[0] + ' – ' + fc[1] + '</b><small>點 ◀ 回看每一手</small>'; rvMark = null; dirty = true; kick(); return; }
+  var mv = G.moves[rv.i - 1], who = movers[rv.i - 1], tag = rv.i <= G.pre ? '（開局）' : '';
+  var head = '<b>第 ' + rv.i + ' 手 ' + NAMES[who] + ' ' + sqName(mv) + tag + '</b>';
+  rvMark = { mv: mv, best: -1, who: who };
+  var c = rv.cache[rv.i];
+  if (c) { rvMark.best = c.best; info.innerHTML = head + '<small>' + c.txt + '</small>'; dirty = true; kick(); return; }
+  info.innerHTML = head + '<small>分析中…</small>'; dirty = true; kick();
+  cancelWork();
+  var idx = rv.i;
+  ask({ type: 'analyze', s: sides(pos), ms: 450 }, function (r) {
+    var best = r.scores[0], mine = r.scores.filter(function (x) { return x.sq === mv; })[0], txt;
+    if (!best || !mine) txt = '唯一著法';
+    else if (r.scores.length === 1) txt = '唯一著法';
+    else {
+      var loss = best.v - mine.v, disc = r.exact ? loss : Math.round(loss / 30);
+      if (mine.sq === best.sq || loss <= 0) txt = '✓ 最佳手' + (r.exact ? '（終局完全讀）' : '');
+      else txt = '最佳 ' + sqName(best.sq) + '・損失' + (r.exact ? ' ' : ' 約 ') + Math.max(r.exact ? 1 : 0, disc) + ' 子' + (disc >= 6 ? '（失著）' : disc >= 3 ? '（疑問手）' : '');
+    }
+    rv.cache[idx] = { best: best ? best.sq : -1, txt: txt };
+    if (rv.i === idx && phase === 'review') reviewShow();
+  });
+}
+function endReview() {
+  cancelWork(); phase = 'over'; rvMark = null; var old = shownPos; shownPos = null; animateDiff(old, P);
+  $('toolBar').classList.remove('hidden'); $('revBar').classList.add('hidden'); updateHUD(); show('ovResult');
+}
+var shownPos = null, rvMark = null;
+
+// ---------- record / share ----------
+function recordText() {
+  var mv = G.moves.map(sqName).join('');
+  var hdr = '黑白棋 ' + (G.mode === 'ai' ? '對電腦（' + LEVELS[G.level].name + '）你執' + NAMES[G.human] : '雙人') + (G.hand ? ' 讓' + G.hand + '角' : '') + (G.open === 'daily' ? ' 每日開局 ' + G.day : '');
+  var res = '';
+  if (phase === 'over' || phase === 'review') { var fc = finalCounts(P); res = ' 結果 ' + fc[0] + '-' + fc[1]; }
+  return hdr + res + '\n' + mv;
+}
+function openRecord() {
+  if (!G) return;
+  $('recText').value = recordText(); $('recInfo').textContent = '標準座標棋譜（' + G.moves.length + ' 手，a–h 為行、1–8 為列）。';
+  $('recImg').classList.add('hidden'); show('ovRecord');
+}
+function boardImage(cb) {
+  var c = document.createElement('canvas'), s = 600; c.width = s; c.height = s + 80; var x = c.getContext('2d');
+  x.fillStyle = '#0b1a13'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(cv, 0, 0, cv.width, cv.height, 20, 20, s - 40, s - 40);
+  var fc = (phase === 'over' || phase === 'review') ? finalCounts(P) : counts(P);
+  x.fillStyle = '#f2d27e'; x.font = 'bold 34px system-ui,sans-serif'; x.textAlign = 'center'; x.fillText('黑白棋  ' + fc[0] + ' – ' + fc[1], s / 2, s + 40);
+  c.toBlob(function (b) { cb(b, c.toDataURL('image/png')); }, 'image/png');
+}
+function shareRecord() {
+  var text = recordText();
+  boardImage(function (blob, url) {
+    var file = null; try { file = new File([blob], 'othello.png', { type: 'image/png' }); } catch (e) {}
+    if (navigator.share) {
+      var data = { text: text, title: '黑白棋棋譜' };
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) data.files = [file];
+      navigator.share(data).catch(function () {});
+    } else { $('recImg').src = url; $('recImg').classList.remove('hidden'); toast('長按或右鍵圖片即可儲存'); }
+  });
+}
+function copyRecord() {
+  var t = $('recText'); t.select();
+  var ok = function () { toast('已複製棋譜'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(ok, function () { try { document.execCommand('copy'); ok(); } catch (e) {} });
+  else { try { document.execCommand('copy'); ok(); } catch (e) {} }
+}
+
+// ---------- HUD ----------
+var evalVal = null;
+function setEval(turn, v, exact) { var b = turn === 0 ? v : -v; evalVal = { b: b, exact: exact }; drawEval(); }
+function drawEval() {
+  var on = SET.evalbar && G && G.mode !== 'net' && phase !== 'title';
+  $('evalBar').classList.toggle('hidden', !on); if (!on) return;
+  var f = 0.5, txt = '均勢';
+  if (evalVal) {
+    var b = evalVal.b;
+    if (evalVal.exact) { f = 0.5 + 0.5 * Math.tanh(b / 16); txt = b === 0 ? '終局：和' : '終局：' + (b > 0 ? '黑' : '白') + ' +' + Math.abs(b); }
+    else if (Math.abs(b) >= WIN) { f = b > 0 ? 0.97 : 0.03; txt = (b > 0 ? '黑' : '白') + '必勝'; }
+    else { f = 0.5 + 0.5 * Math.tanh(b / 350); txt = Math.abs(b) < 40 ? '均勢' : (b > 0 ? '黑' : '白') + (Math.abs(b) > 400 ? '大優' : '稍優'); }
+  }
+  $('evalFill').style.width = (f * 100).toFixed(1) + '%'; $('evalTxt').textContent = txt;
+}
+function setStatus(kind) {
+  var el = $('stText'), dots = '<span class="dots"><i></i><i></i><i></i></span>';
+  if (kind === 'think') el.innerHTML = '電腦思考中 ' + dots;
+  else if (kind === 'hint') el.innerHTML = '分析最佳落點 ' + dots;
+  else el.innerHTML = kind;
+}
+function updateHUD() {
+  var g = G;
+  if (!g) return;
+  var turn = g.mode === 'net' && g.passDue >= 0 ? g.passDue : P.turn, isAI = g.mode === 'ai';
+  $('wB').textContent = isAI ? (g.human === 0 ? '你' : '電腦') : '黑方';
+  $('wW').textContent = isAI ? (g.human === 1 ? '你' : '電腦') : '白方';
+  if (g.mode === 'net') { $('wB').textContent = NETN[0] || '黑方'; $('wW').textContent = NETN[1] || '白方'; }
+  $('sB').classList.toggle('on', phase === 'play' && turn === 0); $('sW').classList.toggle('on', phase === 'play' && turn === 1);
+  if (phase === 'play') {
+    if (aiReq) setStatus('think');
+    else if (g.mode === 'net') setStatus(esc(NETST || '連線中…'));
+    else if (isAI) setStatus(turn === g.human ? '輪到你（' + NAMES[turn] + '）' : '電腦（' + NAMES[turn] + '）');
+    else setStatus(NAMES[turn] + '方回合');
+  } else if (phase === 'count') setStatus('數子中…');
+  else if (phase === 'over') { var fc = finalCounts(P); setStatus('終局 ' + fc[0] + ' – ' + fc[1] + (g.mode === 'net' && /再來/.test(NETST) ? '・' + esc(NETST) : '')); }
+  else if (phase === 'review') setStatus('覆盤');
+  var lv = $('lvBadge');
+  if (isAI) { var pip = ''; for (var i = 1; i <= 5; i++) pip += '<i' + (i <= g.level ? ' class="on"' : '') + '></i>'; lv.innerHTML = '難度 ' + g.level + '・' + LEVELS[g.level].name + ' <span class="pips">' + pip + '</span>'; }
+  else lv.textContent = g.mode === 'net' ? '連線對戰' : '同機雙人';
+  var floor = g.pre, hasUndo = false;
+  for (var k = floor; k < g.moves.length; k++) if (g.mode === '2p' || movers[k] === g.human) hasUndo = true;
+  $('bUndo').disabled = !(phase === 'play' && hasUndo && g.mode !== 'net');
+  $('bHint').disabled = !(phase === 'play' && isHumanTurn() && g.mode !== 'net'); $('bNew').disabled = g.mode === 'net';
+  drawEval();
+  if (document.body.classList.contains('land')) {
+    var ml = $('mLog'), hs = '';
+    for (var j = 0; j < g.moves.length; j++) hs += '<span' + (j === g.moves.length - 1 ? ' class="last"' : '') + '><i class="' + (movers[j] ? 'w' : 'k') + '"></i>' + (j + 1) + ' ' + sqName(g.moves[j]) + '</span>';
+    if (ml.innerHTML !== hs) { ml.innerHTML = hs; ml.scrollTop = ml.scrollHeight; }
+  }
+}
+var shownCounts = [-1, -1];
+function setCounts(b, w) {
+  if (b !== shownCounts[0]) { var e = $('nB'); e.textContent = b; e.classList.remove('bump'); void e.offsetWidth; e.classList.add('bump'); }
+  if (w !== shownCounts[1]) { var f = $('nW'); f.textContent = w; f.classList.remove('bump'); void f.offsetWidth; f.classList.add('bump'); }
+  if (b !== shownCounts[0] || w !== shownCounts[1]) $('rB').style.width = (b + w ? b / (b + w) * 100 : 50) + '%';
+  shownCounts = [b, w];
+}
+var toastT = 0;
+function toast(m) { var t = $('toast'); t.textContent = m; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; toastT = setTimeout(function () { t.classList.add('hidden'); }, 320); }, 1500); }
+
+// ---------- rendering ----------
+var cv = $('cv'), cx = cv.getContext('2d'), DPR = 1, S = 300, M = 0, CELL = 36, raf = 0, dirty = true, animEnd = 0, hover = -1, preview = -1, shake = 0;
+var disp = new Array(64), particles = [], COL = {}, feltCache = null, sprites = null;
+function readColors() { var cs = getComputedStyle(document.documentElement); ['felt', 'brass', 'brass2', 'accent', 'hot', 'dot', 'ink'].forEach(function (k) { COL[k] = cs.getPropertyValue('--' + k).trim(); }); }
+function layout() {
+  var land = innerWidth > innerHeight * 1.15;
+  document.body.classList.toggle('land', land);
+  if (land) {
+    var sat = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+    var bs = Math.floor(Math.min(innerHeight - 16 - sat, innerWidth * 0.58));
+    document.documentElement.style.setProperty('--bs', bs + 'px');
+  }
+  var w = $('boardWrap'), size = Math.floor(Math.min(w.clientWidth, w.clientHeight));
+  size = Math.max(200, Math.min(size, 760));
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  S = size; cv.style.width = S + 'px'; cv.style.height = S + 'px'; cv.width = Math.round(S * DPR); cv.height = Math.round(S * DPR);
+  M = S >= 440 ? Math.round(S * 0.045) : Math.round(S * 0.018);
+  CELL = (S - 2 * M) / 8; feltCache = null; sprites = null; dirty = true; kick();
+}
+function cxy(sq) { return [M + ((sq & 7) + 0.5) * CELL, M + ((sq >> 3) + 0.5) * CELL]; }
+function buildFelt() {
+  var c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height; var x = c.getContext('2d'); x.scale(DPR, DPR);
+  var r = 16;
+  x.beginPath(); x.roundRect ? x.roundRect(0, 0, S, S, r) : x.rect(0, 0, S, S); x.closePath();
+  var g = x.createLinearGradient(0, 0, S, S); g.addColorStop(0, '#6d4b22'); g.addColorStop(0.5, '#3d2810'); g.addColorStop(1, '#5a3c19');
+  x.fillStyle = g; x.fill();
+  var inset = Math.max(2, M * 0.4);
+  x.save(); x.beginPath(); x.rect(inset, inset, S - 2 * inset, S - 2 * inset); x.clip();
+  x.fillStyle = COL.felt; x.fillRect(0, 0, S, S);
+  // woven noise
+  var id = x.getImageData(0, 0, c.width, c.height), d = id.data, seed = 7;
+  for (var i = 0; i < d.length; i += 4) { seed = (seed * 16807) % 2147483647; var n = (seed / 2147483647 - 0.5) * 18 + (((i / 4) % c.width + Math.floor(i / 4 / c.width)) % 4 < 2 ? 3 : -3); d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  x.putImageData(id, 0, 0);
+  var vg = x.createRadialGradient(S / 2, S * 0.42, S * 0.1, S / 2, S / 2, S * 0.75); vg.addColorStop(0, 'rgba(255,255,255,0.03)'); vg.addColorStop(1, 'rgba(0,0,0,0.45)');
+  x.fillStyle = vg; x.fillRect(0, 0, S, S); x.restore();
+  // brass grid
+  var lg = x.createLinearGradient(0, 0, S, S); lg.addColorStop(0, '#f0d58a'); lg.addColorStop(0.5, COL.brass); lg.addColorStop(1, '#9a7330');
+  x.strokeStyle = lg; x.lineWidth = Math.max(1, CELL * 0.035); x.globalAlpha = 0.85;
+  x.beginPath();
+  for (var k = 0; k <= 8; k++) { var p = M + k * CELL; x.moveTo(M, p); x.lineTo(S - M, p); x.moveTo(p, M); x.lineTo(p, S - M); }
+  x.stroke(); x.globalAlpha = 1;
+  x.fillStyle = lg;
+  [[2, 2], [6, 2], [2, 6], [6, 6]].forEach(function (q) { x.beginPath(); x.arc(M + q[0] * CELL, M + q[1] * CELL, Math.max(2.5, CELL * 0.075), 0, 7); x.fill(); });
+  if (M >= 14) {
+    x.fillStyle = '#f0d58acc'; x.font = '600 ' + Math.max(11, Math.round(M * 0.55)) + 'px system-ui,sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    for (k = 0; k < 8; k++) { x.fillText('abcdefgh'[k], M + (k + 0.5) * CELL, M / 2); x.fillText(String(k + 1), M / 2, M + (k + 0.5) * CELL); }
+  }
+  feltCache = c;
+}
+function buildSprites() {
+  var r = CELL * 0.41, sz = Math.ceil(r * 2 * DPR) + 4, mk = function (fn) { var c = document.createElement('canvas'); c.width = c.height = sz; var x = c.getContext('2d'); x.translate(sz / 2, sz / 2); x.scale(DPR, DPR); fn(x, r); return c; };
+  var black = mk(function (x, r) {
+    var g = x.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.05, 0, 0, r); g.addColorStop(0, '#77777f'); g.addColorStop(0.28, '#2a2a2e'); g.addColorStop(1, '#030304');
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill();
+    x.strokeStyle = 'rgba(255,255,255,0.12)'; x.lineWidth = r * 0.06; x.beginPath(); x.arc(0, 0, r * 0.8, 0, 7); x.stroke();
+    x.fillStyle = 'rgba(255,255,255,0.22)'; x.beginPath(); x.ellipse(-r * 0.3, -r * 0.42, r * 0.32, r * 0.16, -0.5, 0, 7); x.fill();
+  });
+  var white = mk(function (x, r) {
+    var g = x.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.05, 0, 0, r); g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, '#f2ede2'); g.addColorStop(1, '#bfb6a2');
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill();
+    var p = x.createLinearGradient(-r, -r, r, r); p.addColorStop(0, 'rgba(255,190,220,0.10)'); p.addColorStop(0.5, 'rgba(180,220,255,0.10)'); p.addColorStop(1, 'rgba(255,240,190,0.10)');
+    x.fillStyle = p; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill();
+    x.strokeStyle = 'rgba(120,105,80,0.25)'; x.lineWidth = r * 0.06; x.beginPath(); x.arc(0, 0, r * 0.8, 0, 7); x.stroke();
+  });
+  var shadow = mk(function (x, r) { var g = x.createRadialGradient(0, 0, r * 0.5, 0, 0, r); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.beginPath(); x.arc(0, 0, r, 0, 7); x.fill(); });
+  sprites = { f: [black, white], sh: shadow, r: r, sz: sz / DPR };
+}
+var EDGE = ['#5d574c', '#2b2a28'];
+function drawDisc(x, y, c, from, ph, lift, alpha, scale) {
+  var r = sprites.r * (scale || 1), ang = ph * Math.PI, sx = Math.abs(Math.cos(ang)), face = ph < 0.5 ? from : c, s = Math.sin(ang), th = r * 0.16;
+  lift = (lift || 0) + s * r * 0.45;
+  cx.globalAlpha = (alpha == null ? 1 : alpha) * 0.9 * Math.max(0.35, 1 - lift / r * 0.5);
+  var ss = sprites.sz * (scale || 1) * (1.05 + lift / r * 0.15);
+  cx.drawImage(sprites.sh, x - ss / 2 + r * 0.1 + lift * 0.35, y - ss / 2 + r * 0.16 + lift * 0.5, ss, ss);
+  cx.globalAlpha = alpha == null ? 1 : alpha;
+  y -= lift;
+  // side thickness (the opposite face shows on the rim)
+  cx.fillStyle = EDGE[face]; cx.beginPath(); cx.ellipse(x + s * th * 0.8, y + th * (0.55 + 0.2 * s), r * sx + s * th, r, 0, 0, 7); cx.fill();
+  var w = sprites.sz * (scale || 1);
+  if (sx > 0.02) cx.drawImage(sprites.f[face], x - w * sx / 2, y - w / 2, w * sx, w);
+  cx.globalAlpha = 1;
+}
+function snapDisplay(withDrop) {
+  var t = nowT();
+  for (var i = 0; i < 64; i++) { var c = cellAt(P, i); disp[i] = c < 0 ? null : { c: c, from: c, fs: 0, fd: 1, ds: withDrop ? t + (i % 8 + (i >> 3)) * 18 : 0 }; }
+  animEnd = withDrop ? t + 400 : t; if (withDrop) for (var k = 0; k < 4; k++) SFX.tick(k * 0.05, k * 3);
+  if (G) setCounts(counts(P)[0], counts(P)[1]);
+  dirty = true; kick();
+}
+function animateMove(sq, fl, color) {
+  var t = nowT(), fast = SET.fast, dropD = fast ? 60 : 100, stag = fast ? 15 : 40, fd = fast ? 80 : 250, end = t;
+  disp[sq] = { c: color, from: color, fs: 0, fd: 1, ds: t, dd: dropD };
+  SFX.place(); vib(8);
+  var x0 = sq & 7, y0 = sq >> 3;
+  fl.slice().sort(function (a, b) { return Math.max(Math.abs((a & 7) - x0), Math.abs((a >> 3) - y0)) - Math.max(Math.abs((b & 7) - x0), Math.abs((b >> 3) - y0)); }).forEach(function (f, i) {
+    var dist = Math.max(Math.abs((f & 7) - x0), Math.abs((f >> 3) - y0)), st = t + dropD + (dist - 1) * stag + (i % 2) * 6;
+    disp[f] = { c: color, from: color ^ 1, fs: st, fd: fd, ds: 0 };
+    end = Math.max(end, st + fd);
+    SFX.flip((st - t) / 1000, i);
+  });
+  if (sq === 0 || sq === 7 || sq === 56 || sq === 63) { setTimeout(function () { SFX.corner(); vib(15); }, dropD); var p = cxy(sq); sparkle(p[0], p[1], 26, COL.accent); }
+  else { var q = cxy(sq); sparkle(q[0], q[1], 6, color ? '#fff' : '#888'); }
+  animEnd = Math.max(end, t + dropD) + 20;
+  dirty = true; kick();
+}
+function animateDiff(a, b) { // undo / review: flip back or fade changed squares
+  var t = nowT(), d = SET.fast ? 80 : 200;
+  for (var i = 0; i < 64; i++) {
+    var ca = a ? cellAt(a, i) : -1, cb = cellAt(b, i);
+    if (ca === cb) { if (cb >= 0 && !disp[i]) disp[i] = { c: cb, from: cb, fs: 0, fd: 1, ds: 0 }; if (cb < 0) disp[i] = null; continue; }
+    if (cb < 0) disp[i] = { c: ca, from: ca, fs: 0, fd: 1, ds: 0, out: t, od: d };
+    else if (ca < 0) disp[i] = { c: cb, from: cb, fs: 0, fd: 1, ds: t, dd: 100 };
+    else disp[i] = { c: cb, from: ca, fs: t, fd: d, ds: 0 };
+  }
+  animEnd = t + d + 20; dirty = true; kick();
+}
+function sparkle(x, y, n, col) { for (var i = 0; i < n; i++) { var a = Math.random() * 6.283, v = 0.5 + Math.random() * 2.2; particles.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.6, life: 1, dec: 0.012 + Math.random() * 0.02, s: 1.5 + Math.random() * 2.5, col: col }); } }
+function burst() { var cols = ['#f2d27e', '#ffffff', '#222', '#7fd69b', '#ff8a5c']; for (var i = 0; i < 90; i++) { var a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, v = 3 + Math.random() * 5; particles.push({ x: S / 2, y: S * 0.75, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, dec: 0.006 + Math.random() * 0.008, s: 3 + Math.random() * 4, col: cols[i % cols.length], g: 0.12, rect: true, rot: Math.random() * 6 }); } kick(); }
+function kick() { if (!raf && !document.hidden) raf = requestAnimationFrame(frame); }
+function frame() {
+  raf = 0;
+  var t = nowT(), live = draw(t);
+  if (live || dirty) { dirty = false; raf = requestAnimationFrame(frame); }
+}
+function ease(t) { return t < 0 ? 0 : t > 1 ? 1 : 1 - Math.pow(1 - t, 3); }
+function draw(t) {
+  if (!feltCache) buildFelt(); if (!sprites) buildSprites();
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0); cx.clearRect(0, 0, S, S);
+  var live = false, sk = 0;
+  if (shake && t - shake < 250) { sk = Math.sin((t - shake) / 18) * 3 * (1 - (t - shake) / 250); live = true; }
+  cx.save(); cx.translate(sk, 0);
+  cx.drawImage(feltCache, 0, 0, S, S);
+  var showPos = shownPos || P, i, d, p, bC = 0, wC = 0;
+  // legal dots / hint
+  var interactive = G && phase === 'play' && isHumanTurn() && !aiReq;
+  var legal = interactive ? legalOf(P) : [];
+  var flipCnt = {};
+  if (interactive && (SET.dots || SET.nums || hint)) legal.forEach(function (sq) { flipCnt[sq] = flipsOf(P, sq).length; });
+  if (interactive && t >= animEnd - 30) {
+    legal.forEach(function (sq) {
+      var q = cxy(sq);
+      if (hint) {
+        var st = hint.stars[sq] || 1, best = sq === hint.best, pulse = 0.5 + 0.5 * Math.sin((t - hint.t) / 220);
+        if (best) { cx.strokeStyle = COL.accent; cx.lineWidth = 3; cx.globalAlpha = 0.6 + 0.4 * pulse; cx.beginPath(); cx.arc(q[0], q[1], CELL * (0.36 + 0.04 * pulse), 0, 7); cx.stroke(); cx.globalAlpha = 1; live = true; }
+        cx.fillStyle = best ? COL.accent : 'rgba(255,240,200,0.85)'; cx.font = '700 ' + Math.max(11, Math.round(CELL * 0.26)) + 'px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+        cx.fillText('★★★'.slice(0, st), q[0], q[1] + (best ? 0 : 0));
+        return;
+      }
+      if (SET.dots || SET.nums) {
+        var rr = SET.nums ? CELL * 0.19 : CELL * 0.11;
+        cx.fillStyle = P.turn ? 'rgba(255,255,255,0.30)' : 'rgba(0,0,0,0.30)'; cx.beginPath(); cx.arc(q[0], q[1], rr, 0, 7); cx.fill();
+        cx.strokeStyle = 'rgba(255,255,255,0.35)'; cx.lineWidth = 1; cx.stroke();
+        if (SET.nums) { cx.fillStyle = P.turn ? '#1d2a22' : '#f3ecd8'; cx.font = '700 ' + Math.max(11, Math.round(CELL * 0.24)) + 'px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(flipCnt[sq], q[0], q[1] + 0.5); }
+      }
+    });
+  }
+  // discs
+  if ((phase === 'count' || phase === 'over') && countAnim) {
+    countAnim.list.forEach(function (d) {
+      var k = ease((t - d.st) / 520), a = cxy(d.from), b = cxy(d.to), x = a[0] + (b[0] - a[0]) * k, y = a[1] + (b[1] - a[1]) * k;
+      drawDisc(x, y, d.c, d.c, 1, Math.sin(k * Math.PI) * CELL * 0.6, 1, 1 + Math.sin(k * Math.PI) * 0.12);
+      if (k >= 1) { if (d.c) wC++; else bC++; }
+    });
+    if (t < countAnim.end) live = true;
+    if (t >= countAnim.end) { var cc = counts(P); setCounts(cc[0], cc[1]); } else setCounts(bC, wC);
+  } else {
+    for (i = 0; i < 64; i++) {
+      d = disp[i]; if (!d) continue; p = cxy(i);
+      var ph = 1, lift = 0, sc = 1, al = 1;
+      if (d.fd > 1) { ph = (t - d.fs) / d.fd; if (ph < 1) live = true; ph = ph < 0 ? 0 : ph > 1 ? 1 : ph; }
+      if (d.ds) { var k = (t - d.ds) / (d.dd || 100); if (k < 1) { live = true; if (k < 0) continue; lift = (1 - ease(k)) * CELL * 0.55; sc = 1 + (1 - k) * 0.18; } else if (t - d.ds < 400) { var rp = (t - d.ds - (d.dd || 100)) / 300; if (rp < 1) { live = true; cx.strokeStyle = 'rgba(242,210,126,' + (0.6 * (1 - rp)) + ')'; cx.lineWidth = 2; cx.beginPath(); cx.arc(p[0], p[1], CELL * (0.42 + rp * 0.2), 0, 7); cx.stroke(); } } }
+      if (d.out) { var o = (t - d.out) / d.od; if (o >= 1) { disp[i] = null; continue; } live = true; al = 1 - o; sc = 1 - o * 0.4; }
+      drawDisc(p[0], p[1], d.c, d.from, ph, lift, al, sc);
+      var vis = ph < 0.5 ? d.from : d.c; if (!d.out && !(d.ds && t < d.ds)) { if (vis) wC++; else bC++; }
+    }
+    if (G && phase !== 'title') setCounts(bC, wC);
+  }
+  // last move marker
+  if (G && !countAnim && !shownPos && G.moves.length && t >= animEnd - 30) {
+    var lm = G.moves[G.moves.length - 1], lp = cxy(lm);
+    cx.fillStyle = COL.hot; cx.beginPath(); cx.arc(lp[0], lp[1], Math.max(3, CELL * 0.07), 0, 7); cx.fill();
+  }
+  // review marks
+  if (phase === 'review' && rvMark) {
+    var mp = cxy(rvMark.mv);
+    cx.globalAlpha = 0.55; drawDisc(mp[0], mp[1], rvMark.who, rvMark.who, 1, 0, 0.55, 0.9); cx.globalAlpha = 1;
+    cx.strokeStyle = COL.hot; cx.lineWidth = 3; cx.beginPath(); cx.arc(mp[0], mp[1], CELL * 0.43, 0, 7); cx.stroke();
+    if (rvMark.best >= 0 && rvMark.best !== rvMark.mv) { var bp = cxy(rvMark.best); cx.strokeStyle = COL.accent; cx.setLineDash([5, 4]); cx.beginPath(); cx.arc(bp[0], bp[1], CELL * 0.4, 0, 7); cx.stroke(); cx.setLineDash([]); cx.fillStyle = COL.accent; cx.font = '700 ' + Math.max(11, Math.round(CELL * 0.26)) + 'px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('最佳', bp[0], bp[1]); }
+  }
+  // hover / long-press preview
+  var pv = preview >= 0 ? preview : hover;
+  if (interactive && pv >= 0 && t >= animEnd - 30 && legal.indexOf(pv) >= 0) {
+    var gp = cxy(pv); drawDisc(gp[0], gp[1], P.turn, P.turn, 1, 0, 0.5, 1);
+    var fl = flipsOf(P, pv), blink = 0.45 + 0.55 * Math.abs(Math.sin(t / 160));
+    cx.strokeStyle = preview >= 0 ? COL.hot : COL.accent; cx.lineWidth = 2.5; cx.globalAlpha = blink;
+    fl.forEach(function (f) { var fp = cxy(f); cx.beginPath(); cx.arc(fp[0], fp[1], CELL * 0.44, 0, 7); cx.stroke(); });
+    cx.globalAlpha = 1; live = true;
+    if (preview >= 0) {
+      var cc2 = counts(P), me = P.turn, a1 = cc2[me] + fl.length + 1, b1 = cc2[me ^ 1] - fl.length;
+      cx.fillStyle = 'rgba(0,0,0,0.65)'; var tx = '翻 ' + fl.length + ' 子 → ' + (me ? b1 + ' : ' + a1 : a1 + ' : ' + b1), tw = Math.max(110, tx.length * 9);
+      var ty = gp[1] > S / 2 ? gp[1] - CELL * 0.9 : gp[1] + CELL * 0.9, tx0 = Math.max(4 + tw / 2, Math.min(S - 4 - tw / 2, gp[0]));
+      cx.beginPath(); cx.roundRect ? cx.roundRect(tx0 - tw / 2, ty - 14, tw, 28, 10) : cx.rect(tx0 - tw / 2, ty - 14, tw, 28); cx.fill();
+      cx.fillStyle = '#fff'; cx.font = '700 13px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(tx, tx0, ty);
+    }
+  }
+  // particles
+  for (i = particles.length - 1; i >= 0; i--) {
+    var q = particles[i]; q.x += q.vx; q.y += q.vy; q.vy += q.g || 0.04; q.vx *= 0.99; q.life -= q.dec;
+    if (q.life <= 0) { particles.splice(i, 1); continue; }
+    cx.globalAlpha = Math.min(1, q.life * 1.5); cx.fillStyle = q.col;
+    if (q.rect) { q.rot += 0.15; cx.save(); cx.translate(q.x, q.y); cx.rotate(q.rot); cx.fillRect(-q.s / 2, -q.s / 4, q.s, q.s / 2); cx.restore(); }
+    else { cx.beginPath(); cx.arc(q.x, q.y, q.s * q.life, 0, 7); cx.fill(); }
+  }
+  cx.globalAlpha = 1; if (particles.length) live = true;
+  cx.restore();
+  return live;
+}
+
+// ---------- input ----------
+var down = null;
+function sqAt(e) { var r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * S / r.width - M, y = (e.clientY - r.top) * S / r.height - M; if (x < 0 || y < 0 || x >= CELL * 8 || y >= CELL * 8) return -1; return Math.floor(y / CELL) * 8 + Math.floor(x / CELL); }
+cv.addEventListener('pointerdown', function (e) {
+  audio();
+  var sq = sqAt(e); if (sq < 0) return;
+  down = { sq: sq, t: nowT(), touch: e.pointerType !== 'mouse', id: e.pointerId, lp: false };
+  if (down.touch && SET.longpress && canInput() && legalOf(P).indexOf(sq) >= 0) {
+    down.timer = setTimeout(function () { if (down && down.sq === sq) { down.lp = true; preview = sq; vib(10); dirty = true; kick(); } }, 300);
+  }
+});
+cv.addEventListener('pointermove', function (e) {
+  var sq = sqAt(e);
+  if (e.pointerType === 'mouse') { if (sq !== hover) { hover = sq; dirty = true; kick(); } return; }
+  if (down && sq !== down.sq) { clearTimeout(down.timer); if (preview >= 0) { preview = -1; dirty = true; kick(); } down.moved = true; }
+});
+cv.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') { hover = -1; dirty = true; kick(); } });
+function endPress(e, cancel) {
+  if (!down) return; var d = down; down = null; clearTimeout(d.timer);
+  var sq = sqAt(e), wasPrev = preview >= 0; preview = -1; dirty = true; kick();
+  if (cancel || sq !== d.sq || d.moved) return;
+  if (d.touch && SET.longpress) { if (d.lp && wasPrev) humanMove(sq); else if (canInput() && legalOf(P).indexOf(sq) >= 0) toast('長按 0.3 秒預覽，放開落子'); else humanMove(sq); return; }
+  humanMove(sq);
+}
+cv.addEventListener('pointerup', function (e) { endPress(e, false); });
+cv.addEventListener('pointercancel', function (e) { endPress(e, true); });
+document.addEventListener('keydown', function (e) {
+  if (e.target.closest && e.target.closest('textarea')) return;
+  var k = e.key.toLowerCase();
+  if (phase === 'review') { if (k === 'arrowleft') { rv.i--; reviewShow(); } else if (k === 'arrowright') { rv.i++; reviewShow(); } else if (k === 'escape') endReview(); return; }
+  if (anyOpen()) { if (k === 'escape') closeTop(); return; }
+  if (k === 'u') undo(); else if (k === 'h') showHint(); else if (k === 'n' && !(G && G.mode === 'net')) openSetup();
+});
+
+// ---------- overlays ----------
+var OVS = ['ovTitle', 'ovSetup', 'ovSettings', 'ovMenu', 'ovRules', 'ovStats', 'ovResult', 'ovRecord'], stack = [];
+function show(id) { if (stack.indexOf(id) < 0) stack.push(id); $(id).classList.remove('hidden'); }
+function hide(id) { $(id).classList.add('hidden'); stack = stack.filter(function (x) { return x !== id; }); }
+function closeAll() { OVS.forEach(hide); }
+function anyOpen() { return stack.length > 0; }
+function closeTop() { var id = stack[stack.length - 1]; if (id && id !== 'ovTitle' && id !== 'ovResult') hide(id); }
+document.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', function () { SFX.ui(); hide(b.closest('.ov').id); }); });
+function onTap(id, fn) { $(id).addEventListener('click', function (e) { audio(); fn(e); }); }
+// segmented controls
+function seg(id, get, set) {
+  var el = $(id);
+  var paint = function () { var v = String(get()); el.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === v); b.setAttribute('aria-pressed', b.dataset.v === v); }); };
+  el.addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; set(b.dataset.v); paint(); SFX.ui(); });
+  paint(); return paint;
+}
+(function () { var h = ''; for (var i = 1; i <= 5; i++) h += '<button data-v="' + i + '">' + i + '<small>' + LEVELS[i].name + '</small></button>'; $('sgLevel').innerHTML = h; })();
+var segPaints = [
+  seg('sgMode', function () { return SET.setup.mode; }, function (v) { SET.setup.mode = v; $('aiOpts').classList.toggle('hidden', v !== 'ai'); saveSet(); }),
+  seg('sgLevel', function () { return SET.setup.level; }, function (v) { SET.setup.level = +v; saveSet(); }),
+  seg('sgColor', function () { return SET.setup.color; }, function (v) { SET.setup.color = v; saveSet(); }),
+  seg('sgHand', function () { return SET.setup.hand; }, function (v) { SET.setup.hand = +v; saveSet(); }),
+  seg('sgOpen', function () { return SET.setup.open; }, function (v) { SET.setup.open = v; saveSet(); }),
+  seg('sgTheme', function () { return SET.theme; }, function (v) { SET.theme = v; saveSet(); applyTheme(); })
+];
+function openSetup() { segPaints.forEach(function (f) { f(); }); $('aiOpts').classList.toggle('hidden', SET.setup.mode !== 'ai'); hide('ovMenu'); hide('ovResult'); show('ovSetup'); }
+var SWS = [['dots', '顯示落點', '合法落點以半透明小圓點標示'], ['nums', '顯示翻子數', '圓點內顯示可翻幾顆'], ['longpress', '長按預覽落子', '防誤觸：長按 0.3 秒看翻轉結果，放開才落子'], ['fast', '快速模式', '翻轉動畫縮短為 80ms'], ['evalbar', '評估條', '顯示電腦評估的勝負傾向'], ['sound', '音效', ''], ['vib', '震動', '支援的裝置才有效']];
+$('swList').innerHTML = SWS.map(function (s) { return '<button class="sw" role="switch" data-k="' + s[0] + '" aria-checked="false"><span>' + s[1] + (s[2] ? '<small>' + s[2] + '</small>' : '') + '</span><i class="knob"></i></button>'; }).join('');
+function paintSw() { document.querySelectorAll('#swList .sw').forEach(function (b) { b.setAttribute('aria-checked', !!SET[b.dataset.k]); }); paintMute(); }
+$('swList').addEventListener('click', function (e) { var b = e.target.closest('.sw'); if (!b) return; var k = b.dataset.k; SET[k] = !SET[k]; saveSet(); paintSw(); audio(); SFX.ui(); if (k === 'evalbar') { drawEval(); if (SET.evalbar && G && phase === 'play' && !evalVal) requestEval(); } dirty = true; kick(); });
+function paintMute() { $('muteIco').innerHTML = SET.sound ? '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11"/>' : '<path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9l5 6M22 9l-5 6"/>'; }
+function openStats() {
+  var rows = '<tr><th>難度</th><th>對局</th><th>勝</th><th>負</th><th>和</th><th>勝率</th><th>平均子差</th></tr>';
+  for (var i = 1; i <= 5; i++) { var s = STATS.lv[i] || { p: 0, w: 0, l: 0, d: 0, diff: 0 }; rows += '<tr><td>' + i + ' ' + LEVELS[i].name + '</td><td>' + s.p + '</td><td>' + s.w + '</td><td>' + s.l + '</td><td>' + s.d + '</td><td>' + (s.p ? Math.round(s.w / s.p * 100) + '%' : '–') + '</td><td>' + (s.p ? (s.diff / s.p > 0 ? '+' : '') + (s.diff / s.p).toFixed(1) : '–') + '</td></tr>'; }
+  $('stTable').innerHTML = rows;
+  var dk = todayKey(), dd = STATS.daily[dk];
+  $('st2p').textContent = '雙人對局 ' + (STATS.pvp || 0) + ' 場・今日每日開局：' + (dd ? ({ w: '勝', l: '負', d: '和' })[dd.r] + ' ' + dd.s : '尚未挑戰');
+  var A = [['first', '初勝'], ['corners', '四角全取'], ['shutout', '完封'], ['expert', '擊敗專家'], ['pure', '不靠提示勝高級']];
+  $('achList').innerHTML = A.map(function (a) { return '<span class="' + (STATS.ach[a[0]] ? 'got' : '') + '">' + (STATS.ach[a[0]] ? '🏅 ' : '🔒 ') + a[1] + '</span>'; }).join('');
+  show('ovStats');
+}
+function openMenu() {
+  if (!G) { show('ovTitle'); return; }
+  if (G.mode === 'net') { NET.open(); return; }
+  if (phase === 'over') { show('ovResult'); return; }
+  $('mInfo').textContent = G.mode === 'ai' ? '對電腦・難度 ' + G.level + '（' + LEVELS[G.level].name + '）・第 ' + (G.moves.length + 1) + ' 手' : '同機雙人・第 ' + (G.moves.length + 1) + ' 手';
+  show('ovMenu');
+}
+function goHome() { closeAll(); $('tCont').classList.toggle('hidden', !(G && phase === 'play')); show('ovTitle'); }
+onTap('bMenu', function () { SFX.ui(); if (phase === 'review') endReview(); else openMenu(); });
+onTap('bMute', function () { SET.sound = !SET.sound; saveSet(); paintSw(); if (SET.sound) SFX.ui(); });
+onTap('bUndo', undo); onTap('bHint', showHint); onTap('bNew', function () { SFX.ui(); openSetup(); });
+onTap('bSet', function () { SFX.ui(); paintSw(); segPaints[5](); show('ovSettings'); });
+onTap('setDone', function () { hide('ovSettings'); });
+onTap('tCont', function () { SFX.ui(); closeAll(); if (!G) { var sg = ld('game', null); if (!sg || !resumeGame(sg)) openSetup(); } });
+onTap('tNew', function () { SFX.ui(); openSetup(); });
+onTap('tNet', function () { SFX.ui(); NET.open(); });
+onTap('tDaily', function () { SFX.ui(); var c = Object.assign({}, SET.setup, { open: 'daily', mode: 'ai' }); startGame(c); });
+onTap('tRules', function () { show('ovRules'); }); onTap('mRules', function () { show('ovRules'); });
+onTap('tStats', openStats); onTap('mStats', openStats);
+onTap('tSet', function () { paintSw(); segPaints[5](); show('ovSettings'); });
+onTap('sStart', function () { SFX.ui(); startGame(SET.setup); });
+onTap('mResume', function () { hide('ovMenu'); }); onTap('mNew', openSetup); onTap('mHome', goHome);
+onTap('mRecord', openRecord); onTap('rRecord', openRecord); onTap('recShare', shareRecord); onTap('recCopy', copyRecord);
+onTap('rAgain', function () { if (G && G.mode === 'net') { hide('ovResult'); NET.rematch(); return; } var c = { mode: G.mode, level: G.level, color: G.mode === 'ai' ? String(G.human) : '0', hand: G.hand, open: G.open === 'daily' ? 'std' : G.open }; startGame(c); });
+onTap('rReview', startReview); onTap('rHome', function () { if (G && G.mode === 'net') { NET.leave(); if (G && G.mode === 'net') netExit(); return; } goHome(); });
+onTap('rBoard', function () { hide('ovResult'); countAnim = null; snapDisplay(false); toast('點選單可再開結果'); });
+onTap('rvPrev', function () { rv.i--; reviewShow(); }); onTap('rvNext', function () { rv.i++; reviewShow(); }); onTap('rvEnd', endReview);
+
+// ---------- lifecycle ----------
+document.addEventListener('visibilitychange', function () { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; } else { dirty = true; kick(); } });
+window.addEventListener('resize', function () { layout(); updateHUD(); });
+if (window.matchMedia) { var mq = matchMedia('(prefers-color-scheme: dark)'); var onMq = function () { if (SET.theme === 'auto') applyTheme(); }; mq.addEventListener ? mq.addEventListener('change', onMq) : mq.addListener(onMq); }
+applyTheme(); paintSw(); layout();
+// title backdrop: a demo position
+P = initialPos(); [19, 18, 17, 9, 37, 44].forEach(function (s, i) { var q = playPos(P, s); if (q) P = normalize(q); }); snapDisplay(true);
+var saved = ld('game', null);
+$('tCont').classList.toggle('hidden', !saved);
+show('ovTitle');
+if (new URLSearchParams(location.search).has('autostart')) { closeAll(); startGame(SET.setup); }
+window.__oth = { get G() { return G; }, get P() { return P; }, get phase() { return phase; }, canInput: function () { return canInput(); }, geom: function () { var r = cv.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, S: S, M: M, CELL: CELL }; }, aiBusy: function () { return !!aiReq; } };
+// ---------- online play（連線對戰，見 netplay 模組）----------
+// 棋步清單：格號 0–63 或 'pass'。須 Pass 的一方由自己的裝置送出一次 'pass'，對方經 play() 收到；之前 toMove() 回傳該方。
+var NETST = '', NETN = ['黑方', '白方'];
+function netLegal(m) {
+  if (!G || G.mode !== 'net' || G.netRes != null || isOver(P)) return false;
+  if (m === 'pass') return G.passDue >= 0;
+  return G.passDue < 0 && typeof m === 'number' && legalOf(P).indexOf(m) >= 0;
+}
+function netApply(m) { // silent replay of one move
+  if (!netLegal(m)) return false;
+  if (m === 'pass') { G.passDue = -1; return true; }
+  var p = P, q = playPos(p, m); G.moves.push(m); movers.push(p.turn); posList.push(q);
+  if (!isOver(q) && !legalOf(q).length) { G.passDue = q.turn; q = passPos(q); }
+  P = q; return true;
+}
+function netPass() { // the local side has no move: send the pass exactly once
+  if (!G || G.mode !== 'net' || G.passDue < 0 || G.passDue !== G.human || !NET.canMove()) return false;
+  G.passDue = -1; NET.moved('pass');
+  toast('你無處可下，Pass'); SFX.pass(); vib([10, 40, 10]); updateHUD(); dirty = true; kick();
+  return true;
+}
+function netStart(side, mv) {
+  cancelWork(); clearTimeout(aiTimer); clearTimeout(afterTimer); clearTimeout(cntTimer); aiReq = 0;
+  G = { mode: 'net', level: 0, human: side, hand: 0, open: 'std', moves: [], pre: 0, hints: 0, undos: 0, day: 0, start: initialPos(), passDue: -1, netRes: null };
+  replay();
+  var n = 0; while (n < mv.length && netApply(mv[n])) n++;
+  phase = 'play'; countAnim = null; shownPos = null; rvMark = null; hint = null; evalVal = null; hover = -1; preview = -1;
+  $('toolBar').classList.remove('hidden'); $('revBar').classList.add('hidden');
+  snapDisplay(true); closeAll(); updateHUD(); dirty = true; kick();
+  if (isOver(P)) cntTimer = setTimeout(finishGame, 400);
+  else if (G.passDue >= 0 && G.passDue === side) setTimeout(netPass, 600);
+  return n;
+}
+function netExit() {
+  cancelWork(); clearTimeout(aiTimer); clearTimeout(afterTimer); clearTimeout(cntTimer); aiReq = 0;
+  G = null; phase = 'title'; countAnim = null; hint = null; closeAll(); drawEval();
+  $('tCont').classList.toggle('hidden', !ld('game', null)); show('ovTitle'); dirty = true; kick();
+}
+NET.init({
+  game: 'othello', title: '黑白棋', sides: ['黑', '白'], button: $('tNet'),
+  choices: [], // 開局的「隨機／每日」需雙方共用亂數或日期，讓子只對電腦，故連線只下標準開局
+  start: function (o, side, mv) { return netStart(side, mv); },
+  play: function (m) {
+    if (!netLegal(m)) return false;
+    if (m === 'pass') { var who = G.passDue; G.passDue = -1; toast(NAMES[who] + '方無處可下，Pass'); SFX.pass(); vib([10, 40, 10]); updateHUD(); dirty = true; kick(); return true; }
+    hover = -1; preview = -1; return doMove(m);
+  },
+  toMove: function () { if (!G || G.mode !== 'net' || G.netRes != null || isOver(P)) return -1; return G.passDue >= 0 ? G.passDue : P.turn; },
+  resigned: function (side) {
+    if (!G || G.mode !== 'net' || G.netRes != null || isOver(P)) return;
+    cancelWork(); clearTimeout(afterTimer); clearTimeout(cntTimer); G.netRes = side; G.passDue = -1; countAnim = null; finishGame();
+  },
+  exit: netExit,
+  names: function (a, b) { NETN = [a, b]; if (G && G.mode === 'net') updateHUD(); },
+  onStatus: function (t) { NETST = t; if (G && G.mode === 'net') updateHUD(); },
+  resumeHint: function (code) { $('tNetInfo').textContent = '房間 ' + code; },
+  snapshot: function () {
+    var s = ''; for (var i = 0; i < 64; i++) s += '.xo'[cellAt(P, i) + 1];
+    return s + '|' + (!G || G.mode !== 'net' ? '-' : G.netRes != null ? 'r' + G.netRes : isOver(P) ? finalCounts(P).join('-') : '-');
+  },
+  randomMove: function () { // test hook: one random legal move (or the pass) for the local side, like a tap
+    if (!G || G.mode !== 'net' || phase !== 'play') return false;
+    if (G.passDue >= 0) return netPass();
+    if (!isHumanTurn()) return false;
+    var L = legalOf(P); if (!L.length) return false;
+    var sq = L[(Math.random() * L.length) | 0];
+    if (doMove(sq)) { NET.moved(sq); return true; }
+    return false;
+  }
+});
+})();
+</script>
+</body>
+</html>

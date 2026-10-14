@@ -1,0 +1,535 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>編碼轉換箱</title>
+<style>
+/* Patch bay: stone panel, ochre signal lamp for the active codec, punched-tape output strip */
+:root{
+  --bg:#e9e8e3; --surface:#fbfbf8; --sunk:#f2f1ec; --ink:#1d1c18; --muted:#5b5950; --faint:#86847a;
+  --line:#d6d4cb; --line-strong:#b8b5a9; --accent:#9a5200; --accent-ink:#fffaf2; --accent-soft:#f6e5cc; --lamp:#e08a12;
+  --ok:#25693c; --ok-soft:#dcefe1; --bad:#b0281d; --bad-soft:#f9e2de; --hole:#d9d7cd;
+  --shadow:0 14px 34px rgba(30,28,20,.18);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141412; --surface:#1d1d1a; --sunk:#171715; --ink:#ebe9e1; --muted:#a8a598; --faint:#7b796f;
+  --line:#2f2e29; --line-strong:#45443d; --accent:#f0a640; --accent-ink:#1c1200; --accent-soft:#3a2a10; --lamp:#ffb347;
+  --ok:#7fd49a; --ok-soft:#173222; --bad:#ff8f80; --bad-soft:#3d1c18; --hole:#2a2925;
+  --shadow:0 14px 34px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141412; --surface:#1d1d1a; --sunk:#171715; --ink:#ebe9e1; --muted:#a8a598; --faint:#7b796f;
+  --line:#2f2e29; --line-strong:#45443d; --accent:#f0a640; --accent-ink:#1c1200; --accent-soft:#3a2a10; --lamp:#ffb347;
+  --ok:#7fd49a; --ok-soft:#173222; --bad:#ff8f80; --bad-soft:#3d1c18; --hole:#2a2925;
+  --shadow:0 14px 34px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding-block:0 calc(28px + env(safe-area-inset-bottom));padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right))}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto}
+header.top{display:flex;align-items:center;gap:10px;min-height:62px}
+.brand{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
+.brand h1{margin:0;font-size:19px;font-weight:760;white-space:nowrap;letter-spacing:.02em}
+.brand .tag{font:600 10.5px var(--mono);letter-spacing:.14em;color:var(--faint);border:1px solid var(--line-strong);padding:2px 6px;border-radius:3px;white-space:nowrap}
+.btn{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn.pri{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.btn:disabled{opacity:.4;cursor:default}
+@media (hover:hover){.btn:not(:disabled):hover{border-color:var(--accent)}}
+.main{display:grid;gap:12px}
+.codecs{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;margin-inline:-2px}
+.codec{flex:none;scroll-snap-align:start;min-height:44px;padding:0 14px 0 12px;border:1px solid var(--line-strong);background:var(--surface);border-radius:999px;cursor:pointer;font:600 13.5px var(--mono);display:inline-flex;align-items:center;gap:8px;white-space:nowrap;color:var(--muted)}
+.codec::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--hole);box-shadow:inset 0 1px 1px rgba(0,0,0,.2)}
+.codec[aria-pressed="true"]{color:var(--ink);border-color:var(--ink);background:var(--accent-soft)}
+.codec[aria-pressed="true"]::before{background:var(--lamp);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp) 25%,transparent)}
+.ctl{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--ink);border-radius:6px;overflow:hidden}
+.seg button{min-height:44px;min-width:92px;border:0;background:var(--surface);cursor:pointer;font-weight:650;font-size:14px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.seg button:disabled{opacity:.35;cursor:default}
+.sp{flex:1}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;position:relative}
+.bh{display:flex;align-items:center;gap:8px;min-height:36px;margin-bottom:6px}
+.bh b{font:700 11px var(--mono);letter-spacing:.16em;color:var(--muted)}
+.bh .meta{font:12px var(--mono);color:var(--faint);margin-left:auto;text-align:right}
+.chip{font-size:11px;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-weight:700}
+textarea{display:block;width:100%;height:25vh;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--sunk);padding:10px;font:14px/1.55 var(--mono);word-break:break-all}
+textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+#out{background:var(--sunk);background-image:radial-gradient(circle at 7px 50%,var(--hole) 2.2px,transparent 2.6px);background-size:14px 14px;background-repeat:repeat-y;padding-left:22px}
+.opts{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;min-height:44px}
+.opts .lbl{font:700 11px var(--mono);letter-spacing:.14em;color:var(--muted)}
+.tog{display:inline-flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-size:13.5px}
+.tog input{width:20px;height:20px;accent-color:var(--accent)}
+.opts select{min-height:40px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:0 8px;font-size:13.5px}
+.optsel{display:inline-flex;align-items:center;gap:6px;font-size:13.5px}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 10px;font-size:13.5px;font-weight:600;margin-top:8px}
+.note{background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:8px 10px;font-size:13px;font-weight:600;margin-top:8px}
+.big{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--muted)}
+.jwt{display:grid;gap:10px;margin-top:10px}
+.jwt section{border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.jwt h3{margin:0;font:700 11px var(--mono);letter-spacing:.16em;padding:6px 10px;background:var(--sunk);color:var(--muted);display:flex;gap:8px;align-items:center}
+.jwt pre{margin:0;padding:10px;font:13px/1.5 var(--mono);white-space:pre-wrap;word-break:break-all}
+.claims{width:100%;border-collapse:collapse;font-size:13px}
+.claims td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
+.claims td:first-child{font:600 12.5px var(--mono);white-space:nowrap;color:var(--muted);width:1%}
+.st{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:99px;margin-left:6px;white-space:nowrap}
+.st.bad{background:var(--bad-soft);color:var(--bad)} .st.ok{background:var(--ok-soft);color:var(--ok)}
+.warn-sig{font-size:12.5px;color:var(--muted);padding:0 2px}
+.hint{font-size:12px;color:var(--faint);margin-top:6px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.rem{font-size:13px;color:var(--muted)}
+@media (min-width:900px){
+  .main{grid-template-columns:200px minmax(0,1fr);align-items:start}
+  .codecs{flex-direction:column;overflow:visible;padding:0;margin:0;position:sticky;top:8px}
+  .codec{border-radius:6px;justify-content:flex-start}
+  .io{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+  textarea{height:46svh}
+}
+@media (max-height:500px) and (orientation:landscape){ textarea{height:150px;min-height:110px} }
+@media (min-width:640px) and (max-width:899px){ .io{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><h1>編碼轉換箱</h1><span class="tag">ENC/DEC</span></div>
+    <button class="btn" id="swapBtn" type="button" aria-label="交換輸入輸出" title="交換輸入輸出">⇅ 交換</button>
+  </header>
+  <div class="main">
+    <nav class="codecs" id="codecs" aria-label="編碼種類"></nav>
+    <div>
+      <div class="ctl">
+        <div class="seg" role="group" aria-label="方向">
+          <button id="dirEnc" type="button" aria-pressed="true">編碼 →</button>
+          <button id="dirDec" type="button" aria-pressed="false">← 解碼</button>
+        </div>
+        <span class="sp"></span>
+        <button class="btn" id="detectBtn" type="button">自動偵測</button>
+      </div>
+      <div class="opts" id="opts" aria-label="選項"></div>
+      <div class="io">
+        <div class="box">
+          <div class="bh"><b>INPUT</b><span class="chip" id="sampleChip" hidden>範例</span><span class="meta" id="inMeta"></span></div>
+          <textarea id="in" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="輸入文字" placeholder="輸入要轉換的文字"></textarea>
+          <div class="big" id="bigBar" hidden><span>輸入超過 5MB，改為手動轉換。</span><button class="btn pri" id="runBtn" type="button">轉換</button></div>
+          <div class="ctl" style="margin-top:6px">
+            <button class="btn" id="clearBtn" type="button">清除</button>
+            <button class="btn" id="pasteBtn" type="button">貼上</button>
+            <span class="sp"></span>
+            <label class="tog rem" for="remChk"><input type="checkbox" id="remChk">記住輸入</label>
+          </div>
+        </div>
+        <div class="box">
+          <div class="bh"><b>OUTPUT</b><span class="meta" id="outMeta"></span></div>
+          <textarea id="out" readonly spellcheck="false" aria-label="輸出結果"></textarea>
+          <div id="err" class="err" role="alert" hidden></div>
+          <div id="note" class="note" hidden></div>
+          <div id="jwt" class="jwt" hidden></div>
+          <div class="ctl" style="margin-top:6px">
+            <button class="btn pri" id="copyBtn" type="button">複製結果</button>
+            <button class="btn" id="useBtn" type="button">結果當輸入</button>
+          </div>
+          <div class="hint">在輸出框向左滑也能交換輸入輸出，方便連續轉換。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="toastHost" aria-live="polite"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "encode-box:v1:";
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(KEY + k); } catch {} }
+};
+let toastT;
+function toast(msg) { const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, 2000); }
+class CodecError extends Error {}
+const fail = m => { throw new CodecError(m); };
+
+/* ---------- byte helpers ---------- */
+const te = new TextEncoder();
+const utf8 = s => te.encode(s);
+function bytesToText(b) {
+  try { return { text: new TextDecoder("utf-8", { fatal: true }).decode(b) }; }
+  catch { return null; }
+}
+const hex2 = b => (b < 16 ? "0" : "") + b.toString(16);
+function bytesToHex(b, upper, sep) { const a = new Array(b.length); for (let i = 0; i < b.length; i++) a[i] = hex2(b[i]); const s = a.join(sep); return upper ? s.toUpperCase() : s; }
+function decodeBytesOrHex(bytes) {
+  const r = bytesToText(bytes);
+  if (r) return r;
+  return { text: bytesToHex(bytes, true, " "), note: "內容不是合法的 UTF-8 文字，判斷為二進位資料，改以 Hex 顯示（共 " + bytes.length + " 位元組）。" };
+}
+function bytesToB64(b) { let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); }
+function b64ToBytes(str) {
+  const bad = /[^A-Za-z0-9+/=\s_-]/.exec(str);
+  if (bad) fail(`第 ${bad.index + 1} 個字元「${bad[0]}」不是 Base64 字元`);
+  let s = str.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  const body = s.replace(/=+$/, "");
+  if (body.includes("=")) fail("「=」只能出現在結尾");
+  if (body.length % 4 === 1) fail(`長度不正確：去掉補位後有 ${body.length} 個字元，Base64 不可能是這個長度（可能少複製或多複製了字元）`);
+  s = body + "===".slice(0, (4 - body.length % 4) % 4);
+  let bin; try { bin = atob(s); } catch { fail("Base64 內容不正確"); }
+  const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* ---------- HTML entities ---------- */
+const ENT = {}; const ENT_REV = {};
+"AElig:c6,Aacute:c1,Acirc:c2,Agrave:c0,Alpha:391,Aring:c5,Atilde:c3,Auml:c4,Beta:392,Ccedil:c7,Chi:3a7,Dagger:2021,Delta:394,ETH:d0,Eacute:c9,Ecirc:ca,Egrave:c8,Epsilon:395,Eta:397,Euml:cb,Gamma:393,Iacute:cd,Icirc:ce,Igrave:cc,Iota:399,Iuml:cf,Kappa:39a,Lambda:39b,Mu:39c,Ntilde:d1,Nu:39d,OElig:152,Oacute:d3,Ocirc:d4,Ograve:d2,Omega:3a9,Omicron:39f,Oslash:d8,Otilde:d5,Ouml:d6,Phi:3a6,Pi:3a0,Prime:2033,Psi:3a8,Rho:3a1,Scaron:160,Sigma:3a3,THORN:de,Tau:3a4,Theta:398,Uacute:da,Ucirc:db,Ugrave:d9,Upsilon:3a5,Uuml:dc,Xi:39e,Yacute:dd,Yuml:178,Zeta:396,aacute:e1,acirc:e2,acute:b4,aelig:e6,agrave:e0,alefsym:2135,alpha:3b1,amp:26,and:2227,ang:2220,aring:e5,asymp:2248,atilde:e3,auml:e4,bdquo:201e,beta:3b2,brvbar:a6,bull:2022,cap:2229,ccedil:e7,cedil:b8,cent:a2,chi:3c7,circ:2c6,clubs:2663,cong:2245,copy:a9,crarr:21b5,cup:222a,curren:a4,dArr:21d3,dagger:2020,darr:2193,deg:b0,delta:3b4,diams:2666,divide:f7,eacute:e9,ecirc:ea,egrave:e8,empty:2205,emsp:2003,ensp:2002,epsilon:3b5,equiv:2261,eta:3b7,eth:f0,euml:eb,euro:20ac,exist:2203,fnof:192,forall:2200,frac12:bd,frac14:bc,frac34:be,frasl:2044,gamma:3b3,ge:2265,gt:3e,hArr:21d4,harr:2194,hearts:2665,hellip:2026,iacute:ed,icirc:ee,iexcl:a1,igrave:ec,image:2111,infin:221e,int:222b,iota:3b9,iquest:bf,isin:2208,iuml:ef,kappa:3ba,lArr:21d0,lambda:3bb,lang:2329,laquo:ab,larr:2190,lceil:2308,ldquo:201c,le:2264,lfloor:230a,lowast:2217,loz:25ca,lrm:200e,lsaquo:2039,lsquo:2018,lt:3c,macr:af,mdash:2014,micro:b5,middot:b7,minus:2212,mu:3bc,nabla:2207,nbsp:a0,ndash:2013,ne:2260,ni:220b,not:ac,notin:2209,nsub:2284,ntilde:f1,nu:3bd,oacute:f3,ocirc:f4,oelig:153,ograve:f2,oline:203e,omega:3c9,omicron:3bf,oplus:2295,or:2228,ordf:aa,ordm:ba,oslash:f8,otilde:f5,otimes:2297,ouml:f6,para:b6,part:2202,permil:2030,perp:22a5,phi:3c6,pi:3c0,piv:3d6,plusmn:b1,pound:a3,prime:2032,prod:220f,prop:221d,psi:3c8,quot:22,rArr:21d2,radic:221a,rang:232a,raquo:bb,rarr:2192,rceil:2309,rdquo:201d,real:211c,reg:ae,rfloor:230b,rho:3c1,rlm:200f,rsaquo:203a,rsquo:2019,sbquo:201a,scaron:161,sdot:22c5,sect:a7,shy:ad,sigma:3c3,sigmaf:3c2,sim:223c,spades:2660,sub:2282,sube:2286,sum:2211,sup:2283,sup1:b9,sup2:b2,sup3:b3,supe:2287,szlig:df,tau:3c4,there4:2234,theta:3b8,thetasym:3d1,thinsp:2009,thorn:fe,tilde:2dc,times:d7,trade:2122,uArr:21d1,uacute:fa,uarr:2191,ucirc:fb,ugrave:f9,uml:a8,upsih:3d2,upsilon:3c5,uuml:fc,weierp:2118,xi:3be,yacute:fd,yen:a5,yuml:ff,zeta:3b6,zwj:200d,zwnj:200c".split(",").forEach(p => { const [k, v] = p.split(":"); ENT[k] = parseInt(v, 16); });
+ENT.apos = 39;
+
+/* ---------- Punycode (RFC 3492) ---------- */
+const PB = 36, TMIN = 1, TMAX = 26, SKEW = 38, DAMP = 700, IBIAS = 72, IN = 128;
+function adapt(delta, num, first) { delta = first ? Math.floor(delta / DAMP) : delta >> 1; delta += Math.floor(delta / num); let k = 0; while (delta > ((PB - TMIN) * TMAX) >> 1) { delta = Math.floor(delta / (PB - TMIN)); k += PB; } return k + Math.floor((PB - TMIN + 1) * delta / (delta + SKEW)); }
+const pdig = d => String.fromCharCode(d < 26 ? 97 + d : 22 + d);
+function punyEncode(input) {
+  const cps = Array.from(input, c => c.codePointAt(0));
+  let n = IN, delta = 0, bias = IBIAS, out = "";
+  for (const c of cps) if (c < 128) out += String.fromCharCode(c);
+  const b = out.length; let h = b; if (b) out += "-";
+  while (h < cps.length) {
+    let m = Infinity; for (const c of cps) if (c >= n && c < m) m = c;
+    delta += (m - n) * (h + 1); n = m;
+    for (const c of cps) {
+      if (c < n) delta++;
+      if (c === n) {
+        let q = delta;
+        for (let k = PB; ; k += PB) { const t = k <= bias ? TMIN : k >= bias + TMAX ? TMAX : k - bias; if (q < t) break; out += pdig(t + (q - t) % (PB - t)); q = Math.floor((q - t) / (PB - t)); }
+        out += pdig(q); bias = adapt(delta, h + 1, h === b); delta = 0; h++;
+      }
+    }
+    delta++; n++;
+  }
+  return out;
+}
+function punyDecode(input) {
+  const out = []; let b = input.lastIndexOf("-"); if (b < 0) b = 0;
+  for (let j = 0; j < b; j++) { const c = input.charCodeAt(j); if (c >= 128) fail("Punycode 基本字元區含非 ASCII 字元"); out.push(c); }
+  let n = IN, bias = IBIAS, i = 0;
+  for (let idx = b > 0 ? b + 1 : 0; idx < input.length;) {
+    const oldi = i; let w = 1;
+    for (let k = PB; ; k += PB) {
+      if (idx >= input.length) fail("Punycode 結尾不完整");
+      const cp = input.charCodeAt(idx++);
+      const d = cp >= 48 && cp <= 57 ? cp - 22 : cp >= 65 && cp <= 90 ? cp - 65 : cp >= 97 && cp <= 122 ? cp - 97 : PB;
+      if (d >= PB) fail("Punycode 含非法字元「" + String.fromCharCode(cp) + "」");
+      i += d * w; const t = k <= bias ? TMIN : k >= bias + TMAX ? TMAX : k - bias;
+      if (d < t) break; w *= PB - t;
+    }
+    const len = out.length + 1; bias = adapt(i - oldi, len, oldi === 0);
+    n += Math.floor(i / len); i %= len;
+    if (n > 0x10FFFF) fail("Punycode 解出的碼位超出範圍");
+    out.splice(i, 0, n); i++;
+  }
+  return String.fromCodePoint(...out);
+}
+function mapHosts(str, fn) {
+  return str.replace(/\S+/g, tok => tok.replace(/^([a-z][a-z0-9+.-]*:\/\/)?([^/:?#@\s]+@)?([^/:?#\s]+)(.*)$/i, (m, pr, user, host, rest) => (pr || "") + (user || "") + host.replace(/[。．｡]/g, ".").split(".").map(fn).join(".") + rest));
+}
+
+/* ---------- Codecs ---------- */
+const CODECS = [
+  { id: "b64", label: "Base64", opts: [{ id: "wrap", type: "bool", label: "每 76 字換行", def: false }],
+    enc(s, o) { const r = bytesToB64(utf8(s)); return { text: o.wrap ? r.replace(/.{76}(?=.)/g, "$&\n") : r }; },
+    dec(s) { return decodeBytesOrHex(b64ToBytes(s)); } },
+  { id: "b64url", label: "Base64URL", opts: [],
+    enc(s) { return { text: bytesToB64(utf8(s)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") }; },
+    dec(s) { return decodeBytesOrHex(b64ToBytes(s)); } },
+  { id: "url", label: "URL", opts: [{ id: "mode", type: "choice", label: "範圍", def: "component", choices: [["component", "僅元件"], ["full", "整段網址"]] }, { id: "plus", type: "bool", label: "+ 視為空白", def: false }],
+    enc(s, o) { let r = o.mode === "full" ? encodeURI(s) : encodeURIComponent(s); if (o.plus) r = r.replace(/%20/g, "+"); return { text: r }; },
+    dec(s, o) {
+      const src = o.plus ? s.replace(/\+/g, " ") : s;
+      try { return { text: o.mode === "full" ? decodeURI(src) : decodeURIComponent(src) }; }
+      catch { fail(urlErr(src)); }
+    } },
+  { id: "html", label: "HTML 實體", opts: [{ id: "mode", type: "choice", label: "範圍", def: "min", choices: [["min", "僅必要字元"], ["all", "全部非 ASCII"]] }],
+    enc(s, o) {
+      let r = s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      if (o.mode === "all") r = r.replace(/[^\x00-\x7F]/gu, c => "&#x" + c.codePointAt(0).toString(16).toUpperCase() + ";");
+      return { text: r };
+    },
+    dec(s) {
+      let unknown = 0;
+      const text = s.replace(/&(#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);/g, (m, e) => {
+        if (e[0] === "#") { const cp = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) || cp === 0) { unknown++; return m; } return String.fromCodePoint(cp); }
+        if (Object.prototype.hasOwnProperty.call(ENT, e)) return String.fromCodePoint(ENT[e]);
+        unknown++; return m;
+      });
+      return { text, note: unknown ? `有 ${unknown} 個實體無法辨識，已保留原文。` : "" };
+    } },
+  { id: "uni", label: "Unicode 跳脫", opts: [{ id: "style", type: "choice", label: "格式", def: "u", choices: [["u", "\\uXXXX"], ["brace", "\\u{XXXXX}"], ["uplus", "U+XXXX"]] }, { id: "nonascii", type: "bool", label: "只跳脫非 ASCII", def: true }],
+    enc(s, o) {
+      const h4 = n => n.toString(16).toUpperCase().padStart(4, "0");
+      if (o.style === "uplus") return { text: Array.from(s, c => "U+" + h4(c.codePointAt(0))).join(" ") };
+      let out = "";
+      for (const c of s) {
+        const cp = c.codePointAt(0);
+        if (o.nonascii && cp < 128) { out += c; continue; }
+        if (o.style === "brace") out += "\\u{" + cp.toString(16).toUpperCase() + "}";
+        else if (cp > 0xFFFF) out += "\\u" + h4(c.charCodeAt(0)) + "\\u" + h4(c.charCodeAt(1));
+        else out += "\\u" + h4(cp);
+      }
+      return { text: out };
+    },
+    dec(s) {
+      const bad = /\\u(?!\{[0-9a-fA-F]{1,6}\}|[0-9a-fA-F]{4})/.exec(s);
+      if (bad) fail(`第 ${bad.index + 1} 個字元的「${s.slice(bad.index, bad.index + 6)}」不是完整的 \\u 跳脫（需要 4 位十六進位數字，或 \\u{…}）`);
+      return { text: s.replace(/\\u\{([0-9a-fA-F]{1,6})\}|\\u([0-9a-fA-F]{4})|\\x([0-9a-fA-F]{2})|U\+([0-9A-Fa-f]{4,6}) ?/g, (m, a, b, c, d) => {
+        const cp = parseInt(a || b || c || d, 16);
+        if (b) return String.fromCharCode(cp);
+        if (cp > 0x10FFFF) fail("碼位 " + m.trim() + " 超出 Unicode 範圍");
+        return String.fromCodePoint(cp);
+      }) };
+    } },
+  { id: "hex", label: "Hex", opts: [{ id: "upper", type: "bool", label: "大寫", def: false }, { id: "sep", type: "bool", label: "以空白分隔", def: true }],
+    enc(s, o) { return { text: bytesToHex(utf8(s), o.upper, o.sep ? " " : "") }; },
+    dec(s) {
+      const clean = s.replace(/0x/gi, "").replace(/\\x/gi, "");
+      const bad = /[^0-9a-fA-F\s,:]/.exec(clean);
+      if (bad) fail(`含有非十六進位字元「${bad[0]}」`);
+      const h = clean.replace(/[\s,:]/g, "");
+      if (h.length % 2) fail(`長度為奇數（${h.length} 個十六進位數字），每個位元組需要 2 個數字`);
+      const b = new Uint8Array(h.length / 2); for (let i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 2, 2), 16);
+      const r = bytesToText(b);
+      if (r) return r;
+      return { text: new TextDecoder("utf-8").decode(b), note: "位元組不是合法的 UTF-8，無法解讀的部分以 \uFFFD 顯示。" };
+    } },
+  { id: "bin", label: "二進位", opts: [],
+    enc(s) { return { text: Array.from(utf8(s), b => b.toString(2).padStart(8, "0")).join(" ") }; },
+    dec(s) {
+      const bad = /[^01\s]/.exec(s); if (bad) fail(`第 ${bad.index + 1} 個字元「${bad[0]}」不是 0 或 1`);
+      const h = s.replace(/\s+/g, ""); if (h.length % 8) fail(`位元數 ${h.length} 不是 8 的倍數`);
+      const b = new Uint8Array(h.length / 8); for (let i = 0; i < b.length; i++) b[i] = parseInt(h.substr(i * 8, 8), 2);
+      const r = bytesToText(b); if (r) return r;
+      return { text: new TextDecoder("utf-8").decode(b), note: "位元組不是合法的 UTF-8，無法解讀的部分以 \uFFFD 顯示。" };
+    } },
+  { id: "puny", label: "Punycode", opts: [],
+    enc(s) { return { text: mapHosts(s, l => /[^\x00-\x7F]/.test(l) ? "xn--" + punyEncode(l.toLowerCase()) : l) }; },
+    dec(s) { return { text: mapHosts(s, l => /^xn--/i.test(l) ? punyDecode(l.slice(4).toLowerCase()) : l) }; } },
+  { id: "jwt", label: "JWT 解析", opts: [], decodeOnly: true,
+    dec(s) { return jwtDecode(s); } },
+];
+const BY = Object.fromEntries(CODECS.map(c => [c.id, c]));
+
+function urlErr(s) {
+  const bad = /%(?![0-9a-fA-F]{2})/.exec(s);
+  if (bad) return `第 ${bad.index + 1} 個字元的「${s.slice(bad.index, bad.index + 3)}」不是合法的百分比編碼（% 後面要接兩位十六進位數字）`;
+  const re = /(?:%[0-9a-fA-F]{2})+/g; let m;
+  while ((m = re.exec(s))) {
+    const bytes = m[0].slice(1).split("%").map(h => parseInt(h, 16));
+    try { new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes)); }
+    catch { return `第 ${m.index + 1} 個字元起的「${m[0].length > 24 ? m[0].slice(0, 24) + "…" : m[0]}」不是完整的 UTF-8 序列`; }
+  }
+  return "URL 解碼失敗";
+}
+
+let jwtView = null;
+function jwtDecode(s) {
+  const t = s.trim().replace(/^Bearer\s+/i, "");
+  const parts = t.split(".");
+  if (parts.length < 2 || parts.length > 3) fail(`JWT 應由「.」分成 3 段，目前是 ${parts.length} 段`);
+  const seg = (p, name) => {
+    let b; try { b = b64ToBytes(p); } catch (e) { fail(name + " 不是合法的 Base64URL：" + e.message); }
+    const r = bytesToText(b); if (!r) fail(name + " 解碼後不是 UTF-8 文字");
+    try { return JSON.parse(r.text); } catch { fail(name + " 解碼後不是合法的 JSON"); }
+  };
+  const header = seg(parts[0], "Header"), payload = seg(parts[1], "Payload");
+  jwtView = { header, payload, sig: parts[2] || "" };
+  return { text: "// HEADER\n" + JSON.stringify(header, null, 2) + "\n\n// PAYLOAD\n" + JSON.stringify(payload, null, 2) + "\n\n// SIGNATURE（未驗證）\n" + (parts[2] || "（無）") };
+}
+function fmtTime(sec) {
+  const d = new Date(sec * 1000); if (isNaN(d)) return "（無效時間）";
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function rel(sec) {
+  const diff = Math.round(sec - Date.now() / 1000), a = Math.abs(diff);
+  const s = a < 60 ? a + " 秒" : a < 3600 ? Math.round(a / 60) + " 分鐘" : a < 86400 ? Math.round(a / 3600) + " 小時" : Math.round(a / 86400) + " 天";
+  return diff >= 0 ? s + "後" : s + "前";
+}
+function renderJwt() {
+  const box = $("jwt"); box.textContent = "";
+  if (!jwtView) { box.hidden = true; out.hidden = false; return; }
+  box.hidden = false; out.hidden = true;
+  const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  const secH = mk("section"); const h1 = mk("h3", null, "HEADER"); secH.append(h1, mk("pre", null, JSON.stringify(jwtView.header, null, 2)));
+  const p = jwtView.payload;
+  const secC = mk("section"); secC.appendChild(mk("h3", null, "時間欄位"));
+  const tbl = mk("table", "claims"); const now = Date.now() / 1000; let any = false;
+  for (const k of ["exp", "iat", "nbf"]) {
+    if (typeof p[k] !== "number") continue; any = true;
+    const tr = mk("tr"); tr.appendChild(mk("td", null, k));
+    const td = mk("td", null, fmtTime(p[k]) + "（" + rel(p[k]) + "）");
+    if (k === "exp") td.appendChild(p[k] < now ? mk("span", "st bad", "已過期") : mk("span", "st ok", "未過期"));
+    if (k === "nbf" && p[k] > now) td.appendChild(mk("span", "st bad", "尚未生效"));
+    tr.appendChild(td); tbl.appendChild(tr);
+  }
+  if (any) { secC.appendChild(tbl); }
+  const secP = mk("section"); secP.append(mk("h3", null, "PAYLOAD"), mk("pre", null, JSON.stringify(p, null, 2)));
+  box.append(secH); if (any) box.append(secC); box.append(secP, mk("div", "warn-sig", "只解碼內容，不驗證簽章（" + (jwtView.header.alg || "未知演算法") + "）。請勿把正式環境的 Token 貼到不信任的網站。"));
+}
+
+/* ---------- auto detect ---------- */
+function detect(s) {
+  const t = s.trim(); if (!t) return null;
+  const parts = t.replace(/^Bearer\s+/i, "").split(".");
+  if (parts.length === 3 && parts.every((p, i) => i === 2 || /^[A-Za-z0-9_-]+$/.test(p))) { try { jwtDecode(t); return "jwt"; } catch {} }
+  if (/%[0-9A-Fa-f]{2}/.test(t)) return "url";
+  if (/&[A-Za-z]+;|&#/.test(t)) return "html";
+  if (/\\u[0-9a-fA-F{]|U\+[0-9A-Fa-f]{4}/.test(t)) return "uni";
+  if (/(^|[.\s/])xn--/i.test(t)) return "puny";
+  if (/^[01]{8}(\s+[01]{8})*$/.test(t)) return "bin";
+  if (/^(0x)?[0-9a-fA-F]{2}(\s*(0x)?[0-9a-fA-F]{2})*$/.test(t) && /\s/.test(t)) return "hex";
+  const b = t.replace(/\s+/g, "");
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(b) && b.length % 4 === 0 && b.length >= 4) return "b64";
+  if (/^[A-Za-z0-9_-]+$/.test(b) && b.length % 4 !== 1 && b.length >= 8 && /[_-]/.test(b)) return "b64url";
+  if (/^[0-9a-fA-F]+$/.test(b) && b.length % 2 === 0 && b.length >= 4) return "hex";
+  return null;
+}
+
+/* ---------- state + UI ---------- */
+let state = { codec: "b64", dir: "enc", opts: {} };
+const st0 = LS.get("state", null);
+if (st0 && BY[st0.codec]) state = { codec: st0.codec, dir: st0.dir === "dec" ? "dec" : "enc", opts: st0.opts || {} };
+const inp = $("in"), out = $("out");
+const SAMPLE = "你好 😀 Hello, 世界";
+let isSample = false;
+function optsFor(c) { const o = {}; const saved = state.opts[c.id] || {}; for (const d of c.opts) o[d.id] = saved[d.id] !== undefined ? saved[d.id] : d.def; return o; }
+function save() { LS.set("state", state); }
+
+function renderCodecs() {
+  const nav = $("codecs"); nav.textContent = "";
+  for (const c of CODECS) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "codec"; b.id = "codec-" + c.id; b.textContent = c.label;
+    b.setAttribute("aria-pressed", c.id === state.codec);
+    b.addEventListener("click", () => selectCodec(c.id, true));
+    nav.appendChild(b);
+  }
+}
+function selectCodec(id, scroll) {
+  state.codec = id; const c = BY[id];
+  if (c.decodeOnly) state.dir = "dec";
+  document.querySelectorAll(".codec").forEach(b => b.setAttribute("aria-pressed", b.id === "codec-" + id));
+  if (scroll) { const b = $("codec-" + id); b.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+  renderDir(); renderOpts(); save(); run();
+}
+function renderDir() {
+  const c = BY[state.codec];
+  $("dirEnc").disabled = !!c.decodeOnly;
+  $("dirEnc").setAttribute("aria-pressed", state.dir === "enc"); $("dirDec").setAttribute("aria-pressed", state.dir === "dec");
+  $("swapBtn").disabled = !!c.decodeOnly; $("useBtn").disabled = false;
+}
+function renderOpts() {
+  const c = BY[state.codec], box = $("opts"); box.textContent = "";
+  const o = optsFor(c);
+  const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "OPTIONS"; box.appendChild(lbl);
+  if (!c.opts.length) { const s = document.createElement("span"); s.style.cssText = "font-size:13px;color:var(--faint)"; s.textContent = c.decodeOnly ? "僅解碼，不驗證簽章" : "此編碼沒有選項"; box.appendChild(s); return; }
+  for (const d of c.opts) {
+    const id = `opt-${c.id}-${d.id}`;
+    if (d.type === "bool") {
+      const l = document.createElement("label"); l.className = "tog"; l.htmlFor = id;
+      const i = document.createElement("input"); i.type = "checkbox"; i.id = id; i.checked = !!o[d.id];
+      i.addEventListener("change", () => setOpt(c.id, d.id, i.checked));
+      l.append(i, d.label); box.appendChild(l);
+    } else {
+      const l = document.createElement("label"); l.className = "optsel"; l.htmlFor = id; l.append(d.label);
+      const sel = document.createElement("select"); sel.id = id;
+      for (const [v, t] of d.choices) { const op = document.createElement("option"); op.value = v; op.textContent = t; sel.appendChild(op); }
+      sel.value = o[d.id]; sel.addEventListener("change", () => setOpt(c.id, d.id, sel.value));
+      l.appendChild(sel); box.appendChild(l);
+    }
+  }
+}
+function setOpt(cid, oid, v) { (state.opts[cid] = state.opts[cid] || {})[oid] = v; save(); run(); }
+function setDir(d) { if (BY[state.codec].decodeOnly && d === "enc") return; state.dir = d; renderDir(); save(); run(); }
+$("dirEnc").addEventListener("click", () => setDir("enc"));
+$("dirDec").addEventListener("click", () => setDir("dec"));
+
+function stats(s) {
+  let cps = 0; for (const _ of s) cps++;
+  const bytes = s.length > 6e6 ? "—" : utf8(s).length.toLocaleString();
+  return `${cps.toLocaleString()} 字・${bytes} 位元組`;
+}
+const BIGLIM = 5 * 1048576;
+function run(manual) {
+  const s = inp.value;
+  $("inMeta").textContent = stats(s);
+  const big = s.length > BIGLIM; $("bigBar").hidden = !big;
+  if (big && !manual) { return; }
+  const c = BY[state.codec], o = optsFor(c);
+  $("err").hidden = true; $("note").hidden = true; jwtView = null;
+  let r = { text: "" };
+  if (s.length) {
+    try { r = state.dir === "enc" ? c.enc(s, o) : c.dec(s, o); }
+    catch (e) {
+      if (!(e instanceof CodecError) && !(e instanceof RangeError)) console.warn(e);
+      out.value = ""; $("outMeta").textContent = "";
+      $("err").textContent = (state.dir === "enc" ? "編碼失敗：" : "解碼失敗：") + (e.message || "格式不正確");
+      $("err").hidden = false; renderJwt(); return;
+    }
+  }
+  out.value = r.text; $("outMeta").textContent = r.text ? stats(r.text) : "";
+  if (r.note) { $("note").textContent = r.note; $("note").hidden = false; }
+  renderJwt();
+  if ($("remChk").checked && !isSample) { if (s.length <= 100000) LS.set("input", s); }
+}
+let inT;
+inp.addEventListener("input", () => { if (isSample) { isSample = false; $("sampleChip").hidden = true; } clearTimeout(inT); inT = setTimeout(run, 150); });
+$("runBtn").addEventListener("click", () => run(true));
+function setInput(v, sample) { inp.value = v; isSample = !!sample; $("sampleChip").hidden = !sample; run(); }
+
+function swap() {
+  if (BY[state.codec].decodeOnly) { toast("JWT 只能解碼，無法交換"); return; }
+  if (!$("note").hidden && /Hex 顯示/.test($("note").textContent)) { toast("輸出是二進位資料的 Hex，無法直接交換"); return; }
+  const o = out.value; state.dir = state.dir === "enc" ? "dec" : "enc"; renderDir(); save(); setInput(o); toast("已交換輸入與輸出");
+}
+$("swapBtn").addEventListener("click", swap);
+$("useBtn").addEventListener("click", () => { if (!out.value) { toast("沒有結果可用"); return; } setInput(out.value); toast("結果已移到輸入，可選下一種轉換"); });
+let sw = null;
+out.addEventListener("pointerdown", e => { if (e.pointerType !== "mouse") sw = { x: e.clientX, y: e.clientY }; });
+out.addEventListener("pointerup", e => { if (!sw) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y; sw = null; if (dx < -70 && Math.abs(dy) < 40) swap(); });
+out.addEventListener("pointercancel", () => { sw = null; });
+$("copyBtn").addEventListener("click", async () => {
+  const t = out.value; if (!t) { toast("沒有內容可以複製"); return; }
+  try { await navigator.clipboard.writeText(t); toast("已複製"); return; } catch {}
+  try { out.focus(); out.select(); if (document.execCommand("copy")) { toast("已複製"); return; } } catch {}
+  out.focus(); out.select(); toast("請長按選取的文字手動複製");
+});
+$("clearBtn").addEventListener("click", () => { setInput(""); LS.del("input"); inp.focus(); });
+$("pasteBtn").addEventListener("click", async () => {
+  try { const t = await navigator.clipboard.readText(); setInput(t); toast("已貼上"); } catch { inp.focus(); toast("無法讀取剪貼簿，請長按輸入框貼上"); }
+});
+$("detectBtn").addEventListener("click", () => {
+  const id = detect(inp.value);
+  if (!id) { toast(inp.value.trim() ? "無法判斷是哪種編碼" : "請先輸入內容"); return; }
+  state.dir = "dec"; selectCodec(id, true);
+  toast("判斷為 " + BY[id].label + "，已套用解碼");
+});
+$("remChk").addEventListener("change", () => {
+  LS.set("remember", $("remChk").checked);
+  if ($("remChk").checked) { if (!isSample) LS.set("input", inp.value); toast("會在這台裝置記住輸入內容"); } else { LS.del("input"); toast("已停止記住，並清除儲存的輸入"); }
+});
+
+/* init */
+renderCodecs(); renderDir(); renderOpts();
+$("remChk").checked = !!LS.get("remember", false);
+const savedIn = $("remChk").checked ? LS.get("input", null) : null;
+if (typeof savedIn === "string" && savedIn) setInput(savedIn); else setInput(SAMPLE, true);
+window.__eb = { CODECS: BY, detect, punyEncode, punyDecode, optsFor, setInput, selectCodec, setDir };
+window.__ebReady = true;
+})();
+</script>
+</body></html>

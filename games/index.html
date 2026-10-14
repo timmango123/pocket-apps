@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script>
+<title>口袋遊樂場</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Mono:wght@700&display=swap">
+<style>
+/* Layout: a shelf of game cartridges (cover + label) in a wrapping grid; tapping one swaps the shelf for a full-height player with a slim top bar. */
+:root {
+  --bg: #e9ebf2;          /* cool shelf paper */
+  --shelf: #dfe2ec;
+  --card: #ffffff;
+  --ink: #1b1d2b;
+  --muted: #5d6278;
+  --line: #c9cddc;
+  --coin: #e8a317;        /* token-coin accent */
+  --coin-ink: #2a1d00;
+  --display: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --body: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --mono: "Space Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --tag-puzzle: #2f6fd6; --tag-reflex: #d64a2f; --tag-action: #8a3fd1; --tag-calm: #1f8f6a; --tag-board: #a2412f; --tag-card: #a87a12; --tag-world: #b0602a;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #13151d; --shelf: #1a1d28; --card: #20232f; --ink: #eceef6; --muted: #9ba0b6; --line: #2f3344;
+  --coin: #f2b544; --coin-ink: #241800;
+  --tag-puzzle: #7aa7ff; --tag-reflex: #ff8a6e; --tag-action: #c39bff; --tag-calm: #5fd3a8; --tag-board: #ef9a84; --tag-card: #e8c25e; --tag-world: #f0a56a;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #13151d; --shelf: #1a1d28; --card: #20232f; --ink: #eceef6; --muted: #9ba0b6; --line: #2f3344;
+  --coin: #f2b544; --coin-ink: #241800;
+  --tag-puzzle: #7aa7ff; --tag-reflex: #ff8a6e; --tag-action: #c39bff; --tag-calm: #5fd3a8; --tag-board: #ef9a84; --tag-card: #e8c25e; --tag-world: #f0a56a;
+  color-scheme: dark }
+
+html, body { height: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); -webkit-tap-highlight-color: transparent; }
+body.playing { overflow: hidden; overscroll-behavior: none; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--coin); outline-offset: 3px; }
+
+.wrap { max-width: 1060px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(40px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.coin { width: 46px; height: 46px; flex: none; border-radius: 50%; background: var(--coin); color: var(--coin-ink);
+  display: grid; place-items: center; font: 700 13px/1 var(--mono); box-shadow: inset 0 -4px 0 rgba(0,0,0,.18), inset 0 0 0 3px rgba(255,255,255,.25); }
+h1 { margin: 0; font: 900 clamp(26px, 6vw, 38px)/1.1 var(--display); letter-spacing: .02em; text-wrap: balance; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.count { font: 700 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; font-variant-numeric: tabular-nums; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 44px; padding: 7px 16px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; font-size: 14px; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 18px; }
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card:last-child:nth-child(odd) { grid-column: 1 / -1; grid-template-columns: minmax(0, 46%) 1fr; grid-template-rows: auto; }
+  .card:last-child:nth-child(odd) .label { align-content: center; }
+}
+.card { display: grid; grid-template-rows: auto 1fr; text-align: left; background: var(--card); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 1px 0 var(--line), 0 6px 18px -10px rgba(10,12,30,.35); transition: transform .18s ease, box-shadow .18s ease; min-width: 0; }
+@media (hover: hover) { .card:hover { transform: translateY(-3px); box-shadow: 0 1px 0 var(--line), 0 14px 26px -12px rgba(10,12,30,.45); }
+}
+.card:active { transform: translateY(0) scale(.98); }
+.shot { position: relative; aspect-ratio: 3 / 4; max-width: 100%; background: var(--shelf); overflow: hidden; }
+.shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shot .play { position: absolute; right: 10px; bottom: 10px; width: 40px; height: 40px; border-radius: 50%; background: var(--coin); color: var(--coin-ink);
+  display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+.shot .play svg { width: 16px; height: 16px; margin-left: 2px; }
+.last { position: absolute; left: 10px; top: 10px; padding: 3px 9px; border-radius: 999px; background: var(--coin); color: var(--coin-ink); font-size: 12px; font-weight: 700; }
+.label { padding: 11px 13px 14px; display: grid; gap: 5px; align-content: start; min-width: 0; }
+.label h2 { margin: 0; font: 900 17px/1.3 var(--display); }
+.label p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.tag { font-size: 12px; font-weight: 700; color: var(--c); }
+.tag + .tag::before { content: "·"; color: var(--muted); margin-right: 6px; font-weight: 400; }
+.tag.levels { color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: .04em; align-self: center; }
+.foot { color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Player */
+#player { position: fixed; inset: 0; z-index: 10; display: grid; grid-template-rows: auto 1fr; background: #000; }
+.bar { display: flex; align-items: center; gap: 8px; padding: calc(4px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); background: var(--card); border-bottom: 1px solid var(--line); min-width: 0; }
+.bar button { display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 700; }
+.bar .back { background: var(--coin); color: var(--coin-ink); }
+.bar .ghost { color: var(--muted); }
+@media (hover: hover) { .bar .ghost:hover { color: var(--ink); background: var(--shelf); } }
+.bar h3 { flex: 1; min-width: 0; margin: 0; font: 900 16px/1 var(--display); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar svg { width: 16px; height: 16px; }
+.stage { position: relative; min-height: 0; padding-bottom: env(safe-area-inset-bottom, 0px); background: #000; }
+.stage iframe { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+.loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; color: #aab; font-size: 14px; pointer-events: none; text-align: center; padding: 0 24px; }
+.loading button { pointer-events: auto; min-height: 44px; padding: 0 18px; border-radius: 10px; background: var(--coin); color: var(--coin-ink); font-weight: 700; }
+.bar .fav[aria-pressed="true"] { color: var(--coin); }
+.bar .fav svg { width: 18px; height: 18px; }
+.star { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.45); color: var(--coin); display: grid; place-items: center; }
+.star svg { width: 15px; height: 15px; }
+.empty { grid-column: 1 / -1; padding: 40px 12px; text-align: center; color: var(--muted); text-wrap: pretty; }
+
+@media (prefers-reduced-motion: reduce) { .card, .card:hover { transition: none; transform: none; } }
+</style>
+
+<div class="wrap" id="hub">
+  <header>
+    <div class="brand">
+      <div class="coin" aria-hidden="true">PLAY</div>
+      <div>
+        <h1>口袋遊樂場</h1>
+        <p class="sub">這個專案做過的小遊戲都在這裡，點一下就開始玩。</p>
+      </div>
+    </div>
+    <span class="count" id="count"></span>
+  </header>
+  <div class="filters" id="filters" role="group" aria-label="依類型篩選"></div>
+  <main class="grid" id="grid"></main>
+  <p class="foot">每款遊戲的關卡進度、最高分和收藏都會留在這台裝置上。</p>
+</div>
+
+<div id="player" hidden>
+  <div class="bar">
+    <button class="back" id="back" aria-label="回到遊戲大廳"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>大廳</button>
+    <h3 id="ptitle"></h3>
+    <button class="ghost fav" id="fav" aria-pressed="false" aria-label="收藏這款遊戲"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>收藏</button>
+    <button class="ghost" id="restart" aria-label="重新載入這款遊戲"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>重來</button>
+  </div>
+  <div class="stage" id="stage"><div class="loading" id="loading"><span id="lmsg">載入中…</span><button id="retry" hidden>再試一次</button></div></div>
+</div>
+
+<script type="application/json" id="hub-meta">[{"id": "kiln-2048", "name": "窯變 2048", "cat": "puzzle", "levels": false, "blurb": "滑動合併陶瓷，九種玩法、五套窯色。"}, {"id": "antikythera", "name": "天機齒輪", "cat": "puzzle", "levels": true, "blurb": "把齒輪擺上銅釘，接通古希臘天象儀。"}, {"id": "foldline", "name": "摺紙旋律路", "cat": "puzzle", "levels": true, "blurb": "轉動、翻摺紙片，接出一條會唱歌的路。"}, {"id": "light-path", "name": "光路折鏡", "cat": "puzzle", "levels": true, "blurb": "轉動鏡子，讓彩色雷射點亮每顆水晶。"}, {"id": "ice-slide", "name": "冰原企鵝", "cat": "puzzle", "levels": true, "blurb": "企鵝一滑到底，吃光魚兒再回冰屋。"}, {"id": "one-stroke", "name": "一筆繪境", "cat": "puzzle", "levels": true, "blurb": "一筆走遍每一格，依序蓋過朱印。"}, {"id": "pipe-flow", "name": "銅管水坊", "cat": "puzzle", "levels": true, "blurb": "轉動銅管，讓水流到每一個出口。"}, {"id": "parking-escape", "name": "霓虹夜停", "cat": "puzzle", "levels": true, "blurb": "滑開擋路的車，讓紅色跑車衝出停車場。"}, {"id": "color-sort", "name": "鍊金藥劑室", "cat": "puzzle", "levels": true, "blurb": "倒來倒去，讓每支試管只剩一種藥水。"}, {"id": "block-fill", "name": "榫卯木格", "cat": "puzzle", "levels": false, "blurb": "把木塊拼進九宮盤，填滿就消除。"}, {"id": "nonogram", "name": "十字繡坊", "cat": "puzzle", "levels": true, "blurb": "依數字提示繡出隱藏的小圖。"}, {"id": "flip-lights", "name": "夜市花燈", "cat": "puzzle", "levels": true, "blurb": "點亮一盞，鄰居跟著變，讓整片燈籠全亮。"}, {"id": "rope-cut", "name": "森林糖果樹屋", "cat": "puzzle", "levels": true, "blurb": "切斷藤蔓，讓糖果擺進小狐狸嘴裡。"}, {"id": "color-push", "name": "積木推推樂", "cat": "puzzle", "levels": true, "blurb": "一推整排動，把積木推回同色格。"}, {"id": "sudoku", "name": "和紙數獨", "cat": "puzzle", "levels": true, "blurb": "墨印和紙上的經典數獨，一百關技巧漸進。"}, {"id": "minesweeper", "name": "極地探冰", "cat": "puzzle", "levels": true, "blurb": "冰原踩地雷，保證不用猜，一百關越鑿越深。"}, {"id": "queens", "name": "花園女王", "cat": "puzzle", "levels": true, "blurb": "每行每列每塊花圃一位女王，互不相鄰。"}, {"id": "hashi", "name": "群島橋匠", "cat": "puzzle", "levels": true, "blurb": "依島上數字架橋，把整片群島連起來。"}, {"id": "block-roll", "name": "石碑翻滾", "cat": "puzzle", "levels": true, "blurb": "翻滾長方石碑，直立落進雲端神殿的洞口。"}, {"id": "tangram", "name": "剪紙七巧", "cat": "puzzle", "levels": true, "blurb": "用七塊紅紙拼出墨色剪影，拼完變窗花。"}, {"id": "link-match", "name": "糖果連連看", "cat": "puzzle", "levels": true, "blurb": "兩轉彎內連起相同甜點，限時清空糖果屋。"}, {"id": "gem-match", "name": "深海珍珠", "cat": "puzzle", "levels": true, "blurb": "交換海洋寶物三連消，連鎖點亮珊瑚礁。"}, {"id": "peg-solitaire", "name": "玉珠孤棋", "cat": "puzzle", "levels": true, "blurb": "玉珠互跳，最後只留一顆在金框裡。"}, {"id": "gravity-maze", "name": "星環迷宮", "cat": "puzzle", "levels": true, "blurb": "旋轉太空艙，讓能量珠靠重力滾進出口。"}, {"id": "mirror-walk", "name": "鏡湖雙影", "cat": "puzzle", "levels": true, "blurb": "一個指令動兩隻狐狸，左右相反，同時抵達。"}, {"id": "kakuro", "name": "馬賽克數和", "cat": "puzzle", "levels": true, "blurb": "填數字湊出每段總和，拼出地中海馬賽克。"}, {"id": "klotski", "name": "三國華容道", "cat": "puzzle", "levels": true, "blurb": "滑動木雕將領，讓曹操從華容道脫身。"}, {"id": "mini-golf", "name": "果嶺彈珠", "cat": "puzzle", "levels": true, "blurb": "拖曳擊球，闖過紙模型迷你高爾夫百洞。"}, {"id": "vibe-arcade", "name": "霓虹街機", "cat": "reflex", "levels": false, "blurb": "閃電反應、疊塔、記憶、拼盤四台機台。"}, {"id": "knife-target", "name": "飛刀神射", "cat": "reflex", "levels": true, "blurb": "對旋轉木靶擲飛刀，別碰到已插的刀。"}, {"id": "push-zombie", "name": "推推殭屍", "cat": "reflex", "levels": false, "blurb": "三隻殭屍輪流爬出來，只敲全出來的那隻。"}, {"id": "shot-zombie", "name": "射擊殭屍", "cat": "reflex", "levels": false, "blurb": "射倒最前面那隻，整排往前推，拚手速。"}, {"id": "twin-lanes", "name": "雙軌疾行", "cat": "reflex", "levels": false, "blurb": "左右手各控一位跑者，吃圓閃方。"}, {"id": "orbit-hop", "name": "星軌跳躍", "cat": "reflex", "levels": false, "blurb": "抓準時機，從一顆星球彈射到下一顆。"}, {"id": "slide-rush", "name": "滑水衝刺", "cat": "reflex", "levels": true, "blurb": "左右拖曳過彎搶名次，一道比一道陡。"}, {"id": "rhythm-tap", "name": "合成波節拍", "cat": "reflex", "levels": true, "blurb": "跟著即時合成的音樂敲下四軌音符。"}, {"id": "dodge-rush", "name": "螢火迴避", "cat": "reflex", "levels": false, "blurb": "拖著螢火蟲穿過漫天彈幕，撐越久越好。"}, {"id": "chain-burst", "name": "深海螢光", "cat": "reflex", "levels": true, "blurb": "只點一下，讓水母一隻接一隻連鎖發光。"}, {"id": "hoop-king", "name": "投籃王", "cat": "reflex", "levels": true, "blurb": "向上一滑出手，空心入網拿高分。"}, {"id": "brick-balls", "name": "幾何霓虹磚", "cat": "reflex", "levels": true, "blurb": "瞄準一次發射整串彈珠，打碎所有磚塊。"}, {"id": "timing-slash", "name": "月下居合", "cat": "reflex", "levels": true, "blurb": "刀光繞月，在通過符紙的瞬間出手。"}, {"id": "snake-glide", "name": "苔原光蛇", "cat": "reflex", "levels": false, "blurb": "滑動轉彎，穿過傳送門吃個不停。"}, {"id": "mental-math", "name": "粉筆心算", "cat": "reflex", "levels": false, "blurb": "黑板落下的算式，搶在觸底前點出答案。"}, {"id": "falling-blocks", "name": "星塊落陣", "cat": "reflex", "levels": false, "blurb": "滑動旋轉排滿星塊，消行點亮夜空。"}, {"id": "flap-glider", "name": "紙鶴穿梭", "cat": "reflex", "levels": false, "blurb": "點一下振翅，紙鶴穿過黃昏竹林縫隙。"}, {"id": "color-rings", "name": "光環穿越", "cat": "reflex", "levels": false, "blurb": "點擊彈跳，只從同色光環穿過。"}, {"id": "helix-drop", "name": "螺旋墜落", "cat": "reflex", "levels": false, "blurb": "轉動糖果塔，讓果凍球一路砸碎墜落。"}, {"id": "fruit-slash", "name": "果園快刀", "cat": "reflex", "levels": false, "blurb": "劃開拋起的水果，一刀多顆連切，小心刺蝟栗子。"}, {"id": "frog-crossing", "name": "小蛙過河", "cat": "reflex", "levels": true, "blurb": "跳過車流、踩木過河，送小青蛙回荷葉窩。"}, {"id": "air-hockey", "name": "霓虹冰球", "cat": "reflex", "levels": true, "blurb": "拖曳推桿，擊敗 100 位霓虹機器人。"}, {"id": "color-eye", "name": "辨色眼力", "cat": "reflex", "levels": false, "blurb": "一片顏料裡找出唯一不同的那格。"}, {"id": "firefly-maze", "name": "螢火迷宮", "cat": "reflex", "levels": true, "blurb": "螢火蟲吃光點，強光反擊影蛾。"}, {"id": "catch-basket", "name": "籃接豐收", "cat": "reflex", "levels": false, "blurb": "拖籃接秋果，滿籃倒出換高分。"}, {"id": "doodle-shooter", "name": "塗鴉射擊", "cat": "action", "levels": true, "blurb": "筆記本上的塗鴉射擊，關底有 Boss。"}, {"id": "pixel-wizard", "name": "像素法師", "cat": "action", "levels": true, "blurb": "切換咒語擊退一波波怪物的像素法師。"}, {"id": "slingshot-siege", "name": "石砲攻城記", "cat": "action", "levels": true, "blurb": "拉弓彈射石彈，轟垮城堡打倒盔甲地精。"}, {"id": "asteroid-storm", "name": "隕石風暴", "cat": "action", "levels": false, "blurb": "雙搖桿霓虹射擊，擊碎分裂隕石撐過無盡波次。"}, {"id": "cannon-duel", "name": "山頭砲戰", "cat": "action", "levels": true, "blurb": "拖曳瞄準越過山頭，炸翻電腦砲台。"}, {"id": "tower-defense", "name": "菇菇守城", "cat": "action", "levels": true, "blurb": "種蘑菇塔擋害蟲，守護蘑菇村。"}, {"id": "xiangqi", "name": "中國象棋", "cat": "board", "levels": true, "blurb": "對弈五級電腦，破解百關連將殺局。"}, {"id": "chess", "name": "西洋棋", "cat": "board", "levels": true, "blurb": "對戰五級電腦，挑戰百道將死殘局。"}, {"id": "gomoku", "name": "五子棋", "cat": "board", "levels": true, "blurb": "對戰五級電腦，挑戰百關限步連五。"}, {"id": "othello", "name": "黑白棋", "cat": "board", "levels": false, "blurb": "翡翠賭桌翻轉棋，五級電腦對弈。"}, {"id": "go9", "name": "九路圍棋", "cat": "board", "levels": false, "blurb": "禪庭石庭對電腦下圍棋，自動判死活數子。"}, {"id": "connect-four", "name": "四子連線", "cat": "board", "levels": false, "blurb": "投子連四，挑戰五級電腦與 Pop Out。"}, {"id": "banqi", "name": "象棋暗棋", "cat": "board", "levels": false, "blurb": "翻棋比大小，炮打隔山兵吃帥。"}, {"id": "chinese-checkers", "name": "中國跳棋", "cat": "board", "levels": false, "blurb": "六角星上連跳搭橋，對戰一到五台電腦。"}, {"id": "draughts", "name": "國際跳棋", "cat": "board", "levels": false, "blurb": "巴西・俄式・英美跳棋，有吃必吃連吃升王。"}, {"id": "dots-and-boxes", "name": "點格棋", "cat": "board", "levels": false, "blurb": "輪流畫線圍格子，讓兩格奪控制。"}, {"id": "hex", "name": "六角連通", "cat": "board", "levels": false, "blurb": "紅連上下藍連左右，蜂巢極光六角棋。"}, {"id": "ultimate-tictactoe", "name": "九宮井字", "cat": "board", "levels": false, "blurb": "下哪格送對手去哪盤，五級電腦對弈。"}, {"id": "mancala", "name": "播棋", "cat": "board", "levels": false, "blurb": "彩豆撒入木坑，連動搶收鬥電腦。"}, {"id": "aeroplane-chess", "name": "飛行棋", "cat": "board", "levels": false, "blurb": "擲骰起飛撞機回場，對戰三台電腦。"}, {"id": "backgammon", "name": "雙陸棋", "cat": "board", "levels": false, "blurb": "擲骰打擊移出，五級電腦與加倍骰。"}, {"id": "shogi", "name": "日本將棋", "cat": "board", "levels": false, "blurb": "吃子可打入的日本將棋，五級電腦與詰將棋"}, {"id": "klondike-solitaire", "name": "經典接龍", "cat": "card", "levels": true, "blurb": "綠呢牌桌上的經典接龍，百局保證可解。"}, {"id": "spider-solitaire", "name": "蜘蛛接龍", "cat": "card", "levels": true, "blurb": "月光蛛網下理順八串牌，一到四種花色。"}, {"id": "freecell", "name": "新接龍", "cat": "card", "levels": true, "blurb": "青花瓷桌上的 FreeCell，百局皆可解。"}, {"id": "pyramid-solitaire", "name": "金字塔接龍", "cat": "card", "levels": true, "blurb": "兩張湊十三，拆光黃昏沙丘上的金字塔。"}, {"id": "mahjong-solitaire", "name": "麻將接龍", "cat": "card", "levels": true, "blurb": "竹林茶室裡拆牌山，百關層疊配對。"}, {"id": "big-two", "name": "大老二", "cat": "card", "levels": false, "blurb": "台灣規則大老二，和三位夜市牌友拼清手。"}, {"id": "taiwan-mahjong", "name": "台灣麻將", "cat": "card", "levels": false, "blurb": "16 張台麻，聽牌提示與台數一次算清。"}, {"id": "texas-holdem", "name": "德州撲克", "cat": "card", "levels": false, "blurb": "深夜爵士廳的六人桌，和五位電腦鬥智。"}, {"id": "blackjack", "name": "二十一點", "cat": "card", "levels": false, "blurb": "裝飾藝術列車上對莊家，點數越滾越高"}, {"id": "hearts", "name": "紅心大戰", "cat": "card", "levels": false, "blurb": "躲開紅心與黑桃 Q，或大膽射月。"}, {"id": "pick-red-points", "name": "撿紅點", "cat": "card", "levels": false, "blurb": "柑仔店桌上湊十吃牌，紅點越多越贏。"}, {"id": "sevens", "name": "排七", "cat": "card", "levels": false, "blurb": "從 7 往兩邊接牌，卡住對手讓他蓋大牌。"}, {"id": "old-maid", "name": "抽鬼牌", "cat": "card", "levels": false, "blurb": "馬戲團裡抽牌配對，別讓小丑留在你手上。"}, {"id": "yacht-dice", "name": "快艇骰子", "cat": "card", "levels": false, "blurb": "擲五顆骰填十三格，乘著快艇遠航刷分。"}, {"id": "liars-dice", "name": "吹牛骰", "cat": "card", "levels": false, "blurb": "燈籠茶館裡喊點開盅，看穿電腦的虛張聲勢。"}, {"id": "pressure-washer", "name": "高壓洗淨", "cat": "calm", "levels": true, "blurb": "用水柱沖掉污垢，看著畫面一點點變乾淨。"}, {"id": "word-world", "name": "字字成真", "cat": "calm", "levels": false, "blurb": "打出一個詞，它就出現在小世界裡。"}, {"id": "warehouse-command", "name": "倉儲指揮所", "cat": "world", "levels": false, "blurb": "派遣堆高機搬貨出貨，衝高倉庫吞吐量。"}, {"id": "atlantis", "name": "波塞迪亞", "cat": "world", "levels": false, "blurb": "在夕陽下的亞特蘭提斯城自由漫步。"}, {"id": "clearwater", "name": "清淺水灣", "cat": "calm", "levels": false, "blurb": "輕觸卵石淺灘激起漣漪，看光影在水底晃動。"}, {"id": "rain-on-glass", "name": "雨窗", "cat": "calm", "levels": false, "blurb": "雨夜起霧的窗，用手指在玻璃上寫字作畫。"}]</script>
+
+<script>
+(() => {
+  const META = JSON.parse(document.getElementById('hub-meta').textContent);
+  const CATS = { puzzle: '益智', reflex: '反應', action: '動作', board: '經典棋類', card: '牌類與骰子', calm: '休閒', world: '探索與模擬' };
+  const VIEWS = { recent: '最近玩過', favs: '收藏' };
+  const RECENT_MAX = 12;
+  const STAR = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="currentColor"/></svg>';
+  const $ = id => document.getElementById(id);
+  const byId = new Map(META.map(g => [g.id, g]));
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    list(k) { try { const a = JSON.parse(this.get(k)); return Array.isArray(a) ? a.filter(id => byId.has(id)) : []; } catch (e) { return []; } }
+  };
+  let filter = store.get('hub.filter') || 'all';
+  if (filter !== 'all' && !CATS[filter] && !VIEWS[filter]) filter = 'all';
+  let recent = store.list('hub.recent');
+  const lastOld = store.get('hub.last');
+  if (!recent.length && byId.has(lastOld)) recent = [lastOld];
+  let favs = new Set(store.list('hub.favs'));
+
+  const leveled = META.filter(g => g.levels).length;
+  $('count').textContent = `${META.length} 款遊戲 · ${leveled} 款各有 100 關`;
+
+  const filters = $('filters');
+  [['all', '全部'], ['recent', VIEWS.recent], ['favs', VIEWS.favs], ...Object.entries(CATS).filter(([k]) => META.some(g => g.cat === k))].forEach(([k, name]) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.dataset.k = k; b.textContent = name;
+    b.onclick = () => { filter = k; store.set('hub.filter', k); render(); };
+    filters.appendChild(b);
+  });
+
+  function shown() {
+    if (filter === 'recent') return recent.map(id => byId.get(id));
+    if (filter === 'favs') return META.filter(g => favs.has(g.id));
+    return META.filter(g => filter === 'all' || g.cat === filter);
+  }
+
+  function render() {
+    filters.querySelectorAll('.chip').forEach(c => {
+      c.setAttribute('aria-pressed', c.dataset.k === filter);
+      if (VIEWS[c.dataset.k]) {
+        const n = c.dataset.k === 'recent' ? recent.length : favs.size;
+        c.textContent = n ? `${VIEWS[c.dataset.k]} ${n}` : VIEWS[c.dataset.k];
+      }
+    });
+    const last = recent[0];
+    const grid = $('grid'); grid.textContent = '';
+    const list = shown();
+    if (!list.length) {
+      const p = document.createElement('p'); p.className = 'empty';
+      p.textContent = filter === 'favs' ? '還沒有收藏。開啟遊戲後按上方的「收藏」，就會出現在這裡。' : '還沒有玩過任何遊戲，挑一款開始吧。';
+      grid.appendChild(p); return;
+    }
+    list.forEach(g => {
+      const b = document.createElement('button');
+      b.className = 'card'; b.setAttribute('aria-label', `開始玩 ${g.name}`);
+      b.innerHTML = `
+        <div class="shot"><img alt="" loading="lazy" src="covers/${g.id}.jpg">
+          ${g.id === last ? '<span class="last">上次玩</span>' : ''}
+          ${favs.has(g.id) ? `<span class="star" aria-label="已收藏">${STAR}</span>` : ''}
+          <span class="play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg></span></div>
+        <div class="label"><h2></h2><p></p>
+          <div class="tags"><span class="tag" style="--c:var(--tag-${g.cat})">${CATS[g.cat]}</span>${g.levels ? '<span class="tag levels">100 關</span>' : ''}</div></div>`;
+      b.querySelector('h2').textContent = g.name;
+      b.querySelector('p').textContent = g.blurb;
+      b.onclick = () => open(g);
+      // Start downloading as soon as a finger lands, so the game is usually ready by the time the tap ends.
+      b.addEventListener('pointerdown', () => load(g.id).catch(() => {}), { passive: true });
+      grid.appendChild(b);
+    });
+  }
+
+  // Each game is its own published file (play/<id>.html), fetched on first open and kept for the session.
+  // It still runs through srcdoc, as before, so it shares this page's storage and saved progress carries over.
+  const cache = new Map();
+  function load(id) {
+    if (!cache.has(id)) {
+      const p = fetch(`play/${id}.html`).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); });
+      p.catch(() => cache.delete(id));
+      cache.set(id, p);
+    }
+    return cache.get(id);
+  }
+
+  let current = null, scrollY = 0, token = 0;
+  function open(g) {
+    current = g; scrollY = window.scrollY;
+    recent = [g.id, ...recent.filter(id => id !== g.id)].slice(0, RECENT_MAX);
+    store.set('hub.recent', JSON.stringify(recent));
+    store.set('hub.last', g.id);
+    $('ptitle').textContent = g.name;
+    syncFav();
+    $('hub').hidden = true; $('player').hidden = false;
+    document.body.classList.add('playing');
+    mount();
+  }
+  function syncFav() {
+    const on = favs.has(current.id);
+    $('fav').setAttribute('aria-pressed', on);
+    $('fav').setAttribute('aria-label', on ? '取消收藏這款遊戲' : '收藏這款遊戲');
+    $('fav').lastChild.textContent = on ? '已收藏' : '收藏';
+    $('fav').querySelector('path').setAttribute('fill', on ? 'currentColor' : 'none');
+  }
+  async function mount() {
+    const stage = $('stage'), g = current, my = ++token;
+    stage.querySelector('iframe')?.remove();
+    $('lmsg').textContent = '載入中…'; $('retry').hidden = true; $('loading').hidden = false;
+    let html;
+    try { html = await load(g.id); }
+    catch (e) {
+      if (my !== token) return;
+      $('lmsg').textContent = '遊戲載入失敗，請確認網路連線。'; $('retry').hidden = false;
+      return;
+    }
+    if (my !== token || current !== g) return;
+    const f = document.createElement('iframe');
+    f.title = g.name;
+    f.setAttribute('allow', 'autoplay; fullscreen; gamepad');
+    f.addEventListener('load', () => { $('loading').hidden = true; try { f.contentWindow.focus(); } catch (e) {} });
+    f.srcdoc = html;
+    stage.appendChild(f);
+  }
+  function close() {
+    if (!current) return;
+    token++;
+    $('stage').querySelector('iframe')?.remove();
+    current = null;
+    $('player').hidden = true; $('hub').hidden = false;
+    document.body.classList.remove('playing');
+    render();
+    window.scrollTo(0, scrollY);
+  }
+  $('back').onclick = close;
+  $('restart').onclick = () => current && mount();
+  $('retry').onclick = () => current && mount();
+  $('fav').onclick = () => {
+    if (!current) return;
+    favs.has(current.id) ? favs.delete(current.id) : favs.add(current.id);
+    store.set('hub.favs', JSON.stringify([...favs]));
+    syncFav();
+  };
+  render();
+})();
+</script>

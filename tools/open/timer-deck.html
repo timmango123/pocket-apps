@@ -1,0 +1,1089 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>多功能計時器</title>
+<style>
+/* Instrument-panel look: cool steel gray, hairline cards, cobalt accent, phase colors for intervals */
+:root {
+  --bg: #e9edf1;
+  --surface: #ffffff;
+  --surface-2: #f3f5f8;
+  --ink: #12171d;
+  --ink-2: #3f4854;
+  --muted: #5f6975;
+  --line: #d2d8df;
+  --line-strong: #aeb7c2;
+  --accent: #1d4ed8;
+  --accent-ink: #ffffff;
+  --accent-soft: #dfe7fb;
+  --work: #c9342a;
+  --rest: #1b7f46;
+  --prep: #a77a00;
+  --work-tint: #fbe5e2;
+  --rest-tint: #dcf1e3;
+  --prep-tint: #f8edc8;
+  --done: #e08a00;
+  --done-tint: #ffe9c2;
+  --fast: #1b7f46;
+  --slow: #c9342a;
+  --overlay: rgba(14, 18, 24, .48);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1114; --surface: #171b20; --surface-2: #1e232a; --ink: #e9edf2; --ink-2: #c0c8d2; --muted: #8f99a5;
+    --line: #2a3139; --line-strong: #46505c; --accent: #86a6ff; --accent-ink: #0a1022; --accent-soft: #1d2741;
+    --work: #ff7166; --rest: #5ad18f; --prep: #f1c445; --work-tint: #3b1b19; --rest-tint: #12301f; --prep-tint: #332a0d;
+    --done: #ffb02e; --done-tint: #3e2b08; --fast: #5ad18f; --slow: #ff7166; --overlay: rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1114; --surface: #171b20; --surface-2: #1e232a; --ink: #e9edf2; --ink-2: #c0c8d2; --muted: #8f99a5;
+  --line: #2a3139; --line-strong: #46505c; --accent: #86a6ff; --accent-ink: #0a1022; --accent-soft: #1d2741;
+  --work: #ff7166; --rest: #5ad18f; --prep: #f1c445; --work-tint: #3b1b19; --rest-tint: #12301f; --prep-tint: #332a0d;
+  --done: #ffb02e; --done-tint: #3e2b08; --fast: #5ad18f; --slow: #ff7166; --overlay: rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--sans);
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  padding-block: max(12px, env(safe-area-inset-top)) calc(32px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1100px; margin: 0 auto; }
+
+/* Top bar */
+.top { display: flex; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
+.brand { flex: 1; min-width: 0; }
+.brand h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .02em; }
+.brand p { margin: 0; font: 11px/1.4 var(--mono); color: var(--muted); letter-spacing: .06em; }
+.btn { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; font-size: 14px; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-ghost { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+.icon-btn { width: 44px; height: 44px; border-radius: 6px; display: inline-grid; place-items: center; color: var(--ink-2); border: 1px solid transparent; }
+.icon-btn svg { width: 22px; height: 22px; }
+@media (hover: hover) {
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost:hover, .icon-btn:hover { background: var(--surface-2); }
+}
+
+/* Quick presets */
+.quick { display: flex; align-items: center; gap: 8px; padding: 12px 0; overflow-x: auto; scrollbar-width: none; }
+.quick::-webkit-scrollbar { display: none; }
+.quick-label { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .08em; flex: none; }
+.chip { flex: none; min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line-strong); background: var(--surface); font: 600 14px/1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.chip small { font-family: var(--sans); font-weight: 500; font-size: 12px; color: var(--muted); margin-left: 2px; }
+@media (hover: hover) { .chip:hover { border-color: var(--accent); color: var(--accent); } }
+
+/* Cards */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 720px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1060px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.card {
+  --tint: var(--surface); --phase: var(--accent);
+  position: relative; background: var(--tint); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px 12px; transition: transform .2s ease, background-color .3s ease, opacity .2s ease;
+  touch-action: pan-y; user-select: none; -webkit-user-select: none;
+}
+.card[data-phase="work"] { --tint: var(--work-tint); --phase: var(--work); border-color: color-mix(in srgb, var(--work) 35%, var(--line)); }
+.card[data-phase="rest"] { --tint: var(--rest-tint); --phase: var(--rest); border-color: color-mix(in srgb, var(--rest) 35%, var(--line)); }
+.card[data-phase="prep"] { --tint: var(--prep-tint); --phase: var(--prep); border-color: color-mix(in srgb, var(--prep) 40%, var(--line)); }
+.card.is-done { --phase: var(--done); border-color: var(--done); animation: flash 1s steps(2, jump-none) infinite; }
+.card.is-done.acked { animation: none; --tint: var(--surface); border-color: var(--line); }
+@keyframes flash { 0% { background: var(--done-tint); } 100% { background: var(--surface); } }
+.card.dragging { z-index: 5; box-shadow: 0 10px 30px rgba(0,0,0,.18); transform: scale(1.02); transition: none; }
+.card.swiping { transition: none; }
+.card-head { display: flex; align-items: center; gap: 4px; min-height: 44px; }
+.grip { width: 32px; height: 44px; display: grid; place-items: center; color: var(--muted); cursor: grab; touch-action: none; flex: none; margin-left: -6px; }
+.grip svg { width: 16px; height: 16px; }
+.tag { flex: none; font: 600 11px/1 var(--mono); padding: 4px 6px; border-radius: 4px; border: 1px solid var(--line-strong); color: var(--ink-2); letter-spacing: .04em; }
+.name { flex: 1; min-width: 0; text-align: left; font-weight: 600; font-size: 15px; min-height: 44px; padding: 0 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.name-input { flex: 1; min-width: 0; height: 40px; font: 600 16px var(--sans); padding: 0 8px; border: 1px solid var(--accent); border-radius: 4px; background: var(--surface); color: var(--ink); }
+.del { color: var(--muted); }
+.card-body { display: flex; align-items: center; gap: 14px; margin-top: 2px; }
+.ring { position: relative; width: 76px; height: 76px; flex: none; }
+.ring > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring .track { stroke: var(--line); }
+.ring .ticks { stroke: var(--line-strong); }
+.ring .prog { stroke: var(--phase); transition: stroke .3s; }
+.play { position: absolute; inset: 12px; border-radius: 50%; background: var(--phase); color: var(--accent-ink); display: grid; place-items: center; }
+.card[data-phase] .play, .card.is-done .play { color: #fff; }
+:root[data-theme="dark"] .card[data-phase] .play, :root[data-theme="dark"] .card.is-done .play { color: #111; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card[data-phase] .play, :root:not([data-theme="light"]) .card.is-done .play { color: #111; } }
+.play svg { width: 24px; height: 24px; }
+.readout { flex: 1; min-width: 0; }
+.time { display: block; font: 600 48px/1.05 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; color: var(--ink); border-radius: 4px; text-align: left; width: 100%; }
+.time.long { font-size: 36px; }
+.time.xlong { font-size: 30px; }
+.time .cs { font-size: .55em; color: var(--muted); letter-spacing: 0; }
+.card.adjustable .time { touch-action: none; cursor: ns-resize; }
+.sub { margin-top: 4px; font-size: 13px; color: var(--muted); min-height: 20px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.sub b { color: var(--phase); font-weight: 700; }
+.foot { display: flex; gap: 8px; margin-top: 10px; }
+.foot .btn { flex: 1; padding: 0 8px; }
+.foot .btn svg { width: 18px; height: 18px; }
+.stop-btn { flex: 1; min-height: 52px; border-radius: 6px; background: var(--done); color: #1a1200; font-weight: 800; font-size: 18px; letter-spacing: .1em; }
+.laps { margin-top: 8px; border-top: 1px dashed var(--line-strong); }
+.laps summary { min-height: 44px; display: flex; align-items: center; font-size: 13px; color: var(--ink-2); cursor: pointer; list-style: none; gap: 6px; }
+.laps summary::-webkit-details-marker { display: none; }
+.laps summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .2s; margin: 0 4px; }
+.laps[open] summary::before { transform: rotate(45deg); }
+.lap-list { margin: 0; padding: 0; list-style: none; max-height: 200px; overflow-y: auto; font: 13px/1 var(--mono); font-variant-numeric: tabular-nums; }
+.lap-list li { display: grid; grid-template-columns: 3.5em 1fr 1fr; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); }
+.lap-list li span:nth-child(2), .lap-list li span:nth-child(3) { text-align: right; }
+.lap-list li span:nth-child(3) { color: var(--muted); }
+.lap-list li.fast span:nth-child(2) { color: var(--fast); font-weight: 700; }
+.lap-list li.slow span:nth-child(2) { color: var(--slow); font-weight: 700; }
+.lap-head { font: 600 11px/1 var(--mono) !important; color: var(--muted); letter-spacing: .06em; }
+.del-reveal { position: absolute; inset: 1px; opacity: 0; border-radius: 8px; background: var(--work); color: #fff; display: flex; align-items: center; justify-content: flex-end; padding-right: 20px; font-weight: 700; z-index: -1; }
+.slot { position: relative; z-index: 0; }
+.slot:has(.card.swiping) .del-reveal, .slot.removing .del-reveal { opacity: 1; }
+.empty { padding: 40px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; }
+.note { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+/* Sheet */
+.scrim { position: fixed; inset: 0; background: var(--overlay); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+.sheet {
+  width: 100%; max-width: 520px; max-height: 92%; overflow-y: auto; background: var(--surface); color: var(--ink);
+  border-radius: 12px 12px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  border: 1px solid var(--line-strong); border-bottom: 0;
+}
+@media (min-width: 640px) { .scrim { align-items: center; padding: 16px; } .sheet { border-radius: 12px; border-bottom: 1px solid var(--line-strong); } }
+@media (max-height: 600px) { .scrim { align-items: flex-start; overflow-y: auto; } .sheet { max-height: none; border-radius: 0 0 12px 12px; } }
+.sheet h2 { margin: 0 0 12px; font-size: 18px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+.seg button { min-height: 44px; font-weight: 600; font-size: 14px; color: var(--ink-2); }
+.seg button + button { border-left: 1px solid var(--line-strong); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.field { display: grid; gap: 4px; margin-bottom: 12px; }
+.field > span, .lbl { font-size: 12px; color: var(--muted); font-weight: 600; }
+.input { height: 44px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface-2); color: var(--ink); font: 16px var(--sans); width: 100%; }
+.hms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.hms label { display: grid; gap: 4px; }
+.hms .input { font: 600 26px var(--mono); text-align: center; height: 56px; font-variant-numeric: tabular-nums; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.grid2 label { display: grid; gap: 4px; }
+.grid2 .input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tpls { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tpl { display: inline-flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 22px; background: var(--surface-2); }
+.tpl button { min-height: 40px; padding: 0 12px; font-size: 13px; font-weight: 600; position: relative; }
+.tpl button::after { content: ""; position: absolute; inset: -2px 0; }
+.tpl .x { padding: 0 10px 0 4px; color: var(--muted); }
+.summary { font: 13px/1.5 var(--mono); color: var(--ink-2); background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
+.err { color: var(--work); font-size: 13px; font-weight: 600; min-height: 20px; margin: -4px 0 8px; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.actions .btn { flex: 1 1 120px; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border-bottom: 1px solid var(--line); }
+.switch-row:last-of-type { border-bottom: 0; }
+.switch-row div { display: grid; }
+.switch-row small { color: var(--muted); font-size: 12px; }
+.switch { appearance: none; -webkit-appearance: none; width: 50px; height: 30px; border-radius: 15px; background: var(--line-strong); position: relative; flex: none; cursor: pointer; margin: 0; }
+.switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::before { transform: translateX(20px); }
+.switch::after { content: ""; position: absolute; inset: -8px; }
+.theme-seg { margin: 12px 0 0; }
+
+/* Toast */
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 4px 4px 4px 16px; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 14px; z-index: 60; max-width: calc(100% - 32px); }
+.toast button { min-height: 44px; padding: 0 12px; font-weight: 700; color: var(--bg); text-decoration: underline; }
+.toast:not(:has(button:not([hidden]))) { padding: 12px 16px; }
+
+/* Fullscreen */
+.fs { position: fixed; inset: 0; z-index: 50; background: var(--tint, var(--bg)); color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); --phase: var(--accent); }
+.fs[data-phase="work"] { --tint: var(--work-tint); --phase: var(--work); }
+.fs[data-phase="rest"] { --tint: var(--rest-tint); --phase: var(--rest); }
+.fs[data-phase="prep"] { --tint: var(--prep-tint); --phase: var(--prep); }
+.fs.is-done { --phase: var(--done); animation: flash 1s steps(2, jump-none) infinite; }
+.fs-name { font-size: 16px; color: var(--muted); font-weight: 600; }
+.fs-phase { font-size: clamp(20px, 6vw, 44px); font-weight: 800; color: var(--phase); letter-spacing: .1em; min-height: 1.2em; }
+.fs-time { font: 600 22vw/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.03em; white-space: nowrap; margin: 2vh 0; }
+.fs-time .cs { font-size: .5em; color: var(--muted); }
+.fs-round { font: 600 clamp(14px, 3.5vw, 22px) var(--mono); color: var(--ink-2); min-height: 1.3em; }
+.fs-pause { width: 96px; height: 96px; border-radius: 50%; background: var(--phase); color: #fff; display: grid; place-items: center; margin-top: 3vh; }
+.fs-pause svg { width: 40px; height: 40px; }
+.fs-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 10px; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
+.fs-top { position: absolute; top: max(8px, env(safe-area-inset-top)); right: 12px; }
+.fs.hide-ctl .fs-bar, .fs.hide-ctl .fs-top, .fs.hide-ctl .fs-pause { visibility: hidden; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .fs { flex-direction: column; }
+  .fs-time { margin: 0; }
+  .fs-pause { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); width: 64px; height: 64px; margin: 0; }
+  .fs-pause svg { width: 28px; height: 28px; }
+  .fs-bar { justify-content: flex-end; padding-right: max(16px, env(safe-area-inset-right)); }
+  .fs-name { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .card.is-done:not(.acked), .fs.is-done { background: var(--done-tint); }
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>多功能計時器</h1>
+      <p id="clock">--:--:--</p>
+    </div>
+    <button class="btn btn-primary" id="addBtn" type="button" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>新增
+    </button>
+    <button class="icon-btn" id="settingsBtn" type="button" aria-label="設定" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></svg>
+    </button>
+  </header>
+
+  <nav class="quick" aria-label="快速倒數">
+    <span class="quick-label">快速</span>
+    <button class="chip" type="button" data-min="1">1<small>分</small></button>
+    <button class="chip" type="button" data-min="3">3<small>分</small></button>
+    <button class="chip" type="button" data-min="5">5<small>分</small></button>
+    <button class="chip" type="button" data-min="10">10<small>分</small></button>
+    <button class="chip" type="button" data-min="15">15<small>分</small></button>
+    <button class="chip" type="button" data-min="30">30<small>分</small></button>
+  </nav>
+
+  <main class="grid" id="list" aria-live="off"></main>
+  <div class="empty" id="empty" hidden>還沒有計時器。點「新增」或上方快速按鈕建立。</div>
+  <p class="note">提示：左滑卡片可刪除；倒數暫停時，在時間數字上下滑動可 ±1 分鐘；按住左側握把拖曳可排序。頁面重新整理後計時會依時間戳接續。手機鎖屏或切到背景時瀏覽器可能暫停頁面，屆時無法發出提示音，回到畫面後會補算並標示結束時間。若沒有聲音，請關閉手機靜音模式。</p>
+</div>
+
+<div class="scrim" id="addScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+    <h2 id="addTitle">新增計時器</h2>
+    <div class="seg" role="group" aria-label="類型" id="typeSeg">
+      <button type="button" id="typeCountdown" data-type="countdown" aria-pressed="true">倒數</button>
+      <button type="button" id="typeStopwatch" data-type="stopwatch" aria-pressed="false">碼錶</button>
+      <button type="button" id="typeInterval" data-type="interval" aria-pressed="false">間歇</button>
+    </div>
+    <label class="field"><span>名稱（1～20 字）</span><input class="input" id="nameInput" maxlength="20" autocomplete="off"></label>
+    <div id="cdFields">
+      <div class="lbl" style="margin-bottom:4px">時間</div>
+      <div class="hms">
+        <label><span class="lbl">時</span><input class="input" id="hInput" inputmode="numeric" type="number" min="0" max="99" value="0"></label>
+        <label><span class="lbl">分</span><input class="input" id="mInput" inputmode="numeric" type="number" min="0" max="59" value="5"></label>
+        <label><span class="lbl">秒</span><input class="input" id="sInput" inputmode="numeric" type="number" min="0" max="59" value="0"></label>
+      </div>
+      <div style="height:12px"></div>
+    </div>
+    <div id="ivFields" hidden>
+      <div class="lbl" style="margin-bottom:6px">範本</div>
+      <div class="tpls" id="tplList"></div>
+      <div class="grid2">
+        <label><span class="lbl">準備（秒）</span><input class="input" id="ivPrep" type="number" inputmode="numeric" min="0" max="600"></label>
+        <label><span class="lbl">運動（秒）</span><input class="input" id="ivWork" type="number" inputmode="numeric" min="1" max="3600"></label>
+        <label><span class="lbl">休息（秒）</span><input class="input" id="ivRest" type="number" inputmode="numeric" min="0" max="3600"></label>
+        <label><span class="lbl">回合數</span><input class="input" id="ivRounds" type="number" inputmode="numeric" min="1" max="99"></label>
+        <label><span class="lbl">組數</span><input class="input" id="ivSets" type="number" inputmode="numeric" min="1" max="20"></label>
+        <label><span class="lbl">組間休息（秒）</span><input class="input" id="ivSetRest" type="number" inputmode="numeric" min="0" max="3600"></label>
+      </div>
+      <div style="height:10px"></div>
+      <div class="summary" id="ivSummary"></div>
+    </div>
+    <div class="err" id="addErr" role="alert"></div>
+    <div class="actions">
+      <button class="btn btn-ghost" type="button" id="saveTplBtn" hidden>存為範本</button>
+      <button class="btn btn-ghost" type="button" id="addCancel">取消</button>
+      <button class="btn btn-ghost" type="button" id="addOnly">建立</button>
+      <button class="btn btn-primary" type="button" id="addStart">建立並開始</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="setScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <h2 id="setTitle">設定</h2>
+    <label class="switch-row"><div><span>提示音</span><small>最後 3 秒短嗶、結束長嗶、間歇換階段雙嗶</small></div><input type="checkbox" class="switch" id="optSound"></label>
+    <label class="switch-row"><div><span>震動</span><small>時間到時震動（支援的手機）</small></div><input type="checkbox" class="switch" id="optVibrate"></label>
+    <label class="switch-row"><div><span>保持螢幕常亮</span><small id="wakeNote">計時中避免螢幕自動關閉</small></div><input type="checkbox" class="switch" id="optWake"></label>
+    <div class="lbl" style="margin-top:12px">外觀</div>
+    <div class="seg theme-seg" role="group" aria-label="外觀" id="themeSeg">
+      <button type="button" id="themeAuto" data-theme-val="auto">自動</button>
+      <button type="button" id="themeLight" data-theme-val="light">淺色</button>
+      <button type="button" id="themeDark" data-theme-val="dark">深色</button>
+    </div>
+    <div class="actions" style="margin-top:6px">
+      <button class="btn btn-ghost" type="button" id="testSound">試聽提示音</button>
+      <button class="btn btn-primary" type="button" id="setClose">完成</button>
+    </div>
+  </div>
+</div>
+
+<div class="fs" id="fs" hidden role="dialog" aria-modal="true" aria-label="全螢幕計時">
+  <div class="fs-top"><button class="btn btn-ghost" type="button" id="fsExit">離開全螢幕</button></div>
+  <div class="fs-name" id="fsName"></div>
+  <div class="fs-phase" id="fsPhase"></div>
+  <div class="fs-time" id="fsTime">00:00</div>
+  <div class="fs-round" id="fsRound"></div>
+  <button class="fs-pause" type="button" id="fsPause" aria-label="開始或暫停"></button>
+  <div class="fs-bar">
+    <button class="btn btn-ghost" type="button" id="fsReset">重設</button>
+    <button class="btn btn-ghost" type="button" id="fsLap" hidden>計圈</button>
+    <button class="btn btn-primary" type="button" id="fsStop" hidden>停止提示</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"><span id="toastMsg"></span><button type="button" id="toastUndo" hidden>復原</button></div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const MAX_TIMERS = 20;
+const MAX_MS = (99 * 3600 + 59 * 60 + 59) * 1000;
+const K = { timers: 'timer-deck:v1:timers', presets: 'timer-deck:v1:presets', settings: 'timer-deck:v1:settings' };
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>',
+  reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></svg>',
+  full: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  lap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  grip: '<svg viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.4"/><circle cx="11" cy="3" r="1.4"/><circle cx="5" cy="8" r="1.4"/><circle cx="11" cy="8" r="1.4"/><circle cx="5" cy="13" r="1.4"/><circle cx="11" cy="13" r="1.4"/></svg>'
+};
+const TYPE_LABEL = { countdown: '倒數', stopwatch: '碼錶', interval: '間歇' };
+const PHASE_LABEL = { prep: '準備', work: '運動', rest: '休息', setrest: '組間休息' };
+const DEFAULT_IV = { prep: 10, work: 20, rest: 10, rounds: 8, sets: 1, setRest: 60 };
+
+// ---------- state ----------
+let settings = Object.assign({ sound: true, vibrate: true, wake: true, theme: 'auto' }, store.get(K.settings, {}));
+let presets = store.get(K.presets, null);
+if (!Array.isArray(presets)) presets = [];
+let timers = store.get(K.timers, null);
+function validTimer(t) { return t && typeof t.id === 'string' && TYPE_LABEL[t.type] && ['idle','running','paused','done'].includes(t.status); }
+if (!Array.isArray(timers)) timers = null; else timers = timers.filter(validTimer).slice(0, MAX_TIMERS);
+const rt = new Map(); // runtime-only per timer: lastSec, lastIdx, lastAlarm
+
+function uid() { const a = new Uint32Array(2); crypto.getRandomValues(a); return a[0].toString(36) + a[1].toString(36); }
+function newTimer(type, opts = {}) {
+  const t = { id: uid(), type, name: opts.name || nextName(type), status: 'idle', startAt: 0, pausedElapsed: 0, duration: 0, laps: [], doneAt: 0, ack: false };
+  if (type === 'countdown') t.duration = opts.duration || 300000;
+  if (type === 'interval') { t.cfg = Object.assign({}, DEFAULT_IV, opts.cfg || {}); t.duration = phasesOf(t.cfg).total; }
+  return t;
+}
+function nextName(type) {
+  const base = TYPE_LABEL[type];
+  const used = new Set(timers.map(t => t.name));
+  for (let i = 1; i < 999; i++) if (!used.has(base + ' ' + i)) return base + ' ' + i;
+  return base;
+}
+if (!timers || !timers.length && store.get(K.timers, null) === null) {
+  timers = [];
+  timers.push(newTimer('countdown', { name: '範例：燉湯', duration: 40 * 60000 }));
+  timers.push(newTimer('countdown', { name: '範例：煮麵', duration: 8 * 60000 }));
+  timers.push(newTimer('interval', { name: '範例：Tabata' }));
+  timers.push(newTimer('stopwatch', { name: '範例：簡報計時' }));
+}
+function save() { store.set(K.timers, timers); }
+
+// ---------- time math ----------
+function elapsedOf(t, now) { return t.pausedElapsed + (t.status === 'running' ? Math.max(0, now - t.startAt) : 0); }
+const phaseCache = new WeakMap();
+function phasesOf(cfg) {
+  const list = [];
+  if (cfg.prep > 0) list.push({ type: 'prep', duration: cfg.prep * 1000, round: 0, set: 1 });
+  for (let s = 1; s <= cfg.sets; s++) {
+    for (let r = 1; r <= cfg.rounds; r++) {
+      list.push({ type: 'work', duration: cfg.work * 1000, round: r, set: s });
+      if (cfg.rest > 0) list.push({ type: 'rest', duration: cfg.rest * 1000, round: r, set: s });
+    }
+    if (s < cfg.sets && cfg.setRest > 0) list.push({ type: 'setrest', duration: cfg.setRest * 1000, round: cfg.rounds, set: s });
+  }
+  let acc = 0; for (const p of list) { p.start = acc; acc += p.duration; }
+  return { list, total: acc };
+}
+function phasesFor(t) {
+  let p = phaseCache.get(t.cfg);
+  if (!p) { p = phasesOf(t.cfg); phaseCache.set(t.cfg, p); }
+  return p;
+}
+function locate(t, el) {
+  const { list, total } = phasesFor(t);
+  if (el >= total) { const last = list[list.length - 1]; return { idx: list.length, phase: last, phaseRem: 0, done: true }; }
+  let lo = 0, hi = list.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (list[mid].start <= el) lo = mid; else hi = mid - 1; }
+  const p = list[lo];
+  return { idx: lo, phase: p, phaseRem: p.start + p.duration - el, done: false };
+}
+const pad = n => String(n).padStart(2, '0');
+function fmtCountdown(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000 - 1e-9));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  return h ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
+}
+function fmtSW(ms) {
+  const cs = Math.floor(ms / 10);
+  const h = Math.floor(cs / 360000), m = Math.floor(cs % 360000 / 6000), s = Math.floor(cs % 6000 / 100), c = cs % 100;
+  return { main: h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`, cs: '.' + pad(c) };
+}
+function fmtClock(ts) { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtDurShort(ms) {
+  const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
+  return (h ? h + ' 小時 ' : '') + (m ? m + ' 分 ' : '') + (ss || (!h && !m) ? ss + ' 秒' : '');
+}
+
+// ---------- audio ----------
+let actx = null;
+function audio() {
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { actx = null; } }
+  if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+  return actx;
+}
+document.addEventListener('pointerdown', () => audio(), { capture: true });
+document.addEventListener('keydown', () => audio(), { capture: true });
+function beep(freq = 880, ms = 100, gain = 0.25, delay = 0) {
+  if (!settings.sound || !actx || actx.state !== 'running') return;
+  const t0 = actx.currentTime + 0.01 + delay, dur = ms / 1000;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = 'sine'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + 0.005);
+  g.gain.setValueAtTime(gain, t0 + dur - 0.005);
+  g.gain.linearRampToValueAtTime(0, t0 + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+const sndTick = () => beep(880, 100, 0.22);
+const sndDouble = () => { beep(1100, 90, 0.25); beep(1100, 90, 0.25, 0.16); };
+const sndEnd = () => { beep(1320, 220, 0.3); beep(1320, 220, 0.3, 0.32); beep(1320, 220, 0.3, 0.64); };
+function vibrate(p) { if (settings.vibrate && navigator.vibrate) { try { navigator.vibrate(p); } catch {} } }
+
+// ---------- wake lock ----------
+let wakeLock = null;
+async function syncWake() {
+  const want = settings.wake && timers.some(t => t.status === 'running') && document.visibilityState === 'visible';
+  if (want && !wakeLock && navigator.wakeLock) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } catch { wakeLock = null; }
+  } else if (!want && wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+}
+
+// ---------- actions ----------
+function start(t) {
+  const now = Date.now();
+  if (t.status === 'done') { reset(t, true); }
+  if (t.type !== 'stopwatch' && t.duration - t.pausedElapsed <= 0) return;
+  t.status = 'running'; t.startAt = now; t.ack = false;
+  const r = rtOf(t); r.lastSec = null; r.lastIdx = null;
+  save(); syncWake(); refreshCard(t);
+}
+function pause(t) {
+  if (t.status !== 'running') return;
+  t.pausedElapsed = elapsedOf(t, Date.now()); t.status = 'paused';
+  save(); syncWake(); refreshCard(t);
+}
+function reset(t, silent) {
+  t.status = 'idle'; t.pausedElapsed = 0; t.startAt = 0; t.laps = []; t.doneAt = 0; t.ack = false;
+  if (!silent) { save(); syncWake(); refreshCard(t); }
+}
+function toggle(t) { if (t.status === 'running') pause(t); else start(t); }
+function finish(t, doneAt) {
+  t.status = 'done'; t.doneAt = doneAt; t.pausedElapsed = t.duration; t.ack = false;
+  save(); syncWake(); refreshCard(t);
+  if (Date.now() - doneAt < 5000) { vibrate([300, 100, 300, 100, 300]); }
+}
+function ack(t) { t.ack = true; save(); refreshCard(t); }
+function lap(t) {
+  if (t.status !== 'running' || t.laps.length >= 999) return;
+  const total = elapsedOf(t, Date.now());
+  const prev = t.laps.length ? t.laps[t.laps.length - 1].total : 0;
+  t.laps.push({ lap: t.laps.length + 1, split: total - prev, total });
+  save(); renderLaps(t);
+}
+function rtOf(t) { let r = rt.get(t.id); if (!r) { r = { lastSec: null, lastIdx: null, lastAlarm: 0 }; rt.set(t.id, r); } return r; }
+
+// ---------- logic tick (independent of rAF) ----------
+function logic() {
+  const now = Date.now();
+  for (const t of timers) {
+    const r = rtOf(t);
+    if (t.status === 'running') {
+      const el = elapsedOf(t, now);
+      if (t.type === 'countdown') {
+        const rem = t.duration - el;
+        if (rem <= 0) { finish(t, t.startAt + (t.duration - t.pausedElapsed)); continue; }
+        const sec = Math.ceil(rem / 1000);
+        if (sec !== r.lastSec) {
+          const fresh = sec * 1000 - rem < 450;
+          if (r.lastSec !== null && sec <= 3 && fresh) sndTick();
+          r.lastSec = sec;
+        }
+      } else if (t.type === 'interval') {
+        const loc = locate(t, el);
+        if (loc.done) { finish(t, t.startAt + (t.duration - t.pausedElapsed)); continue; }
+        const fresh = loc.phase.start + 450 > el;
+        if (r.lastIdx !== null && loc.idx !== r.lastIdx && fresh) { sndDouble(); vibrate(120); }
+        r.lastIdx = loc.idx;
+        if (loc.phase.type !== 'work') {
+          const sec = Math.ceil(loc.phaseRem / 1000);
+          if (sec !== r.lastSec) {
+            if (r.lastSec !== null && sec <= 3 && sec * 1000 - loc.phaseRem < 450 && loc.phase.duration > 3000) sndTick();
+            r.lastSec = sec;
+          }
+        } else r.lastSec = null;
+      }
+    } else if (t.status === 'done' && !t.ack) {
+      if (now - t.doneAt < 60000 && now - r.lastAlarm >= 1600) { r.lastAlarm = now; sndEnd(); }
+    }
+  }
+}
+setInterval(logic, 100);
+
+// ---------- rendering ----------
+const listEl = $('#list');
+const els = new Map();
+const RING_R = 34, RING_C = 2 * Math.PI * RING_R;
+function ticksPath() {
+  let d = '';
+  for (let i = 0; i < 60; i++) {
+    const a = i / 60 * Math.PI * 2, r1 = i % 5 ? 36.5 : 35.5, r2 = 38;
+    d += `M${38 + Math.cos(a) * r1} ${38 + Math.sin(a) * r1}L${38 + Math.cos(a) * r2} ${38 + Math.sin(a) * r2}`;
+  }
+  return d;
+}
+const TICKS = ticksPath();
+function buildCard(t) {
+  const slot = document.createElement('div');
+  slot.className = 'slot'; slot.dataset.id = t.id;
+  slot.innerHTML = `
+    <div class="del-reveal" aria-hidden="true">刪除</div>
+    <article class="card" aria-label="${TYPE_LABEL[t.type]}計時器">
+      <div class="card-head">
+        <span class="grip" aria-hidden="true">${ICON.grip}</span>
+        <button class="name" type="button" title="點擊改名"></button>
+        <span class="tag">${TYPE_LABEL[t.type]}</span>
+        <button class="icon-btn del" type="button" aria-label="刪除">${ICON.x}</button>
+      </div>
+      <div class="card-body">
+        <div class="ring">
+          <svg viewBox="0 0 76 76" aria-hidden="true">
+            <path class="ticks" d="${TICKS}" stroke-width="1"/>
+            <circle class="track" cx="38" cy="38" r="${RING_R}" fill="none" stroke-width="3"/>
+            <circle class="prog" cx="38" cy="38" r="${RING_R}" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="${RING_C}" stroke-dashoffset="0"/>
+          </svg>
+          <button class="play" type="button" aria-label="開始"></button>
+        </div>
+        <div class="readout">
+          <button class="time" type="button" aria-label="時間"></button>
+          <div class="sub"></div>
+        </div>
+      </div>
+      <div class="foot"></div>
+      ${t.type === 'stopwatch' ? '<details class="laps"><summary></summary><ul class="lap-list"></ul></details>' : ''}
+    </article>`;
+  const card = slot.querySelector('.card');
+  const e = {
+    slot, card, name: card.querySelector('.name'), play: card.querySelector('.play'), prog: card.querySelector('.prog'),
+    time: card.querySelector('.time'), sub: card.querySelector('.sub'), foot: card.querySelector('.foot'),
+    laps: card.querySelector('.laps'), lastText: '', lastSub: '', lastOff: -1, lastPhase: null
+  };
+  e.name.addEventListener('click', () => startRename(t, e));
+  card.querySelector('.del').addEventListener('click', () => removeTimer(t.id));
+  e.play.addEventListener('click', () => toggle(t));
+  e.time.addEventListener('click', () => {
+    if (e.suppressClick) { e.suppressClick = false; return; }
+    if (t.type !== 'stopwatch' && t.status === 'idle') openAdd(t);
+    else if (t.status === 'done') ack(t);
+  });
+  attachGestures(t, e);
+  els.set(t.id, e);
+  return e;
+}
+function buildFoot(t, e) {
+  const f = e.foot; f.innerHTML = '';
+  const mk = (cls, html, label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; if (label) b.setAttribute('aria-label', label); b.addEventListener('click', fn); f.appendChild(b); return b; };
+  if (t.status === 'done' && !t.ack) {
+    mk('stop-btn', '停止', '停止提示', () => ack(t));
+    return;
+  }
+  mk('btn btn-ghost', ICON.reset + '重設', null, () => reset(t));
+  if (t.type === 'stopwatch') {
+    const b = mk('btn btn-ghost', ICON.lap + '計圈', null, () => lap(t));
+    b.disabled = t.status !== 'running'; b.style.opacity = b.disabled ? .45 : 1;
+  }
+  mk('btn btn-ghost', ICON.full + '全螢幕', null, () => openFs(t));
+}
+function refreshCard(t) {
+  const e = els.get(t.id); if (!e) return;
+  e.name.textContent = t.name;
+  e.play.innerHTML = t.status === 'running' ? ICON.pause : ICON.play;
+  e.play.setAttribute('aria-label', t.status === 'running' ? '暫停' : '開始');
+  e.card.classList.toggle('is-done', t.status === 'done');
+  e.card.classList.toggle('acked', t.status === 'done' && t.ack);
+  e.card.classList.toggle('adjustable', t.type === 'countdown' && (t.status === 'idle' || t.status === 'paused'));
+  e.time.setAttribute('aria-label', t.type !== 'stopwatch' && t.status === 'idle' ? '時間，點擊編輯' : '時間');
+  buildFoot(t, e);
+  if (t.type === 'stopwatch') renderLaps(t);
+  e.lastText = null; e.lastSub = null;
+  updateCard(t, Date.now());
+  if (fsId === t.id) updateFs(true);
+}
+function updateCard(t, now) {
+  const e = els.get(t.id); if (!e) return;
+  const el = elapsedOf(t, now);
+  let text, frac, sub = '', phase = null, len;
+  if (t.type === 'countdown') {
+    const rem = t.duration - el;
+    text = fmtCountdown(rem); len = text.length;
+    frac = t.duration ? Math.max(0, rem) / t.duration : 0;
+    if (t.status === 'running') sub = `結束於 <b>${fmtClock(now + rem)}</b>`;
+    else if (t.status === 'paused') sub = `已暫停 · 總長 ${fmtDurShort(t.duration)}`;
+    else if (t.status === 'done') sub = `已於 <b>${fmtClock(t.doneAt)}</b> 結束`;
+    else sub = `總長 ${fmtDurShort(t.duration)} · 點時間可編輯`;
+  } else if (t.type === 'stopwatch') {
+    const f = fmtSW(el); text = f.main + '\u0000' + f.cs; len = f.main.length + 3;
+    frac = 1 - (el % 60000) / 60000;
+    if (t.laps.length) sub = `第 ${t.laps.length + 1} 圈 · 本圈 ${fmtSW(el - t.laps[t.laps.length - 1].total).main}`;
+    else sub = t.status === 'idle' ? '按開始計時' : t.status === 'paused' ? '已暫停' : '計時中';
+  } else {
+    const loc = locate(t, el);
+    const cfg = t.cfg;
+    if (t.status === 'done') { text = '00:00'; sub = `已於 <b>${fmtClock(t.doneAt)}</b> 完成`; frac = 0; }
+    else if (t.status === 'idle') {
+      text = fmtCountdown(t.duration); frac = 1;
+      sub = `${cfg.work}/${cfg.rest} 秒 × ${cfg.rounds} 回合${cfg.sets > 1 ? ' × ' + cfg.sets + ' 組' : ''} · 點時間可編輯`;
+    } else {
+      text = fmtCountdown(loc.phaseRem); phase = loc.phase.type === 'setrest' ? 'rest' : loc.phase.type;
+      frac = Math.max(0, t.duration - el) / t.duration;
+      const p = loc.phase;
+      sub = `<b>${PHASE_LABEL[p.type]}</b>` + (p.type === 'prep' ? '' : `<span>回合 ${p.round}/${cfg.rounds}</span>`) + (cfg.sets > 1 ? `<span>第 ${p.set}/${cfg.sets} 組</span>` : '') + `<span>剩 ${fmtCountdown(t.duration - el)}</span>`;
+    }
+    len = text.length;
+  }
+  if (phase !== e.lastPhase) { if (phase) e.card.dataset.phase = phase; else delete e.card.dataset.phase; e.lastPhase = phase; }
+  if (text !== e.lastText) {
+    e.lastText = text;
+    if (t.type === 'stopwatch') { const [a, b] = text.split('\u0000'); e.time.innerHTML = `${a}<span class="cs">${b}</span>`; }
+    else e.time.textContent = text;
+    e.time.classList.toggle('long', len >= 7 && len < 9);
+    e.time.classList.toggle('xlong', len >= 9);
+  }
+  if (sub !== e.lastSub) { e.lastSub = sub; e.sub.innerHTML = sub; }
+  const off = Math.round(RING_C * (1 - frac) * 10) / 10;
+  if (off !== e.lastOff) { e.lastOff = off; e.prog.style.strokeDashoffset = off; }
+}
+function renderLaps(t) {
+  const e = els.get(t.id); if (!e || !e.laps) return;
+  const sum = e.laps.querySelector('summary'), ul = e.laps.querySelector('ul');
+  const n = t.laps.length;
+  sum.textContent = n ? `圈數紀錄（${n}）` : '圈數紀錄（尚無）';
+  if (!n) { ul.innerHTML = ''; return; }
+  let fast = -1, slow = -1;
+  if (n >= 2) {
+    let mn = Infinity, mx = -Infinity;
+    t.laps.forEach((l, i) => { if (l.split < mn) { mn = l.split; fast = i; } if (l.split > mx) { mx = l.split; slow = i; } });
+  }
+  const rows = ['<li class="lap-head"><span>圈</span><span>單圈</span><span>累計</span></li>'];
+  for (let i = n - 1; i >= 0; i--) {
+    const l = t.laps[i], s = fmtSW(l.split), tt = fmtSW(l.total);
+    rows.push(`<li class="${i === fast ? 'fast' : i === slow ? 'slow' : ''}"><span>${pad(l.lap)}</span><span>${s.main}${s.cs}</span><span>${tt.main}${tt.cs}</span></li>`);
+  }
+  ul.innerHTML = rows.join('');
+}
+function renderAll() {
+  const keep = new Set(timers.map(t => t.id));
+  for (const [id, e] of els) if (!keep.has(id)) { e.slot.remove(); els.delete(id); }
+  timers.forEach(t => {
+    let e = els.get(t.id);
+    if (!e) { e = buildCard(t); }
+    listEl.appendChild(e.slot);
+    refreshCard(t);
+  });
+  $('#empty').hidden = timers.length > 0;
+}
+
+// ---------- rename ----------
+function startRename(t, e) {
+  const inp = document.createElement('input');
+  inp.className = 'name-input'; inp.id = 'rename-' + t.id; inp.maxLength = 20; inp.value = t.name; inp.setAttribute('aria-label', '計時器名稱');
+  e.name.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const finishR = (commit) => {
+    if (done) return; done = true;
+    const v = inp.value.trim();
+    if (commit && v.length >= 1 && v.length <= 20) { t.name = v; save(); }
+    else if (commit && !v) toast('名稱需為 1～20 字');
+    inp.replaceWith(e.name); e.name.textContent = t.name;
+    if (fsId === t.id) $('#fsName').textContent = t.name;
+  };
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') finishR(true); if (ev.key === 'Escape') finishR(false); });
+  inp.addEventListener('blur', () => finishR(true));
+}
+
+// ---------- delete + undo ----------
+let undoBuf = null, toastTimer = 0;
+function removeTimer(id) {
+  const i = timers.findIndex(t => t.id === id); if (i < 0) return;
+  const [t] = timers.splice(i, 1);
+  undoBuf = { t, i };
+  if (fsId === id) closeFs();
+  save(); renderAll(); syncWake();
+  toast(`已刪除「${t.name}」`, true);
+}
+function toast(msg, undo) {
+  $('#toastMsg').textContent = msg; $('#toastUndo').hidden = !undo; $('#toast').hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; undoBuf = null; }, undo ? 5000 : 2600);
+}
+$('#toastUndo').addEventListener('click', () => {
+  if (!undoBuf) return;
+  timers.splice(Math.min(undoBuf.i, timers.length), 0, undoBuf.t); undoBuf = null;
+  save(); renderAll(); syncWake(); $('#toast').hidden = true;
+});
+
+// ---------- gestures ----------
+function attachGestures(t, e) {
+  const card = e.card;
+  // swipe-left delete
+  let sx = 0, sy = 0, sw = false, pid = null, dx = 0;
+  card.addEventListener('pointerdown', ev => {
+    if (ev.target.closest('.grip') || ev.target.closest('input')) return;
+    if (card.classList.contains('adjustable') && ev.target.closest('.time')) return;
+    sx = ev.clientX; sy = ev.clientY; sw = false; pid = ev.pointerId; dx = 0;
+  });
+  card.addEventListener('pointermove', ev => {
+    if (pid !== ev.pointerId) return;
+    const mx = ev.clientX - sx, my = ev.clientY - sy;
+    if (!sw) {
+      if (Math.abs(my) > 12 && Math.abs(my) > Math.abs(mx)) { pid = null; return; }
+      if (mx < -12 && Math.abs(mx) > Math.abs(my) * 1.5) { sw = true; card.classList.add('swiping'); try { card.setPointerCapture(ev.pointerId); } catch {} }
+    }
+    if (sw) { dx = Math.min(0, mx); card.style.transform = `translateX(${dx}px)`; }
+  });
+  const end = ev => {
+    if (pid !== ev.pointerId) return; pid = null;
+    if (!sw) return;
+    card.classList.remove('swiping');
+    const w = card.offsetWidth;
+    if (dx < -w * 0.4) { e.slot.classList.add('removing'); card.style.transform = `translateX(${-w - 20}px)`; card.style.opacity = 0; setTimeout(() => { card.style.transform = ''; card.style.opacity = ''; removeTimer(t.id); }, 180); }
+    else card.style.transform = '';
+    // swallow the click following a swipe
+    const stop = c => { c.stopPropagation(); c.preventDefault(); };
+    card.addEventListener('click', stop, { capture: true, once: true });
+    setTimeout(() => card.removeEventListener('click', stop, { capture: true }), 50);
+  };
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', ev => { if (pid === ev.pointerId) { pid = null; card.classList.remove('swiping'); card.style.transform = ''; } });
+
+  // vertical swipe on time: ±1 min
+  let ty = null, tAcc = 0, tid = null;
+  e.time.addEventListener('pointerdown', ev => {
+    if (!card.classList.contains('adjustable')) return;
+    ty = ev.clientY; tAcc = 0; tid = ev.pointerId; try { e.time.setPointerCapture(ev.pointerId); } catch {}
+  });
+  e.time.addEventListener('pointermove', ev => {
+    if (tid !== ev.pointerId || ty === null) return;
+    const d = ty - ev.clientY;
+    const steps = Math.trunc(d / 28) - tAcc;
+    if (steps) {
+      tAcc += steps;
+      const nd = Math.min(MAX_MS, Math.max(t.pausedElapsed + 1000, t.duration + steps * 60000));
+      if (nd !== t.duration) { t.duration = nd; e.suppressClick = true; updateCard(t, Date.now()); }
+    }
+  });
+  const tEnd = ev => { if (tid !== ev.pointerId) return; tid = null; ty = null; if (tAcc) { save(); refreshCard(t); setTimeout(() => { e.suppressClick = false; }, 60); } };
+  e.time.addEventListener('pointerup', tEnd);
+  e.time.addEventListener('pointercancel', tEnd);
+
+  // drag reorder via grip
+  const grip = card.querySelector('.grip');
+  let gid = null, gy0 = 0;
+  grip.addEventListener('pointerdown', ev => {
+    gid = ev.pointerId; gy0 = ev.clientY; try { grip.setPointerCapture(ev.pointerId); } catch {}
+    card.classList.add('dragging'); ev.preventDefault();
+  });
+  grip.addEventListener('pointermove', ev => {
+    if (gid !== ev.pointerId) return;
+    const x = ev.clientX, y = ev.clientY;
+    card.style.transform = `translateY(${y - gy0}px) scale(1.02)`;
+    const slots = [...listEl.children];
+    for (const s of slots) {
+      if (s === e.slot) continue;
+      const r = s.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        const from = timers.findIndex(q => q.id === t.id), to = timers.findIndex(q => q.id === s.dataset.id);
+        const before = e.slot.getBoundingClientRect().top;
+        timers.splice(to, 0, timers.splice(from, 1)[0]);
+        if (from < to) s.after(e.slot); else s.before(e.slot);
+        gy0 += e.slot.getBoundingClientRect().top - before;
+        card.style.transform = `translateY(${y - gy0}px) scale(1.02)`;
+        break;
+      }
+    }
+  });
+  const gEnd = ev => { if (gid !== ev.pointerId) return; gid = null; card.classList.remove('dragging'); card.style.transform = ''; save(); };
+  grip.addEventListener('pointerup', gEnd);
+  grip.addEventListener('pointercancel', gEnd);
+  grip.tabIndex = 0; grip.setAttribute('role', 'button'); grip.setAttribute('aria-label', '拖曳排序（鍵盤用上下鍵）'); grip.removeAttribute('aria-hidden');
+  grip.addEventListener('keydown', ev => {
+    if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+    ev.preventDefault();
+    const i = timers.findIndex(q => q.id === t.id), j = i + (ev.key === 'ArrowUp' ? -1 : 1);
+    if (j < 0 || j >= timers.length) return;
+    [timers[i], timers[j]] = [timers[j], timers[i]]; save(); renderAll(); els.get(t.id).card.querySelector('.grip').focus();
+  });
+}
+
+// ---------- quick presets ----------
+document.querySelectorAll('.chip[data-min]').forEach(b => b.addEventListener('click', () => {
+  if (timers.length >= MAX_TIMERS) { toast(`最多同時 ${MAX_TIMERS} 個計時器`); return; }
+  const m = +b.dataset.min;
+  const t = newTimer('countdown', { duration: m * 60000, name: `${m} 分鐘` + (timers.some(q => q.name === `${m} 分鐘`) ? ' ' + (timers.filter(q => q.name.startsWith(`${m} 分鐘`)).length + 1) : '') });
+  timers.unshift(t); renderAll(); start(t);
+  els.get(t.id).slot.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}));
+
+// ---------- add / edit sheet ----------
+let addType = 'countdown', editing = null, lastFocus = null;
+const ivIds = { prep: 'ivPrep', work: 'ivWork', rest: 'ivRest', rounds: 'ivRounds', sets: 'ivSets', setRest: 'ivSetRest' };
+function setType(type) {
+  addType = type;
+  document.querySelectorAll('#typeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.type === type)));
+  $('#cdFields').hidden = type !== 'countdown';
+  $('#ivFields').hidden = type !== 'interval';
+  $('#saveTplBtn').hidden = type !== 'interval';
+  if (!editing) $('#nameInput').value = nextName(type);
+  $('#addErr').textContent = '';
+  updIvSummary();
+}
+document.querySelectorAll('#typeSeg button').forEach(b => b.addEventListener('click', () => { if (!editing) setType(b.dataset.type); }));
+function fillIv(cfg) { for (const k in ivIds) $('#' + ivIds[k]).value = cfg[k]; updIvSummary(); }
+function readIv() {
+  const cfg = {}; const lim = { prep: [0, 600], work: [1, 3600], rest: [0, 3600], rounds: [1, 99], sets: [1, 20], setRest: [0, 3600] };
+  const names = { prep: '準備', work: '運動', rest: '休息', rounds: '回合數', sets: '組數', setRest: '組間休息' };
+  for (const k in ivIds) {
+    const raw = $('#' + ivIds[k]).value.trim(); const v = Number(raw);
+    if (raw === '' || !Number.isInteger(v) || v < lim[k][0] || v > lim[k][1]) return { err: `${names[k]}需為 ${lim[k][0]}～${lim[k][1]} 的整數` };
+    cfg[k] = v;
+  }
+  return { cfg };
+}
+function updIvSummary() {
+  if (addType !== 'interval') return;
+  const r = readIv();
+  if (r.err) { $('#ivSummary').textContent = r.err; return; }
+  const p = phasesOf(r.cfg);
+  if (p.total > MAX_MS) { $('#ivSummary').textContent = '總長超過 99:59:59'; return; }
+  $('#ivSummary').textContent = `總長 ${fmtCountdown(p.total)}（${p.list.length} 個階段）`;
+}
+Object.values(ivIds).forEach(id => $('#' + id).addEventListener('input', updIvSummary));
+function renderTpls() {
+  const all = [{ name: 'Tabata 20/10', cfg: DEFAULT_IV, builtin: true }, { name: '30/30 × 10', cfg: { prep: 10, work: 30, rest: 30, rounds: 10, sets: 1, setRest: 60 }, builtin: true }, ...presets];
+  const box = $('#tplList'); box.innerHTML = '';
+  all.forEach((p, i) => {
+    const w = document.createElement('span'); w.className = 'tpl';
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = p.name; b.id = 'tpl-' + i;
+    b.addEventListener('click', () => { fillIv(p.cfg); if (!editing) $('#nameInput').value = p.name; });
+    w.appendChild(b);
+    if (!p.builtin) {
+      const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.innerHTML = '×'; x.setAttribute('aria-label', '刪除範本 ' + p.name);
+      x.addEventListener('click', () => { presets.splice(presets.indexOf(p), 1); store.set(K.presets, presets); renderTpls(); });
+      w.appendChild(x);
+    } else b.style.paddingRight = '14px';
+    box.appendChild(w);
+  });
+}
+$('#saveTplBtn').addEventListener('click', () => {
+  const r = readIv(); if (r.err) { $('#addErr').textContent = r.err; return; }
+  const name = ($('#nameInput').value.trim() || '自訂範本').slice(0, 20);
+  const i = presets.findIndex(p => p.name === name);
+  if (i >= 0) presets[i] = { name, cfg: r.cfg }; else { if (presets.length >= 20) presets.shift(); presets.push({ name, cfg: r.cfg }); }
+  store.set(K.presets, presets); renderTpls(); toast(`已存為範本「${name}」`);
+});
+function openAdd(t) {
+  editing = t || null; lastFocus = document.activeElement;
+  $('#addTitle').textContent = editing ? '編輯計時器' : '新增計時器';
+  $('#addOnly').hidden = !!editing;
+  $('#addStart').textContent = editing ? '儲存' : '建立並開始';
+  document.querySelectorAll('#typeSeg button').forEach(b => b.disabled = !!editing);
+  renderTpls();
+  setType(editing ? editing.type : addType);
+  if (editing) {
+    $('#nameInput').value = editing.name;
+    if (editing.type === 'countdown') { const s = Math.round(editing.duration / 1000); $('#hInput').value = Math.floor(s / 3600); $('#mInput').value = Math.floor(s % 3600 / 60); $('#sInput').value = s % 60; }
+    if (editing.type === 'interval') fillIv(editing.cfg);
+  } else if (!$('#ivPrep').value) fillIv(DEFAULT_IV);
+  $('#addScrim').hidden = false;
+  setTimeout(() => (addType === 'countdown' ? $('#mInput') : $('#nameInput')).focus(), 30);
+}
+function closeAdd() { $('#addScrim').hidden = true; editing = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+function readCountdown() {
+  const vals = ['hInput', 'mInput', 'sInput'].map(id => $('#' + id).value.trim());
+  const nums = vals.map(v => v === '' ? 0 : Number(v));
+  if (nums.some(n => !Number.isInteger(n) || n < 0)) return { err: '請輸入非負整數' };
+  const [h, m, s] = nums;
+  if (h > 99 || (h === 99 && (m > 59 || s > 59)) || h * 3600 + m * 60 + s > 99 * 3600 + 59 * 60 + 59) return { err: '最長只能設定 99:59:59' };
+  if (m > 59 || s > 59) return { err: '分與秒需為 0～59' };
+  const ms = (h * 3600 + m * 60 + s) * 1000;
+  if (ms < 1000) return { err: '時間至少要 1 秒才能開始' };
+  return { ms };
+}
+function submitAdd(andStart) {
+  const err = $('#addErr'); err.textContent = '';
+  const name = $('#nameInput').value.trim();
+  if (!name || name.length > 20) { err.textContent = '名稱需為 1～20 字'; return; }
+  if (!editing && timers.length >= MAX_TIMERS) { err.textContent = `最多同時 ${MAX_TIMERS} 個計時器`; return; }
+  let opts = { name };
+  if (addType === 'countdown') { const r = readCountdown(); if (r.err) { err.textContent = r.err; return; } opts.duration = r.ms; }
+  if (addType === 'interval') { const r = readIv(); if (r.err) { err.textContent = r.err; return; } if (phasesOf(r.cfg).total > MAX_MS) { err.textContent = '總長超過 99:59:59'; return; } opts.cfg = r.cfg; }
+  if (editing) {
+    const t = editing; t.name = name;
+    if (t.type === 'countdown') t.duration = opts.duration;
+    if (t.type === 'interval') { t.cfg = opts.cfg; t.duration = phasesOf(t.cfg).total; }
+    reset(t, true); save(); closeAdd(); refreshCard(t); return;
+  }
+  const t = newTimer(addType, opts);
+  timers.unshift(t); save(); closeAdd(); renderAll();
+  if (andStart) start(t);
+  els.get(t.id).slot.scrollIntoView({ block: 'nearest' });
+}
+$('#addBtn').addEventListener('click', () => {
+  if (timers.length >= MAX_TIMERS) { toast(`最多同時 ${MAX_TIMERS} 個計時器`); return; }
+  openAdd(null);
+});
+$('#addCancel').addEventListener('click', closeAdd);
+$('#addOnly').addEventListener('click', () => submitAdd(false));
+$('#addStart').addEventListener('click', () => submitAdd(!editing));
+$('#addScrim').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeAdd(); });
+$('#addScrim').addEventListener('keydown', ev => { if (ev.key === 'Escape') closeAdd(); if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') submitAdd(!editing); });
+
+// ---------- settings ----------
+function applyTheme() {
+  if (settings.theme === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.dataset.theme = settings.theme;
+  document.querySelectorAll('#themeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeVal === settings.theme)));
+}
+applyTheme();
+function saveSettings() { store.set(K.settings, settings); }
+$('#settingsBtn').addEventListener('click', () => {
+  lastFocus = document.activeElement;
+  $('#optSound').checked = settings.sound; $('#optVibrate').checked = settings.vibrate; $('#optWake').checked = settings.wake;
+  $('#wakeNote').textContent = navigator.wakeLock ? '計時中避免螢幕自動關閉' : '此瀏覽器不支援，請手動關閉自動鎖定';
+  $('#setScrim').hidden = false; $('#optSound').focus();
+});
+$('#optSound').addEventListener('change', e => { settings.sound = e.target.checked; saveSettings(); });
+$('#optVibrate').addEventListener('change', e => { settings.vibrate = e.target.checked; saveSettings(); });
+$('#optWake').addEventListener('change', e => { settings.wake = e.target.checked; saveSettings(); syncWake(); });
+document.querySelectorAll('#themeSeg button').forEach(b => b.addEventListener('click', () => { settings.theme = b.dataset.themeVal; saveSettings(); applyTheme(); }));
+$('#testSound').addEventListener('click', () => { audio(); setTimeout(sndEnd, 30); });
+const closeSet = () => { $('#setScrim').hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); };
+$('#setClose').addEventListener('click', closeSet);
+$('#setScrim').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeSet(); });
+$('#setScrim').addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSet(); });
+
+// ---------- fullscreen ----------
+let fsId = null, fsLen = 0;
+const fs = $('#fs');
+function fsTimer() { return timers.find(t => t.id === fsId); }
+function openFs(t) {
+  fsId = t.id; fs.hidden = false; fs.classList.remove('hide-ctl'); fsLen = 0;
+  $('#fsName').textContent = t.name;
+  if (fs.requestFullscreen && !document.fullscreenElement) fs.requestFullscreen().catch(() => {});
+  updateFs(true); $('#fsPause').focus();
+}
+function closeFs() {
+  fsId = null; fs.hidden = true;
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && fsId) { /* stay in pseudo fullscreen */ } });
+function fitFs(len) {
+  if (len === fsLen) return; fsLen = len;
+  const vw = innerWidth / 100, vh = innerHeight / 100;
+  const land = innerWidth > innerHeight;
+  let size = land ? Math.min(26 * vw, 52 * vh) : 22 * vw;
+  const maxW = innerWidth * 0.92;
+  const est = len * 0.62 * size; // monospace advance ≈ .6em
+  if (est > maxW) size = maxW / (len * 0.62);
+  $('#fsTime').style.fontSize = size + 'px';
+}
+addEventListener('resize', () => { fsLen = 0; if (fsId) updateFs(true); });
+function updateFs(force) {
+  const t = fsTimer(); if (!t) { if (fsId) closeFs(); return; }
+  const now = Date.now(), el = elapsedOf(t, now);
+  let phase = '', round = '', ph = null, html, len;
+  if (t.type === 'countdown') { const s = fmtCountdown(t.duration - el); html = s; len = s.length; phase = t.status === 'done' ? '時間到' : ''; }
+  else if (t.type === 'stopwatch') { const f = fmtSW(el); html = `${f.main}<span class="cs">${f.cs}</span>`; len = f.main.length + 1.5; round = t.laps.length ? `第 ${t.laps.length + 1} 圈` : ''; }
+  else {
+    if (t.status === 'idle') { const s = fmtCountdown(t.duration); html = s; len = s.length; phase = '準備開始'; }
+    else if (t.status === 'done') { html = '00:00'; len = 5; phase = '完成'; }
+    else { const loc = locate(t, el); const s = fmtCountdown(loc.phaseRem); html = s; len = s.length; phase = PHASE_LABEL[loc.phase.type]; ph = loc.phase.type === 'setrest' ? 'rest' : loc.phase.type; round = loc.phase.type === 'prep' ? `共 ${t.cfg.rounds} 回合` : `回合 ${loc.phase.round}/${t.cfg.rounds}` + (t.cfg.sets > 1 ? ` · 第 ${loc.phase.set}/${t.cfg.sets} 組` : ''); }
+  }
+  fitFs(len);
+  const ft = $('#fsTime'); if (ft.innerHTML !== html) ft.innerHTML = html;
+  if (force || fs.dataset.phaseText !== phase) { $('#fsPhase').textContent = phase; fs.dataset.phaseText = phase; }
+  if ($('#fsRound').textContent !== round) $('#fsRound').textContent = round;
+  if (ph) fs.dataset.phase = ph; else delete fs.dataset.phase;
+  if (force) {
+    fs.classList.toggle('is-done', t.status === 'done' && !t.ack);
+    $('#fsPause').innerHTML = t.status === 'running' ? ICON.pause : ICON.play;
+    $('#fsPause').setAttribute('aria-label', t.status === 'running' ? '暫停' : '開始');
+    $('#fsLap').hidden = t.type !== 'stopwatch';
+    $('#fsStop').hidden = !(t.status === 'done' && !t.ack);
+  }
+}
+$('#fsPause').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) toggle(t); });
+$('#fsReset').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) reset(t); });
+$('#fsLap').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) lap(t); });
+$('#fsStop').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) ack(t); });
+$('#fsExit').addEventListener('click', ev => { ev.stopPropagation(); const id = fsId; closeFs(); const e = els.get(id); if (e) e.play.focus(); });
+fs.addEventListener('click', ev => { if (!ev.target.closest('button')) fs.classList.toggle('hide-ctl'); });
+document.addEventListener('keydown', ev => {
+  if (!fsId) return;
+  if (ev.key === 'Escape') { closeFs(); }
+  else if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); const t = fsTimer(); if (t) toggle(t); }
+});
+
+// ---------- main loop ----------
+function frame() {
+  if (document.visibilityState === 'visible') {
+    const now = Date.now();
+    for (const t of timers) if (t.status === 'running') updateCard(t, now);
+    if (fsId) updateFs(false);
+    $('#clock').textContent = new Date(now).toLocaleTimeString('zh-TW', { hour12: false });
+  }
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    // mark stale ticks so we don't beep for crossings that happened while hidden
+    for (const t of timers) { const r = rtOf(t); r.lastSec = null; r.lastIdx = null; }
+    logic(); timers.forEach(refreshCard);
+  }
+  syncWake();
+});
+addEventListener('storage', ev => { if (ev.key === K.timers) { const v = store.get(K.timers, null); if (Array.isArray(v)) {
+  // update the existing objects in place: each card's listeners close over its timer object
+  const old = new Map(timers.map(t => [t.id, t]));
+  timers = v.filter(validTimer).map(n => { const o = old.get(n.id); if (!o) return n; for (const k of Object.keys(o)) if (!(k in n)) delete o[k]; return Object.assign(o, n); });
+  renderAll(); } } });
+
+// Initial: settle anything that finished while the page was closed (no sound for stale ones)
+(function boot() {
+  const now = Date.now();
+  for (const t of timers) {
+    if (t.status !== 'running') continue;
+    if (t.type !== 'stopwatch' && elapsedOf(t, now) >= t.duration) { t.status = 'done'; t.doneAt = t.startAt + (t.duration - t.pausedElapsed); t.pausedElapsed = t.duration; t.ack = false; }
+  }
+  save(); renderAll(); syncWake(); requestAnimationFrame(frame);
+})();
+
+// test hook for automated verification
+window.__timerDeck = { get timers() { return timers; }, phasesOf, locate, fmtCountdown, fmtSW, readCountdown };
+})();
+</script>
+</body></html>

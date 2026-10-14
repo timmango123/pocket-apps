@@ -1,0 +1,1713 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>九路圍棋</title>
+<style>
+:root{
+  --bg:#efe8da; --ink:#2a251f; --ink2:#6c6252; --panel:rgba(255,252,246,.86); --panel2:#fffaf1; --line:rgba(90,70,40,.16);
+  --accent:#c2462b; --accent2:#de7a3a; --ok:#4f7d4a; --chip:#f6efe2; --shadow:0 4px 16px rgba(80,60,30,.13);
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#181715; --ink:#ece5d8; --ink2:#a99f8f; --panel:rgba(36,33,29,.88); --panel2:#2a2722; --line:rgba(255,236,210,.11);
+    --accent:#e2643f; --accent2:#e98c48; --ok:#7fb276; --chip:#322e28; --shadow:0 4px 18px rgba(0,0,0,.4); }
+}
+:root[data-theme="dark"]{ --bg:#181715; --ink:#ece5d8; --ink2:#a99f8f; --panel:rgba(36,33,29,.88); --panel2:#2a2722; --line:rgba(255,236,210,.11);
+  --accent:#e2643f; --accent2:#e98c48; --ok:#7fb276; --chip:#322e28; --shadow:0 4px 18px rgba(0,0,0,.4); }
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+#bg,#fx{position:fixed;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+#fx{z-index:25}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;padding:calc(var(--sat) + 8px) calc(var(--sar) + 10px) calc(var(--sab) + 8px) calc(var(--sal) + 10px);gap:8px;max-width:620px;margin:0 auto}
+/* player bar */
+#bar{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:8px 8px 7px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.prow{display:flex;align-items:stretch;gap:6px}
+.pl{flex:1;min-width:0;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:13px;border:2px solid transparent;transition:border-color .25s,background .25s}
+.pl.on{border-color:var(--accent);background:var(--chip)}
+.pl .st{width:26px;height:26px;border-radius:50%;flex:none;box-shadow:0 2px 3px rgba(0,0,0,.35)}
+.st.b{background:radial-gradient(circle at 35% 30%,#6b6b6b,#1a1a1a 60%,#050505)}
+.st.w{background:radial-gradient(circle at 35% 30%,#fff,#eeebe4 55%,#c9c4ba)}
+.pl .who{min-width:0;flex:1;line-height:1.15}
+.pl .who b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl .who small{display:block;font-size:11.5px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl .cap{font-size:11.5px;color:var(--ink2);text-align:center;line-height:1.1;flex:none}
+.pl .cap b{display:block;font-size:17px;color:var(--ink)}
+.pl.right{flex-direction:row-reverse;text-align:right}
+.mid{flex:none;width:62px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11.5px;color:var(--ink2);line-height:1.3;text-align:center}
+.mid b{font-size:13px;color:var(--ink)}
+.dots i{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--accent);margin:0 1px;animation:dot 1s infinite}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
+#wrRow{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11.5px;color:var(--ink2)}
+#wrBar{flex:1;height:8px;border-radius:5px;background:linear-gradient(#f4f1ea,#dcd6cb);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+#wrFill{display:block;height:100%;width:50%;background:linear-gradient(#4a4a4a,#111);transition:width .6s cubic-bezier(.3,.8,.3,1)}
+#wrRow span{min-width:44px;white-space:nowrap}
+#wrRow span:last-child{text-align:right}
+/* board */
+#main{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center}
+#cv{display:block;touch-action:none;border-radius:6px}
+#toast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);background:rgba(30,26,22,.9);color:#fff4e6;padding:10px 16px;border-radius:14px;font-size:14px;
+  max-width:86%;text-align:center;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;line-height:1.45;z-index:5}
+#toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+/* tool bars */
+.tools{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:6px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.tb{flex:1;min-width:0;height:54px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:600;color:var(--ink)}
+.tb svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tb:active{background:var(--chip);transform:scale(.96)}
+.tb[disabled]{opacity:.35;pointer-events:none}
+.tb.pri{background:var(--accent);color:#fff}
+.tb.wide{flex:1.5;flex-direction:row;gap:6px;font-size:14px}
+.sinfo{flex:2;display:flex;flex-direction:column;justify-content:center;padding:0 6px;font-size:12px;color:var(--ink2);line-height:1.35;min-width:0}
+.sinfo b{color:var(--ink);font-size:14px;white-space:nowrap}
+#rvSlider{flex:3;min-width:0;accent-color:var(--accent);height:44px}
+@media (hover:hover){.tb:hover{background:var(--chip)}.tb.pri:hover{background:var(--accent2)}}
+/* overlays */
+.ov{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 14px) 14px calc(var(--sab) + 14px);
+  background:rgba(40,32,22,.32);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .22s ease}
+[data-dark] .ov{background:rgba(0,0,0,.5)}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{transform:translateY(14px) scale(.96);opacity:0}100%{transform:none;opacity:1}}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:24px;box-shadow:0 20px 60px rgba(40,25,10,.3);padding:20px 18px;width:min(420px,100%);
+  max-height:100%;overflow:auto;animation:pop .3s cubic-bezier(.2,.9,.3,1.1);-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.card h2{margin:0 0 4px;font-size:24px;letter-spacing:3px;text-align:center}
+.card h3{margin:16px 0 8px;font-size:14px;color:var(--ink2);font-weight:600;letter-spacing:1px}
+.card p{margin:6px 0;color:var(--ink2);line-height:1.6;font-size:14px}
+.logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:2px}
+.logo .st{width:22px;height:22px;border-radius:50%;box-shadow:0 2px 3px rgba(0,0,0,.3)}
+.sub{text-align:center;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
+.seg{display:flex;gap:5px;background:var(--chip);border-radius:13px;padding:4px}
+.seg button{flex:1;min-width:0;min-height:44px;border-radius:10px;font-size:14px;font-weight:600;color:var(--ink2);line-height:1.15;padding:3px 2px}
+.seg button small{display:block;font-size:11px;font-weight:500;opacity:.85}
+.seg button.on{background:var(--panel2);color:var(--ink);box-shadow:0 1px 4px rgba(60,40,10,.18);outline:2px solid var(--accent);outline-offset:-2px}
+.seg.dis{opacity:.4;pointer-events:none}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;border-radius:16px;margin-top:12px;font-weight:700;font-size:17px;
+  background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;box-shadow:0 4px 0 #8e2f1b,0 8px 18px rgba(160,60,30,.25);letter-spacing:2px}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #8e2f1b}
+.btn.sec{background:var(--chip);color:var(--ink);box-shadow:0 3px 0 var(--line);letter-spacing:1px;font-size:15px}
+.btn.sec:active{box-shadow:none}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+.row .btn{margin-top:10px}
+.daily{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:16px;background:var(--chip);min-height:56px;width:100%;text-align:left}
+.daily .ic{flex:none}
+.daily b{display:block;font-size:15px}.daily small{display:block;font-size:12px;color:var(--ink2)}
+.daily .done{margin-left:auto;font-size:12px;color:var(--ok);font-weight:700;white-space:nowrap}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;width:100%;padding:4px 2px;font-size:14px;text-align:left;border-bottom:1px solid var(--line)}
+.sw:last-child{border-bottom:0}
+.sw small{display:block;font-size:11.5px;color:var(--ink2)}
+.sw i{flex:none;width:46px;height:28px;border-radius:15px;background:var(--line);position:relative;transition:background .2s}
+.sw i::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.sw[aria-checked="true"] i{background:var(--accent)}
+.sw[aria-checked="true"] i::after{transform:translateX(18px)}
+.res-title{font-size:30px;font-weight:800;letter-spacing:4px;text-align:center;margin:2px 0}
+.res-sub{text-align:center;color:var(--ink2);font-size:14px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:6px 4px;text-align:center;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--ink2);font-weight:600}
+td:first-child,th:first-child{text-align:left;color:var(--ink2)}
+tr.tot td{font-weight:800;font-size:16px;color:var(--ink);border-bottom:0}
+#wrChart{width:100%;height:110px;display:block;margin-top:8px;border-radius:12px;background:var(--chip)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
+.chip{background:var(--chip);border-radius:20px;padding:6px 10px;font-size:12.5px}
+.ach{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ach div{background:var(--chip);border-radius:14px;padding:10px;font-size:13px;line-height:1.35;opacity:.5}
+.ach div.on{opacity:1;outline:2px solid var(--accent2);outline-offset:-2px}
+.ach b{display:block;font-size:14px}
+.ach small{color:var(--ink2);font-size:11.5px}
+textarea{width:100%;height:160px;border-radius:12px;border:1px solid var(--line);background:var(--chip);color:var(--ink);padding:10px;font:13px/1.4 ui-monospace,Menlo,monospace;resize:vertical;-webkit-user-select:text;user-select:text}
+.help p{font-size:13.5px;text-align:left}
+.help b{color:var(--ink)}
+.x{position:sticky;top:-6px;float:right;width:44px;height:44px;margin:-10px -8px 0 0;border-radius:50%;font-size:22px;color:var(--ink2)}
+@media (pointer:coarse){textarea{font-size:16px}}
+/* landscape phones */
+@media (orientation:landscape) and (max-height:560px){
+  #app{max-width:none;display:grid;grid-template-columns:1fr minmax(250px,330px);grid-template-rows:auto auto 1fr;gap:8px 12px}
+  #main{grid-column:1;grid-row:1/4}
+  #bar{grid-column:2;grid-row:1}
+  .tools{grid-column:2;grid-row:2;flex-wrap:wrap;align-self:start}
+  .tools .tb{flex:1 1 30%;height:48px}
+  .card{max-height:100%}
+}
+@media (max-height:600px){.ov{align-items:flex-start;overflow:auto}}
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="app">
+  <header id="bar">
+    <div class="prow">
+      <div class="pl" id="plB"><span class="st b"></span><div class="who"><b id="nmB">黑</b><small id="sbB">你</small></div><div class="cap">提<b id="capB">0</b></div></div>
+      <div class="mid"><b id="mvNo">第 1 手</b><span id="komiTxt">貼 7.5</span><span id="ruleTxt">中國規則</span></div>
+      <div class="pl right" id="plW"><span class="st w"></span><div class="who"><b id="nmW">白</b><small id="sbW">電腦</small></div><div class="cap">提<b id="capW">0</b></div></div>
+    </div>
+    <div id="wrRow"><span id="wrB">黑 50%</span><div id="wrBar"><i id="wrFill"></i></div><span id="wrW">白 50%</span></div>
+  </header>
+  <main id="main"><canvas id="cv" aria-label="棋盤"></canvas><div id="toast"></div></main>
+  <nav class="tools" id="tPlay">
+    <button class="tb" id="bPass"><svg viewBox="0 0 24 24"><path d="M6 5v14M18 5v14M10 12h4"/></svg>停一手</button>
+    <button class="tb" id="bUndo"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>悔棋</button>
+    <button class="tb" id="bHint"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>提示</button>
+    <button class="tb" id="bResign"><svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>認輸</button>
+    <button class="tb" id="bMenu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+  </nav>
+  <nav class="tools" id="tScore" hidden>
+    <div class="sinfo"><b id="scLive">判定中…</b><span id="scHint">點棋子可切換死活</span></div>
+    <button class="tb" id="bResume"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>繼續下</button>
+    <button class="tb pri wide" id="bConfirm"><svg viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>確認計分</button>
+  </nav>
+  <nav class="tools" id="tOver" hidden>
+    <button class="tb" id="bShowRes"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>結果</button>
+    <button class="tb" id="bReview"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>覆盤</button>
+    <button class="tb pri wide" id="bAgain"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>再來一局</button>
+    <button class="tb" id="bMenu2"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+  </nav>
+  <nav class="tools" id="tReview" hidden>
+    <button class="tb" id="rvPrev" aria-label="上一手"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <input type="range" id="rvSlider" min="0" max="0" value="0" aria-label="手數">
+    <button class="tb" id="rvNext" aria-label="下一手"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="tb" id="rvExit"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>結束</button>
+  </nav>
+</div>
+<canvas id="fx"></canvas>
+
+<div class="ov" id="menu" hidden>
+  <div class="card">
+    <button class="x" id="menuX" aria-label="關閉">×</button>
+    <div class="logo"><span class="st b"></span><h2>九路圍棋</h2><span class="st w"></span></div>
+    <div class="sub">禪庭石庭・手機上的一局小棋</div>
+    <h3>對手</h3>
+    <div class="seg" id="sgMode"><button data-v="ai">電腦</button><button data-v="pvp">同機雙人</button></div>
+    <h3>電腦棋力</h3>
+    <div class="seg" id="sgLevel"><button data-v="0">25級<small>入門</small></button><button data-v="1">18級<small>初學</small></button><button data-v="2">12級<small>進階</small></button><button data-v="3">8級<small>強手</small></button><button data-v="4">5級<small>高手</small></button></div>
+    <h3>我執</h3>
+    <div class="seg" id="sgColor"><button data-v="black">黑（先）</button><button data-v="white">白（後）</button><button data-v="random">隨機</button></div>
+    <h3>讓子（黑方先擺，貼目 0.5）</h3>
+    <div class="seg" id="sgHcap"><button data-v="0">不讓</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button></div>
+    <h3>規則</h3>
+    <div class="seg" id="sgRules"><button data-v="cn">中國規則<small>數子・貼 7.5</small></button><button data-v="jp">日本規則<small>數目・貼 6.5</small></button></div>
+    <h3>盤面</h3>
+    <div class="seg" id="sgSize"><button data-v="9">9 路<small>約 10 分鐘</small></button><button data-v="13">13 路<small>約 25 分鐘</small></button></div>
+    <button class="btn" id="bStart">開始對局</button>
+    <button class="daily" id="bDaily"><svg class="ic" viewBox="-12 -12 24 24" width="30" height="30"><path fill="#c7432a" d="M0-11 2.5-5 7-7.5 5.5-2 10.5 0 6 2.5 7.5 6 1.5 4.5 0.8 7H-0.8L-1.5 4.5-7.5 6-6 2.5-10.5 0-5.5-2-7-7.5-2.5-5Z"/><path stroke="#7a2a14" stroke-width="1" d="M0 4v8"/></svg><span><b>每日讓子挑戰</b><small id="dailyTxt"></small></span><span class="done" id="dailyDone"></span></button>
+    <div class="row"><button class="btn sec" id="bContinue">繼續對局</button><button class="btn sec" id="bStats">統計・成就</button></div>
+    <div class="row"><button class="btn sec" id="bSgf">棋譜 SGF</button><button class="btn sec" id="bHelp">規則說明</button></div>
+    <h3>設定</h3>
+    <div>
+      <button class="sw" role="switch" id="swConfirm" aria-checked="true"><span>觸控預覽確認<small>先點出預覽子，再點同一點落子</small></span><i></i></button>
+      <button class="sw" role="switch" id="swWr" aria-checked="true"><span>顯示勝率條</span><i></i></button>
+      <button class="sw" role="switch" id="swTerr" aria-checked="false"><span>地域預覽<small>對局中顯示目前歸屬估計</small></span><i></i></button>
+      <button class="sw" role="switch" id="swSound" aria-checked="true"><span>音效與震動</span><i></i></button>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="result" hidden>
+  <div class="card">
+    <button class="x" id="resX" aria-label="關閉">×</button>
+    <div class="res-title" id="rTitle">黑勝</div>
+    <div class="res-sub" id="rSub"></div>
+    <table id="rTable"></table>
+    <canvas id="wrChart"></canvas>
+    <div class="chips" id="rAch"></div>
+    <button class="btn" id="rAgain">再來一局</button>
+    <div class="row"><button class="btn sec" id="rReview">覆盤</button><button class="btn sec" id="rSgf">棋譜</button><button class="btn sec" id="rMenu">選單</button></div>
+  </div>
+</div>
+
+<div class="ov" id="stats" hidden>
+  <div class="card">
+    <button class="x" data-close="stats" aria-label="關閉">×</button>
+    <h2>統計・成就</h2>
+    <h3>對電腦戰績</h3>
+    <table id="stTable"></table>
+    <p id="stMore"></p>
+    <h3>成就</h3>
+    <div class="ach" id="achGrid"></div>
+    <button class="btn sec" data-close="stats">返回</button>
+  </div>
+</div>
+
+<div class="ov" id="sgf" hidden>
+  <div class="card">
+    <button class="x" data-close="sgf" aria-label="關閉">×</button>
+    <h2>棋譜 SGF</h2>
+    <p>複製下方文字即可保存棋譜；貼上別的 9 或 13 路 SGF 後按「載入」，會以同機雙人模式開啟。</p>
+    <textarea id="sgfText" spellcheck="false"></textarea>
+    <div class="row"><button class="btn sec" id="sgfCopy">複製</button><button class="btn sec" id="sgfLoad">載入</button></div>
+  </div>
+</div>
+
+<div class="ov" id="help" hidden>
+  <div class="card help">
+    <button class="x" data-close="help" aria-label="關閉">×</button>
+    <h2>規則說明</h2>
+    <p><b>落子與提子：</b>黑白輪流把棋子下在交叉點上。一塊棋相鄰的空點叫「氣」，氣被對方全部堵住就被提走。對方只剩一氣時稱為「叫吃」，外框會閃一下提醒。</p>
+    <p><b>禁著：</b>不能下在下了之後自己無氣、又提不到對方的位置（自殺）。<b>劫：</b>不能立刻把剛被提的一子提回；中國規則採「超級劫」，任何重現先前盤面的著手都禁止，盤上會以「劫」字標示。日本規則只禁立即回提，若三劫循環則無勝負。</p>
+    <p><b>終局：</b>雙方連續停一手就進入判定。電腦會用 2,000 局模擬估計死活並自動標示死子（半透明加 ×），你可以點任何一塊棋切換死活，確認後計分。</p>
+    <p><b>中國規則（數子）：</b>活子＋自己圍住的空點，白方另加貼目 7.5；雙活的公氣不計。<b>日本規則（數目）：</b>圍地＋提子＋死子，貼目 6.5（簡化：雙活中的眼也計入地）。讓子局貼目 0.5。</p>
+    <p><b>操作：</b>觸控時先點出預覽子，再點同一點落子（可在設定改為單擊落子）；滑鼠懸停預覽、單擊落子。鍵盤：P 停一手、U 悔棋、H 提示、N 新局。</p>
+    <p><b>電腦：</b>蒙地卡羅樹搜尋（UCT＋RAVE），在背景執行緒思考，不會卡住畫面。勝率低於 5% 連續三手時電腦會主動認輸。</p>
+    <button class="btn sec" data-close="help">知道了</button>
+  </div>
+</div>
+
+<div class="ov" id="confirm" hidden>
+  <div class="card" style="text-align:center">
+    <h2 id="cfTitle">要認輸嗎？</h2>
+    <p id="cfText">這局將記為落敗。</p>
+    <div class="row"><button class="btn sec" id="cfNo">再想想</button><button class="btn" id="cfYes">認輸</button></div>
+  </div>
+</div>
+
+<script id="coreScript">
+/*CORE-START*/
+var GO = (function () {
+'use strict';
+var EMPTY = 0, BLACK = 1, WHITE = 2, EDGE = 3;
+var seed = 0x2545F491;
+function rand() { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; }
+function setSeed(s) { seed = (s >>> 0) || 1; }
+function now() { return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(); }
+setSeed((Date.now() ^ (Math.random() * 4294967295)) >>> 0);
+
+var ZC = {};
+function zob(len) {
+  if (ZC[len]) return ZC[len];
+  var s = 0x1234567, a = new Uint32Array(len * 2), b = new Uint32Array(len * 2);
+  function r() { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return s >>> 0; }
+  for (var i = 0; i < len * 2; i++) { a[i] = r(); b[i] = r(); }
+  return (ZC[len] = { a: a, b: b });
+}
+
+/* ---------- 3x3 patterns (MoGo style, as in michi); X/O = either colour, x = not X, o = not O, ' ' = off board ---------- */
+var PATSRC = [
+  ['XOX', '...', '???'], ['XO.', '...', '?.?'], ['XO?', 'X..', 'x.?'], ['.O.', 'X..', '...'],
+  ['XO?', 'O.o', '?o?'], ['XO?', 'O.X', '???'], ['?X?', 'O.O', 'ooo'], ['OX?', 'o.O', '???'],
+  ['X.?', 'O.?', '   '], ['OX?', 'X.O', '   '], ['?X?', 'x.O', '   '], ['?XO', 'x.x', '   '], ['?OX', 'X.O', '   ']
+];
+var PAT = new Uint8Array(65536);
+(function () {
+  var V = { '.': 0, 'X': 1, 'O': 2, ' ': 3 };
+  function rot(p) { return [p[2][0] + p[1][0] + p[0][0], p[2][1] + p[1][1] + p[0][1], p[2][2] + p[1][2] + p[0][2]]; }
+  function flip(p) { return [p[2], p[1], p[0]]; }
+  function swap(p) { return p.map(function (l) { return l.replace(/X/g, 'Z').replace(/x/g, 'z').replace(/O/g, 'X').replace(/o/g, 'x').replace(/Z/g, 'O').replace(/z/g, 'o'); }); }
+  function wild(s, ch, to) { var i = s.indexOf(ch); if (i < 0) return [s]; var out = []; to.forEach(function (t) { out = out.concat(wild(s.slice(0, i) + t + s.slice(i + 1), ch, to)); }); return out; }
+  PATSRC.forEach(function (p0) {
+    var vars = [], p = p0;
+    for (var r = 0; r < 4; r++) { vars.push(p, flip(p)); p = rot(p); }
+    vars = vars.concat(vars.map(swap));
+    vars.forEach(function (v) {
+      var s = v.join('');
+      wild(s, '?', ['.', 'X', 'O', ' ']).forEach(function (s1) {
+        wild(s1, 'x', ['.', 'O', ' ']).forEach(function (s2) {
+          wild(s2, 'o', ['.', 'X', ' ']).forEach(function (s3) {
+            var code = 0, k = 0;
+            for (var i = 0; i < 9; i++) { if (i === 4) continue; code |= V[s3[i]] << (2 * k); k++; }
+            PAT[code] = 1;
+          });
+        });
+      });
+    });
+  });
+})();
+
+/* ---------- Board: padded (n+2)^2 Uint8Array, groups as rings with pseudo-liberty sums ---------- */
+function Board(n) {
+  this.n = n; var W = n + 2; this.W = W; this.len = W * W;
+  var L = this.len;
+  this.c = new Uint8Array(L); this.g = new Int16Array(L); this.nx = new Int16Array(L); this.gs = new Int16Array(L);
+  this.pl = new Int32Array(L); this.ls = new Int32Array(L); this.lq = new Int32Array(L);
+  this.dir = [1, -1, W, -W]; this.off8 = [-W - 1, -W, -W + 1, -1, 1, W - 1, W, W + 1];
+  this.z = zob(L); this.cand = new Int16Array(16);
+  this.caps = [0, 0, 0]; this.ko = 0; this.toPlay = BLACK; this.last = 0; this.last2 = 0; this.passes = 0; this.h1 = 0; this.h2 = 0;
+  this.c.fill(EDGE);
+  var pts = [];
+  for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) { var p = (y + 1) * W + x + 1; this.c[p] = EMPTY; pts.push(p); }
+  this.pts = new Int16Array(pts);
+}
+var B = Board.prototype;
+B.pt = function (x, y) { return (y + 1) * this.W + x + 1; };
+B.xy = function (p) { return [p % this.W - 1, ((p / this.W) | 0) - 1]; };
+B.copy = function (o) {
+  this.c.set(o.c); this.g.set(o.g); this.nx.set(o.nx); this.gs.set(o.gs); this.pl.set(o.pl); this.ls.set(o.ls); this.lq.set(o.lq);
+  this.caps[1] = o.caps[1]; this.caps[2] = o.caps[2]; this.ko = o.ko; this.toPlay = o.toPlay; this.last = o.last; this.last2 = o.last2;
+  this.passes = o.passes; this.h1 = o.h1; this.h2 = o.h2; return this;
+};
+B.clone = function () { return new Board(this.n).copy(this); };
+B.key = function () { return this.h1 * 2097152 + (this.h2 & 0x1fffff); };
+B.atari = function (r) { var p = this.pl[r], s = this.ls[r]; return p * this.lq[r] === s * s; };
+B.atariLib = function (r) { return this.ls[r] / this.pl[r]; };
+B.merge = function (a, b) {
+  var g = this.g, nx = this.nx, gs = this.gs, t, s;
+  if (gs[a] < gs[b]) { t = a; a = b; b = t; }
+  s = b; do { g[s] = a; s = nx[s]; } while (s !== b);
+  t = nx[a]; nx[a] = nx[b]; nx[b] = t;
+  gs[a] += gs[b]; this.pl[a] += this.pl[b]; this.ls[a] += this.ls[b]; this.lq[a] += this.lq[b];
+  return a;
+};
+B.remove = function (r) {
+  var c = this.c, nx = this.nx, g = this.g, dir = this.dir, col = c[r], s = r, n = 0, zi, i, q, v, rr;
+  do { c[s] = EMPTY; zi = s * 2 + col - 1; this.h1 ^= this.z.a[zi]; this.h2 ^= this.z.b[zi]; n++; s = nx[s]; } while (s !== r);
+  s = r;
+  do {
+    for (i = 0; i < 4; i++) { q = s + dir[i]; v = c[q]; if (v === BLACK || v === WHITE) { rr = g[q]; this.pl[rr]++; this.ls[rr] += s; this.lq[rr] += s * s; } }
+    s = nx[s];
+  } while (s !== r);
+  return n;
+};
+/* place a stone (legality assumed); returns number of stones captured */
+B.place = function (pt, col) {
+  var c = this.c, g = this.g, pl = this.pl, ls = this.ls, lq = this.lq, dir = this.dir, opp = 3 - col, i, q, v, r, cap = 0, capPt = 0;
+  var zi = pt * 2 + col - 1; this.h1 ^= this.z.a[zi]; this.h2 ^= this.z.b[zi];
+  c[pt] = col; g[pt] = pt; this.nx[pt] = pt; this.gs[pt] = 1; pl[pt] = 0; ls[pt] = 0; lq[pt] = 0;
+  for (i = 0; i < 4; i++) {
+    q = pt + dir[i]; v = c[q];
+    if (v === EMPTY) { pl[pt]++; ls[pt] += q; lq[pt] += q * q; }
+    else if (v !== EDGE) { r = g[q]; pl[r]--; ls[r] -= pt; lq[r] -= pt * pt; }
+  }
+  for (i = 0; i < 4; i++) { q = pt + dir[i]; if (c[q] === col) { r = g[q]; if (r !== g[pt]) this.merge(g[pt], r); } }
+  for (i = 0; i < 4; i++) { q = pt + dir[i]; if (c[q] === opp) { r = g[q]; if (pl[r] === 0) { capPt = q; cap += this.remove(r); } } }
+  this.ko = 0;
+  if (cap === 1) { r = g[pt]; if (this.gs[r] === 1 && pl[r] === 1) this.ko = capPt; }
+  this.caps[col] += cap;
+  return cap;
+};
+/* play for side to move; pt 0 = pass */
+B.play = function (pt) {
+  var col = this.toPlay, cap = 0;
+  if (pt) { cap = this.place(pt, col); this.passes = 0; } else { this.ko = 0; this.passes++; }
+  this.last2 = this.last; this.last = pt; this.toPlay = 3 - col;
+  return cap;
+};
+/* legal ignoring superko (simple ko + suicide) */
+B.legal = function (pt, col) {
+  var c = this.c, i, q, v;
+  if (c[pt] !== EMPTY || pt === this.ko) return false;
+  for (i = 0; i < 4; i++) {
+    q = pt + this.dir[i]; v = c[q];
+    if (v === EMPTY) return true;
+    if (v === col) { if (!this.atari(this.g[q])) return true; }
+    else if (v !== EDGE) { if (this.atari(this.g[q])) return true; }
+  }
+  return false;
+};
+B.isEye = function (pt, col) {
+  var c = this.c, W = this.W, i, v, opp = 3 - col, bad = 0, edge = 0;
+  for (i = 0; i < 4; i++) { v = c[pt + this.dir[i]]; if (v !== col && v !== EDGE) return false; }
+  for (i = 0; i < 4; i++) { v = c[pt + (i === 0 ? W + 1 : i === 1 ? W - 1 : i === 2 ? 1 - W : -1 - W)]; if (v === opp) bad++; else if (v === EDGE) edge = 1; }
+  return bad + edge < 2;
+};
+/* number of liberties (capped at 2) the stone at pt would have after col plays there */
+B.libsAfter = function (pt, col) {
+  var c = this.c, g = this.g, nx = this.nx, dir = this.dir, opp = 3 - col, l1 = 0, i, j, q, v, r, s, u;
+  for (i = 0; i < 4; i++) {
+    q = pt + dir[i]; v = c[q];
+    if (v === EMPTY) { if (!l1) l1 = q; else if (q !== l1) return 2; }
+    else if (v === opp) { if (this.atari(g[q])) return 2; }
+    else if (v === col) {
+      r = g[q]; s = r;
+      do {
+        for (j = 0; j < 4; j++) { u = s + dir[j]; if (u !== pt && c[u] === EMPTY) { if (!l1) l1 = u; else if (u !== l1) return 2; } }
+        s = nx[s];
+      } while (s !== r);
+    }
+  }
+  return l1 ? 1 : 0;
+};
+B.code = function (p) { var c = this.c, o = this.off8, k = 0, i; for (i = 0; i < 8; i++) k |= c[p + o[i]] << (2 * i); return k; };
+B.libCount = function (r) {
+  var c = this.c, nx = this.nx, dir = this.dir, seen = [], s = r, i, u;
+  do { for (i = 0; i < 4; i++) { u = s + dir[i]; if (c[u] === EMPTY && seen.indexOf(u) < 0) seen.push(u); } s = nx[s]; } while (s !== r);
+  return seen.length;
+};
+B.stones = function (r) { var out = [], s = r; do { out.push(s); s = this.nx[s]; } while (s !== r); return out; };
+/* capture an opponent group in atari touching my group r */
+B.counterCapture = function (r, col) {
+  var c = this.c, g = this.g, nx = this.nx, dir = this.dir, opp = 3 - col, s = r, i, q, lib;
+  do {
+    for (i = 0; i < 4; i++) { q = s + dir[i]; if (c[q] === opp && this.atari(g[q])) { lib = this.atariLib(g[q]); if (this.legal(lib, col)) return lib; } }
+    s = nx[s];
+  } while (s !== r);
+  return 0;
+};
+/* playout policy pieces */
+B.atariMove = function (col) {
+  var last = this.last, c = this.c, g = this.g, opp = 3 - col, i, q, r, lib, m;
+  if (c[last] === opp) { r = g[last]; if (this.atari(r)) { lib = this.atariLib(r); if (this.legal(lib, col)) return lib; } }
+  for (i = 0; i < 4; i++) {
+    q = last + this.dir[i];
+    if (c[q] === col) {
+      r = g[q];
+      if (this.atari(r)) {
+        m = this.counterCapture(r, col); if (m) return m;
+        lib = this.atariLib(r); if (this.legal(lib, col) && this.libsAfter(lib, col) >= 2) return lib;
+      }
+    }
+  }
+  return 0;
+};
+B.patternMove = function (col) {
+  var last = this.last, c = this.c, o = this.off8, k = 0, i, q;
+  for (i = 0; i < 8; i++) {
+    q = last + o[i];
+    if (c[q] === EMPTY && PAT[this.code(q)] && this.legal(q, col) && this.libsAfter(q, col) >= 2) this.cand[k++] = q;
+  }
+  return k ? this.cand[(rand() * k) | 0] : 0;
+};
+B.randomMove = function (col, pol) {
+  var pts = this.pts, np = pts.length, st = (rand() * np) | 0, i, p, j;
+  for (j = 0; j < np; j++) {
+    i = st + j; if (i >= np) i -= np;
+    p = pts[i];
+    if (this.c[p] !== EMPTY || p === this.ko || this.isEye(p, col) || !this.legal(p, col)) continue;
+    if (pol >= 2 && this.libsAfter(p, col) < 2) {
+      var c = this.c, W = this.W;
+      if (c[p + 1] === col || c[p - 1] === col || c[p + W] === col || c[p - W] === col || rand() < 0.9) continue;
+    }
+    return p;
+  }
+  return 0;
+};
+B.policyMove = function (col, pol) {
+  var m;
+  if (pol >= 1 && this.last && rand() < 0.95) { m = this.atariMove(col); if (m) return m; }
+  if (pol >= 2 && this.last && rand() < 0.9) { m = this.patternMove(col); if (m) return m; }
+  return this.randomMove(col, pol);
+};
+B.playout = function (pol, amaf) {
+  var col = this.toPlay, passes = this.passes, cap = this.n * this.n * 3, k = 0, m;
+  while (passes < 2 && k < cap) {
+    m = this.policyMove(col, pol);
+    if (m) { this.place(m, col); if (amaf && amaf[m] === 0) amaf[m] = col; passes = 0; }
+    else { this.ko = 0; passes++; }
+    this.last2 = this.last; this.last = m; col = 3 - col; k++;
+  }
+  this.toPlay = col; this.passes = passes;
+};
+/* quick area score of a played-out board: black - white - komi; accumulates ownership counts */
+B.quickScore = function (komi, oB, oW) {
+  var c = this.c, pts = this.pts, dir = this.dir, s = 0, i, p, v, b, w, j, u;
+  for (i = 0; i < pts.length; i++) {
+    p = pts[i]; v = c[p];
+    if (v === EMPTY) { b = 0; w = 0; for (j = 0; j < 4; j++) { u = c[p + dir[j]]; if (u === BLACK) b = 1; else if (u === WHITE) w = 1; } v = b && !w ? BLACK : w && !b ? WHITE : 0; }
+    if (v === BLACK) { s++; if (oB) oB[p]++; } else if (v === WHITE) { s--; if (oW) oW[p]++; }
+  }
+  return s - komi;
+};
+
+/* ---------- Game: rules, history, positional superko ---------- */
+var STAR = { 9: [[2, 2], [6, 2], [4, 4], [2, 6], [6, 6]], 13: [[3, 3], [9, 3], [6, 6], [3, 9], [9, 9]] };
+var HCAP = { 9: [[6, 2], [2, 6], [6, 6], [2, 2], [4, 4]], 13: [[9, 3], [3, 9], [9, 9], [3, 3], [6, 6]] };
+function Game(o) {
+  o = o || {};
+  this.size = o.size || 9; this.rules = o.rules || 'cn'; this.handicap = o.handicap || 0;
+  this.komi = o.komi != null ? o.komi : (this.handicap ? 0.5 : this.rules === 'jp' ? 6.5 : 7.5);
+  this.b = new Board(this.size);
+  for (var i = 0; i < this.handicap; i++) { var h = HCAP[this.size][i]; this.b.place(this.b.pt(h[0], h[1]), BLACK); }
+  this.b.caps[1] = 0;
+  if (this.handicap) this.b.toPlay = WHITE;
+  this.moves = []; this.seen = {}; this.seenSide = {}; this.noResult = false; this.biggestCap = 0;
+  this.seen[this.b.key()] = 1; this.seenSide[this.b.key() + ':' + this.b.toPlay] = 1;
+}
+var G = Game.prototype;
+G.opts = function () { return { size: this.size, rules: this.rules, handicap: this.handicap, komi: this.komi }; };
+G.toPlay = function () { return this.b.toPlay; };
+/* '' if legal, else 'occupied' | 'ko' | 'suicide' | 'superko' */
+G.check = function (pt, col) {
+  var b = this.b; col = col || b.toPlay;
+  if (!pt) return '';
+  if (b.c[pt] !== EMPTY) return 'occupied';
+  if (pt === b.ko) return 'ko';
+  if (!b.legal(pt, col)) return 'suicide';
+  if (this.rules !== 'jp' || this.strictKo) { var t = this.tmp || (this.tmp = new Board(this.size)); t.copy(b); t.place(pt, col); if (this.seen[t.key()]) return 'superko'; }
+  return '';
+};
+G.superkoAvoid = function (pt) { var t = this.tmp || (this.tmp = new Board(this.size)); t.copy(this.b); t.place(pt, this.b.toPlay); return !!this.seen[t.key()]; };
+G.play = function (pt) {
+  var b = this.b, cap = b.play(pt), k = b.key(), ks = k + ':' + b.toPlay;
+  this.moves.push(pt);
+  if (pt) { this.seen[k] = (this.seen[k] || 0) + 1; }
+  this.seenSide[ks] = (this.seenSide[ks] || 0) + 1;
+  if (this.rules === 'jp' && pt && this.seenSide[ks] >= 3) this.noResult = true;
+  if (cap > this.biggestCap) this.biggestCap = cap;
+  return cap;
+};
+G.over = function () { return this.b.passes >= 2; };
+G.clone = function () { return Game.replay(this.opts(), this.moves); };
+Game.replay = function (o, moves) { var g = new Game(o); for (var i = 0; i < moves.length; i++) g.play(moves[i]); return g; };
+G.legalMoves = function () { var b = this.b, out = [], i, p; for (i = 0; i < b.pts.length; i++) { p = b.pts[i]; if (!this.check(p)) out.push(p); } return out; };
+
+/* ---------- final scoring ---------- */
+/* dead: array of points of dead stones. Returns full breakdown and an owner map (1 black, 2 white, 0 neutral) */
+function finalScore(game, dead, rules) {
+  rules = rules || game.rules;
+  var b = game.b, t = b.clone(), c = t.c, deadB = 0, deadW = 0, i, p;
+  (dead || []).forEach(function (p) { if (c[p] === BLACK) deadB++; else if (c[p] === WHITE) deadW++; c[p] = EMPTY; });
+  var owner = new Uint8Array(t.len), seen = new Uint8Array(t.len), stB = 0, stW = 0, trB = 0, trW = 0;
+  for (i = 0; i < t.pts.length; i++) {
+    p = t.pts[i];
+    if (c[p] === BLACK) { stB++; owner[p] = BLACK; continue; }
+    if (c[p] === WHITE) { stW++; owner[p] = WHITE; continue; }
+    if (seen[p]) continue;
+    var stack = [p], region = [], bord = 0; seen[p] = 1;
+    while (stack.length) {
+      var q = stack.pop(); region.push(q);
+      for (var j = 0; j < 4; j++) { var u = q + t.dir[j], v = c[u]; if (v === EMPTY) { if (!seen[u]) { seen[u] = 1; stack.push(u); } } else if (v !== EDGE) bord |= v; }
+    }
+    var own = bord === 1 ? BLACK : bord === 2 ? WHITE : 0;
+    region.forEach(function (q) { owner[q] = own; });
+    if (own === BLACK) trB += region.length; else if (own === WHITE) trW += region.length;
+  }
+  var r = { rules: rules, komi: game.komi, owner: owner, deadB: deadB, deadW: deadW, stonesB: stB, stonesW: stW, terrB: trB, terrW: trW, capsB: b.caps[1], capsW: b.caps[2] };
+  if (rules === 'jp') { r.B = trB + b.caps[1] + deadW; r.W = trW + b.caps[2] + deadB + game.komi; }
+  else { r.B = stB + trB; r.W = stW + trW + game.komi; }
+  r.diff = r.B - r.W; r.winner = r.diff > 0 ? BLACK : r.diff < 0 ? WHITE : 0;
+  return r;
+}
+/* ownership by playouts from the current position (half with each side to move). Returns {fB, fW} fractions per point */
+function ownership(game, n, pol) {
+  var b = game.b, s = new Board(b.n), oB = new Int32Array(b.len), oW = new Int32Array(b.len), i, fB = new Float32Array(b.len), fW = new Float32Array(b.len);
+  pol = pol == null ? 2 : pol;
+  for (i = 0; i < n; i++) { s.copy(b); s.passes = 0; s.ko = 0; s.toPlay = i & 1 ? WHITE : BLACK; s.last = 0; s.playout(pol, null); s.quickScore(0, oB, oW); }
+  for (i = 0; i < b.len; i++) { fB[i] = oB[i] / n; fW[i] = oW[i] / n; }
+  return { fB: fB, fW: fW };
+}
+/* area estimate from ownership: black - white - komi */
+function ownEst(game, own) { var b = game.b, s = 0, i, p; for (i = 0; i < b.pts.length; i++) { p = b.pts[i]; if (own.fB[p] > 0.5) s++; else if (own.fW[p] > 0.5) s--; } return s - game.komi; }
+/* groups whose stones are owned by the opponent in more than `th` of the playouts */
+function deadFromOwn(game, own, th) {
+  var b = game.b, done = new Uint8Array(b.len), dead = [], i, p;
+  th = th == null ? 0.7 : th;
+  for (i = 0; i < b.pts.length; i++) {
+    p = b.pts[i]; var col = b.c[p];
+    if ((col !== BLACK && col !== WHITE) || done[b.g[p]]) continue;
+    var r = b.g[p], st = b.stones(r), sum = 0; done[r] = 1;
+    st.forEach(function (q) { sum += col === BLACK ? own.fW[q] : own.fB[q]; });
+    if (sum / st.length > th) dead = dead.concat(st);
+  }
+  return dead;
+}
+
+/* ---------- MCTS + UCT + RAVE ---------- */
+var LEVELS = [
+  { name: '25 級', sims: 300, time: 300, pol: 0, rave: false, priors: false, mistake: 0, random: 0.2 },
+  { name: '18 級', sims: 1500, time: 800, pol: 1, rave: false, priors: false, mistake: 0.10, random: 0 },
+  { name: '12 級', sims: 6000, time: 1500, pol: 2, rave: true, priors: true, mistake: 0.03, random: 0 },
+  { name: '8 級', sims: 20000, time: 3000, pol: 2, rave: true, priors: true, mistake: 0, random: 0 },
+  { name: '5 級', sims: 1e9, time: 5000, pol: 2, rave: true, priors: true, mistake: 0, random: 0, reuse: true }
+];
+var RAVE_EQ = 3500, EXPAND = 8;
+function Node(m, col) { this.m = m; this.col = col; this.v = 0; this.n = 0; this.w = 0; this.rn = 0; this.rw = 0; this.kids = null; }
+function expand(node, b, cfg, root, game) {
+  var col = b.toPlay, kids = [], pts = b.pts, i, p, k, x, y, n = b.n, line, d, near = b.last;
+  for (i = 0; i < pts.length; i++) {
+    p = pts[i];
+    if (b.c[p] !== EMPTY || !b.legal(p, col) || b.isEye(p, col)) continue;
+    if (root && game && game.superkoAvoid(p)) continue;
+    k = new Node(p, col);
+    if (cfg.priors) {
+      k.n = 10; k.w = 5;
+      var la = b.libsAfter(p, col);
+      if (la < 2) { k.n += 10; }
+      var capt = 0, save = 0;
+      for (var j = 0; j < 4; j++) {
+        var q = p + b.dir[j], v = b.c[q];
+        if (v === 3 - col && b.atari(b.g[q])) capt += b.gs[b.g[q]];
+        else if (v === col && b.atari(b.g[q]) && la >= 2) save += b.gs[b.g[q]];
+      }
+      if (capt) { k.n += 15; k.w += 15 + Math.min(capt, 5) * 2; }
+      if (save) { k.n += 15; k.w += 15; }
+      x = p % b.W - 1; y = ((p / b.W) | 0) - 1;
+      line = Math.min(x, y, n - 1 - x, n - 1 - y);
+      if (line === 0 && !capt && !save) { k.n += 12; }
+      else if (line === 2 && n >= 9) { k.n += 4; k.w += 4; }
+      if (near) {
+        d = Math.abs(x - (near % b.W - 1)) + Math.abs(y - (((near / b.W) | 0) - 1));
+        if (d <= 2 && PAT[b.code(p)] && la >= 2) { k.n += 10; k.w += 10; }
+        if (d === 1) { k.n += 6; k.w += 6; } else if (d === 2) { k.n += 4; k.w += 4; }
+      }
+    }
+    kids.push(k);
+  }
+  if (!kids.length) kids.push(new Node(0, col));
+  node.kids = kids;
+}
+function select(node, cfg) {
+  var kids = node.kids, best = null, bu = -1, i, k, u, beta, lnN = Math.log(node.v + 1);
+  for (i = 0; i < kids.length; i++) {
+    k = kids[i];
+    if (k.n === 0) u = 10 + rand();
+    else {
+      u = k.w / k.n;
+      if (cfg.rave && k.rn > 0) { beta = k.rn / (k.rn + k.n + k.rn * k.n / RAVE_EQ); u = (1 - beta) * u + beta * k.rw / k.rn; }
+      u += (cfg.rave ? 0.08 : 0.9) * Math.sqrt(lnN / (k.v + 1));
+    }
+    if (u > bu) { bu = u; best = k; }
+  }
+  return best;
+}
+var LAST_TREE = null;
+/* search the position of `game`; returns best move info */
+function search(game, cfg, limits) {
+  limits = limits || {};
+  var b = game.b, maxSims = limits.sims || cfg.sims, tmax = limits.time || cfg.time, sc = b.n === 13 ? 0.45 : 1;
+  if (!limits.sims) maxSims = Math.round(maxSims * sc);
+  var root = null, t0 = now(), komi = game.komi, key = game.moves.join(',') + '|' + game.size + game.handicap;
+  if (cfg.reuse && LAST_TREE && key.indexOf(LAST_TREE.key) === 0 && LAST_TREE.size === game.size + ':' + game.handicap) {
+    var rest = game.moves.slice(LAST_TREE.len), node = LAST_TREE.root;
+    for (var i = 0; i < rest.length && node; i++) {
+      var nn = null; if (node.kids) for (var j = 0; j < node.kids.length; j++) if (node.kids[j].m === rest[i]) { nn = node.kids[j]; break; }
+      node = nn;
+    }
+    if (node && node.kids && rest.length <= 2) {
+      root = node;
+      root.kids = root.kids.filter(function (k) { return !k.m || !game.superkoAvoid(k.m); });
+      if (!root.kids.length) root = null;
+    }
+  }
+  var reused = root ? root.v : 0;
+  if (!root) { root = new Node(b.last, 3 - b.toPlay); expand(root, b, cfg, true, game); }
+  var s = new Board(b.n), amaf = new Uint8Array(b.len), oB = new Int32Array(b.len), oW = new Int32Array(b.len), path = [], sims = 0, nPlay = 0;
+  if (root.kids.length === 1 && root.kids[0].m === 0) maxSims = Math.min(maxSims, 200);
+  while (sims < maxSims) {
+    if ((sims & 15) === 0 && now() - t0 > tmax && sims > 0) break;
+    s.copy(b); amaf.fill(0); path.length = 0;
+    var nd = root; path.push(nd);
+    while (nd.kids) {
+      var ch = select(nd, cfg);
+      s.play(ch.m); if (ch.m && amaf[ch.m] === 0) amaf[ch.m] = ch.col;
+      path.push(ch); nd = ch;
+      if (s.passes >= 2) break;
+    }
+    if (!nd.kids && nd.v >= EXPAND && s.passes < 2) {
+      expand(nd, s, cfg, false, null);
+      var ch2 = select(nd, cfg); s.play(ch2.m); if (ch2.m && amaf[ch2.m] === 0) amaf[ch2.m] = ch2.col; path.push(ch2);
+    }
+    s.playout(cfg.pol, amaf);
+    var win = s.quickScore(komi, oB, oW) > 0 ? BLACK : WHITE;
+    nPlay++;
+    for (var pi = 0; pi < path.length; pi++) {
+      var pn = path[pi]; pn.v++; pn.n++; if (pn.col === win) pn.w++;
+      if (cfg.rave && pn.kids) {
+        var ks = pn.kids;
+        for (var ki = 0; ki < ks.length; ki++) { var kk = ks[ki]; if (kk.m && amaf[kk.m] === kk.col) { kk.rn++; if (kk.col === win) kk.rw++; } }
+      }
+    }
+    sims++;
+  }
+  var kids = root.kids.slice().sort(function (a, b2) { return b2.v - a.v || b2.n - a.n; });
+  var best = kids[0];
+  var fB = new Float32Array(b.len), fW = new Float32Array(b.len);
+  for (var q = 0; q < b.len; q++) { fB[q] = oB[q] / Math.max(1, nPlay); fW[q] = oW[q] / Math.max(1, nPlay); }
+  var res = {
+    move: best.m, wr: best.v ? best.w / best.n : 0.5, col: best.col, sims: sims, reused: reused, ms: Math.round(now() - t0),
+    all: kids.map(function (k) { return { m: k.m, v: k.v, wr: k.n ? k.w / k.n : 0.5 }; }), own: { fB: fB, fW: fW }
+  };
+  res.top = res.all.slice(0, 5);
+  if (cfg.reuse) LAST_TREE = { root: root, key: key, len: game.moves.length, size: game.size + ':' + game.handicap };
+  return res;
+}
+/* opening book: first two moves of an even 9x9 game */
+function book(game) {
+  if (game.size !== 9 || game.handicap || game.moves.length > 1) return 0;
+  var b = game.b, P = function (x, y) { return b.pt(x, y); }, r = rand();
+  if (game.moves.length === 0) return r < 0.6 ? P(4, 4) : r < 0.8 ? P(2, 6) : P(6, 2);
+  var m = game.moves[0];
+  if (!m) return P(4, 4);
+  if (m === P(4, 4)) { var opts = [P(2, 2), P(6, 6), P(2, 6), P(6, 2), P(2, 5), P(5, 6)]; return opts[(r * opts.length) | 0]; }
+  return P(4, 4);
+}
+/* full decision for the computer: book, search, mistakes, pass logic. Returns {move, wr, top, own, sims, ms, pass} */
+function think(game, lv, limits) {
+  var cfg = typeof lv === 'number' ? LEVELS[lv] : lv, b = game.b, me = b.toPlay;
+  var legal = game.legalMoves().filter(function (p) { return !b.isEye(p, me); });
+  if (!legal.length) return { move: 0, wr: 0.5, top: [], own: null, sims: 0, ms: 0, why: 'nomoves' };
+  var bk = (cfg.pol >= 1 && !(limits && limits.nobook)) ? book(game) : 0;
+  if (bk && legal.indexOf(bk) >= 0) return { move: bk, wr: 0.5, top: [], own: null, sims: 0, ms: 0, why: 'book' };
+  var res = search(game, cfg, limits);
+  var mv = res.move;
+  if (cfg.random && rand() < cfg.random) { mv = legal[(rand() * legal.length) | 0]; res.why = 'random'; }
+  else if (cfg.mistake && rand() < cfg.mistake && res.top.length > 1) {
+    var top = res.top.filter(function (t) { return t.m; }), tot = 0, i;
+    top.forEach(function (t) { tot += t.v + 1; });
+    var x = rand() * tot; for (i = 0; i < top.length; i++) { x -= top[i].v + 1; if (x <= 0) break; }
+    mv = top[Math.min(i, top.length - 1)].m; res.why = 'mistake';
+  }
+  /* pass decision on an unbiased ownership estimate (the search's own playouts are skewed towards its favourite lines) */
+  var u = ownership(game, b.n === 13 ? 200 : 300, 2), est = ownEst(game, u), winning = (est > 0 ? BLACK : WHITE) === me;
+  var settled = function (p) { return Math.max(u.fB[p], u.fW[p]) > 0.85; };
+  var urgent = false, d, q;
+  if (mv) for (d = 0; d < 4; d++) { q = mv + b.dir[d]; if ((b.c[q] === 1 || b.c[q] === 2) && b.atari(b.g[q])) urgent = true; }
+  var oppPassed = game.moves.length > 0 && game.moves[game.moves.length - 1] === 0;
+  var deadOpp = {}, nDead = 0;
+  deadFromOwn(game, u, 0.7).forEach(function (p) { if (b.c[p] === 3 - me) { deadOpp[p] = 1; nDead++; } });
+  var nearDead = function (p) { for (var j = 0; j < 4; j++) if (deadOpp[p + b.dir[j]]) return true; return false; };
+  if (!mv) res.pass = true;
+  else if ((oppPassed && winning) || (settled(mv) && !urgent && res.wr > 0.8 && game.moves.length > b.n * b.n / 3)) {
+    var bw = res.wr, alt = null, a, k;
+    /* 1. remove dead invaders inside my area (free under area scoring, and it settles the count) */
+    if (winning && nDead) for (a = 0; a < res.all.length && !alt; a++) { k = res.all[a]; if (k.m && nearDead(k.m) && b.libsAfter(k.m, me) >= 2) alt = k; }
+    /* 2. otherwise a still-contested point the search does not mind */
+    if (!alt) for (a = 0; a < res.all.length && !alt; a++) { k = res.all[a]; if (k.m && !settled(k.m) && k.wr >= bw - 0.08 && b.libsAfter(k.m, me) >= 2) alt = k; }
+    if (alt) { mv = alt.m; res.why = nDead && nearDead(alt.m) ? 'cleanup' : 'contest'; }
+    else if (winning && (oppPassed || game.moves.length > b.n * b.n / 2)) { res.pass = true; mv = 0; }
+  }
+  res.move = mv; res.est = est;
+  return res;
+}
+
+/* ---------- coordinates & SGF ---------- */
+var COLS = 'ABCDEFGHJKLMNOPQRST';
+function coord(b, p) { if (!p) return 'Pass'; var xy = b.xy(p); return COLS[xy[0]] + (b.n - xy[1]); }
+function toSGF(game, res) {
+  var b = game.b, s = '(;GM[1]FF[4]CA[UTF-8]AP[go9]SZ[' + game.size + ']KM[' + game.komi + ']RU[' + (game.rules === 'jp' ? 'Japanese' : 'Chinese') + ']';
+  if (res) s += 'RE[' + res + ']';
+  if (game.handicap) { s += 'HA[' + game.handicap + ']AB'; for (var i = 0; i < game.handicap; i++) { var h = HCAP[game.size][i]; s += '[' + String.fromCharCode(97 + h[0], 97 + h[1]) + ']'; } }
+  var col = game.handicap ? WHITE : BLACK;
+  game.moves.forEach(function (m) {
+    var xy = m ? b.xy(m) : null;
+    s += '\n;' + (col === BLACK ? 'B' : 'W') + '[' + (m ? String.fromCharCode(97 + xy[0], 97 + xy[1]) : '') + ']';
+    col = 3 - col;
+  });
+  return s + ')';
+}
+function fromSGF(txt) {
+  var sz = +(/SZ\[(\d+)\]/.exec(txt) || [0, 9])[1], km = /KM\[([-\d.]+)\]/.exec(txt), ha = +(/HA\[(\d+)\]/.exec(txt) || [0, 0])[1];
+  var ru = /RU\[([^\]]*)\]/.exec(txt), rules = ru && /jap/i.test(ru[1]) ? 'jp' : 'cn';
+  if (sz !== 9 && sz !== 13) throw new Error('只支援 9 路或 13 路');
+  var g = new Game({ size: sz, rules: rules, handicap: Math.min(5, ha), komi: km ? +km[1] : undefined });
+  var re = /;\s*([BW])\[([a-s]{0,2})\]/g, m;
+  while ((m = re.exec(txt))) {
+    var col = m[1] === 'B' ? BLACK : WHITE;
+    if (col !== g.b.toPlay) throw new Error('著手順序不符');
+    var p = 0;
+    if (m[2].length === 2) { var x = m[2].charCodeAt(0) - 97, y = m[2].charCodeAt(1) - 97; if (x >= sz || y >= sz) p = 0; else p = g.b.pt(x, y); }
+    if (p && g.check(p)) throw new Error('非法著手 ' + coord(g.b, p));
+    g.play(p);
+  }
+  return g;
+}
+
+return {
+  EMPTY: EMPTY, BLACK: BLACK, WHITE: WHITE, EDGE: EDGE, Board: Board, Game: Game, LEVELS: LEVELS, PAT: PAT, STAR: STAR, HCAP: HCAP,
+  search: search, think: think, finalScore: finalScore, ownEst: ownEst, ownership: ownership, deadFromOwn: deadFromOwn, book: book,
+  coord: coord, toSGF: toSGF, fromSGF: fromSGF, setSeed: setSeed, rand: rand, resetTree: function () { LAST_TREE = null; }
+};
+})();
+
+/*CORE-END*/
+</script>
+<script>
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+var BLACK = 1, WHITE = 2, EMPTY = 0;
+var LS = {
+  get: function (k, d) { try { var v = localStorage.getItem('go9.' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set: function (k, v) { try { localStorage.setItem('go9.' + k, JSON.stringify(v)); } catch (e) {} },
+  del: function (k) { try { localStorage.removeItem('go9.' + k); } catch (e) {} }
+};
+var DEF = { mode: 'ai', level: 1, color: 'black', handicap: 0, rules: 'cn', size: 9, confirm: true, showWr: true, showTerr: false, sound: true };
+var S = Object.assign({}, DEF, LS.get('settings', {}));
+function saveSettings() { LS.set('settings', S); }
+function blankStats() { return { lv: [0, 1, 2, 3, 4].map(function () { return { p: 0, w: 0, m: 0, mc: 0 }; }), pvp: 0, daily: {}, streak: 0 }; }
+var ST = Object.assign(blankStats(), LS.get('stats', {}));
+var ACH = LS.get('ach', {});
+var ACHS = [
+  { id: 'first', n: '初勝', d: '第一次贏電腦' },
+  { id: 'dragon', n: '屠龍', d: '一手吃掉 10 子以上的大龍' },
+  { id: 'beat5', n: '勝 5 級', d: '贏下最強的 5 級電腦' },
+  { id: 'even', n: '無讓子勝', d: '不讓子贏 12 級以上電腦' },
+  { id: 'daily', n: '每日挑戰', d: '完成一次每日讓子挑戰' },
+  { id: 'big', n: '十三路制霸', d: '在 13 路盤贏電腦' }
+];
+var LVN = ['25 級', '18 級', '12 級', '8 級', '5 級'];
+
+/* ================= audio & haptics ================= */
+var AC = null, master = null, noiseBuf = null;
+function audio() {
+  if (!S.sound) return null;
+  if (!AC) {
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      master = AC.createGain(); master.gain.value = 0.8; master.connect(AC.destination);
+      noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.4, AC.sampleRate);
+      var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    } catch (e) { AC = null; return null; }
+  }
+  if (AC.state === 'suspended') AC.resume().catch(function () {});
+  return AC;
+}
+function noise(t, dur, f, q, vol, type) {
+  var a = AC, s = a.createBufferSource(), fl = a.createBiquadFilter(), g = a.createGain();
+  s.buffer = noiseBuf; fl.type = type || 'bandpass'; fl.frequency.value = f; fl.Q.value = q;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(master); s.start(t, Math.random() * 0.2); s.stop(t + dur + 0.02);
+}
+function tone(t, f, dur, vol, type, f2) {
+  var a = AC, o = a.createOscillator(), g = a.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+}
+var SFX = {
+  stone: function () { var a = audio(); if (!a) return; var t = a.currentTime; noise(t, 0.05, 2600, 1.2, 0.9); tone(t, 210, 0.09, 0.35, 'sine', 120); noise(t + 0.004, 0.03, 5200, 3, 0.25); },
+  capture: function (n) { var a = audio(); if (!a) return; var t = a.currentTime + 0.06; n = Math.min(n, 9); for (var i = 0; i < n; i++) noise(t + i * 0.045 + Math.random() * 0.015, 0.09, 3800 + Math.random() * 1500, 0.7, 0.32, 'highpass'); },
+  pass: function () { var a = audio(); if (!a) return; var t = a.currentTime; tone(t, 523, 0.25, 0.12, 'triangle'); tone(t + 0.12, 392, 0.35, 0.1, 'triangle'); },
+  bad: function () { var a = audio(); if (!a) return; var t = a.currentTime; tone(t, 150, 0.16, 0.2, 'square', 110); },
+  atari: function () { var a = audio(); if (!a) return; var t = a.currentTime + 0.08; tone(t, 1320, 0.12, 0.08, 'sine'); tone(t + 0.07, 1760, 0.14, 0.06, 'sine'); },
+  tick: function () { var a = audio(); if (!a) return; tone(a.currentTime, 880, 0.05, 0.05, 'sine'); },
+  win: function () { var a = audio(); if (!a) return; var t = a.currentTime, n = [392, 440, 523, 587, 659, 784, 880, 1047]; n.forEach(function (f, i) { tone(t + i * 0.11, f, 0.9, 0.13, 'triangle'); tone(t + i * 0.11, f * 2, 0.3, 0.03, 'sine'); }); },
+  lose: function () { var a = audio(); if (!a) return; var t = a.currentTime;[440, 392, 330, 294].forEach(function (f, i) { tone(t + i * 0.2, f, 0.7, 0.11, 'triangle'); }); }
+};
+function buzz(p) { if (S.sound && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} }
+
+/* ================= engine bridge: Blob worker with synchronous fallback ================= */
+function handleMsg(d) {
+  var g = GO.Game.replay(d.opts, d.moves), r;
+  if (d.type === 'think') { r = GO.think(g, d.level, d.limits); }
+  else if (d.type === 'own') { var o = GO.ownership(g, d.n, 2); r = { own: o, dead: GO.deadFromOwn(g, o, 0.7) }; }
+  return r;
+}
+var worker = null, wurl = null, reqId = 0, pending = {};
+function makeWorker() {
+  try {
+    if (!wurl) {
+      var core = $('coreScript').textContent;
+      wurl = URL.createObjectURL(new Blob([core + '\n' + handleMsg.toString() + '\nself.onmessage=function(e){var r=handleMsg(e.data);self.postMessage({id:e.data.id,res:r});};'], { type: 'text/javascript' }));
+    }
+    worker = new Worker(wurl);
+    worker.onmessage = function (e) { var cb = pending[e.data.id]; delete pending[e.data.id]; if (cb) cb(e.data.res); };
+    worker.onerror = function () { worker = null; };
+  } catch (e) { worker = null; }
+}
+function ask(msg, cb) {
+  msg.id = ++reqId;
+  if (!worker) makeWorker();
+  if (worker) { pending[msg.id] = cb; worker.postMessage(msg); }
+  else {
+    if (msg.limits) msg.limits.time = Math.min(msg.limits.time || 1500, 1500); else if (msg.type === 'think') msg.limits = { time: 1200 };
+    setTimeout(function () { var r = handleMsg(msg); cb(r); }, 40);
+  }
+  return msg.id;
+}
+function cancelAll() {
+  var had = Object.keys(pending).length;
+  pending = {};
+  if (had && worker) { worker.terminate(); worker = null; }
+}
+
+/* ================= game state ================= */
+var G = null;  // current match
+var phase = 'menu';
+function colorName(c) { return c === BLACK ? '黑' : '白'; }
+function moveColor(i) { var f = G.game.handicap ? WHITE : BLACK; return i % 2 === 0 ? f : 3 - f; }
+function isHumanTurn() { return G && (G.mode === 'pvp' || G.game.b.toPlay !== G.ai); }
+function dailyCfg(d) {
+  d = d || new Date();
+  var key = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  var h = (key * 2654435761) >>> 0, level = 2 + (h % 3), hs = [[2, 3], [2, 3, 4], [3, 4, 5]][level - 2];
+  return { key: String(key), level: level, handicap: hs[(h >>> 8) % hs.length] };
+}
+function newGame(opt) {
+  cancelAll(); GO.resetTree();
+  opt = opt || {};
+  var mode = opt.mode || S.mode, size = opt.size || S.size, rules = opt.rules || S.rules, hc = opt.handicap != null ? opt.handicap : S.handicap;
+  var col = opt.color || S.color; if (col === 'random') col = Math.random() < 0.5 ? 'black' : 'white';
+  var game = new GO.Game({ size: size, rules: rules, handicap: hc });
+  G = { game: game, mode: mode, ai: col === 'black' ? WHITE : BLACK, level: opt.level != null ? opt.level : S.level, daily: opt.daily || null,
+    wr: [], low: 0, dead: null, hint: null, own: null, result: null, bigCap: 0, ko: null, flash: null };
+  if (mode === 'pvp') G.ai = 0;
+  G.wr[0] = 0.5;
+  phase = 'play';
+  hideAll(); resetBoardGeometry(); computeKo(); updateBar(); showTools(); save(); draw(true);
+  var first = game.b.toPlay;
+  toast(mode === 'pvp' ? '同機雙人：' + colorName(first) + '方先下' : (hc ? '讓 ' + hc + ' 子・' : '') + (first === G.ai ? '電腦先下' : '你先下') + '（你執' + colorName(3 - G.ai) + '）', 1500);
+  maybeAI();
+}
+function save() {
+  if (!G || phase === 'over' || phase === 'review') { if (G && phase === 'over') LS.del('game'); return; }
+  LS.set('game', { o: G.game.opts(), moves: G.game.moves, mode: G.mode, ai: G.ai, level: G.level, daily: G.daily, wr: G.wr, low: G.low, bigCap: G.bigCap, scoring: phase === 'scoring' });
+}
+function resume() {
+  var s = LS.get('game', null);
+  if (!s || !s.o || !Array.isArray(s.moves)) return false;
+  try {
+    var game = GO.Game.replay(s.o, s.moves);
+    G = { game: game, mode: s.mode, ai: s.ai, level: s.level, daily: s.daily, wr: s.wr || [0.5], low: s.low || 0, dead: null, hint: null, own: null, result: null, bigCap: s.bigCap || 0, ko: null, flash: null };
+    phase = 'play'; resetBoardGeometry(); computeKo(); updateBar(); showTools(); draw(true);
+    if (s.scoring) enterScoring(); else maybeAI();
+    return true;
+  } catch (e) { LS.del('game'); return false; }
+}
+
+/* ================= moves ================= */
+function playMove(pt, byAI) {
+  var game = G.game, b = game.b, col = b.toPlay, before = b.c.slice();
+  var cap = game.play(pt);
+  G.hint = null;
+  if (pt) {
+    anims.push({ k: 'drop', p: pt, t: now(), d: 120 });
+    SFX.stone(); buzz(6);
+    if (cap) {
+      var ca = [];
+      for (var i = 0; i < b.pts.length; i++) { var q = b.pts[i]; if (before[q] === 3 - col && b.c[q] === EMPTY) ca.push(q); }
+      anims.push({ k: 'cap', ps: ca, col: 3 - col, t: now() + 60, d: 650 });
+      SFX.capture(cap); buzz(15);
+      if (cap > G.bigCap && (G.mode === 'pvp' || col !== G.ai)) G.bigCap = cap;
+      if (cap >= 10 && G.mode === 'ai' && col !== G.ai) unlock('dragon');
+      spark(pt, cap);
+    }
+    /* atari flash: opponent groups next to the move left with one liberty */
+    var seen = {};
+    for (var d = 0; d < 4; d++) {
+      var nq = pt + b.dir[d];
+      if (b.c[nq] === 3 - col && !seen[b.g[nq]]) { seen[b.g[nq]] = 1; if (b.libCount(b.g[nq]) === 1) { anims.push({ k: 'atari', ps: b.stones(b.g[nq]), t: now() + 80, d: 900 }); SFX.atari(); } }
+    }
+  } else {
+    SFX.pass();
+    toast((G.mode === 'ai' && col === G.ai ? '電腦' : colorName(col) + '方') + '停一手' + (b.passes >= 2 ? '' : (G.mode === 'ai' && col === G.ai ? '：你也停一手即進入終局' : '')), 1600);
+  }
+  if (game.noResult) { computeKo(); updateBar(); finish({ type: 'noresult' }); return; }
+  computeKo(); updateBar(); showTools(); save(); draw(true);
+  if (b.passes >= 2) { enterScoring(); return; }
+  maybeAI();
+}
+function maybeAI() {
+  if (!G || phase !== 'play') return;
+  if (G.mode === 'pvp') { if (S.showWr || S.showTerr) evalPos(); return; }
+  if (G.game.b.toPlay !== G.ai) return;
+  phase = 'think'; updateBar(); showTools();
+  var t0 = now(), mvAt = G.game.moves.length;
+  ask({ type: 'think', opts: G.game.opts(), moves: G.game.moves.slice(), level: G.level }, function (r) {
+    if (!G || phase !== 'think' || G.game.moves.length !== mvAt) return;
+    var wait = Math.max(0, 450 - (now() - t0));
+    setTimeout(function () {
+      if (!G || phase !== 'think' || G.game.moves.length !== mvAt) return;
+      phase = 'play';
+      if (r.own) G.own = r.own;
+      var wrB = G.ai === BLACK ? r.wr : 1 - r.wr;
+      if (r.sims) { G.wr[mvAt] = G.wr[mvAt] != null ? G.wr[mvAt] : wrB; G.wr[mvAt + 1] = wrB; }
+      else G.wr[mvAt + 1] = G.wr[mvAt] != null ? G.wr[mvAt] : 0.5;
+      G.lastThink = { ms: r.ms, sims: r.sims };
+      if (r.sims && r.wr < 0.05 && G.game.moves.length > 20) G.low++; else G.low = 0;
+      if (G.low >= 3) { finish({ type: 'resign', loser: G.ai }); return; }
+      playMove(r.move, true);
+    }, wait);
+  });
+}
+function evalPos() {
+  var mvAt = G.game.moves.length;
+  ask({ type: 'think', opts: G.game.opts(), moves: G.game.moves.slice(), level: 2, limits: { sims: 1500, time: 500, nobook: 1 } }, function (r) {
+    if (!G || G.game.moves.length !== mvAt || !r.own) return;
+    G.own = r.own;
+    var me = G.game.b.toPlay; G.wr[mvAt] = me === BLACK ? r.wr : 1 - r.wr;
+    updateBar(); draw(true);
+  });
+}
+function humanTap(pt, mouse) {
+  if (!G) return;
+  if (phase === 'scoring') { toggleDead(pt); return; }
+  if (phase === 'think') { toast('電腦思考中…', 800); return; }
+  if (phase !== 'play' || !isHumanTurn()) return;
+  var why = G.game.check(pt);
+  if (why === 'occupied') { preview = 0; draw(true); return; }
+  if (why) {
+    shake = { p: pt, t: now() }; SFX.bad(); buzz([12, 40, 12]); preview = 0;
+    toast(why === 'suicide' ? '禁著：這一手下去自己沒有氣，又提不到對方' : why === 'ko' ? '劫：不能立刻提回，先到別處下一手（找劫材）' : '劫（超級劫）：這手會重現之前的盤面', 2000);
+    draw(true); return;
+  }
+  if (!mouse && S.confirm && preview !== pt) { preview = pt; SFX.tick(); draw(true); return; }
+  preview = 0;
+  playMove(pt, false);
+}
+function doPass() {
+  if (!G || phase !== 'play' || !isHumanTurn()) return;
+  preview = 0; playMove(0, false);
+}
+function undo() {
+  if (!G) return;
+  if (phase === 'over' || phase === 'review' || phase === 'menu') return;
+  var mv = G.game.moves, cut = mv.length;
+  if (G.mode === 'pvp') cut = mv.length - 1;
+  else {
+    var human = 3 - G.ai, i;
+    for (i = mv.length - 1; i >= 0; i--) if (moveColor(i) === human) break;
+    cut = i;
+  }
+  if (cut < 0) { toast('還沒有可以悔的棋', 1000); return; }
+  cancelAll(); GO.resetTree();
+  G.game = GO.Game.replay(G.game.opts(), mv.slice(0, cut));
+  G.wr.length = Math.min(G.wr.length, cut + 1); G.low = 0; G.hint = null; G.dead = null; preview = 0;
+  phase = 'play'; computeKo(); updateBar(); showTools(); save(); draw(true); SFX.tick();
+  toast('悔棋', 700);
+  maybeAI();
+}
+function hint() {
+  if (!G || phase !== 'play' || !isHumanTurn()) return;
+  var mvAt = G.game.moves.length;
+  phase = 'think'; G.hintBusy = true; updateBar(); showTools(); toast('思考提示中…', 1300);
+  var cfg = Object.assign({}, GO.LEVELS[3], { time: 1500, mistake: 0, random: 0, reuse: false });
+  ask({ type: 'think', opts: G.game.opts(), moves: G.game.moves.slice(), level: cfg, limits: { time: 1500, nobook: 1 } }, function (r) {
+    if (!G || G.game.moves.length !== mvAt) return;
+    phase = 'play'; G.hintBusy = false;
+    if (r.own) G.own = r.own;
+    G.hint = (r.top || []).filter(function (t) { return t.m; }).slice(0, 3);
+    var me = G.game.b.toPlay;
+    if (G.hint.length) G.wr[mvAt] = me === BLACK ? G.hint[0].wr : 1 - G.hint[0].wr;
+    if (!G.hint.length || r.pass) toast('建議：停一手（盤面已定）', 1600);
+    updateBar(); showTools(); draw(true);
+  });
+}
+function resign() {
+  if (!G || (phase !== 'play' && phase !== 'think')) return;
+  var who = G.mode === 'pvp' ? G.game.b.toPlay : 3 - G.ai;
+  $('cfTitle').textContent = G.mode === 'pvp' ? colorName(who) + '方要認輸嗎？' : '要認輸嗎？';
+  $('cfText').textContent = G.mode === 'pvp' ? '對局將判' + colorName(3 - who) + '方中盤勝。' : '這局將記為落敗。';
+  show('confirm');
+  $('cfYes').onclick = function () { hide('confirm'); cancelAll(); finish({ type: 'resign', loser: who }); };
+}
+
+/* ================= scoring ================= */
+function enterScoring() {
+  if (!G) return;
+  phase = 'scoring'; G.dead = null; preview = 0; G.hint = null;
+  showTools(); $('scLive').textContent = '判定死活中…'; updateBar(); draw(true); save();
+  var mvAt = G.game.moves.length;
+  ask({ type: 'own', opts: G.game.opts(), moves: G.game.moves.slice(), n: 2000 }, function (r) {
+    if (!G || phase !== 'scoring' || G.game.moves.length !== mvAt) return;
+    G.dead = {}; r.dead.forEach(function (p) { G.dead[p] = 1; });
+    G.own = r.own;
+    updateScoreLive(); draw(true);
+    if (r.dead.length) toast('已自動標示 ' + r.dead.length + ' 顆死子，點棋子可修正', 1800);
+  });
+}
+function deadList() { var a = []; for (var k in G.dead) if (G.dead[k]) a.push(+k); return a; }
+function updateScoreLive() {
+  if (!G.dead) return;
+  var r = GO.finalScore(G.game, deadList());
+  G.score = r;
+  var k = r.komi ? '（含貼 ' + r.komi + '）' : '';
+  $('scLive').textContent = '黑 ' + fmt(r.B) + ' ： 白 ' + fmt(r.W);
+  $('scHint').textContent = (r.winner === BLACK ? '黑' : '白') + '領先 ' + fmt(Math.abs(r.diff)) + (r.rules === 'jp' ? ' 目' : ' 子') + k;
+}
+function fmt(x) { return (Math.round(x * 10) / 10).toString(); }
+function toggleDead(pt) {
+  if (!G.dead) return;
+  var b = G.game.b;
+  if (b.c[pt] !== BLACK && b.c[pt] !== WHITE) return;
+  var st = b.stones(b.g[pt]), nv = G.dead[pt] ? 0 : 1;
+  st.forEach(function (p) { G.dead[p] = nv; });
+  SFX.tick(); buzz(8); updateScoreLive(); draw(true);
+}
+function resumePlay() {
+  if (phase !== 'scoring') return;
+  cancelAll(); phase = 'play'; G.dead = null; G.game.b.passes = 0; showTools(); updateBar(); draw(true); save();
+  toast('繼續對局：輪到' + colorName(G.game.b.toPlay) + '方', 1200); maybeAI();
+}
+
+/* ================= finish, stats, achievements ================= */
+function unlock(id) {
+  if (ACH[id]) return;
+  ACH[id] = Date.now(); LS.set('ach', ACH);
+  G && (G.newAch = (G.newAch || []).concat(id));
+  var a = ACHS.filter(function (x) { return x.id === id; })[0];
+  if (a) setTimeout(function () { toast('★ 解鎖成就：' + a.n, 1800); }, 400);
+}
+function finish(res) {
+  cancelAll();
+  var game = G.game;
+  if (res.type === 'score') { res.sc = GO.finalScore(game, deadList()); res.winner = res.sc.winner; res.dead = Object.assign({}, G.dead); }
+  else if (res.type === 'resign') res.winner = 3 - res.loser;
+  else res.winner = 0;
+  G.result = res; phase = 'over';
+  var human = G.mode === 'ai' ? 3 - G.ai : 0, won = human && res.winner === human;
+  if (G.mode === 'ai') {
+    var s = ST.lv[G.level]; s.p++; if (won) s.w++;
+    if (res.sc) { s.m += human === BLACK ? res.sc.diff : -res.sc.diff; s.mc++; }
+    if (G.daily) ST.daily[G.daily] = won ? 'win' : (ST.daily[G.daily] || 'lose');
+    if (won) {
+      unlock('first');
+      if (G.level === 4) unlock('beat5');
+      if (!game.handicap && G.level >= 2) unlock('even');
+      if (G.daily) unlock('daily');
+      if (game.size === 13) unlock('big');
+    }
+  } else ST.pvp++;
+  LS.set('stats', ST); LS.del('game');
+  showTools(); updateBar(); draw(true);
+  if (won || G.mode === 'pvp') { SFX.win(); leaves(won ? 46 : 30); buzz([20, 60, 30]); } else if (res.winner) SFX.lose(); else SFX.pass();
+  setTimeout(showResult, won ? 1100 : 700);
+}
+function resultTexts() {
+  var r = G.result, human = G.mode === 'ai' ? 3 - G.ai : 0, t, sub;
+  if (r.type === 'noresult') return ['無勝負', '三劫循環（日本規則）'];
+  var wn = colorName(r.winner), margin = r.sc ? fmt(Math.abs(r.sc.diff)) + (r.sc.rules === 'jp' ? ' 目' : ' 子') : '';
+  if (human) t = r.winner === human ? '你贏了！' : '電腦獲勝';
+  else t = wn + '方勝';
+  if (r.type === 'resign') sub = (G.mode === 'ai' ? (r.loser === G.ai ? '電腦認輸・' : '你認輸・') : colorName(r.loser) + '方認輸・') + wn + '中盤勝';
+  else sub = wn + '勝 ' + margin + '・' + (r.sc.rules === 'jp' ? '日本規則數目' : '中國規則數子');
+  return [t, sub];
+}
+function showResult() {
+  if (!G || !G.result) return;
+  var r = G.result, tx = resultTexts();
+  $('rTitle').textContent = tx[0]; $('rSub').textContent = tx[1];
+  $('rTitle').style.color = (G.mode === 'ai' && r.winner === 3 - G.ai) ? 'var(--accent)' : '';
+  var h = '';
+  if (r.sc) {
+    var s = r.sc;
+    h = '<tr><th></th><th>● 黑</th><th>○ 白</th></tr>';
+    if (s.rules === 'jp') h += row('圍地', s.terrB, s.terrW) + row('提子', s.capsB, s.capsW) + row('死子', s.deadW, s.deadB) + row('貼目', '—', s.komi);
+    else h += row('活子', s.stonesB, s.stonesW) + row('圍地', s.terrB, s.terrW) + row('貼目', '—', s.komi);
+    h += '<tr class="tot"><td>合計</td><td>' + fmt(s.B) + '</td><td>' + fmt(s.W) + '</td></tr>';
+  } else {
+    h = '<tr><td>手數</td><td colspan="2">' + G.game.moves.length + ' 手</td></tr><tr><td>提子</td><td>● ' + G.game.b.caps[1] + '</td><td>○ ' + G.game.b.caps[2] + '</td></tr>';
+  }
+  if (G.mode === 'ai') h += '<tr><td>對手</td><td colspan="2">電腦 ' + LVN[G.level] + (G.game.handicap ? '・讓 ' + G.game.handicap + ' 子' : '') + (G.daily ? '・每日挑戰' : '') + '</td></tr>';
+  $('rTable').innerHTML = h;
+  var a = (G.newAch || []).map(function (id) { var x = ACHS.filter(function (y) { return y.id === id; })[0]; return '<span class="chip">★ ' + x.n + '</span>'; }).join('');
+  $('rAch').innerHTML = a;
+  show('result');
+  drawChart();
+  function row(n, a, b) { return '<tr><td>' + n + '</td><td>' + a + '</td><td>' + b + '</td></tr>'; }
+}
+function drawChart(cv, upto) {
+  cv = cv || $('wrChart');
+  var dpr = Math.min(2, window.devicePixelRatio || 1), w = cv.clientWidth || 300, h = cv.clientHeight || 110;
+  cv.width = w * dpr; cv.height = h * dpr;
+  var c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  var pts = [], n = G.game.moves.length, dark = isDark();
+  for (var i = 0; i <= n; i++) if (G.wr[i] != null) pts.push([i, G.wr[i]]);
+  c.clearRect(0, 0, w, h);
+  var L = 30, R = 8, T = 16, Bm = 18, X = function (i) { return L + (w - L - R) * (n ? i / n : 0); }, Y = function (v) { return T + (h - T - Bm) * (1 - v); };
+  c.font = '11px system-ui,sans-serif'; c.fillStyle = dark ? '#a99f8f' : '#6c6252';
+  c.fillText('黑勝率', 4, 12); c.textAlign = 'right'; c.fillText('第 ' + n + ' 手', w - R, h - 4); c.textAlign = 'left';
+  c.strokeStyle = dark ? 'rgba(255,236,210,.15)' : 'rgba(90,70,40,.18)'; c.lineWidth = 1; c.setLineDash([3, 3]);
+  c.beginPath(); c.moveTo(L, Y(0.5)); c.lineTo(w - R, Y(0.5)); c.stroke(); c.setLineDash([]);
+  c.fillText('50%', 2, Y(0.5) + 4);
+  if (pts.length < 2) return;
+  c.beginPath(); c.moveTo(X(pts[0][0]), Y(0.5));
+  pts.forEach(function (p) { c.lineTo(X(p[0]), Y(p[1])); }); c.lineTo(X(pts[pts.length - 1][0]), Y(0.5)); c.closePath();
+  c.fillStyle = dark ? 'rgba(236,229,216,.12)' : 'rgba(40,30,20,.12)'; c.fill();
+  c.beginPath(); pts.forEach(function (p, k) { k ? c.lineTo(X(p[0]), Y(p[1])) : c.moveTo(X(p[0]), Y(p[1])); });
+  c.strokeStyle = dark ? '#ece5d8' : '#2a251f'; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
+  if (upto != null) { c.strokeStyle = '#c2462b'; c.lineWidth = 2; c.beginPath(); c.moveTo(X(upto), T); c.lineTo(X(upto), h - Bm); c.stroke(); }
+}
+
+/* ================= review ================= */
+var RV = null;
+function startReview() {
+  if (!G) return;
+  hide('result'); phase = 'review';
+  var n = G.game.moves.length; RV = { k: n, full: G.game };
+  $('rvSlider').max = n; $('rvSlider').value = n;
+  showTools(); reviewTo(n);
+}
+function reviewTo(k) {
+  k = Math.max(0, Math.min(RV.full.moves.length, k)); RV.k = k; $('rvSlider').value = k;
+  G.view = GO.Game.replay(RV.full.opts(), RV.full.moves.slice(0, k));
+  computeKo(); updateBar(); draw(true);
+}
+function endReview() { G.view = null; phase = 'over'; RV = null; computeKo(); showTools(); updateBar(); draw(true); }
+
+/* ================= HUD ================= */
+function curGame() { return G && G.view ? G.view : G && G.game; }
+function updateBar() {
+  if (!G) return;
+  var g = curGame(), b = g.b, tp = b.toPlay;
+  $('capB').textContent = b.caps[1]; $('capW').textContent = b.caps[2];
+  $('mvNo').textContent = phase === 'review' ? '覆盤 ' + g.moves.length : phase === 'scoring' ? '終局判定' : phase === 'over' ? '對局結束' : '第 ' + (g.moves.length + 1) + ' 手';
+  $('komiTxt').textContent = '貼 ' + g.komi + (g.handicap ? '・讓' + g.handicap : '');
+  $('ruleTxt').textContent = (g.rules === 'jp' ? '日本' : '中國') + '・' + g.size + '路';
+  var thinking = phase === 'think' && !G.hintBusy;
+  if (G.mode === 'pvp') { $('nmB').textContent = '黑方'; $('nmW').textContent = '白方'; $('sbB').textContent = '同機雙人'; $('sbW').textContent = '同機雙人'; }
+  else {
+    $('nmB').textContent = G.ai === BLACK ? '電腦' : '你'; $('nmW').textContent = G.ai === WHITE ? '電腦' : '你';
+    var lv = LVN[G.level] + (G.daily ? '・每日' : '');
+    var think = '<span class="dots"><i></i><i></i><i></i></span> 思考中';
+    $('sbB').innerHTML = G.ai === BLACK ? (thinking ? think : lv) : '執黑';
+    $('sbW').innerHTML = G.ai === WHITE ? (thinking ? think : lv) : '執白';
+  }
+  var live = phase === 'play' || phase === 'think';
+  $('plB').classList.toggle('on', live && tp === BLACK); $('plW').classList.toggle('on', live && tp === WHITE);
+  var wr = G.wr[Math.min(g.moves.length, G.wr.length - 1)];
+  for (var i = g.moves.length; i >= 0 && wr == null; i--) wr = G.wr[i];
+  if (wr == null) wr = 0.5;
+  $('wrRow').hidden = !S.showWr;
+  $('wrFill').style.width = (wr * 100).toFixed(1) + '%';
+  $('wrB').textContent = '黑 ' + Math.round(wr * 100) + '%'; $('wrW').textContent = '白 ' + Math.round((1 - wr) * 100) + '%';
+}
+function showTools() {
+  var p = phase;
+  $('tPlay').hidden = !(p === 'play' || p === 'think' || p === 'idle'); $('tScore').hidden = p !== 'scoring'; $('tOver').hidden = p !== 'over'; $('tReview').hidden = p !== 'review';
+  var hum = G && isHumanTurn() && p === 'play';
+  $('bPass').disabled = !hum; $('bHint').disabled = !hum; $('bUndo').disabled = !G || !G.game.moves.length || p === 'think' && G.hintBusy;
+  $('bResign').disabled = !(p === 'play' || (p === 'think' && !G.hintBusy));
+  if (p === 'idle') { $('bUndo').disabled = true; $('bResign').disabled = true; }
+  if (p === 'scoring') updateScoreLive();
+}
+var toastT = 0;
+function toast(msg, ms) {
+  var t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); }, ms || 1200);
+}
+function show(id) { $(id).hidden = false; }
+function hide(id) { $(id).hidden = true; }
+function hideAll() { ['menu', 'result', 'stats', 'sgf', 'help', 'confirm'].forEach(hide); }
+
+/* ================= rendering ================= */
+var cv = $('cv'), ctx = cv.getContext('2d'), DPR = 1, BW = 300, cell = 30, pad = 24, boardCache = null, sprites = null;
+var preview = 0, hover = 0, shake = null, anims = [], dirty = true;
+function now() { return performance.now(); }
+function isDark() {
+  var t = document.documentElement.getAttribute('data-theme');
+  if (t) return t === 'dark';
+  return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function resetBoardGeometry() { boardCache = null; sprites = null; layout(); }
+function layout() {
+  var m = $('main'), w = m.clientWidth, h = m.clientHeight;
+  var sz = Math.floor(Math.max(120, Math.min(w, h)));
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  if (sz !== BW || cv.width !== Math.round(sz * DPR)) {
+    BW = sz; cv.style.width = sz + 'px'; cv.style.height = sz + 'px'; cv.width = Math.round(sz * DPR); cv.height = Math.round(sz * DPR);
+    boardCache = null; sprites = null;
+  }
+  var n = G ? G.game.size : 9;
+  cell = BW / (n - 1 + 2.1); pad = cell * 1.05;
+  dirty = true;
+}
+function PX(i) { return pad + i * cell; }
+function rng(s) { return function () { s = (s * 16807) % 2147483647; return s / 2147483647; }; }
+function buildBoard() {
+  var n = G.game.size, W = cv.width, c = document.createElement('canvas'); c.width = W; c.height = W;
+  var x = c.getContext('2d'), dark = isDark(), r = rng(7);
+  x.scale(DPR, DPR);
+  var g = x.createLinearGradient(0, 0, BW, BW);
+  if (dark) { g.addColorStop(0, '#a27a49'); g.addColorStop(1, '#8a6436'); } else { g.addColorStop(0, '#e2bd84'); g.addColorStop(0.5, '#dcb57a'); g.addColorStop(1, '#d2a96c'); }
+  x.fillStyle = g; x.fillRect(0, 0, BW, BW);
+  /* fine wood grain */
+  for (var i = 0; i < 70; i++) {
+    var y0 = r() * BW * 1.2 - BW * 0.1, amp = 2 + r() * 6, fr = 0.004 + r() * 0.01, ph = r() * 6;
+    x.strokeStyle = dark ? 'rgba(40,22,5,' + (0.05 + r() * 0.1) + ')' : 'rgba(120,75,25,' + (0.04 + r() * 0.08) + ')';
+    x.lineWidth = 0.5 + r() * 1.4; x.beginPath();
+    for (var xx = 0; xx <= BW; xx += 6) { var yy = y0 + Math.sin(xx * fr + ph) * amp + Math.sin(xx * 0.05 + ph) * 0.8; xx ? x.lineTo(xx, yy) : x.moveTo(xx, yy); }
+    x.stroke();
+  }
+  var vg = x.createRadialGradient(BW / 2, BW / 2, BW * 0.3, BW / 2, BW / 2, BW * 0.75);
+  vg.addColorStop(0, 'rgba(255,240,210,0.06)'); vg.addColorStop(1, 'rgba(60,30,0,0.16)');
+  x.fillStyle = vg; x.fillRect(0, 0, BW, BW);
+  /* ink grid */
+  var ink = dark ? 'rgba(25,14,4,.85)' : 'rgba(40,25,10,.82)';
+  x.strokeStyle = ink; x.lineWidth = Math.max(1, cell / 36);
+  x.beginPath();
+  for (i = 0; i < n; i++) { x.moveTo(PX(0), PX(i)); x.lineTo(PX(n - 1), PX(i)); x.moveTo(PX(i), PX(0)); x.lineTo(PX(i), PX(n - 1)); }
+  x.stroke();
+  x.lineWidth = Math.max(1.6, cell / 20); x.strokeRect(PX(0), PX(0), PX(n - 1) - PX(0), PX(n - 1) - PX(0));
+  x.fillStyle = ink;
+  GO.STAR[n].forEach(function (s) { x.beginPath(); x.arc(PX(s[0]), PX(s[1]), Math.max(2.5, cell * 0.09), 0, 7); x.fill(); });
+  /* coordinates */
+  var fs = Math.max(11, Math.min(13, cell * 0.3));
+  x.font = '600 ' + fs + 'px system-ui,sans-serif'; x.fillStyle = dark ? 'rgba(30,16,4,.7)' : 'rgba(60,38,15,.62)'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  var L = 'ABCDEFGHJKLMN', off = pad * 0.36;
+  for (i = 0; i < n; i++) {
+    x.fillText(L[i], PX(i), off); x.fillText(L[i], PX(i), BW - off);
+    x.fillText(String(n - i), off, PX(i)); x.fillText(String(n - i), BW - off, PX(i));
+  }
+  boardCache = c;
+}
+function buildSprites() {
+  var R = cell * 0.48, sz = Math.ceil(R * 2 * DPR + 6), mk = function () { var c = document.createElement('canvas'); c.width = sz; c.height = sz; var x = c.getContext('2d'); x.translate(sz / 2, sz / 2); x.scale(DPR, DPR); return [c, x]; };
+  var out = { R: R, sz: sz, w: [] };
+  /* black slate: matte with a soft highlight */
+  var a = mk(), x = a[1], g = x.createRadialGradient(-R * 0.35, -R * 0.4, R * 0.05, 0, 0, R);
+  g.addColorStop(0, '#6a6a6a'); g.addColorStop(0.35, '#2c2c2c'); g.addColorStop(1, '#070707');
+  x.fillStyle = g; x.beginPath(); x.arc(0, 0, R, 0, 7); x.fill();
+  x.globalAlpha = 0.18; x.fillStyle = '#fff'; x.beginPath(); x.ellipse(-R * 0.3, -R * 0.42, R * 0.32, R * 0.18, -0.5, 0, 7); x.fill();
+  out.b = a[0];
+  /* white clam shell with faint growth stripes, 4 variants */
+  for (var v = 0; v < 4; v++) {
+    a = mk(); x = a[1];
+    g = x.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.1, 0, 0, R);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.6, '#f1eee6'); g.addColorStop(1, '#cdc7bb');
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, R, 0, 7); x.fill();
+    x.save(); x.clip(); x.rotate(v * 1.3 + 0.4);
+    x.strokeStyle = 'rgba(170,160,140,.22)'; x.lineWidth = Math.max(0.6, R * 0.035);
+    for (var k = -6; k <= 6; k++) { x.beginPath(); x.arc(0, R * 2.2, R * 2.2 + k * R * 0.17, Math.PI * 1.25, Math.PI * 1.75); x.stroke(); }
+    x.restore();
+    x.strokeStyle = 'rgba(120,110,95,.35)'; x.lineWidth = 0.8; x.beginPath(); x.arc(0, 0, R - 0.4, 0, 7); x.stroke();
+    out.w.push(a[0]);
+  }
+  /* shadow */
+  a = mk(); x = a[1]; g = x.createRadialGradient(0, 0, R * 0.6, 0, 0, R * 1.1);
+  g.addColorStop(0, 'rgba(30,15,0,.42)'); g.addColorStop(1, 'rgba(30,15,0,0)'); x.fillStyle = g; x.beginPath(); x.arc(0, 0, R * 1.1, 0, 7); x.fill();
+  out.sh = a[0];
+  sprites = out;
+}
+function stoneAt(x, y, col, p, scale, alpha) {
+  var s = sprites, sz = s.sz / DPR * (scale || 1);
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  if (alpha == null || alpha > 0.6) ctx.drawImage(s.sh, x - sz / 2 + cell * 0.05, y - sz / 2 + cell * 0.08, sz, sz);
+  ctx.drawImage(col === BLACK ? s.b : s.w[p % 4], x - sz / 2, y - sz / 2, sz, sz);
+  ctx.globalAlpha = 1;
+}
+function ptXY(p) { var b = G.game.b; return [PX(p % b.W - 1), PX(((p / b.W) | 0) - 1)]; }
+function draw(force) { if (force) dirty = true; }
+function render(t) {
+  if (!G) { return; }
+  if (!boardCache) buildBoard();
+  if (!sprites) buildSprites();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(boardCache, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  var g = curGame(), b = g.b, n = g.size, i, p, xy, R = sprites.R, dark = isDark();
+  var showDead = phase === 'scoring' && G.dead, over = phase === 'over' && G.result && G.result.sc;
+  /* territory overlay */
+  var owner = null;
+  if (showDead) owner = GO.finalScore(g, deadList()).owner;
+  else if (over) owner = G.result.sc.owner;
+  if (owner) {
+    for (i = 0; i < b.pts.length; i++) {
+      p = b.pts[i]; var o = owner[p];
+      if (!o || (b.c[p] && !(showDead ? G.dead[p] : isDeadFinal(p)))) continue;
+      xy = ptXY(p); var q = cell * 0.36;
+      ctx.fillStyle = o === BLACK ? 'rgba(25,22,20,.72)' : 'rgba(255,253,248,.9)';
+      ctx.fillRect(xy[0] - q / 2, xy[1] - q / 2, q, q);
+      if (o === WHITE) { ctx.strokeStyle = 'rgba(80,60,40,.35)'; ctx.lineWidth = 1; ctx.strokeRect(xy[0] - q / 2, xy[1] - q / 2, q, q); }
+    }
+  } else if (S.showTerr && G.own && (phase === 'play' || phase === 'think')) {
+    for (i = 0; i < b.pts.length; i++) {
+      p = b.pts[i]; if (b.c[p]) continue;
+      var v = G.own.fB[p] - G.own.fW[p]; if (Math.abs(v) < 0.35) continue;
+      xy = ptXY(p); var q2 = cell * 0.3 * Math.min(1, Math.abs(v) + 0.1);
+      ctx.fillStyle = v > 0 ? 'rgba(25,22,20,' + (Math.abs(v) * 0.45) + ')' : 'rgba(255,253,248,' + (Math.abs(v) * 0.7) + ')';
+      ctx.fillRect(xy[0] - q2 / 2, xy[1] - q2 / 2, q2, q2);
+    }
+  }
+  /* stones */
+  var dropA = {}, capA = [];
+  anims.forEach(function (a) { if (a.k === 'drop') dropA[a.p] = a; });
+  for (i = 0; i < b.pts.length; i++) {
+    p = b.pts[i]; var c = b.c[p]; if (c !== BLACK && c !== WHITE) continue;
+    xy = ptXY(p);
+    var dead = showDead ? G.dead[p] : over ? isDeadFinal(p) : 0;
+    var sc = 1, da = dropA[p];
+    if (da && !G.view) { var k = Math.min(1, (t - da.t) / da.d); sc = 1.22 - 0.22 * (1 - Math.pow(1 - k, 3)); }
+    stoneAt(xy[0], xy[1], c, p, sc, dead ? 0.42 : null);
+    if (dead) {
+      ctx.strokeStyle = c === BLACK ? '#e8e2d6' : '#2a2420'; ctx.lineWidth = Math.max(2, cell * 0.07); var e = R * 0.42;
+      ctx.beginPath(); ctx.moveTo(xy[0] - e, xy[1] - e); ctx.lineTo(xy[0] + e, xy[1] + e); ctx.moveTo(xy[0] + e, xy[1] - e); ctx.lineTo(xy[0] - e, xy[1] + e); ctx.stroke();
+    }
+  }
+  /* last move marker */
+  var lm = g.moves.length ? g.moves[g.moves.length - 1] : 0;
+  if (lm && b.c[lm]) {
+    xy = ptXY(lm); var tr = R * 0.42;
+    ctx.fillStyle = b.c[lm] === BLACK ? '#f3ede2' : '#c2462b';
+    ctx.beginPath(); ctx.moveTo(xy[0], xy[1] - tr); ctx.lineTo(xy[0] + tr * 0.9, xy[1] + tr * 0.6); ctx.lineTo(xy[0] - tr * 0.9, xy[1] + tr * 0.6); ctx.closePath(); ctx.fill();
+  }
+  /* ko marks */
+  if (G.ko && (phase === 'play' || phase === 'think')) {
+    ctx.font = '700 ' + Math.max(11, cell * 0.42) + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    G.ko.forEach(function (p) { xy = ptXY(p); ctx.fillStyle = 'rgba(194,70,43,.16)'; ctx.beginPath(); ctx.arc(xy[0], xy[1], R * 0.75, 0, 7); ctx.fill(); ctx.fillStyle = '#b23a20'; ctx.fillText('劫', xy[0], xy[1] + 1); });
+  }
+  /* hints */
+  if (G.hint && phase === 'play') {
+    G.hint.forEach(function (h, k) {
+      xy = ptXY(h.m); var pulse = k === 0 ? 1 + Math.sin(t / 200) * 0.06 : 1;
+      ctx.fillStyle = k === 0 ? 'rgba(194,70,43,.88)' : 'rgba(60,90,120,.72)';
+      ctx.beginPath(); ctx.arc(xy[0], xy[1], R * 0.86 * pulse, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '700 ' + Math.max(11, cell * 0.3) + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(h.wr * 100) + '%', xy[0], xy[1] + 1);
+    });
+  }
+  /* preview / hover ghost */
+  var gp = preview || hover;
+  if (gp && (phase === 'play') && isHumanTurn() && !b.c[gp]) {
+    xy = ptXY(gp);
+    stoneAt(xy[0], xy[1], b.toPlay, gp, 1, preview ? 0.6 : 0.4);
+    if (preview) {
+      ctx.strokeStyle = 'rgba(194,70,43,' + (0.6 + 0.3 * Math.sin(t / 160)) + ')'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(xy[0], xy[1], R + 3 + Math.sin(t / 160) * 1.5, 0, 7); ctx.stroke();
+    }
+  }
+  /* illegal shake */
+  if (shake) {
+    var st = (t - shake.t) / 450;
+    if (st >= 1) shake = null;
+    else { xy = ptXY(shake.p); var dx = Math.sin(st * 40) * 5 * (1 - st); stoneAt(xy[0] + dx, xy[1], b.toPlay, shake.p, 1, 0.5 * (1 - st)); ctx.strokeStyle = 'rgba(200,40,20,' + (1 - st) + ')'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(xy[0] + dx, xy[1], R + 2, 0, 7); ctx.stroke(); }
+  }
+  /* animations: captures float away, atari flashes, sparks */
+  anims = anims.filter(function (a) {
+    var k = (t - a.t) / a.d; if (k >= 1) return false; if (k < 0) { if (a.k === 'cap') a.ps.forEach(function (p) { var q = ptXY(p); stoneAt(q[0], q[1], a.col, p, 1, 1); }); return true; }
+    if (a.k === 'cap') a.ps.forEach(function (p, j) { var q = ptXY(p); stoneAt(q[0], q[1] - k * cell * 0.9, a.col, p, 1 - k * 0.25, Math.max(0, 1 - k * 1.2)); });
+    else if (a.k === 'atari') {
+      ctx.strokeStyle = 'rgba(232,90,50,' + (Math.sin(k * Math.PI * 3) * 0.5 + 0.5) * (1 - k) + ')'; ctx.lineWidth = 3;
+      a.ps.forEach(function (p) { var q = ptXY(p); ctx.beginPath(); ctx.arc(q[0], q[1], R + 3, 0, 7); ctx.stroke(); });
+    } else if (a.k === 'spark') {
+      a.parts.forEach(function (s) { var px = s.x + s.vx * k * 40, py = s.y + s.vy * k * 40 + k * k * 18; ctx.fillStyle = 'rgba(' + s.c + ',' + (1 - k) + ')'; ctx.beginPath(); ctx.arc(px, py, s.r * (1 - k * 0.5), 0, 7); ctx.fill(); });
+    }
+    return true;
+  });
+}
+function isDeadFinal(p) { return G.result && G.result.dead && G.result.dead[p]; }
+function spark(pt, n) {
+  var xy = ptXY(pt), parts = [];
+  for (var i = 0; i < 10 + Math.min(n, 10) * 3; i++) { var a = Math.random() * 6.28, v = 0.5 + Math.random(); parts.push({ x: xy[0], y: xy[1], vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.4, r: 1.5 + Math.random() * 2.2, c: Math.random() < 0.5 ? '235,200,140' : '210,90,50' }); }
+  anims.push({ k: 'spark', parts: parts, t: now(), d: 600 });
+}
+function computeKo() {
+  if (!G) return;
+  var g = curGame(), b = g.b, out = [];
+  if (b.ko && g === G.game) out.push(b.ko);
+  if (g === G.game && g.rules !== 'jp' && g.moves.length) {
+    for (var i = 0; i < b.pts.length; i++) { var p = b.pts[i]; if (p !== b.ko && !b.c[p] && b.legal(p, b.toPlay) && g.check(p) === 'superko') out.push(p); }
+  }
+  G.ko = out;
+}
+
+/* ================= background: raked sand, stone, maple branch ================= */
+var bg = $('bg'), bgx = bg.getContext('2d'), fx = $('fx'), fxx = fx.getContext('2d'), leavesA = [];
+function leafPath(x, s) {
+  x.beginPath();
+  for (var i = 0; i <= 150; i++) {
+    var t = i / 150 * Math.PI * 2, u = t * 5 / (Math.PI * 2), f = 1 - 2 * Math.abs(u - Math.round(u));
+    var r = s * (0.32 + 0.68 * Math.pow(f, 0.65) + 0.035 * Math.sin(t * 45) * f) * (0.74 + 0.26 * Math.cos(t));
+    var px = Math.sin(t) * r, py = -Math.cos(t) * r;
+    i ? x.lineTo(px, py) : x.moveTo(px, py);
+  }
+  x.closePath();
+}
+function drawLeaf(x, px, py, s, rot, col) {
+  x.save(); x.translate(px, py); x.rotate(rot);
+  leafPath(x, s); x.fillStyle = col; x.fill();
+  x.strokeStyle = 'rgba(90,20,10,.35)'; x.lineWidth = Math.max(0.6, s * 0.05); x.beginPath();
+  for (var k = 0; k < 5; k++) { var a = k * Math.PI * 2 / 5; x.moveTo(0, s * 0.15); x.lineTo(Math.sin(a) * s * 0.75, -Math.cos(a) * s * 0.75 + s * 0.1); }
+  x.moveTo(0, s * 0.15); x.lineTo(0, s * 0.75); x.stroke();
+  x.restore();
+}
+function drawBg() {
+  var w = innerWidth, h = innerHeight, d = Math.min(2, devicePixelRatio || 1), dark = isDark();
+  bg.width = w * d; bg.height = h * d; bgx.setTransform(d, 0, 0, d, 0, 0);
+  bgx.fillStyle = dark ? '#181715' : '#efe8da'; bgx.fillRect(0, 0, w, h);
+  var cx = w * 0.12, cy = h * 0.9, R0 = 34, R = 150;
+  bgx.save(); bgx.beginPath(); bgx.rect(0, 0, w, h); bgx.arc(cx, cy, R, 0, Math.PI * 2, true); bgx.clip();
+  bgx.lineWidth = 1.4;
+  for (var y = 6; y < h + 20; y += 10) {
+    bgx.strokeStyle = dark ? 'rgba(255,236,210,.05)' : 'rgba(140,115,80,.17)';
+    bgx.beginPath(); for (var x = 0; x <= w; x += 12) { var yy = y + Math.sin(x * 0.012 + y * 0.03) * 3; x ? bgx.lineTo(x, yy) : bgx.moveTo(x, yy); } bgx.stroke();
+    bgx.strokeStyle = dark ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.5)';
+    bgx.beginPath(); for (x = 0; x <= w; x += 12) { yy = y + 2 + Math.sin(x * 0.012 + y * 0.03) * 3; x ? bgx.lineTo(x, yy) : bgx.moveTo(x, yy); } bgx.stroke();
+  }
+  bgx.restore();
+  for (var r = R0 + 10; r <= R; r += 10) {
+    bgx.strokeStyle = dark ? 'rgba(255,236,210,.05)' : 'rgba(140,115,80,.17)'; bgx.beginPath(); bgx.arc(cx, cy, r, 0, 7); bgx.stroke();
+    bgx.strokeStyle = dark ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.5)'; bgx.beginPath(); bgx.arc(cx, cy, r + 2, 0, 7); bgx.stroke();
+  }
+  var gr = bgx.createRadialGradient(cx - 10, cy - 14, 4, cx, cy, R0 + 6);
+  gr.addColorStop(0, dark ? '#55524c' : '#8d8a83'); gr.addColorStop(1, dark ? '#24221f' : '#4c4a45');
+  bgx.fillStyle = gr; bgx.beginPath(); bgx.ellipse(cx, cy, R0 + 6, R0 - 4, -0.2, 0, 7); bgx.fill();
+  bgx.fillStyle = dark ? 'rgba(90,120,70,.35)' : 'rgba(95,130,70,.55)'; bgx.beginPath(); bgx.ellipse(cx - 6, cy - 16, 18, 8, -0.3, 0, 7); bgx.fill();
+  /* maple branch from the top-right corner */
+  var bx = w + 6, by = -6;
+  bgx.strokeStyle = dark ? '#4a3626' : '#5d4330'; bgx.lineCap = 'round';
+  bgx.lineWidth = 5; bgx.beginPath(); bgx.moveTo(bx, by + 40); bgx.quadraticCurveTo(w - 90, 40, w - 170, 92); bgx.stroke();
+  bgx.lineWidth = 2.5; bgx.beginPath(); bgx.moveTo(w - 100, 58); bgx.quadraticCurveTo(w - 120, 100, w - 112, 140); bgx.stroke();
+  bgx.lineWidth = 2; bgx.beginPath(); bgx.moveTo(w - 150, 80); bgx.quadraticCurveTo(w - 190, 70, w - 220, 52); bgx.stroke();
+  var L = [[w - 172, 98, 17, 0.4], [w - 222, 50, 15, -0.9], [w - 112, 146, 16, 0.2], [w - 60, 62, 18, 0.9], [w - 140, 44, 13, -0.4], [w - 196, 120, 12, 0.8], [w - 30, 92, 14, 0.3]];
+  var cols = dark ? ['#b5432a', '#c95a2a', '#9e3424', '#c46a2c'] : ['#c7432a', '#de6a2e', '#b23424', '#e08a34'];
+  L.forEach(function (l, i) { bgx.globalAlpha = dark ? 0.8 : 0.92; drawLeaf(bgx, l[0], l[1], l[2], l[3], cols[i % cols.length]); });
+  bgx.globalAlpha = 1;
+}
+function leaves(n) {
+  var w = innerWidth;
+  for (var i = 0; i < n; i++) leavesA.push({ x: Math.random() * w, y: -20 - Math.random() * innerHeight * 0.45, s: 8 + Math.random() * 10, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.08, vy: 0.9 + Math.random() * 1.4, sw: Math.random() * 6, c: ['#c7432a', '#de6a2e', '#b23424', '#e8a23a', '#d4542c'][i % 5] });
+}
+function renderFx(t) {
+  var w = innerWidth, h = innerHeight, d = Math.min(2, devicePixelRatio || 1);
+  if (!leavesA.length) { if (fx.width) { fx.width = 0; fx.height = 0; } return; }
+  if (fx.width !== w * d) { fx.width = w * d; fx.height = h * d; }
+  fxx.setTransform(d, 0, 0, d, 0, 0); fxx.clearRect(0, 0, w, h);
+  var k = Math.min(4, (t - (renderFx.lt || t)) / 16.7) || 1; renderFx.lt = t;
+  leavesA = leavesA.filter(function (l) {
+    l.y += l.vy * k * 1.6; l.sw += 0.03 * k; l.r += l.vr * k; var x = l.x + Math.sin(l.sw) * 26;
+    drawLeaf(fxx, x, l.y, l.s, l.r, l.c);
+    return l.y < h + 30;
+  });
+}
+
+/* ================= main loop ================= */
+var running = true, lastT = 0;
+function frame(t) {
+  if (!running) return;
+  requestAnimationFrame(frame);
+  if (G && (dirty || anims.length || shake || preview || (G.hint && phase === 'play'))) { render(t); dirty = false; }
+  if (leavesA.length || fx.width) renderFx(t);
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) running = false;
+  else if (!running) { running = true; dirty = true; requestAnimationFrame(frame); }
+});
+
+/* ================= input ================= */
+function hitPt(ev) {
+  if (!G) return 0;
+  var r = cv.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top, n = G.game.size;
+  var i = Math.round((x - pad) / cell), j = Math.round((y - pad) / cell);
+  if (i < 0 || j < 0 || i >= n || j >= n) return 0;
+  if (Math.abs(x - PX(i)) > cell * 0.55 || Math.abs(y - PX(j)) > cell * 0.55) return 0;
+  return G.game.b.pt(i, j);
+}
+var downAt = null;
+cv.addEventListener('pointerdown', function (e) { audio(); downAt = { x: e.clientX, y: e.clientY, p: hitPt(e) }; });
+cv.addEventListener('pointerup', function (e) {
+  if (!downAt) return;
+  var p = hitPt(e), d = downAt; downAt = null;
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > cell * 0.8) return;
+  if (!p) { if (preview) { preview = 0; draw(true); } return; }
+  humanTap(p, e.pointerType === 'mouse');
+});
+cv.addEventListener('pointermove', function (e) {
+  if (e.pointerType !== 'mouse') return;
+  var p = hitPt(e); if (p !== hover) { hover = p; draw(true); }
+});
+cv.addEventListener('pointerleave', function () { if (hover) { hover = 0; draw(true); } });
+document.addEventListener('keydown', function (e) {
+  if (e.target.closest && e.target.closest('textarea,input')) return;
+  var k = e.key.toLowerCase();
+  if (phase === 'review') { if (k === 'arrowleft') reviewTo(RV.k - 1); else if (k === 'arrowright') reviewTo(RV.k + 1); else if (k === 'escape') endReview(); return; }
+  if (!$('menu').hidden || !$('result').hidden) { if (k === 'escape') { hide('result'); if (G && !G.idle) hide('menu'); } return; }
+  if (k === 'p') doPass(); else if (k === 'u') undo(); else if (k === 'h') hint(); else if (k === 'n') openMenu();
+});
+
+/* ================= menu & dialogs ================= */
+function segInit(id, key, conv) {
+  var el = $(id);
+  el.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () { S[key] = conv ? conv(b.dataset.v) : b.dataset.v; saveSettings(); syncMenu(); SFX.tick(); });
+  });
+}
+segInit('sgMode', 'mode'); segInit('sgLevel', 'level', Number); segInit('sgColor', 'color'); segInit('sgHcap', 'handicap', Number); segInit('sgRules', 'rules'); segInit('sgSize', 'size', Number);
+function syncMenu() {
+  [['sgMode', 'mode'], ['sgLevel', 'level'], ['sgColor', 'color'], ['sgHcap', 'handicap'], ['sgRules', 'rules'], ['sgSize', 'size']].forEach(function (a) {
+    $(a[0]).querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', String(S[a[1]]) === b.dataset.v); });
+  });
+  $('sgLevel').classList.toggle('dis', S.mode === 'pvp'); $('sgColor').classList.toggle('dis', S.mode === 'pvp');
+  [['swConfirm', 'confirm'], ['swWr', 'showWr'], ['swTerr', 'showTerr'], ['swSound', 'sound']].forEach(function (a) { $(a[0]).setAttribute('aria-checked', S[a[1]] ? 'true' : 'false'); });
+  var dc = dailyCfg();
+  $('dailyTxt').textContent = '今日：對 ' + LVN[dc.level] + '，你執黑讓 ' + dc.handicap + ' 子';
+  var st = ST.daily[dc.key]; $('dailyDone').textContent = st === 'win' ? '✓ 已完成' : st ? '再挑戰' : '';
+  $('bContinue').hidden = !(G && !G.idle && (phase === 'play' || phase === 'think' || phase === 'scoring' || phase === 'over'));
+  $('menuX').hidden = !G || !!G.idle;
+}
+[['swConfirm', 'confirm'], ['swWr', 'showWr'], ['swTerr', 'showTerr'], ['swSound', 'sound']].forEach(function (a) {
+  $(a[0]).addEventListener('click', function () { S[a[1]] = !S[a[1]]; saveSettings(); syncMenu(); updateBar(); draw(true); SFX.tick(); if (a[1] === 'showTerr' && S.showTerr && G && G.mode === 'pvp' && phase === 'play') evalPos(); });
+});
+function openMenu() { syncMenu(); show('menu'); }
+$('bMenu').onclick = openMenu; $('bMenu2').onclick = openMenu; $('rMenu').onclick = function () { hide('result'); openMenu(); };
+$('menuX').onclick = function () { if (G && !G.idle) hide('menu'); };
+$('bContinue').onclick = function () { hide('menu'); };
+$('bStart').onclick = function () { hide('menu'); audio(); newGame({}); };
+$('bDaily').onclick = function () { var dc = dailyCfg(); hide('menu'); audio(); newGame({ mode: 'ai', level: dc.level, handicap: dc.handicap, color: 'black', rules: 'cn', size: 9, daily: dc.key }); };
+$('bPass').onclick = doPass; $('bUndo').onclick = undo; $('bHint').onclick = hint; $('bResign').onclick = resign;
+$('cfNo').onclick = function () { hide('confirm'); };
+$('bResume').onclick = resumePlay;
+$('bConfirm').onclick = function () { if (G && G.dead) finish({ type: 'score' }); };
+$('bShowRes').onclick = showResult; $('bReview').onclick = startReview; $('rReview').onclick = startReview;
+$('bAgain').onclick = $('rAgain').onclick = function () {
+  hide('result'); var g = G.game;
+  if (G.daily) { var dc = dailyCfg(); newGame({ mode: 'ai', level: dc.level, handicap: dc.handicap, color: 'black', rules: 'cn', size: 9, daily: dc.key }); }
+  else newGame({ mode: G.mode, level: G.level, handicap: g.handicap, rules: g.rules, size: g.size, color: G.mode === 'ai' ? (G.ai === WHITE ? 'black' : 'white') : 'black' });
+};
+$('resX').onclick = function () { hide('result'); };
+$('rvPrev').onclick = function () { reviewTo(RV.k - 1); SFX.tick(); };
+$('rvNext').onclick = function () { reviewTo(RV.k + 1); SFX.stone(); };
+$('rvSlider').oninput = function () { reviewTo(+this.value); };
+$('rvExit').onclick = endReview;
+document.querySelectorAll('[data-close]').forEach(function (b) { b.addEventListener('click', function () { hide(b.dataset.close); }); });
+$('bHelp').onclick = function () { show('help'); };
+$('bStats').onclick = function () {
+  var h = '<tr><th>等級</th><th>對局</th><th>勝</th><th>勝率</th><th>平均目差</th></tr>';
+  ST.lv.forEach(function (s, i) { h += '<tr><td>' + LVN[i] + '</td><td>' + s.p + '</td><td>' + s.w + '</td><td>' + (s.p ? Math.round(s.w / s.p * 100) + '%' : '—') + '</td><td>' + (s.mc ? (s.m / s.mc > 0 ? '+' : '') + fmt(s.m / s.mc) : '—') + '</td></tr>'; });
+  $('stTable').innerHTML = h;
+  var dn = Object.keys(ST.daily).filter(function (k) { return ST.daily[k] === 'win'; }).length;
+  $('stMore').textContent = '同機雙人 ' + ST.pvp + ' 局・每日挑戰成功 ' + dn + ' 次（目差以你的角度計，認輸局不計）';
+  $('achGrid').innerHTML = ACHS.map(function (a) { return '<div class="' + (ACH[a.id] ? 'on' : '') + '"><b>' + (ACH[a.id] ? '★ ' : '☆ ') + a.n + '</b><small>' + a.d + '</small></div>'; }).join('');
+  show('stats');
+};
+function openSgf() {
+  var txt = '';
+  if (G) { var r = G.result, re = r ? (r.winner ? colorName(r.winner) === '黑' ? 'B+' : 'W+' : '0') + (r && r.sc ? fmt(Math.abs(r.sc.diff)) : r && r.type === 'resign' ? 'R' : '') : ''; txt = GO.toSGF(G.game, re && r.winner ? re : (r ? 'Void' : '')); }
+  $('sgfText').value = txt; show('sgf');
+}
+$('bSgf').onclick = openSgf; $('rSgf').onclick = function () { hide('result'); openSgf(); };
+$('sgfCopy').onclick = function () {
+  var t = $('sgfText'), v = t.value;
+  var done = function () { toast('已複製棋譜', 1000); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, function () { t.select(); try { document.execCommand('copy'); done(); } catch (e) {} });
+  else { t.select(); try { document.execCommand('copy'); done(); } catch (e) {} }
+};
+$('sgfLoad').onclick = function () {
+  try {
+    var g = GO.fromSGF($('sgfText').value);
+    cancelAll(); GO.resetTree();
+    G = { game: g, mode: 'pvp', ai: 0, level: S.level, daily: null, wr: [0.5], low: 0, dead: null, hint: null, own: null, result: null, bigCap: 0, ko: null };
+    phase = 'play'; hideAll(); resetBoardGeometry(); computeKo(); updateBar(); showTools(); save(); draw(true);
+    toast('已載入 ' + g.moves.length + ' 手（同機雙人）', 1500);
+    if (g.over()) enterScoring(); else maybeAI();
+  } catch (e) { toast('無法載入：' + e.message, 2000); }
+};
+
+/* ================= boot ================= */
+var mq = window.matchMedia && matchMedia('(prefers-color-scheme: dark)');
+if (mq && mq.addEventListener) mq.addEventListener('change', function () { drawBg(); boardCache = null; dirty = true; });
+var rsT = 0;
+window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(function () { drawBg(); layout(); }, 60); });
+if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe($('main'));
+drawBg();
+if (!resume()) {
+  G = { game: new GO.Game({ size: S.size, rules: S.rules }), mode: 'pvp', ai: 0, level: S.level, wr: [0.5], low: 0, own: null, idle: true };
+  phase = 'idle'; resetBoardGeometry(); computeKo(); updateBar(); showTools(); openMenu();
+}
+layout();
+requestAnimationFrame(frame);
+/* test hooks for the demo bot */
+window.__go9 = {
+  state: function () { return { phase: phase, moves: G.game.moves.slice(), toPlay: G.game.b.toPlay, ai: G.ai, mode: G.mode, level: G.level, opts: G.game.opts(), result: G.result ? { winner: G.result.winner, type: G.result.type, diff: G.result.sc && G.result.sc.diff } : null, think: G.lastThink, resultVisible: !$('result').hidden, anims: anims.length }; },
+  leaves: function (n) { leaves(n || 30); },
+  ptClient: function (x, y) { var r = cv.getBoundingClientRect(); return [r.left + PX(x), r.top + PX(y)]; }
+};
+})();
+
+</script>
+</body>
+</html>

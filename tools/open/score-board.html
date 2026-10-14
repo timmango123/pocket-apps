@@ -1,0 +1,769 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>記分板</title>
+<style>
+/* Gym scoreboard: charcoal housing, flat team-colour panels, huge tabular numerals. */
+:root {
+  --bg: #e6e8ea;
+  --housing: #1c1f24;
+  --housing-ink: #f2f3f5;
+  --housing-muted: #9aa1ab;
+  --surface: #ffffff;
+  --surface-2: #f2f3f5;
+  --ink: #15181c;
+  --muted: #5d6570;
+  --line: #d3d7dc;
+  --line-strong: #a6adb6;
+  --accent: #e0442b;
+  --accent-ink: #ffffff;
+  --team-ink: #111316;
+  --c0: #f2643f; --c1: #3d8cf0; --c2: #f5c33b; --c3: #3cbf7a; --c4: #a07cf0;
+  --c5: #f17aa8; --c6: #2fbfc0; --c7: #9bc23c; --c8: #f0974a; --c9: #b5bcc6;
+  --scrim: rgba(10,12,15,.5);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --num: "SF Pro Rounded", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d0f12; --housing: #181b20; --housing-ink: #eef0f3; --housing-muted: #8f97a2; --surface: #1b1f25; --surface-2: #242930;
+    --ink: #eceff3; --muted: #a0a8b3; --line: #2e343c; --line-strong: #4b535e; --accent: #ff6a52; --accent-ink: #1d0702; --team-ink: #0c0e10;
+    --c0: #e25a37; --c1: #4a8ee6; --c2: #e2b232; --c3: #39ad6f; --c4: #9474e2; --c5: #e06f9b; --c6: #2fafb0; --c7: #8db237; --c8: #e08a42; --c9: #9aa2ad;
+    --scrim: rgba(0,0,0,.65);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d0f12; --housing: #181b20; --housing-ink: #eef0f3; --housing-muted: #8f97a2; --surface: #1b1f25; --surface-2: #242930;
+  --ink: #eceff3; --muted: #a0a8b3; --line: #2e343c; --line-strong: #4b535e; --accent: #ff6a52; --accent-ink: #1d0702; --team-ink: #0c0e10;
+  --c0: #e25a37; --c1: #4a8ee6; --c2: #e2b232; --c3: #39ad6f; --c4: #9474e2; --c5: #e06f9b; --c6: #2fafb0; --c7: #8db237; --c8: #e08a42; --c9: #9aa2ad;
+  --scrim: rgba(0,0,0,.65);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.4;
+  padding-block: 8px calc(8px + env(safe-area-inset-bottom));
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  overflow: hidden; overscroll-behavior: none;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.app { height: 100%; display: flex; flex-direction: column; gap: 8px; max-width: 1200px; margin: 0 auto; }
+
+/* header */
+.bar { flex: none; height: 48px; display: flex; align-items: center; gap: 6px; background: var(--housing); color: var(--housing-ink); border-radius: 12px; padding: 0 4px 0 6px; }
+.title { flex: 1; min-width: 0; min-height: 44px; border: 0; background: none; color: inherit; text-align: left; font-weight: 800; font-size: 17px; padding: 0 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .02em; }
+.title small { font-weight: 600; color: var(--housing-muted); font-size: 13px; margin-left: 6px; }
+.ib { width: 44px; height: 44px; border: 0; border-radius: 10px; background: none; color: inherit; display: grid; place-items: center; cursor: pointer; flex: none; }
+.ib svg { width: 22px; height: 22px; }
+.ib:disabled { opacity: .3; cursor: default; }
+.lockflag { font-size: 12px; font-weight: 800; background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 2px 8px; border: 0; min-height: 44px; cursor: pointer; }
+
+/* arena */
+.arena { flex: 1; min-height: 0; display: grid; gap: 8px; position: relative; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.arena.two { grid-template-rows: 1fr 1fr; }
+@media (orientation: landscape) { .arena.two { grid-template-rows: none; grid-template-columns: 1fr 1fr; } }
+.team { position: relative; border-radius: 16px; background: var(--c); color: var(--team-ink); overflow: hidden; display: grid; cursor: pointer; }
+.team.rot { transform: rotate(180deg); }
+.team .half { position: absolute; left: 0; right: 0; height: 50%; border: 0; background: transparent; color: inherit; cursor: pointer; display: flex; justify-content: flex-end; padding: 10px 14px; font-size: 28px; font-weight: 800; opacity: .55; }
+.team .half.plus { top: 0; align-items: flex-start; }
+.team .half.minus { bottom: 0; align-items: flex-end; }
+.team .half:active { background: rgba(255,255,255,.14); }
+.team .half.minus:active { background: rgba(0,0,0,.08); }
+.team .info { position: absolute; left: 14px; top: 10px; right: 56px; pointer-events: none; display: flex; align-items: center; gap: 8px; }
+.team .nm { font-weight: 800; font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team .sets { font-weight: 800; font-size: 13px; background: var(--team-ink); color: var(--c); border-radius: 6px; padding: 1px 7px; font-variant-numeric: tabular-nums; }
+.team .serve { width: 12px; height: 12px; border-radius: 50%; background: var(--team-ink); box-shadow: 0 0 0 3px rgba(255,255,255,.5); flex: none; }
+.team .score { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font-family: var(--num); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.04em; line-height: 1; white-space: nowrap; }
+.team .bump { animation: bump .18s ease-out; }
+@keyframes bump { from { transform: scale(1.06); } to { transform: none; } }
+.team.lead::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--team-ink); opacity: .55; pointer-events: none; }
+
+.arena.multi { grid-auto-rows: minmax(72px, 1fr); align-content: stretch; overflow: auto; touch-action: pan-y; }
+@media (orientation: landscape) { .arena.multi { grid-template-columns: 1fr 1fr; } }
+.row { display: grid; grid-template-columns: 56px 1fr auto 56px; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-height: 72px; }
+.row .pm { border: 0; background: var(--surface-2); font-size: 30px; font-weight: 700; cursor: pointer; min-width: 56px; color: var(--ink); }
+.row .who { display: flex; align-items: center; gap: 10px; min-width: 0; padding-left: 0; }
+.row .who::before { content: ""; width: 8px; align-self: stretch; background: var(--c); flex: none; }
+.row .who b { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .who .sets { font-size: 12px; font-weight: 800; color: var(--muted); white-space: nowrap; }
+.row .score { font-family: var(--num); font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.03em; display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; min-width: 2ch; white-space: nowrap; line-height: 1; }
+.row.lead .score { color: var(--accent); }
+
+/* dock: chips + status */
+.dock { flex: none; display: grid; gap: 6px; }
+@media (orientation: landscape) and (max-height: 520px) { .dock { grid-template-columns: auto 1fr; align-items: center; } }
+.chips { display: flex; gap: 6px; }
+.chip { flex: 1; min-width: 44px; min-height: 44px; border: 1.5px solid var(--line-strong); background: var(--surface); border-radius: 10px; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer; padding: 0 6px; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chip.input { flex: 1.3; }
+.status { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; }
+.status .lead { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status .lead b { color: var(--ink); }
+.sbtn { min-height: 44px; border: 1.5px solid var(--line-strong); background: var(--surface); border-radius: 10px; padding: 0 12px; font-weight: 700; cursor: pointer; white-space: nowrap; color: var(--ink); }
+.sbtn.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--accent); width: 0; }
+
+/* sheets */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; display: flex; align-items: flex-end; justify-content: center; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+@media (min-width: 640px) { .scrim { align-items: center; } }
+@media (max-height: 600px) { .scrim { align-items: flex-start; overflow: auto; } }
+.sheet { background: var(--surface); color: var(--ink); border-radius: 16px; width: 100%; max-width: 460px; max-height: 100%; overflow: auto; padding: 16px; display: grid; gap: 12px; }
+.sheet h3 { margin: 0; font-size: 18px; display: flex; align-items: center; justify-content: space-between; }
+.sheet .x { width: 44px; height: 44px; border: 0; background: none; font-size: 24px; cursor: pointer; color: var(--muted); }
+.menu-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mbtn { min-height: 52px; border: 1.5px solid var(--line); background: var(--surface-2); border-radius: 12px; font-weight: 700; cursor: pointer; text-align: left; padding: 0 14px; color: var(--ink); }
+.mbtn small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
+.field { display: grid; gap: 4px; }
+.field > span { font-size: 13px; font-weight: 700; color: var(--muted); }
+.in { min-height: 44px; border: 1.5px solid var(--line-strong); border-radius: 10px; padding: 0 10px; background: var(--surface-2); width: 100%; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; cursor: pointer; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.pl { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.pl .top { display: grid; grid-template-columns: 1fr 110px; gap: 8px; }
+.sw { display: flex; flex-wrap: wrap; gap: 4px; }
+.sw button { width: 44px; height: 44px; border-radius: 10px; border: 3px solid transparent; background: var(--c); cursor: pointer; padding: 0; }
+.sw button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 3px var(--surface); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pbtn { min-height: 48px; border: 0; background: var(--accent); color: var(--accent-ink); border-radius: 12px; padding: 0 18px; font-weight: 800; cursor: pointer; flex: 1; }
+.gbtn { min-height: 48px; border: 1.5px solid var(--line-strong); background: var(--surface); border-radius: 12px; padding: 0 16px; font-weight: 700; cursor: pointer; color: var(--ink); }
+.err { color: var(--accent); font-size: 14px; font-weight: 650; min-height: 18px; margin: 0; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.tbl-wrap { overflow: auto; max-height: 50vh; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; color: var(--muted); }
+thead th { position: sticky; top: 0; background: var(--surface-2); }
+tfoot td { font-weight: 800; color: var(--ink) !important; }
+.hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.hist li { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.hist time { color: var(--muted); font-size: 12px; display: block; }
+.seg { display: flex; border: 1.5px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
+.seg button { flex: 1; min-height: 44px; border: 0; background: var(--surface); cursor: pointer; font-weight: 700; color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* win overlay */
+.win { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: var(--c); color: var(--team-ink); padding: 24px; text-align: center; }
+.win canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.win .box { position: relative; display: grid; gap: 14px; justify-items: center; }
+.win .k { font-size: 16px; font-weight: 800; letter-spacing: .3em; }
+.win .w { font-size: clamp(36px, 12vw, 84px); font-weight: 900; line-height: 1.05; overflow-wrap: anywhere; }
+.win .s { font-family: var(--num); font-size: clamp(28px, 9vw, 56px); font-weight: 800; font-variant-numeric: tabular-nums; }
+.win .actions { justify-content: center; }
+.win .pbtn { background: var(--team-ink); color: var(--c); min-width: 140px; flex: none; }
+.win .gbtn { background: transparent; border-color: var(--team-ink); color: var(--team-ink); }
+.toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); background: var(--housing); color: var(--housing-ink); padding: 10px 16px; border-radius: 10px; font-weight: 600; z-index: 60; max-width: calc(100% - 32px); text-align: center; font-size: 14px; pointer-events: none; }
+@media (hover: hover) {
+  .chip:hover, .sbtn:hover, .gbtn:hover, .mbtn:hover { border-color: var(--ink); }
+  .ib:not(:disabled):hover { background: rgba(255,255,255,.1); }
+  .row .pm:hover { background: var(--line); }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <button class="title" id="title-btn" aria-label="比賽名稱，點擊修改"><span id="title-text">友誼賽</span><small id="title-sub"></small></button>
+    <button class="lockflag" id="unlock" hidden aria-label="已鎖定，長按 1 秒解鎖">鎖定中</button>
+    <button class="ib" id="undo" aria-label="撤銷" title="撤銷 (Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+    <button class="ib" id="redo" aria-label="重做" title="重做 (Ctrl+Y)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+    <button class="ib" id="menu-btn" aria-label="選單"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  </header>
+  <main class="arena two" id="arena" aria-label="選手分數"></main>
+  <div class="dock">
+    <div class="chips" role="group" aria-label="加分值">
+      <button class="chip" data-step="1" id="step-1" aria-pressed="true">+1</button>
+      <button class="chip" data-step="2" id="step-2" aria-pressed="false">+2</button>
+      <button class="chip" data-step="3" id="step-3" aria-pressed="false">+3</button>
+      <button class="chip" data-step="5" id="step-5" aria-pressed="false">+5</button>
+      <button class="chip" data-step="10" id="step-10" aria-pressed="false">+10</button>
+      <button class="chip input" id="input-btn">輸入</button>
+    </div>
+    <div>
+      <div class="status">
+        <span id="st-round" hidden></span>
+        <button class="sbtn" id="next-round" hidden>下一回合</button>
+        <span class="lead" id="st-lead"></span>
+        <button class="sbtn" id="timer-btn" hidden aria-label="計時器，點擊暫停或繼續">00:00</button>
+      </div>
+      <div class="progress" id="progress" hidden><i id="progress-bar"></i></div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="menu" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="menu-title">
+    <h3><span id="menu-title">選單</span><button class="x" data-close aria-label="關閉">×</button></h3>
+    <div class="menu-list">
+      <button class="mbtn" id="m-new">新局<small>保留選手，分數歸零</small></button>
+      <button class="mbtn" id="m-settings">設定<small>選手、規則、回合</small></button>
+      <button class="mbtn" id="m-log">紀錄<small>計分紙與歷史</small></button>
+      <button class="mbtn" id="m-export">匯出<small>複製文字或 CSV</small></button>
+      <button class="mbtn" id="m-theme">主題<small id="m-theme-sub">跟隨系統</small></button>
+      <button class="mbtn" id="m-lock">鎖定<small>防止誤觸</small></button>
+      <button class="mbtn" id="m-full" hidden>全螢幕<small>隱藏瀏覽器列</small></button>
+    </div>
+    <p class="hint">鍵盤：Q/A 左隊 ±1、P/L 右隊 ±1、Ctrl+Z 撤銷。上下滑動選手區可連續加減。長按分數可輸入數值。</p>
+  </div>
+</div>
+
+<div class="scrim" id="confirm-new" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cn-title">
+    <h3 id="cn-title">開始新局？</h3>
+    <p class="hint">目前分數會存入歷史紀錄（最多 30 局），選手與規則保留。</p>
+    <div class="actions"><button class="pbtn" id="cn-ok">開始新局</button><button class="gbtn" data-close>取消</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="settings" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="set-title">
+    <h3><span id="set-title">設定</span><button class="x" data-close aria-label="關閉">×</button></h3>
+    <div class="grid2">
+      <label class="field"><span>人數／隊數</span>
+        <select class="in" id="s-count"><option value="2">2 隊對戰</option><option value="3">3 人</option><option value="4">4 人</option><option value="5">5 人</option><option value="6">6 人</option><option value="7">7 人</option><option value="8">8 人</option></select>
+      </label>
+      <label class="field"><span>規則</span>
+        <select class="in" id="s-rule">
+          <option value="free">自由記分</option>
+          <option value="target">先到目標分</option>
+          <option value="badminton">羽球 21 分</option>
+          <option value="tt">桌球 11 分</option>
+          <option value="volley">排球 25 分</option>
+        </select>
+      </label>
+    </div>
+    <label class="field" id="s-target-wrap"><span>目標分數</span><input class="in" id="s-target" type="number" inputmode="numeric" min="1" max="999999" value="21"></label>
+    <p class="hint" id="s-rule-hint"></p>
+    <div id="s-players" class="grid-players" style="display:grid;gap:8px"></div>
+    <label class="check"><input type="checkbox" id="s-rotate"> 上方隊伍旋轉 180°（面對面坐）</label>
+    <label class="check"><input type="checkbox" id="s-rounds"> 回合制（每回合結束按「下一回合」）</label>
+    <label class="check"><input type="checkbox" id="s-timer"> 顯示比賽計時器</label>
+    <p class="err" id="s-err"></p>
+    <div class="actions"><button class="pbtn" id="s-save">套用</button><button class="gbtn" data-close>取消</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="num" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="num-title">
+    <h3><span id="num-title">輸入分數</span><button class="x" data-close aria-label="關閉">×</button></h3>
+    <label class="field"><span>選手</span><select class="in" id="num-player"></select></label>
+    <div class="seg" role="group" aria-label="輸入方式"><button id="num-add" aria-pressed="true">加減分數</button><button id="num-set" aria-pressed="false">設為此分數</button></div>
+    <label class="field"><span id="num-label">分數變化（可輸入負數）</span><input class="in" id="num-value" type="text" inputmode="numeric" autocomplete="off" placeholder="例如 -3 或 12"></label>
+    <p class="err" id="num-err" role="alert"></p>
+    <div class="actions"><button class="pbtn" id="num-ok">確定</button><button class="gbtn" data-close>取消</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="log" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="log-title">
+    <h3><span id="log-title">紀錄</span><button class="x" data-close aria-label="關閉">×</button></h3>
+    <div class="tbl-wrap"><table id="log-table"></table></div>
+    <div class="actions"><button class="gbtn" id="copy-text">複製結果</button><button class="gbtn" id="copy-csv">複製 CSV</button></div>
+    <div id="sets-wrap"></div>
+    <h3 style="font-size:15px">歷史（最近 30 局）</h3>
+    <ul class="hist" id="hist"></ul>
+  </div>
+</div>
+
+<div class="scrim" id="title-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ts-title">
+    <h3 id="ts-title">比賽名稱</h3>
+    <input class="in" id="title-input" maxlength="20">
+    <div class="actions"><button class="pbtn" id="title-ok">確定</button><button class="gbtn" data-close>取消</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="copy-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+    <h3 id="cp-title">請手動複製</h3>
+    <textarea id="copy-area" class="in" style="height:160px;padding:10px" readonly></textarea>
+    <button class="gbtn" data-close>關閉</button>
+  </div>
+</div>
+
+<div class="win" id="win" hidden>
+  <canvas id="confetti"></canvas>
+  <div class="box">
+    <div class="k" id="win-k">本局勝方</div>
+    <div class="w" id="win-name"></div>
+    <div class="s" id="win-score"></div>
+    <div class="actions"><button class="pbtn" id="win-next">下一局</button><button class="gbtn" id="win-undo">撤銷最後一分</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const P = 'score-board:v1:';
+const store = {
+  get(k, d) {
+    let raw = null;
+    try { raw = localStorage.getItem(P + k); } catch (e) { return d; }
+    if (raw == null) return d;
+    try { return JSON.parse(raw); } catch (e) { try { localStorage.setItem(P + 'corrupt', raw); } catch (_) {} return d; }
+  },
+  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} }
+};
+const MAXS = 999999, MERGE_MS = 1500;
+const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+let toastT;
+function toast(s, ms = 2000) { const t = $('#toast'); t.textContent = s; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
+function buzz(ms) { if (navigator.vibrate) try { navigator.vibrate(ms); } catch (_) {} }
+const RULES = {
+  free: { name: '自由記分' },
+  target: { name: '先到目標分' },
+  badminton: { name: '羽球', to: 21, by: 2, cap: 30, ball: true, hint: '21 分勝；20:20 後需領先 2 分，最高 30 分（29:29 時下一分勝）。' },
+  tt: { name: '桌球', to: 11, by: 2, cap: 0, ball: true, hint: '11 分勝；10:10 後需領先 2 分。' },
+  volley: { name: '排球', to: 25, by: 2, cap: 0, ball: true, hint: '25 分勝；24:24 後需領先 2 分。' },
+};
+
+function defaultState() {
+  return {
+    name: '友誼賽', count: 2,
+    players: [{ name: '藍隊', color: 1, init: 0, score: 0 }, { name: '橘隊', color: 0, init: 0, score: 0 }],
+    log: [], redo: [], round: 1, rule: 'free', target: 21, rotate: true, rounds: false,
+    timer: { on: false, run: false, acc: 0, since: 0 }, sets: [0, 0], setLog: [], step: 1, locked: false, sample: true,
+  };
+}
+let st = store.get('current', null);
+if (!st || !Array.isArray(st.players) || !st.players.length) st = defaultState();
+let history = store.get('history', []); if (!Array.isArray(history)) history = [];
+
+// ---------- persistence (300ms debounce, flush on pagehide) ----------
+let saveT;
+function save() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
+function flush() { clearTimeout(saveT); store.set('current', st); }
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); else requestWake(); });
+
+// ---------- theme ----------
+const themes = ['auto', 'light', 'dark'], themeName = { auto: '跟隨系統', light: '淺色', dark: '深色' };
+let theme = store.get('theme', 'auto');
+function applyTheme() { if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme; $('#m-theme-sub').textContent = themeName[theme]; }
+applyTheme();
+
+// ---------- core ops ----------
+const clamp = v => Math.max(-MAXS, Math.min(MAXS, v));
+function apply(p, delta, merge = true) {
+  if (st.locked || !delta) return;
+  const pl = st.players[p]; if (!pl) return;
+  const nv = clamp(pl.score + delta), real = nv - pl.score;
+  if (real !== delta) { buzz([30, 40, 30]); toast(`分數範圍為 −999999 到 999999`); }
+  if (!real) return;
+  pl.score = nv; st.sample = false;
+  const now = Date.now(), last = st.log[st.log.length - 1];
+  if (merge && last && last.k === 's' && last.p === p && now - last.t < MERGE_MS && last.r === st.round) { last.d += real; last.t = now; if (!last.d) st.log.pop(); }
+  else st.log.push({ k: 's', p, d: real, r: st.round, t: now });
+  st.redo = [];
+  render(p); save(); checkWin();
+}
+function setScore(p, v) { const pl = st.players[p]; apply(p, clamp(v) - pl.score, false); }
+function undo() {
+  if (st.locked) return;
+  const e = st.log.pop(); if (!e) return;
+  if (e.k === 's') st.players[e.p].score -= e.d; else if (e.k === 'r') st.round--;
+  st.redo.push(e); render(); save();
+}
+function redo() {
+  if (st.locked) return;
+  const e = st.redo.pop(); if (!e) return;
+  if (e.k === 's') st.players[e.p].score += e.d; else if (e.k === 'r') st.round++;
+  st.log.push(Object.assign({}, e, { t: 0 })); render(); save(); checkWin();
+}
+function nextRound() { if (st.locked) return; st.round++; st.log.push({ k: 'r', t: Date.now() }); st.redo = []; render(); save(); }
+
+/** Winner index or -1 for the current scores. Exposed for tests. */
+function winner(scores, rule, target) {
+  if (rule === 'free') return -1;
+  if (rule === 'target') { let best = -1; scores.forEach((s, i) => { if (s >= target && (best < 0 || s > scores[best])) best = i; }); return best; }
+  const R = RULES[rule]; if (scores.length !== 2) return -1;
+  for (let i = 0; i < 2; i++) {
+    const a = scores[i], b = scores[1 - i];
+    if (R.cap && a >= R.cap && a > b) return i;
+    if (a >= R.to && a - b >= R.by) return i;
+  }
+  return -1;
+}
+function server() {
+  for (let i = st.log.length - 1; i >= 0; i--) { const e = st.log[i]; if (e.k === 's' && e.d > 0) return e.p; }
+  return st.setLog.length % 2;  // alternate first serve per set
+}
+function checkWin() {
+  const w = winner(st.players.map(p => p.score), st.rule, st.target);
+  if (w < 0) return;
+  showWin(w);
+}
+
+// ---------- rendering ----------
+const arena = $('#arena');
+let built = '';
+function fitScores() {
+  arena.querySelectorAll('.score').forEach(el => {
+    const box = el.parentElement.getBoundingClientRect();
+    const txt = el.textContent, digits = Math.max(1, txt.length);
+    let fs;
+    if (el.closest('.team')) fs = Math.min(box.height * 0.45, (box.width - 24) / (digits * 0.62));
+    else fs = Math.min(box.height * 0.62, 52, (box.width * 0.36) / (digits * 0.62));
+    el.style.fontSize = Math.max(18, Math.floor(fs)) + 'px';
+  });
+}
+const ro = window.ResizeObserver ? new ResizeObserver(() => fitScores()) : null;
+function build() {
+  const key = st.players.length + '|' + st.rotate;
+  arena.innerHTML = '';
+  const two = st.players.length === 2;
+  arena.className = 'arena ' + (two ? 'two' : 'multi');
+  st.players.forEach((p, i) => {
+    let el;
+    if (two) {
+      el = document.createElement('div'); el.className = 'team'; el.dataset.p = i;
+      el.innerHTML = `<button class="half plus" data-act="+" id="p${i}-plus" aria-label="加分">＋</button><button class="half minus" data-act="-" id="p${i}-minus" aria-label="減分">−</button><div class="info"><span class="serve" hidden></span><span class="nm"></span><span class="sets"></span></div><div class="score" id="p${i}-score"></div>`;
+    } else {
+      el = document.createElement('div'); el.className = 'row'; el.dataset.p = i;
+      el.innerHTML = `<button class="pm" data-act="-" id="p${i}-minus" aria-label="減分">−</button><div class="who"><b class="nm"></b><span class="sets"></span></div><div class="score" id="p${i}-score"></div><button class="pm" data-act="+" id="p${i}-plus" aria-label="加分">＋</button>`;
+    }
+    arena.appendChild(el);
+    if (ro) ro.observe(el);
+  });
+  built = key;
+}
+const isPortrait = () => matchMedia('(orientation: portrait)').matches;
+function render(bumpP) {
+  if (built !== st.players.length + '|' + st.rotate || arena.children.length !== st.players.length) build();
+  const scores = st.players.map(p => p.score), max = Math.max(...scores);
+  const leaders = scores.filter(s => s === max).length;
+  const R = RULES[st.rule], sv = R.ball && st.players.length === 2 ? server() : -1;
+  st.players.forEach((p, i) => {
+    const el = arena.children[i];
+    el.style.setProperty('--c', `var(--c${p.color % 10})`);
+    el.classList.toggle('lead', leaders === 1 && scores[i] === max && st.log.length > 0);
+    if (el.classList.contains('team')) el.classList.toggle('rot', i === 0 && st.rotate && isPortrait());
+    el.querySelector('.nm').textContent = p.name;
+    const sets = el.querySelector('.sets'); const sv0 = st.sets[i] || 0;
+    sets.textContent = st.setLog.length ? `局 ${sv0}` : ''; sets.hidden = !st.setLog.length;
+    const s = el.querySelector('.serve'); if (s) s.hidden = sv !== i;
+    const sc = el.querySelector('.score'); sc.textContent = String(p.score);
+    el.querySelectorAll('[data-act]').forEach(b => b.setAttribute('aria-label', `${p.name} ${b.dataset.act === '+' ? '加' : '減'} ${st.step} 分`));
+    if (bumpP === i && !reduce()) { sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+  });
+  fitScores();
+  // header & status
+  $('#title-text').textContent = st.name;
+  $('#title-sub').textContent = st.sample ? '範例' : (st.rule !== 'free' ? (st.rule === 'target' ? `目標 ${st.target}` : R.name) : '');
+  $('#undo').disabled = !st.log.length; $('#redo').disabled = !st.redo.length;
+  $('#unlock').hidden = !st.locked;
+  $('#st-round').hidden = $('#next-round').hidden = !st.rounds;
+  $('#st-round').textContent = `第 ${st.round} 回合`;
+  let lead;
+  if (!st.log.length && scores.every(s => s === scores[0])) lead = st.players.length === 2 ? '點上半部 +分、下半部 −分' : '按 ＋／− 記分';
+  else if (leaders > 1) lead = `<b>平手</b> ${max}`;
+  else { const i = scores.indexOf(max), second = Math.max(...scores.filter((_, j) => j !== i)); lead = `領先：<b></b> 多 ${max - second} 分`; }
+  $('#st-lead').innerHTML = lead;
+  const b = $('#st-lead b'); if (b && leaders === 1 && (st.log.length || !scores.every(s => s === scores[0]))) b.textContent = st.players[scores.indexOf(max)].name;
+  // target progress
+  const tgt = st.rule === 'target' ? st.target : R.to;
+  $('#progress').hidden = !tgt;
+  if (tgt) $('#progress-bar').style.width = Math.max(0, Math.min(100, max / tgt * 100)) + '%';
+  document.querySelectorAll('.chip[data-step]').forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.step === st.step)));
+  $('#timer-btn').hidden = !st.timer.on;
+  renderTimer();
+}
+
+// ---------- input on arena: tap, swipe (24px per point), long-press ----------
+let g = null;
+arena.addEventListener('contextmenu', e => e.preventDefault());
+arena.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-p]'); if (!el) return;
+  requestWake(); ensureAudio();
+  if (st.locked) { toast('已鎖定：長按右上「鎖定中」1 秒解鎖'); return; }
+  const p = +el.dataset.p, flip = el.classList.contains('rot') ? -1 : 1;
+  g = { p, el, id: e.pointerId, y0: e.clientY, x0: e.clientX, applied: 0, swipe: false, long: false, act: (e.target.closest('[data-act]') || {}).dataset?.act, flip };
+  const team = el.classList.contains('team');
+  g.lt = setTimeout(() => { if (g && !g.swipe) { g.long = true; buzz(20); openNum(p, true); } }, 600);
+  g.team = team;
+});
+addEventListener('pointermove', e => {
+  if (!g || e.pointerId !== g.id) return;
+  const dy = (e.clientY - g.y0) * g.flip;
+  if (!g.swipe && g.team && Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(e.clientX - g.x0)) { g.swipe = true; clearTimeout(g.lt); }
+  if (!g.swipe && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) > 14) clearTimeout(g.lt);
+  if (g.swipe) {
+    const steps = Math.trunc(-dy / 24);
+    if (steps !== g.applied) { apply(g.p, (steps - g.applied) * st.step); g.applied = steps; buzz(8); }
+  }
+});
+function endPointer(e) {
+  if (!g || (e.pointerId !== undefined && e.pointerId !== g.id)) return;
+  clearTimeout(g.lt);
+  if (e.type === 'pointerup' && !g.swipe && !g.long && g.act && Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < 14) {
+    apply(g.p, g.act === '+' ? st.step : -st.step); click();
+  }
+  g = null;
+}
+addEventListener('pointerup', endPointer); addEventListener('pointercancel', endPointer);
+// keyboard activation of the +/- buttons (pointer handled above)
+arena.addEventListener('click', e => { if (e.detail === 0) { const b = e.target.closest('[data-act]'); if (b) apply(+b.closest('[data-p]').dataset.p, b.dataset.act === '+' ? st.step : -st.step); } });
+
+addEventListener('keydown', e => {
+  if (e.target.matches('input, select, textarea') || document.querySelector('.scrim:not([hidden])')) { if (e.key === 'Escape') closeAll(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const n = st.players.length, last = n - 1;
+  const map = { q: [0, 1], a: [0, -1], p: [last, 1], l: [last, -1] };
+  const m = map[e.key.toLowerCase()];
+  if (m) { e.preventDefault(); apply(m[0], m[1] * st.step); }
+});
+
+// ---------- chips / numeric input ----------
+document.querySelectorAll('.chip[data-step]').forEach(c => c.onclick = () => { st.step = +c.dataset.step; save(); render(); });
+let numMode = 'add';
+function setNumMode(m) { numMode = m; $('#num-add').setAttribute('aria-pressed', String(m === 'add')); $('#num-set').setAttribute('aria-pressed', String(m === 'set')); $('#num-label').textContent = m === 'add' ? '分數變化（可輸入負數）' : '新的分數'; }
+function openNum(p, setMode) {
+  const sel = $('#num-player'); sel.innerHTML = '';
+  st.players.forEach((pl, i) => { const o = document.createElement('option'); o.value = i; o.textContent = `${pl.name}（目前 ${pl.score}）`; sel.appendChild(o); });
+  sel.value = p == null ? 0 : p; setNumMode(setMode ? 'set' : 'add');
+  $('#num-value').value = setMode && p != null ? String(st.players[p].score) : ''; $('#num-err').textContent = '';
+  open('#num'); setTimeout(() => { $('#num-value').focus(); $('#num-value').select(); }, 50);
+}
+$('#num-add').onclick = () => setNumMode('add');
+$('#num-set').onclick = () => setNumMode('set');
+$('#input-btn').onclick = () => openNum(null, false);
+function numOk() {
+  const raw = $('#num-value').value.trim().replace(/[＋]/g, '+').replace(/[－−]/g, '-').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (!/^[+-]?\d+$/.test(raw)) { $('#num-err').textContent = '請輸入整數，例如 5、-3'; return; }
+  let v = parseInt(raw, 10); const p = +$('#num-player').value;
+  const target = numMode === 'add' ? st.players[p].score + v : v;
+  if (target > MAXS || target < -MAXS) { $('#num-err').textContent = `超出範圍：分數需在 −999999 到 999999 之間`; return; }
+  if (numMode === 'add') { if (!v) { $('#num-err').textContent = '變化量不能是 0'; return; } apply(p, v, false); }
+  else setScore(p, v);
+  closeAll();
+}
+$('#num-ok').onclick = numOk;
+$('#num-value').addEventListener('keydown', e => { if (e.key === 'Enter') numOk(); });
+
+// ---------- sheets ----------
+function open(sel) { closeAll(); $(sel).hidden = false; }
+function closeAll() { document.querySelectorAll('.scrim').forEach(s => s.hidden = true); }
+document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s || e.target.closest('[data-close]')) s.hidden = true; }));
+$('#menu-btn').onclick = () => { $('#m-full').hidden = !(document.fullscreenEnabled && document.documentElement.requestFullscreen); open('#menu'); };
+$('#undo').onclick = undo; $('#redo').onclick = redo;
+$('#next-round').onclick = nextRound;
+$('#title-btn').onclick = () => { $('#title-input').value = st.name; open('#title-sheet'); setTimeout(() => $('#title-input').focus(), 50); };
+function titleOk() { const v = $('#title-input').value.trim().slice(0, 20); if (v) { st.name = v; st.sample = false; } closeAll(); render(); save(); }
+$('#title-ok').onclick = titleOk;
+$('#title-input').addEventListener('keydown', e => { if (e.key === 'Enter') titleOk(); });
+$('#m-theme').onclick = () => { theme = themes[(themes.indexOf(theme) + 1) % 3]; store.set('theme', theme); applyTheme(); };
+$('#m-full').onclick = () => { closeAll(); try { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => toast('無法切換全螢幕')); } catch (e) { toast('無法切換全螢幕'); } };
+$('#m-lock').onclick = () => { st.locked = true; save(); closeAll(); render(); toast('已鎖定：長按「鎖定中」1 秒解鎖'); };
+let unlockT;
+$('#unlock').addEventListener('pointerdown', () => { unlockT = setTimeout(() => { st.locked = false; save(); render(); buzz(40); toast('已解鎖'); }, 1000); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(t => $('#unlock').addEventListener(t, () => clearTimeout(unlockT)));
+$('#unlock').addEventListener('keydown', e => { if (e.key === 'Enter') { st.locked = false; save(); render(); } });
+
+// new game
+function archive() {
+  if (!st.log.length && !st.setLog.length) return;
+  history.unshift({ at: Date.now(), name: st.name, players: st.players.map(p => ({ name: p.name, score: p.score })), sets: st.setLog.length ? st.sets.slice() : null });
+  history = history.slice(0, 30); store.set('history', history);
+}
+function newGame() {
+  archive();
+  st.players.forEach(p => p.score = p.init); st.log = []; st.redo = []; st.round = 1; st.sets = st.players.map(() => 0); st.setLog = [];
+  st.timer.acc = 0; st.timer.since = st.timer.run ? Date.now() : 0;
+  $('#win').hidden = true; closeAll(); render(); flush(); toast('新局開始');
+}
+$('#m-new').onclick = () => open('#confirm-new');
+$('#cn-ok').onclick = newGame;
+
+// ---------- settings ----------
+let draft;
+function openSettings() {
+  draft = { count: st.players.length, players: st.players.map(p => ({ name: p.name, color: p.color, init: p.init })) };
+  $('#s-count').value = String(draft.count); $('#s-rule').value = st.rule; $('#s-target').value = st.target;
+  $('#s-rotate').checked = st.rotate; $('#s-rounds').checked = st.rounds; $('#s-timer').checked = st.timer.on; $('#s-err').textContent = '';
+  renderDraft(); ruleUI(); open('#settings');
+}
+function ruleUI() {
+  const r = $('#s-rule').value, two = +$('#s-count').value === 2;
+  $('#s-target-wrap').hidden = r !== 'target';
+  $('#s-rule-hint').textContent = RULES[r].hint ? RULES[r].hint + (two ? '' : ' 此規則只適用 2 隊對戰。') : (r === 'target' ? '任一方先達到目標分數即獲勝。' : '不判定勝負，適合桌遊與麻將。');
+}
+const NAMES = ['藍隊', '橘隊', '小綠', '小黃', '小紫', '小粉', '小青', '小橙'];
+const COLORS_DEF = [1, 0, 3, 2, 4, 5, 6, 8];
+function renderDraft() {
+  const n = +$('#s-count').value;
+  while (draft.players.length < n) { const i = draft.players.length; draft.players.push({ name: NAMES[i] || `選手 ${i + 1}`, color: COLORS_DEF[i] ?? i % 10, init: draft.players[0] ? draft.players[0].init : 0 }); }
+  draft.players.length = n;
+  const box = $('#s-players'); box.innerHTML = '';
+  draft.players.forEach((p, i) => {
+    const d = document.createElement('div'); d.className = 'pl';
+    d.innerHTML = `<div class="top"><label class="field"><span>名字 ${i + 1}</span><input class="in" id="pn-${i}" maxlength="12"></label><label class="field"><span>初始分</span><input class="in" id="pi-${i}" type="text" inputmode="numeric"></label></div><div class="sw" role="group" aria-label="顏色"></div>`;
+    d.querySelector('#pn-' + i).value = p.name; d.querySelector('#pi-' + i).value = p.init;
+    const sw = d.querySelector('.sw');
+    for (let c = 0; c < 10; c++) { const b = document.createElement('button'); b.style.setProperty('--c', `var(--c${c})`); b.setAttribute('aria-label', '顏色 ' + (c + 1)); b.setAttribute('aria-pressed', String(p.color === c)); b.id = `pc-${i}-${c}`; b.onclick = () => { p.color = c; sw.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }; sw.appendChild(b); }
+    d.querySelector('#pn-' + i).addEventListener('input', e => p.name = e.target.value);
+    d.querySelector('#pi-' + i).addEventListener('input', e => p.init = e.target.value);
+    box.appendChild(d);
+  });
+}
+$('#s-count').onchange = () => { renderDraft(); ruleUI(); };
+$('#s-rule').onchange = ruleUI;
+$('#m-settings').onclick = openSettings;
+$('#s-save').onclick = () => {
+  const err = m => { $('#s-err').textContent = m; };
+  const n = draft.players.length, rule = $('#s-rule').value;
+  if (RULES[rule].ball && n !== 2) return err('球類規則只能用在 2 隊對戰');
+  const tgt = parseInt($('#s-target').value, 10);
+  if (rule === 'target' && !(tgt >= 1 && tgt <= MAXS)) return err('目標分數需為 1–999999 的整數');
+  for (const [i, p] of draft.players.entries()) {
+    const nm = String(p.name).trim();
+    if (!nm) return err(`請輸入選手 ${i + 1} 的名字`);
+    if ([...nm].length > 12) return err('名字最多 12 字');
+    const iv = String(p.init).trim();
+    if (!/^-?\d+$/.test(iv) || Math.abs(+iv) > MAXS) return err(`選手 ${i + 1} 的初始分需為 −999999 到 999999 的整數`);
+  }
+  const structural = n !== st.players.length || draft.players.some((p, i) => +p.init !== st.players[i]?.init);
+  if (structural) archive();
+  st.players = draft.players.map((p, i) => ({ name: String(p.name).trim(), color: p.color, init: +p.init, score: structural ? +p.init : st.players[i].score }));
+  if (structural) { st.log = []; st.redo = []; st.round = 1; st.sets = st.players.map(() => 0); st.setLog = []; }
+  st.rule = rule; if (rule === 'target') st.target = tgt;
+  st.rotate = $('#s-rotate').checked; st.rounds = $('#s-rounds').checked;
+  const ton = $('#s-timer').checked; if (ton && !st.timer.on) st.timer = { on: true, run: false, acc: 0, since: 0 }; st.timer.on = ton;
+  st.sample = false; built = ''; closeAll(); render(); flush();
+  toast(structural ? '已套用，分數重設為初始分' : '已套用');
+};
+
+// ---------- log / export ----------
+function matrix() {
+  const n = st.players.length, rows = [];
+  for (let r = 1; r <= st.round; r++) rows.push(new Array(n).fill(0));
+  st.log.forEach(e => { if (e.k === 's') rows[(e.r || 1) - 1][e.p] += e.d; });
+  return rows;
+}
+function resultText() { return st.players.map(p => `${p.name} ${p.score}`).join('｜') + (st.setLog.length ? `（局分 ${st.sets.join(':')}）` : ''); }
+function csvCell(s) { s = String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function resultCSV() {
+  const head = ['回合', ...st.players.map(p => p.name)].map(csvCell).join(',');
+  const lines = [head];
+  if (st.players.some(p => p.init)) lines.push(['初始', ...st.players.map(p => p.init)].join(','));
+  matrix().forEach((r, i) => lines.push([i + 1, ...r].join(',')));
+  lines.push(['總分', ...st.players.map(p => p.score)].join(','));
+  return lines.join('\n');
+}
+function openLog() {
+  const t = $('#log-table'); t.innerHTML = '';
+  const thead = document.createElement('thead'), tr = document.createElement('tr');
+  ['回合', ...st.players.map(p => p.name)].forEach(h => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+  thead.appendChild(tr); t.appendChild(thead);
+  const tb = document.createElement('tbody');
+  const addRow = (label, vals, sign) => { const r = document.createElement('tr'); [label, ...vals].forEach((v, i) => { const td = document.createElement('td'); td.textContent = i && sign && v > 0 ? '+' + v : v; r.appendChild(td); }); tb.appendChild(r); };
+  if (st.players.some(p => p.init)) addRow('初始', st.players.map(p => p.init));
+  if (st.rounds) matrix().forEach((r, i) => addRow(`第 ${i + 1} 回合`, r, true));
+  else st.log.filter(e => e.k === 's').slice(-60).forEach(e => { const v = st.players.map((_, i) => i === e.p ? e.d : ''); addRow(e.t ? new Date(e.t).toLocaleTimeString('zh-TW', { hour12: false }) : '重做', v, true); });
+  if (!tb.children.length) { const r = document.createElement('tr'); r.innerHTML = '<td colspan="9">尚無紀錄</td>'; tb.appendChild(r); }
+  t.appendChild(tb);
+  const tf = document.createElement('tfoot'); const fr = document.createElement('tr');
+  ['總分', ...st.players.map(p => p.score)].forEach(v => { const td = document.createElement('td'); td.textContent = v; fr.appendChild(td); });
+  tf.appendChild(fr); t.appendChild(tf);
+  $('#sets-wrap').textContent = st.setLog.length ? `局分 ${st.players.map((p, i) => `${p.name} ${st.sets[i]}`).join(' : ')}；各局 ${st.setLog.map(s => s.join('-')).join('、')}` : '';
+  const h = $('#hist'); h.innerHTML = '';
+  if (!history.length) h.innerHTML = '<li>尚無歷史</li>';
+  history.forEach(x => { const li = document.createElement('li'); const tm = document.createElement('time'); tm.textContent = new Date(x.at).toLocaleString('zh-TW', { hour12: false }) + '　' + x.name; li.appendChild(tm); li.appendChild(document.createTextNode(x.players.map(p => `${p.name} ${p.score}`).join('｜') + (x.sets ? `（局 ${x.sets.join(':')}）` : ''))); h.appendChild(li); });
+  open('#log');
+}
+$('#m-log').onclick = openLog;
+$('#m-export').onclick = openLog;
+function copyText(text) {
+  const fb = () => { $('#copy-area').value = text; open('#copy-sheet'); $('#copy-area').focus(); $('#copy-area').select(); };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('已複製'), fb); else fb(); } catch (e) { fb(); }
+}
+$('#copy-text').onclick = () => copyText(resultText());
+$('#copy-csv').onclick = () => copyText(resultCSV());
+
+// ---------- win overlay & confetti ----------
+let confettiRAF = 0;
+function showWin(w) {
+  const p = st.players[w];
+  $('#win').style.setProperty('--c', `var(--c${p.color % 10})`);
+  $('#win-name').textContent = p.name;
+  $('#win-score').textContent = st.players.map(x => x.score).join(' : ');
+  $('#win-k').textContent = st.rule === 'target' ? `先到 ${st.target} 分` : '本局勝方';
+  $('#win').hidden = false; $('#win').dataset.w = w; closeAll();
+  buzz([60, 40, 120]); chime(); confetti();
+  setTimeout(() => $('#win-next').focus(), 50);
+}
+$('#win-next').onclick = () => {
+  const w = +$('#win').dataset.w;
+  st.sets[w] = (st.sets[w] || 0) + 1; st.setLog.push(st.players.map(p => p.score));
+  st.players.forEach(p => p.score = p.init); st.log = []; st.redo = []; st.round = 1;
+  $('#win').hidden = true; cancelAnimationFrame(confettiRAF); render(); flush();
+  toast(`局分 ${st.sets.join(' : ')}`);
+};
+$('#win-undo').onclick = () => { $('#win').hidden = true; cancelAnimationFrame(confettiRAF); undo(); };
+function confetti() {
+  const cv = $('#confetti'); if (reduce()) { cv.hidden = true; return; } cv.hidden = false;
+  const dpr = Math.min(2, devicePixelRatio || 1), W = cv.clientWidth, H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr;
+  const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+  const cs = getComputedStyle(document.documentElement), cols = [0, 1, 2, 3, 4, 5, 6].map(i => cs.getPropertyValue('--c' + i).trim()).concat([cs.getPropertyValue('--team-ink').trim(), '#ffffff']);
+  const parts = Array.from({ length: 140 }, () => ({ x: Math.random() * W, y: -20 - Math.random() * H * .6, vx: (Math.random() - .5) * 2.4, vy: 2 + Math.random() * 3.5, r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, c: cols[Math.floor(Math.random() * cols.length)] }));
+  const t0 = performance.now();
+  cancelAnimationFrame(confettiRAF);
+  const step = t => {
+    ctx.clearRect(0, 0, W, H);
+    parts.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += .03; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2))); ctx.restore(); });
+    if (t - t0 < 3500) confettiRAF = requestAnimationFrame(step); else ctx.clearRect(0, 0, W, H);
+  };
+  confettiRAF = requestAnimationFrame(step);
+}
+
+// ---------- sound (created on first tap) ----------
+let actx = null;
+function ensureAudio() { try { if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) actx = new AC(); } if (actx && actx.state === 'suspended') actx.resume(); } catch (e) {} }
+function click() {}
+function chime() {
+  if (!actx) return;
+  try { const t = actx.currentTime; [523.25, 659.25, 783.99].forEach((f, i) => { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = f; o.type = 'triangle'; g.gain.setValueAtTime(0, t + i * .1); g.gain.linearRampToValueAtTime(.18, t + i * .1 + .02); g.gain.exponentialRampToValueAtTime(.001, t + i * .1 + .5); o.connect(g).connect(actx.destination); o.start(t + i * .1); o.stop(t + i * .1 + .55); }); } catch (e) {}
+}
+
+// ---------- timer ----------
+function elapsed() { return st.timer.acc + (st.timer.run ? Date.now() - st.timer.since : 0); }
+function renderTimer() {
+  if (!st.timer.on) return;
+  const s = Math.floor(elapsed() / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+  const b = $('#timer-btn'); b.textContent = (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(ss).padStart(2, '0') + (st.timer.run ? '' : ' ▶');
+  b.classList.toggle('on', st.timer.run);
+}
+$('#timer-btn').onclick = () => { const t = st.timer; if (t.run) { t.acc += Date.now() - t.since; t.run = false; } else { t.since = Date.now(); t.run = true; } renderTimer(); save(); };
+setInterval(() => { if (st.timer.on && st.timer.run) renderTimer(); }, 500);
+
+// ---------- wake lock ----------
+let wake = null, wakeWarned = store.get('wakeWarned', false);
+async function requestWake() {
+  if (document.visibilityState !== 'visible' || wake) return;
+  try {
+    if (!('wakeLock' in navigator)) throw new Error('unsupported');
+    wake = await navigator.wakeLock.request('screen');
+    wake.addEventListener('release', () => { wake = null; });
+  } catch (e) {
+    if (!wakeWarned) { wakeWarned = true; store.set('wakeWarned', true); toast('此瀏覽器無法防止螢幕熄滅，請自行調整螢幕逾時', 3500); }
+  }
+}
+
+matchMedia('(orientation: portrait)').addEventListener?.('change', () => render());
+render();
+window.__sb = { winner, apply, undo, redo, nextRound, get st() { return st; }, matrix, resultText, resultCSV, MERGE_MS };
+})();
+</script>
+</body></html>

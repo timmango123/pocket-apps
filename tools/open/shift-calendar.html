@@ -1,0 +1,684 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>輪班行事曆</title>
+<style>
+:root{
+  --bg:#eef0f3; --paper:#ffffff; --ink:#151b26; --muted:#4f5867; --faint:#7d8594; --line:#cfd4dc; --rule:#e2e5ea;
+  --accent:#1f3a68; --accent-ink:#ffffff; --accent-soft:#dde4f0; --today:#d6452f;
+  --out:#f5f6f8; --danger:#b3261e; --danger-soft:#f9e2e0; --warn-bg:#fff2cf; --warn-ink:#614500;
+  --shadow:0 10px 40px rgba(16,24,40,.18);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1218; --paper:#171b23; --ink:#e3e7ee; --muted:#a3abb8; --faint:#7a8290; --line:#2c323d; --rule:#222833;
+  --accent:#9db7e6; --accent-ink:#0d1626; --accent-soft:#1d2738; --today:#ff8a73;
+  --out:#13161d; --danger:#f2b8b5; --danger-soft:#3a1d1b; --warn-bg:#352a0e; --warn-ink:#f3d68b;
+  --shadow:0 10px 40px rgba(0,0,0,.5);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1218; --paper:#171b23; --ink:#e3e7ee; --muted:#a3abb8; --faint:#7a8290; --line:#2c323d; --rule:#222833;
+  --accent:#9db7e6; --accent-ink:#0d1626; --accent-soft:#1d2738; --today:#ff8a73;
+  --out:#13161d; --danger:#f2b8b5; --danger-soft:#3a1d1b; --warn-bg:#352a0e; --warn-ink:#f3d68b;
+  --shadow:0 10px 40px rgba(0,0,0,.5);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));overflow-x:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:1100px;margin:0 auto}
+
+.top{display:flex;align-items:center;gap:6px;padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:10px;border-bottom:3px double var(--ink);margin-bottom:10px}
+.top h1{margin:0;flex:1;min-width:0;text-align:center;font-size:20px;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.top h1 small{display:block;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.2em}
+.ib{min-width:44px;height:44px;border-radius:8px;border:1px solid var(--line);background:var(--paper);display:inline-grid;place-items:center;cursor:pointer;padding:0 10px;font-weight:600}
+.ib svg{width:20px;height:20px}
+.ib.ghost{border-color:transparent;background:transparent}
+.sample{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;background:var(--warn-bg);color:var(--warn-ink);border-radius:4px;padding:1px 6px;vertical-align:2px}
+
+.main{display:block}
+.cal{background:var(--paper);border:1px solid var(--line);border-radius:6px;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.wk{display:grid;grid-template-columns:repeat(7,1fr);background:var(--ink);color:var(--bg)}
+.wk span{text-align:center;font-size:12px;font-weight:700;padding:5px 0;letter-spacing:.1em}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.cell{position:relative;min-height:60px;border:0;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule);background:transparent;padding:3px 2px 4px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;text-align:center}
+.cell:nth-child(7n){border-right:0}
+.cell.out{background:var(--out)}
+.cell.out .d,.cell.out .chips{opacity:.45}
+.cell .d{font-size:13px;font-weight:700;line-height:18px;font-variant-numeric:tabular-nums}
+.cell.wkend .d{color:var(--today)}
+.cell.today{box-shadow:inset 0 0 0 2px var(--today)}
+.cell.sel{background:var(--accent-soft)}
+.chips{display:flex;gap:2px;justify-content:center;width:100%}
+.chip{flex:0 1 auto;min-width:24px;height:26px;border-radius:4px;display:grid;place-items:center;font-size:14px;font-weight:800;white-space:nowrap;padding:0 3px;letter-spacing:0}
+.two .chip{min-width:0;flex:1 1 0;max-width:24px;font-size:12.5px;height:22px;padding:0}
+.chip.p2{background:var(--paper)!important;color:var(--ink)!important;border:2px solid var(--c)}
+.ov{position:absolute;top:0;right:0;width:0;height:0;border-top:10px solid var(--today);border-left:10px solid transparent}
+.star{position:absolute;top:2px;left:3px;font-size:11px;line-height:1;color:var(--today);font-weight:800}
+.note-dot{width:4px;height:4px;border-radius:50%;background:var(--muted)}
+@media (hover:hover){.cell:hover{background:var(--accent-soft)} .ib:hover{border-color:var(--muted)}}
+
+.guide{padding:18px;text-align:center;color:var(--muted)}
+.stats{margin-top:12px;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.stats h2{margin:0 0 8px;font-size:12px;letter-spacing:.18em;color:var(--muted);font-weight:700}
+.srow{display:flex;flex-wrap:wrap;gap:6px 14px}
+.sitem{display:flex;align-items:center;gap:6px;font-size:14px}
+.sitem .chip{min-width:24px;height:24px;font-size:13px}
+.tot{display:flex;align-items:baseline;gap:10px;border-top:1px solid var(--rule);margin-top:10px;padding-top:8px;flex-wrap:wrap}
+.tot b{font-size:26px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.tot .cmp{font-size:13px;color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn{height:44px;border-radius:8px;border:1px solid var(--line);background:var(--paper);padding:0 14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.dan{color:var(--danger);border-color:var(--danger)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+@media (hover:hover){.btn:not(:disabled):hover{filter:brightness(1.06)}}
+.legend-p{font-size:12.5px;color:var(--muted);margin-top:8px}
+
+.side{display:none}
+.side .stats{margin-top:0}
+
+dialog{border:0;padding:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);max-width:100vw}
+dialog::backdrop{background:rgba(10,14,22,.45)}
+dialog.sheet{width:100%;max-width:560px;margin:auto auto 0;border-radius:14px 14px 0 0;max-height:88%;overflow:auto;padding:16px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+dialog.full{width:100%;max-width:640px;height:100%;max-height:100%;margin:0 auto;display:flex;flex-direction:column;overflow:hidden}
+dialog.full:not([open]){display:none}
+.dh{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.dh h3{margin:0;flex:1;font-size:18px}
+.dh h3 small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.lbl{font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--muted);margin:14px 0 6px;display:block}
+.pick{display:flex;flex-wrap:wrap;gap:6px}
+.pick button{min-width:56px;height:48px;border-radius:8px;border:2px solid transparent;font-weight:800;font-size:16px;cursor:pointer;padding:0 10px}
+.pick button[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 2px var(--paper) inset}
+textarea,input[type=text],input[type=date],input[type=time],input[type=number],select{width:100%;min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:15px}
+textarea{resize:vertical;min-height:72px}
+.info{font-size:14px;color:var(--muted)}
+.info b{color:var(--ink)}
+.row{display:flex;gap:8px;align-items:center}
+
+.fhead{padding:calc(10px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px;overflow-x:auto;margin-top:8px}
+.tabs button{flex:1;height:44px;border:0;border-bottom:3px solid transparent;background:none;font-weight:700;color:var(--muted);cursor:pointer;white-space:nowrap;padding:0 8px}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.fbody{flex:1;overflow:auto;padding:8px max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left))}
+.ffoot{display:flex;gap:8px;align-items:center;padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-top:1px solid var(--line)}
+.ffoot .err{flex:1;color:var(--danger);font-size:13px;min-width:0}
+.srow-e{display:grid;grid-template-columns:48px 1fr 44px;gap:6px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule)}
+.srow-e .times{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr 82px;gap:6px}
+.srow-e .times label{font-size:11px;color:var(--muted)}
+.srow-e .names{display:grid;grid-template-columns:60px 1fr;gap:6px}
+input[type=color]{width:48px;height:44px;border:1px solid var(--line);border-radius:8px;padding:2px;background:var(--bg)}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{height:40px;border-radius:20px;border:1px solid var(--line);background:var(--bg);padding:0 12px;cursor:pointer;font-weight:600;font-size:13.5px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.seq{display:flex;flex-wrap:wrap;gap:4px;min-height:48px;padding:6px;border:1px dashed var(--line);border-radius:8px;background:var(--bg)}
+.seq button{width:40px;height:40px;border-radius:6px;border:0;font-weight:800;cursor:pointer;position:relative}
+.seq button::after{content:attr(data-n);position:absolute;bottom:-1px;right:2px;font-size:9px;font-weight:600;opacity:.8}
+.seq .empty{color:var(--faint);font-size:13px;align-self:center;padding:0 6px}
+.weekly{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.weekly label{font-size:12px;text-align:center;color:var(--muted)}
+.weekly select{padding:4px 2px;text-align:center}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.switch{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+.switch input{width:22px;height:22px}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;z-index:50;max-width:calc(100% - 32px)}
+.expimg{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;-webkit-touch-callout:default}
+
+@media (min-width:900px){
+  .main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+  .side{display:block;position:sticky;top:12px}
+  .mstats{display:none}
+  .cell{min-height:92px}
+  .chip{height:30px;min-width:34px;font-size:15px}
+  .two .chip{max-width:34px;height:26px}
+}
+@media (max-height:600px) and (orientation:landscape){
+  .cell{min-height:48px}
+  .chip{height:22px}
+  dialog.sheet{max-height:100%;margin-top:0;border-radius:0}
+}
+@media (prefers-reduced-motion:no-preference){.grid.slide{animation:sl .22s ease-out}@keyframes sl{from{opacity:.4;transform:translateX(var(--dx,0))}to{opacity:1;transform:none}}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <button class="ib" id="prev" aria-label="上個月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <h1 id="title"><small id="who">我的班表</small><span id="ym">2026 年 10 月</span></h1>
+    <button class="ib" id="next" aria-label="下個月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M9 5l7 7-7 7"/></svg></button>
+    <button class="ib" id="today">今天</button>
+    <button class="ib" id="openSettings" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </header>
+
+  <div class="main">
+    <div>
+      <section class="cal" id="cal" aria-label="月曆">
+        <div class="wk" id="wk"></div>
+        <div class="grid" id="grid" role="grid"></div>
+      </section>
+      <p class="legend-p" id="legendNote"></p>
+      <div class="mstats" id="mstats"></div>
+    </div>
+    <aside class="side" id="side"></aside>
+  </div>
+</div>
+
+<dialog class="sheet" id="dayDlg" aria-labelledby="dayTitle">
+  <div class="dh"><h3 id="dayTitle"></h3><button class="ib ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="info" id="dayInfo"></div>
+  <span class="lbl">改班（換班、請假、加班）</span>
+  <div class="pick" id="dayPick"></div>
+  <label class="lbl" for="dayNote">備註</label>
+  <textarea id="dayNote" maxlength="200" placeholder="例如：和小王換班、請特休"></textarea>
+  <div class="actions">
+    <button class="btn pri" id="daySave">儲存</button>
+    <button class="btn" id="dayRestore">恢復規則班</button>
+  </div>
+</dialog>
+
+<dialog class="full" id="setDlg" aria-labelledby="setTitle">
+  <div class="fhead">
+    <div class="dh" style="margin:0"><h3 id="setTitle">班表設定</h3><button class="ib ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-rule" aria-selected="true" data-tab="rule">循環規則</button>
+      <button role="tab" id="tab-shift" aria-selected="false" data-tab="shift">班別</button>
+      <button role="tab" id="tab-p2" aria-selected="false" data-tab="p2">第二成員</button>
+      <button role="tab" id="tab-gen" aria-selected="false" data-tab="gen">一般</button>
+    </div>
+  </div>
+  <div class="fbody" id="setBody"></div>
+  <div class="ffoot"><span class="err" id="setErr" role="alert"></span><button class="btn" data-close>取消</button><button class="btn pri" id="setSave">儲存設定</button></div>
+</dialog>
+
+<dialog class="sheet" id="expDlg" aria-labelledby="expTitle">
+  <div class="dh"><h3 id="expTitle">班表圖片</h3><button class="ib ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <p class="info" id="expMsg">長按圖片即可儲存或分享。</p>
+  <img class="expimg" id="expImg" alt="整月班表圖片">
+</dialog>
+
+<dialog class="sheet" id="cfmDlg" aria-labelledby="cfmTitle">
+  <div class="dh"><h3 id="cfmTitle">確定嗎？</h3></div>
+  <p class="info" id="cfmMsg"></p>
+  <div class="actions"><button class="btn dan" id="cfmYes">確定</button><button class="btn" data-close>取消</button></div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+const P = 'shift-calendar:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(P + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} }
+};
+const $ = s => document.querySelector(s);
+const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); if (attrs) for (const k in attrs) { if (k === 'class') n.className = attrs[k]; else if (k === 'text') n.textContent = attrs[k]; else if (k.startsWith('on')) n.addEventListener(k.slice(2), attrs[k]); else if (attrs[k] !== false && attrs[k] != null) n.setAttribute(k, attrs[k]); } for (const c of kids) if (c != null) n.append(c); return n; };
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+
+/* ---------- date helpers (day numbers via UTC) ---------- */
+const dnOf = s => { const [y, m, d] = s.split('-').map(Number); return Math.floor(Date.UTC(y, m - 1, d) / 86400000); };
+const dsOf = n => { const t = new Date(n * 86400000); return t.getUTCFullYear() + '-' + String(t.getUTCMonth() + 1).padStart(2, '0') + '-' + String(t.getUTCDate()).padStart(2, '0'); };
+const todayStr = () => new Date().toLocaleDateString('sv-SE');
+const mod = (a, n) => ((a % n) + n) % n;
+const dow = n => mod(n + 4, 7); // 1970-01-01 was Thursday (4)
+const validDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && dsOf(dnOf(s)) === s;
+
+/* ---------- data ---------- */
+const TEMPLATES = [
+  { name: '四班二輪', type: 'cycle', seq: ['e', 'e', 'l', 'l', 'o', 'o', 'o', 'o'] },
+  { name: '做二休二', type: 'cycle', seq: ['e', 'e', 'o', 'o'] },
+  { name: '做五休二', type: 'weekly', seq: ['e', 'e', 'e', 'e', 'e', 'o', 'o'] },
+  { name: '三班制', type: 'cycle', seq: ['e', 'e', 'm', 'm', 'n', 'n', 'o', 'o'] },
+];
+function sampleData() {
+  return {
+    sample: true, name: '我的班表', weekStart: 1,
+    shifts: [
+      { id: 'e', name: '早班', short: '早', color: '#22814a', start: '07:00', end: '15:00', brk: 0 },
+      { id: 'm', name: '中班', short: '中', color: '#2563b0', start: '15:00', end: '23:00', brk: 0 },
+      { id: 'l', name: '晚班', short: '晚', color: '#a84c0b', start: '19:00', end: '07:00', brk: 1 },
+      { id: 'n', name: '夜班', short: '夜', color: '#6c43b5', start: '23:00', end: '07:00', brk: 0 },
+      { id: 'o', name: '休假', short: '休', color: '#6e747e', start: '', end: '', brk: 0 },
+    ],
+    rules: [{ from: '2026-10-01', type: 'cycle', sequence: ['e', 'e', 'l', 'l', 'o', 'o', 'o', 'o'] }],
+    overrides: { '2026-10-15': { shiftId: 'm', note: '範例：和同事換成中班' } },
+    people: [{ name: '家人', on: false, rules: [{ from: '2026-10-05', type: 'weekly', sequence: ['e', 'e', 'e', 'e', 'e', 'o', 'o'] }] }],
+  };
+}
+function sanitize(d) {
+  try {
+    if (!d || !Array.isArray(d.shifts) || !d.shifts.length || !Array.isArray(d.rules)) return null;
+    d.shifts = d.shifts.filter(s => s && s.id && s.short).slice(0, 10);
+    const ids = new Set(d.shifts.map(s => s.id));
+    const okRule = r => r && validDate(r.from) && (r.type === 'cycle' || r.type === 'weekly') && Array.isArray(r.sequence) && r.sequence.length && r.sequence.every(x => ids.has(x)) && (r.type === 'cycle' || r.sequence.length === 7);
+    d.rules = d.rules.filter(okRule);
+    if (!d.overrides || typeof d.overrides !== 'object') d.overrides = {};
+    for (const k in d.overrides) if (!validDate(k) || !d.overrides[k] || !ids.has(d.overrides[k].shiftId)) delete d.overrides[k];
+    if (!Array.isArray(d.people) || !d.people[0]) d.people = sampleData().people;
+    d.people[0].rules = (d.people[0].rules || []).filter(okRule);
+    if (!d.people[0].rules.length) d.people[0].rules = [{ from: todayStr(), type: 'cycle', sequence: [d.shifts[0].id] }];
+    d.weekStart = d.weekStart === 0 ? 0 : 1;
+    d.name = String(d.name || '我的班表').slice(0, 20);
+    return d;
+  } catch (e) { return null; }
+}
+let data = sanitize(store.get('data', null)) || sampleData();
+const view = store.get('view', null) || {};
+let theme = store.get('theme', 'auto');
+let curY, curM; // month (1-12)
+{ const t = todayStr().split('-').map(Number); curY = Number(view.y) || t[0]; curM = Number(view.m) || t[1]; if (curM < 1 || curM > 12) curM = t[1]; }
+const save = () => store.set('data', data);
+const saveView = () => store.set('view', { y: curY, m: curM });
+function applyTheme() { if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', theme); }
+applyTheme();
+
+const shiftById = id => data.shifts.find(s => s.id === id);
+const isRest = s => !s || !s.start || !s.end;
+function hoursOf(s) {
+  if (isRest(s)) return 0;
+  const [h1, m1] = s.start.split(':').map(Number), [h2, m2] = s.end.split(':').map(Number);
+  let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins <= 0) mins += 1440; // cross-midnight: ends next day
+  return Math.max(0, mins / 60 - (Number(s.brk) || 0));
+}
+function ruleShift(rules, ds) {
+  if (!rules || !rules.length) return null;
+  const n = dnOf(ds);
+  const sorted = rules.slice().sort((a, b) => a.from < b.from ? -1 : 1);
+  let r = sorted[0];
+  for (const x of sorted) if (dnOf(x.from) <= n) r = x;
+  if (r.type === 'weekly') return r.sequence[mod(dow(n) - 1, 7)]; // seq[0]=Mon
+  return r.sequence[mod(n - dnOf(r.from), r.sequence.length)];
+}
+function shiftOn(ds, p = 0) {
+  const rules = p === 0 ? data.rules : (data.people[0] && data.people[0].rules);
+  if (p === 0 && data.overrides[ds]) return data.overrides[ds].shiftId;
+  return ruleShift(rules, ds);
+}
+function textOn(hex) {
+  const m = /^#?([\da-f]{6})$/i.exec(hex || ''); if (!m) return '#fff';
+  const v = parseInt(m[1], 16), r = v >> 16 & 255, g = v >> 8 & 255, b = v & 255;
+  const L = c => { c /= 255; return c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); };
+  const lum = .2126 * L(r) + .7152 * L(g) + .0722 * L(b);
+  return (lum + .05) / .05 > 1.05 / (lum + .05) ? '#111' : '#fff';
+}
+function monthStats(y, m) {
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const counts = {}; let hours = 0;
+  for (let d = 1; d <= days; d++) {
+    const ds = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const id = shiftOn(ds); if (!id) continue;
+    counts[id] = (counts[id] || 0) + 1; hours += hoursOf(shiftById(id));
+  }
+  return { counts, hours, days };
+}
+const fmtH = h => (Math.round(h * 10) / 10).toLocaleString('zh-TW');
+
+/* ---------- render calendar ---------- */
+const grid = $('#grid');
+let selDs = null;
+function chip(s, extra) {
+  const c = el('span', { class: 'chip' + (extra ? ' ' + extra : ''), text: s ? s.short : '?' });
+  if (s) { c.style.background = s.color; c.style.color = textOn(s.color); c.style.setProperty('--c', s.color); }
+  return c;
+}
+function render(dir) {
+  const p2 = data.people[0] && data.people[0].on;
+  $('#ym').textContent = `${curY} 年 ${curM} 月`;
+  const who = $('#who'); who.textContent = data.name + (p2 ? '＋' + data.people[0].name : '');
+  if (data.sample) who.append(' ', el('span', { class: 'sample', text: '範例' }));
+  const wk = $('#wk'); wk.textContent = '';
+  for (let i = 0; i < 7; i++) wk.append(el('span', { text: WD[(i + data.weekStart) % 7] }));
+  grid.textContent = '';
+  grid.classList.toggle('two', !!p2);
+  const first = dnOf(`${curY}-${String(curM).padStart(2, '0')}-01`);
+  const lead = mod(dow(first) - data.weekStart, 7);
+  const start = first - lead, tdy = todayStr();
+  if (!data.rules.length) { grid.append(el('div', { class: 'guide', style: 'grid-column:1/-1', text: '先設定班別與循環' })); }
+  for (let i = 0; i < 42; i++) {
+    const n = start + i, ds = dsOf(n), [y, m, d] = ds.split('-').map(Number);
+    const s1 = shiftById(shiftOn(ds));
+    const w = dow(n);
+    const cls = 'cell' + (m !== curM ? ' out' : '') + (ds === tdy ? ' today' : '') + (w === 0 || w === 6 ? ' wkend' : '') + (ds === selDs ? ' sel' : '');
+    const label = `${m}月${d}日 星期${WD[w]} ${s1 ? s1.name : ''}`;
+    const b = el('button', { class: cls, 'data-ds': ds, 'aria-label': label, type: 'button' }, el('span', { class: 'd', text: d }));
+    const chips = el('span', { class: 'chips' });
+    if (s1) chips.append(chip(s1));
+    if (p2) {
+      const s2 = shiftById(shiftOn(ds, 1)); if (s2) chips.append(chip(s2, 'p2'));
+      if (isRest(s1) && isRest(s2)) b.append(el('span', { class: 'star', text: '★', 'aria-hidden': 'true' }));
+    }
+    b.append(chips);
+    if (data.overrides[ds]) { b.append(el('span', { class: 'ov', 'aria-hidden': 'true' })); if (data.overrides[ds].note) b.append(el('span', { class: 'note-dot', 'aria-hidden': 'true' })); }
+    grid.append(b);
+  }
+  if (dir && !matchMedia('(prefers-reduced-motion: reduce)').matches) { grid.style.setProperty('--dx', dir > 0 ? '30px' : '-30px'); grid.classList.remove('slide'); void grid.offsetWidth; grid.classList.add('slide'); }
+  $('#legendNote').textContent = '紅色三角＝手動改班' + (p2 ? '；外框＝' + data.people[0].name + '；★＝共同休假' : '') + '。左右滑動月曆可切換月份。';
+  renderStats();
+}
+function statsBox() {
+  const st = monthStats(curY, curM);
+  const pm = curM === 1 ? [curY - 1, 12] : [curY, curM - 1];
+  const prev = monthStats(pm[0], pm[1]);
+  const box = el('section', { class: 'stats', 'aria-label': '本月統計' }, el('h2', { text: `${curM} 月統計` }));
+  const row = el('div', { class: 'srow' });
+  for (const s of data.shifts) {
+    const c = st.counts[s.id] || 0; if (!c) continue;
+    row.append(el('span', { class: 'sitem' }, chip(s), el('span', { class: 'num', text: `${s.name} ${c} 天` })));
+  }
+  box.append(row);
+  const diff = st.hours - prev.hours;
+  box.append(el('div', { class: 'tot' }, el('span', { text: '總工時' }), el('b', { text: fmtH(st.hours) + ' h', id: 'totHours' }),
+    el('span', { class: 'cmp num', text: diff === 0 ? '與上月相同' : `較上月 ${diff > 0 ? '+' : '−'}${fmtH(Math.abs(diff))} h` })));
+  const acts = el('div', { class: 'actions' }, el('button', { class: 'btn pri', id: 'exportBtn', type: 'button', onclick: exportPng, text: '匯出班表圖片' }));
+  box.append(acts);
+  return box;
+}
+function renderStats() {
+  const ms = $('#mstats'); ms.textContent = ''; ms.append(statsBox());
+  const side = $('#side'); side.textContent = ''; side.append(statsBox());
+  side.querySelector('#exportBtn').id = 'exportBtn2'; side.querySelector('#totHours').id = 'totHours2';
+  if (selDs) side.append(dayPanel(selDs));
+}
+function dayPanel(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  const s = shiftById(shiftOn(ds)), ov = data.overrides[ds];
+  const box = el('section', { class: 'stats', style: 'margin-top:12px' }, el('h2', { text: `${m} 月 ${d} 日 星期${WD[dow(dnOf(ds))]}` }));
+  box.append(el('div', { class: 'sitem' }, chip(s), el('span', { text: s ? `${s.name}${isRest(s) ? '' : ' ' + s.start + '–' + s.end}` : '' })));
+  if (ov && ov.note) box.append(el('p', { class: 'info', text: ov.note }));
+  box.append(el('div', { class: 'actions' }, el('button', { class: 'btn', type: 'button', text: '改班／備註', onclick: () => openDay(ds) })));
+  return box;
+}
+
+/* ---------- navigation ---------- */
+function go(delta) { curM += delta; if (curM > 12) { curM = 1; curY++; } if (curM < 1) { curM = 12; curY--; } saveView(); render(delta); }
+$('#prev').onclick = () => go(-1);
+$('#next').onclick = () => go(1);
+$('#today').onclick = () => { const t = todayStr().split('-').map(Number); curY = t[0]; curM = t[1]; saveView(); render(); };
+document.addEventListener('keydown', e => { if (document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return; if (e.key === 'ArrowLeft' && e.altKey) go(-1); if (e.key === 'ArrowRight' && e.altKey) go(1); });
+let sw = null, swiped = false;
+$('#cal').addEventListener('pointerdown', e => { sw = { x: e.clientX, y: e.clientY, id: e.pointerId }; swiped = false; });
+$('#cal').addEventListener('pointerup', e => {
+  if (!sw || sw.id !== e.pointerId) return; const dx = e.clientX - sw.x, dy = e.clientY - sw.y; sw = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { swiped = true; go(dx < 0 ? 1 : -1); }
+});
+$('#cal').addEventListener('pointercancel', () => { sw = null; });
+grid.addEventListener('click', e => {
+  if (swiped) { swiped = false; return; }
+  const c = e.target.closest('.cell'); if (!c) return;
+  selDs = c.dataset.ds;
+  if (matchMedia('(min-width:900px)').matches) { render(); } else openDay(selDs);
+});
+
+/* ---------- dialogs ---------- */
+document.querySelectorAll('dialog').forEach(d => {
+  d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); });
+});
+function toast(msg) { const t = el('div', { class: 'toast', role: 'status', text: msg }); document.body.append(t); setTimeout(() => t.remove(), 2200); }
+function confirmBox(msg, yesText) {
+  return new Promise(res => {
+    const d = $('#cfmDlg'); $('#cfmMsg').textContent = msg; $('#cfmYes').textContent = yesText || '確定';
+    let ok = false; $('#cfmYes').onclick = () => { ok = true; d.close(); };
+    d.addEventListener('close', () => res(ok), { once: true }); d.showModal();
+  });
+}
+
+/* ---------- day drawer ---------- */
+let dayPickId = null;
+function openDay(ds) {
+  const [y, m, d] = ds.split('-').map(Number);
+  const ruleId = ruleShift(data.rules, ds), ov = data.overrides[ds];
+  dayPickId = ov ? ov.shiftId : ruleId;
+  $('#dayTitle').textContent = '';
+  $('#dayTitle').append(`${m} 月 ${d} 日（${WD[dow(dnOf(ds))]}）`, el('small', { text: ds }));
+  const info = $('#dayInfo'); info.textContent = '';
+  const rs = shiftById(ruleId);
+  const line = (k, s) => el('div', null, k + '：', el('b', { text: s ? s.name : '—' }), s && !isRest(s) ? `　${s.start}–${s.end}（${fmtH(hoursOf(s))} h）` : '');
+  info.append(line('規則班', rs));
+  if (ov) info.append(line('目前（已手動調整）', shiftById(ov.shiftId)));
+  if (data.people[0] && data.people[0].on) info.append(line(data.people[0].name, shiftById(shiftOn(ds, 1))));
+  const pick = $('#dayPick'); pick.textContent = '';
+  for (const s of data.shifts) {
+    const b = el('button', { type: 'button', 'aria-pressed': String(s.id === dayPickId), id: 'pick-' + s.id, text: s.short, title: s.name, 'aria-label': s.name });
+    b.style.background = s.color; b.style.color = textOn(s.color);
+    b.onclick = () => { dayPickId = s.id; pick.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); };
+    pick.append(b);
+  }
+  $('#dayNote').value = ov ? ov.note || '' : '';
+  $('#dayRestore').disabled = !ov;
+  $('#daySave').onclick = () => {
+    const note = $('#dayNote').value.trim();
+    if (dayPickId === ruleId && !note) delete data.overrides[ds];
+    else data.overrides[ds] = { shiftId: dayPickId, note };
+    save(); $('#dayDlg').close(); render(); toast('已更新 ' + ds);
+  };
+  $('#dayRestore').onclick = () => { delete data.overrides[ds]; save(); $('#dayDlg').close(); render(); toast('已恢復規則班'); };
+  $('#dayDlg').showModal();
+}
+
+/* ---------- settings ---------- */
+let draft = null, tab = 'rule', segIdx = 0, segIdx2 = 0;
+const clone = o => JSON.parse(JSON.stringify(o));
+$('#openSettings').onclick = () => { draft = clone(data); segIdx = draft.rules.length - 1; segIdx2 = 0; $('#setErr').textContent = ''; renderSettings(); $('#setDlg').showModal(); };
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.tab; renderSettings(); });
+function newId() { const a = new Uint8Array(4); crypto.getRandomValues(a); return 's' + Array.from(a, x => x.toString(16).padStart(2, '0')).join(''); }
+function ruleEditor(rules, which) {
+  const frag = document.createDocumentFragment();
+  let idx = which === 2 ? segIdx2 : segIdx; if (idx >= rules.length) idx = rules.length - 1; if (idx < 0) idx = 0;
+  const pre = which === 2 ? 'p2-' : '';
+  const sorted = rules.map((r, i) => [r, i]).sort((a, b) => a[0].from < b[0].from ? -1 : 1);
+  frag.append(el('span', { class: 'lbl', text: '規則段（自某日起套用）' }));
+  const segs = el('div', { class: 'seg' });
+  for (const [r, i] of sorted) segs.append(el('button', { type: 'button', id: `${pre}seg-${i}`, 'aria-pressed': String(i === idx), text: `自 ${r.from} 起`, onclick: () => { if (which === 2) segIdx2 = i; else segIdx = i; renderSettings(); } }));
+  segs.append(el('button', { type: 'button', id: pre + 'seg-add', text: '＋ 新增規則段', onclick: () => {
+    const base = rules[idx]; const t = todayStr();
+    rules.push({ from: t > base.from ? t : dsOf(dnOf(base.from) + 1), type: base.type, sequence: base.sequence.slice() });
+    if (which === 2) segIdx2 = rules.length - 1; else segIdx = rules.length - 1; renderSettings();
+  } }));
+  frag.append(segs);
+  const r = rules[idx];
+  frag.append(el('p', { class: 'hint', text: '每段從起始日開始計算；早於第一段的日期會依第一段往回推算。' }));
+  const fromIn = el('input', { type: 'date', id: pre + 'rule-from', value: r.from });
+  fromIn.onchange = () => { if (validDate(fromIn.value)) { r.from = fromIn.value; renderSettings(); } };
+  frag.append(el('label', { class: 'lbl', for: pre + 'rule-from', text: '起始日（序列第 1 天）' }), fromIn);
+  frag.append(el('span', { class: 'lbl', text: '套用範本' }));
+  const tp = el('div', { class: 'seg' });
+  TEMPLATES.forEach((t, ti) => tp.append(el('button', { type: 'button', id: `${pre}tpl-${ti}`, text: t.name, onclick: () => {
+    const ids = draft.shifts.map(s => s.id); const fb = draft.shifts.find(isRest) || draft.shifts[0];
+    r.type = t.type; r.sequence = t.seq.map(x => ids.includes(x) ? x : fb.id); renderSettings();
+  } })));
+  frag.append(tp);
+  frag.append(el('span', { class: 'lbl', text: '規則類型' }));
+  const ty = el('div', { class: 'seg' });
+  [['cycle', '循環序列'], ['weekly', '依星期']].forEach(([v, t]) => ty.append(el('button', { type: 'button', id: `${pre}type-${v}`, 'aria-pressed': String(r.type === v), text: t, onclick: () => {
+    if (r.type === v) return; r.type = v;
+    if (v === 'weekly') { const w = draft.shifts[0].id, o = (draft.shifts.find(isRest) || draft.shifts[0]).id; r.sequence = [w, w, w, w, w, o, o]; }
+    renderSettings();
+  } })));
+  frag.append(ty);
+  if (r.type === 'cycle') {
+    frag.append(el('span', { class: 'lbl', text: `循環序列（${r.sequence.length} 天，最多 60）` }));
+    const seq = el('div', { class: 'seq', id: pre + 'seq' });
+    if (!r.sequence.length) seq.append(el('span', { class: 'empty', text: '點下方班別加入序列' }));
+    r.sequence.forEach((id, k) => {
+      const s = draft.shifts.find(x => x.id === id);
+      const b = el('button', { type: 'button', 'data-n': k + 1, text: s ? s.short : '?', 'aria-label': `第 ${k + 1} 天 ${s ? s.name : ''}，點一下移除`, onclick: () => { r.sequence.splice(k, 1); renderSettings(); } });
+      if (s) { b.style.background = s.color; b.style.color = textOn(s.color); }
+      seq.append(b);
+    });
+    frag.append(seq, el('p', { class: 'hint', text: '點序列中的格子可移除；點下方班別加到最後。' }));
+    const add = el('div', { class: 'pick', style: 'margin-top:8px' });
+    for (const s of draft.shifts) {
+      const b = el('button', { type: 'button', id: `${pre}add-${s.id}`, text: '＋' + s.short, 'aria-label': '加入' + s.name, onclick: () => { if (r.sequence.length < 60) { r.sequence.push(s.id); renderSettings(); } } });
+      b.style.background = s.color; b.style.color = textOn(s.color); add.append(b);
+    }
+    add.append(el('button', { type: 'button', class: 'btn', style: 'background:var(--bg);color:var(--ink);font-size:14px', id: pre + 'seq-clear', text: '清空', onclick: () => { r.sequence = []; renderSettings(); } }));
+    frag.append(add);
+  } else {
+    frag.append(el('span', { class: 'lbl', text: '每週固定班別' }));
+    const wk = el('div', { class: 'weekly' });
+    for (let k = 0; k < 7; k++) {
+      const sel = el('select', { id: `${pre}wk-${k}`, 'aria-label': '星期' + WD[(k + 1) % 7] });
+      for (const s of draft.shifts) sel.append(el('option', { value: s.id, text: s.short, selected: s.id === r.sequence[k] ? 'selected' : false }));
+      sel.onchange = () => { r.sequence[k] = sel.value; };
+      wk.append(el('div', null, el('label', { for: `${pre}wk-${k}`, text: WD[(k + 1) % 7] }), sel));
+    }
+    frag.append(wk);
+  }
+  if (rules.length > 1) frag.append(el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn dan', id: pre + 'seg-del', text: '刪除此規則段', onclick: () => { rules.splice(idx, 1); if (which === 2) segIdx2 = 0; else segIdx = rules.length - 1; renderSettings(); } })));
+  return frag;
+}
+function renderSettings() {
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  const body = $('#setBody'); body.textContent = '';
+  if (tab === 'rule') body.append(ruleEditor(draft.rules, 1));
+  else if (tab === 'shift') {
+    draft.shifts.forEach((s, i) => {
+      const row = el('div', { class: 'srow-e' });
+      const col = el('input', { type: 'color', id: `sh-color-${i}`, value: s.color, 'aria-label': s.name + ' 顏色' }); col.oninput = () => { s.color = col.value; };
+      const sh = el('input', { type: 'text', id: `sh-short-${i}`, value: s.short, maxlength: 2, 'aria-label': '簡稱（1～2 字）' }); sh.oninput = () => { s.short = sh.value.trim(); };
+      const nm = el('input', { type: 'text', id: `sh-name-${i}`, value: s.name, maxlength: 10, 'aria-label': '名稱' }); nm.oninput = () => { s.name = nm.value.trim(); };
+      const del = el('button', { type: 'button', class: 'ib', id: `sh-del-${i}`, 'aria-label': '刪除' + s.name, onclick: () => {
+        if (draft.shifts.length <= 1) return;
+        const used = [...draft.rules, ...draft.people[0].rules].some(r => r.sequence.includes(s.id));
+        if (used) { $('#setErr').textContent = `「${s.name}」仍在循環序列中，請先移除。`; return; }
+        draft.shifts.splice(i, 1); for (const k in draft.overrides) if (draft.overrides[k].shiftId === s.id) delete draft.overrides[k]; renderSettings();
+      } }, el('span', { text: '✕', 'aria-hidden': 'true' }));
+      const st = el('input', { type: 'time', id: `sh-start-${i}`, value: s.start }); st.onchange = () => { s.start = st.value; };
+      const en = el('input', { type: 'time', id: `sh-end-${i}`, value: s.end }); en.onchange = () => { s.end = en.value; };
+      const bk = el('input', { type: 'number', id: `sh-brk-${i}`, value: s.brk || 0, min: 0, max: 6, step: 0.5, inputmode: 'decimal' }); bk.onchange = () => { s.brk = Math.max(0, Math.min(6, Number(bk.value) || 0)); };
+      row.append(col, el('div', { class: 'names' }, sh, nm), del,
+        el('div', { class: 'times' }, el('div', null, el('label', { for: st.id, text: '上班' }), st), el('div', null, el('label', { for: en.id, text: '下班（早於上班＝跨夜）' }), en), el('div', null, el('label', { for: bk.id, text: '休息 h' }), bk)));
+      body.append(row);
+    });
+    body.append(el('p', { class: 'hint', text: '上下班時間留空代表休假（工時 0）。跨夜班的工時算在開始當日。' }));
+    if (draft.shifts.length < 10) body.append(el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn', id: 'sh-add', text: '＋ 新增班別', onclick: () => {
+      draft.shifts.push({ id: newId(), name: '新班別', short: '新', color: '#3b8ea5', start: '09:00', end: '18:00', brk: 1 }); renderSettings();
+    } })));
+  } else if (tab === 'p2') {
+    const p = draft.people[0];
+    const sw = el('input', { type: 'checkbox', id: 'p2-on', checked: p.on ? 'checked' : false }); sw.onchange = () => { p.on = sw.checked; renderSettings(); };
+    body.append(el('label', { class: 'switch', for: 'p2-on' }, sw, el('span', { text: '在月曆中並列第二位成員的班別' })));
+    body.append(el('p', { class: 'hint', text: '兩人同一天都休假時，月曆格左上角會出現 ★，方便約時間。' }));
+    const nm = el('input', { type: 'text', id: 'p2-name', value: p.name, maxlength: 8 }); nm.oninput = () => { p.name = nm.value.trim() || '成員二'; };
+    body.append(el('label', { class: 'lbl', for: 'p2-name', text: '成員名稱' }), nm);
+    if (p.on) body.append(ruleEditor(p.rules, 2));
+  } else {
+    const nm = el('input', { type: 'text', id: 'gen-name', value: draft.name, maxlength: 20 }); nm.oninput = () => { draft.name = nm.value.trim() || '我的班表'; };
+    body.append(el('label', { class: 'lbl', for: 'gen-name', text: '班表名稱（顯示在標題與匯出圖片）' }), nm);
+    body.append(el('span', { class: 'lbl', text: '一週開始於' }));
+    const ws = el('div', { class: 'seg' });
+    [[1, '週一'], [0, '週日']].forEach(([v, t]) => ws.append(el('button', { type: 'button', id: 'ws-' + v, 'aria-pressed': String(draft.weekStart === v), text: t, onclick: () => { draft.weekStart = v; renderSettings(); } })));
+    body.append(ws);
+    body.append(el('span', { class: 'lbl', text: '外觀' }));
+    const th = el('div', { class: 'seg' });
+    [['auto', '跟隨系統'], ['light', '淺色'], ['dark', '深色']].forEach(([v, t]) => th.append(el('button', { type: 'button', id: 'theme-' + v, 'aria-pressed': String(theme === v), text: t, onclick: () => { theme = v; store.set('theme', v); applyTheme(); renderSettings(); } })));
+    body.append(th);
+    body.append(el('span', { class: 'lbl', text: '資料' }));
+    body.append(el('div', { class: 'actions' },
+      el('button', { type: 'button', class: 'btn', id: 'clear-ov', text: `清除所有手動改班（${Object.keys(draft.overrides).length}）`, onclick: async () => { if (await confirmBox('會刪除所有手動改班與備註，規則不受影響。', '清除')) { draft.overrides = {}; renderSettings(); } } }),
+      el('button', { type: 'button', class: 'btn dan', id: 'reset-all', text: '還原範例資料', onclick: async () => { if (await confirmBox('會清除你所有的班別、規則與改班，回到範例。', '還原')) { draft = sampleData(); segIdx = 0; renderSettings(); } } })));
+    body.append(el('p', { class: 'hint', text: '資料只存在這台裝置的瀏覽器中。' }));
+  }
+}
+$('#setSave').onclick = () => {
+  const err = m => { $('#setErr').textContent = m; };
+  if (draft.shifts.some(s => !s.short || !s.name)) return err('每個班別都需要名稱與簡稱。');
+  if (draft.shifts.some(s => (s.start && !s.end) || (!s.start && s.end))) return err('上下班時間要同時填寫，或同時留空（休假）。');
+  const all = [...draft.rules, ...(draft.people[0].on ? draft.people[0].rules : [])];
+  if (all.some(r => !r.sequence.length)) return err('循環序列是空的，至少要有 1 天。');
+  if (all.some(r => !validDate(r.from))) return err('請填寫規則的起始日。');
+  const froms = draft.rules.map(r => r.from); if (new Set(froms).size !== froms.length) return err('兩段規則的起始日相同，請修改。');
+  if (!draft.people[0].rules.length) draft.people[0].rules = [{ from: todayStr(), type: 'cycle', sequence: [draft.shifts[0].id] }];
+  draft.sample = false;
+  data = draft; save(); $('#setDlg').close(); render(); toast('設定已儲存');
+};
+
+/* ---------- export PNG ---------- */
+let dl = null;
+(async () => { try { dl = await window.claude?.use?.('downloads'); } catch (e) { dl = null; } })();
+function drawPng() {
+  const W = 1080, pad = 56, cw = (W - pad * 2) / 7, ch = 132, p2 = data.people[0] && data.people[0].on;
+  const H = 210 + 56 + ch * 6 + 260;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const F = '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif';
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#151b26'; g.font = `800 64px ${F}`; g.textBaseline = 'alphabetic';
+  g.fillText(`${curY} 年 ${curM} 月`, pad, 120);
+  g.font = `600 32px ${F}`; g.fillStyle = '#4f5867'; g.fillText(data.name + (p2 ? '＋' + data.people[0].name : ''), pad, 170);
+  g.fillStyle = '#151b26'; g.fillRect(pad, 196, W - pad * 2, 4);
+  const top = 210;
+  g.fillRect(pad, top, W - pad * 2, 56);
+  g.fillStyle = '#ffffff'; g.font = `700 28px ${F}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let i = 0; i < 7; i++) g.fillText(WD[(i + data.weekStart) % 7], pad + cw * i + cw / 2, top + 28);
+  const first = dnOf(`${curY}-${String(curM).padStart(2, '0')}-01`), start = first - mod(dow(first) - data.weekStart, 7);
+  const y0 = top + 56;
+  for (let i = 0; i < 42; i++) {
+    const n = start + i, ds = dsOf(n), m = Number(ds.slice(5, 7)), d = Number(ds.slice(8));
+    const x = pad + (i % 7) * cw, y = y0 + Math.floor(i / 7) * ch, out = m !== curM;
+    g.fillStyle = out ? '#f3f4f6' : '#ffffff'; g.fillRect(x, y, cw, ch);
+    g.strokeStyle = '#d5d9e0'; g.lineWidth = 2; g.strokeRect(x, y, cw, ch);
+    g.globalAlpha = out ? .4 : 1;
+    const w = dow(n); g.fillStyle = (w === 0 || w === 6) ? '#c63d28' : '#151b26';
+    g.font = `700 28px ${F}`; g.textAlign = 'left'; g.textBaseline = 'top'; g.fillText(String(d), x + 12, y + 10);
+    const ids = [shiftOn(ds)]; if (p2) ids.push(shiftOn(ds, 1));
+    const bw = p2 ? (cw - 30) / 2 : cw - 24, bh = 62;
+    ids.forEach((id, k) => {
+      const s = shiftById(id); if (!s) return;
+      const bx = x + 12 + k * (bw + 6), by = y + 54;
+      if (k === 1) { g.fillStyle = '#ffffff'; roundRect(g, bx + 2, by + 2, bw - 4, bh - 4, 9); g.fill(); g.strokeStyle = s.color; g.lineWidth = 4; g.stroke(); }
+      else { g.fillStyle = s.color; roundRect(g, bx, by, bw, bh, 10); g.fill(); }
+      g.fillStyle = k === 1 ? '#151b26' : textOn(s.color); g.font = `800 ${p2 ? 34 : 40}px ${F}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(s.short, bx + bw / 2, by + bh / 2 + 2);
+    });
+    if (data.overrides[ds]) { g.fillStyle = '#d6452f'; g.beginPath(); g.moveTo(x + cw - 26, y + 2); g.lineTo(x + cw - 2, y + 2); g.lineTo(x + cw - 2, y + 26); g.fill(); }
+    if (p2 && isRest(shiftById(ids[0])) && isRest(shiftById(ids[1]))) { g.fillStyle = '#d6452f'; g.font = `800 26px ${F}`; g.textAlign = 'right'; g.textBaseline = 'top'; g.fillText('★', x + cw - 12, y + 10); }
+    g.globalAlpha = 1;
+  }
+  // legend + stats
+  const st = monthStats(curY, curM);
+  let ly = y0 + ch * 6 + 50, lx = pad;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  for (const s of data.shifts) {
+    const label = `${s.name}${isRest(s) ? '' : ' ' + s.start + '–' + s.end}  ${st.counts[s.id] || 0} 天`;
+    g.font = `500 26px ${F}`; const tw = g.measureText(label).width;
+    if (lx + 52 + tw > W - pad) { lx = pad; ly += 56; }
+    g.fillStyle = s.color; roundRect(g, lx, ly - 20, 40, 40, 7); g.fill();
+    g.fillStyle = textOn(s.color); g.font = `800 24px ${F}`; g.textAlign = 'center'; g.fillText(s.short, lx + 20, ly + 1);
+    g.fillStyle = '#151b26'; g.font = `500 26px ${F}`; g.textAlign = 'left'; g.fillText(label, lx + 52, ly);
+    lx += 52 + tw + 34;
+  }
+  ly += 70;
+  g.fillStyle = '#151b26'; g.font = `800 40px ${F}`; g.fillText(`總工時 ${fmtH(st.hours)} 小時`, pad, ly);
+  g.font = `500 24px ${F}`; g.fillStyle = '#6b7280'; g.textAlign = 'right';
+  g.fillText((p2 ? '★ 共同休假　' : '') + '紅色三角＝手動改班', W - pad, ly);
+  return c;
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+async function exportPng() {
+  const c = drawPng();
+  const fname = `班表-${curY}-${String(curM).padStart(2, '0')}.png`;
+  if (dl) {
+    try {
+      const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+      await dl.save({ filename: fname, data: blob }); toast('已匯出 ' + fname); return;
+    } catch (e) { if (String(e && (e.message || e)).toLowerCase().includes('declin')) return; }
+  }
+  $('#expImg').src = c.toDataURL('image/png');
+  $('#expMsg').textContent = '長按（或右鍵）圖片即可儲存或分享給家人。';
+  $('#expDlg').showModal();
+}
+
+window.__sc = { ruleShift, shiftOn, hoursOf, monthStats, dnOf, dsOf, get data() { return data; }, drawPng };
+render();
+})();
+</script>
+</body></html>

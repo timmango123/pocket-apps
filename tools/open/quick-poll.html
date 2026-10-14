@@ -1,0 +1,711 @@
+<!doctype html><html lang="zh-Hant"><head><script>(function(){if(window.claude)return;var dl={save:function(o){var b=o.data instanceof Blob?o.data:new Blob([o.data],{type:"application/octet-stream"}),u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=o.filename||"download";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(u)},60000);return Promise.resolve()}};window.claude={use:function(n){return Promise.resolve(n==="downloads"?dl:null)}}})()</script><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style><script>try{if(!window.claude&&parent!==window&&parent.claude)window.claude=parent.claude}catch(e){}</script></head><body><style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>投票器</title>
+<style>
+:root{
+  --bg:#eceff3; --paper:#fbfcfd; --surface:#ffffff; --ink:#18213b; --muted:#59627a; --line:#cfd5df; --line-strong:#8d97ab;
+  --accent:#233a7a; --accent-ink:#ffffff; --accent-soft:#e1e7f6;
+  --stamp:#c4122f; --stamp-soft:#fbe3e6; --bar:#9aa8cc; --win:#c4122f;
+  --good:#1d6b43; --bad:#b01f2e; --bad-bg:#fbe4e6; --focus:#233a7a;
+  --serif:"Noto Serif TC","Source Han Serif TC","PMingLiU","Songti TC",serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f121a; --paper:#161b27; --surface:#1b2130; --ink:#e7eaf3; --muted:#9aa3b8; --line:#2c3446; --line-strong:#4f5a72;
+  --accent:#9db0ff; --accent-ink:#0d1430; --accent-soft:#232c48;
+  --stamp:#ff6b7d; --stamp-soft:#3b1d25; --bar:#56638a; --win:#ff6b7d;
+  --good:#7fd6a3; --bad:#ff8b95; --bad-bg:#3b1b21; --focus:#9db0ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f121a; --paper:#161b27; --surface:#1b2130; --ink:#e7eaf3; --muted:#9aa3b8; --line:#2c3446; --line-strong:#4f5a72;
+  --accent:#9db0ff; --accent-ink:#0d1430; --accent-soft:#232c48;
+  --stamp:#ff6b7d; --stamp-soft:#3b1d25; --bar:#56638a; --win:#ff6b7d;
+  --good:#7fd6a3; --bad:#ff8b95; --bad-bg:#3b1b21; --focus:#9db0ff; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;padding:10px 16px calc(20px + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.app{max-width:1000px;margin:0 auto}
+.top{display:flex;align-items:center;gap:8px;padding:2px 0 10px}
+.top h1{margin:0 auto 0 0;font-size:18px;letter-spacing:.08em;display:flex;align-items:center;gap:8px}
+.top h1 .box{width:22px;height:22px;border:2px solid var(--ink);border-radius:3px;position:relative}
+.top h1 .box::after{content:"";position:absolute;left:4px;right:4px;top:-2px;height:3px;background:var(--stamp)}
+.icon-btn{min-height:44px;min-width:44px;padding:0 12px;border:1px solid var(--line);background:var(--surface);border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.icon-btn svg{width:18px;height:18px}
+.sheet{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:18px 16px;position:relative;box-shadow:0 1px 0 var(--line),0 10px 24px -18px rgba(24,33,59,.45)}
+.sheet.ballot{border-top:6px double var(--accent)}
+.kicker{font-size:12px;letter-spacing:.2em;color:var(--muted);margin:0 0 4px}
+h2.q{font-family:var(--serif);font-size:24px;line-height:1.35;margin:0 0 6px;word-break:break-word}
+.lbl{display:block;font-size:13px;font-weight:700;margin:16px 0 6px}
+input[type=text],input[type=number]{width:100%;min-height:46px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;padding:8px 12px}
+input.bad{border-color:var(--bad);background:var(--bad-bg)}
+.opt-list{list-style:none;margin:0;padding:0;counter-reset:o}
+.opt-list li{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.opt-list li::before{counter-increment:o;content:counter(o);width:22px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px;flex:none}
+.opt-list input{flex:1;min-width:0}
+.del{min-width:44px;min-height:44px;border:1px solid var(--line);background:var(--surface);border-radius:6px;cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
+.btn{min-height:46px;padding:0 16px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;font-weight:600}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.stamp{background:var(--stamp);color:#fff;border-color:var(--stamp)}
+:root[data-theme="dark"] .btn.stamp{color:#1a0b0f}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.stamp{color:#1a0b0f}}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.block{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row > .grow{flex:1}
+.err{color:var(--bad);font-size:13px;font-weight:600;margin:8px 0 0}
+.hint{color:var(--muted);font-size:13px;margin:6px 0 0}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--stamp);border:1px solid var(--stamp);border-radius:3px;padding:0 5px;vertical-align:middle;margin-left:6px}
+.types{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+.types label{position:relative;min-height:46px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--line);cursor:pointer;font-size:14px}
+.types label:first-child{border-left:0}
+.types input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.types label:has(input:checked){background:var(--accent);color:var(--accent-ink);font-weight:700}
+.types label:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:-4px}
+.settings{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:6px}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;border-bottom:1px dashed var(--line);cursor:pointer;font-size:14px}
+.sw input{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:13px;background:var(--line-strong);position:relative;cursor:pointer;flex:none;margin:0;transition:background .15s}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .15s}
+.sw input:checked{background:var(--accent)}
+.sw input:checked::after{transform:translateX(18px)}
+.num{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;border-bottom:1px dashed var(--line);font-size:14px}
+.num input{width:84px;text-align:center}
+.foot{position:sticky;bottom:0;padding:12px 0 calc(4px + env(safe-area-inset-bottom));background:linear-gradient(to bottom,transparent,var(--bg) 30%);margin-top:6px;z-index:2}
+.layout{display:grid;gap:16px}
+@media (min-width:900px){.layout{grid-template-columns:1.1fr .9fr;align-items:start}.preview{display:block!important;position:sticky;top:10px}}
+.preview{display:none}
+/* handoff */
+.hand{min-height:calc(100dvh - 90px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;padding:12px 0}
+.hand .big{font-family:var(--serif);font-size:30px;font-weight:700;margin:0;line-height:1.3}
+.hand .nth{font-size:15px;color:var(--muted);margin:0}
+.hand .nth{font-size:17px}.hand .nth b{font-size:48px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.1;font-family:var(--serif);margin:0 4px;vertical-align:-4px}
+.hold{position:relative;overflow:hidden;min-height:64px;min-width:240px;border-radius:32px;border:2px solid var(--accent);background:var(--surface);color:var(--accent);font-weight:700;font-size:17px;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;padding:0 24px}
+.hold::before{content:"";position:absolute;inset:0;background:var(--accent);transform:scaleX(var(--p,0));transform-origin:left}
+.hold span{position:relative;mix-blend-mode:normal}
+.hold.filling span{color:var(--accent-ink)}
+.hold.small{min-height:48px;min-width:200px;font-size:14px;border-color:var(--stamp);color:var(--stamp)}
+.hold.small::before{background:var(--stamp)}
+.hold.small.filling span{color:#fff}
+.hold:disabled{opacity:.45;cursor:not-allowed}
+.counter{display:flex;gap:14px;justify-content:center;font-size:13px;color:var(--muted)}
+.counter b{color:var(--ink);font-variant-numeric:tabular-nums}
+.confirm-box{background:var(--surface);border:2px solid var(--stamp);border-radius:8px;padding:14px;max-width:360px;width:100%}
+.confirm-box p{margin:0 0 10px;font-weight:700}
+/* vote */
+.vlist{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:10px}
+.vopt{width:100%;min-height:56px;display:flex;align-items:center;gap:12px;text-align:left;padding:8px 14px;border:1.5px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;font-size:17px;position:relative}
+.vopt .name{flex:1;min-width:0;word-break:break-word}
+.vopt .mark{width:36px;height:36px;flex:none;border:1.5px solid var(--line-strong);border-radius:50%;display:grid;place-items:center;font-family:var(--serif);font-weight:900;color:transparent;font-size:20px}
+.vopt.multi .mark{border-radius:5px}
+.vopt[aria-checked="true"]{border-color:var(--stamp);background:var(--stamp-soft)}
+.vopt[aria-checked="true"] .mark{border:2.5px solid var(--stamp);color:var(--stamp);transform:rotate(-8deg)}
+.vopt:disabled{opacity:.4;cursor:not-allowed}
+.rank-row{display:flex;align-items:center;gap:8px;min-height:56px;padding:4px 6px 4px 4px;border:1.5px solid var(--line-strong);background:var(--surface);border-radius:6px;touch-action:none}
+.rank-row.dragging{border-color:var(--accent);box-shadow:0 8px 20px -8px rgba(0,0,0,.35);position:relative;z-index:2}
+.rank-row .pos{width:30px;text-align:center;font-family:var(--serif);font-weight:900;font-size:20px;color:var(--stamp)}
+.rank-row .name{flex:1;min-width:0;font-size:16px;word-break:break-word}
+.handle{width:44px;height:44px;display:grid;place-items:center;cursor:grab;color:var(--muted);border:0;background:transparent;touch-action:none}
+.handle svg{width:20px;height:20px}
+.mv{width:44px;height:44px;border:1px solid var(--line);background:var(--paper);border-radius:6px;cursor:pointer;font-size:15px}
+.mv:disabled{opacity:.3}
+.rate-row{border:1.5px solid var(--line-strong);background:var(--surface);border-radius:6px;padding:8px 10px}
+.rate-row .name{font-size:16px;margin-bottom:2px;word-break:break-word}
+.stars{display:flex;gap:2px}
+.star{width:44px;height:44px;border:0;background:transparent;cursor:pointer;padding:6px;color:var(--line-strong)}
+.star svg{width:100%;height:100%}
+.star.on{color:var(--stamp)}
+.vote-foot{display:flex;gap:10px;margin-top:16px}
+.vote-foot .btn{min-height:52px}
+.done{position:fixed;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 88%,transparent);z-index:20}
+.done div{font-family:var(--serif);font-size:30px;font-weight:900;color:var(--stamp);border:4px solid var(--stamp);border-radius:50%;width:170px;height:170px;display:grid;place-items:center;transform:rotate(-10deg);animation:stampIn .25s ease-out}
+@keyframes stampIn{from{transform:rotate(-10deg) scale(1.6);opacity:0}to{transform:rotate(-10deg) scale(1);opacity:1}}
+/* result */
+.res-wrap{max-width:720px;margin:0 auto}
+.summary{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:6px}
+.summary b{font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums;margin-right:2px}
+.tabs{display:flex;border-bottom:1px solid var(--line);margin-top:14px}
+.tabs button{flex:1;min-height:46px;border:0;background:transparent;cursor:pointer;font-weight:600;color:var(--muted);border-bottom:3px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--stamp)}
+.bars{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:12px}
+.bars li .lab{display:flex;justify-content:space-between;gap:10px;font-size:15px;margin-bottom:4px}
+.bars li .lab span:first-child{min-width:0;word-break:break-word}
+.bars li .lab span:last-child{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.track{height:22px;background:var(--surface);border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--bar);transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.bars li.win .fill{background:var(--win)}
+.bars li.win .lab span:first-child{font-weight:800}
+.bars li.win .lab span:first-child::after{content:"當選";font-size:11px;font-weight:800;color:var(--stamp);border:1.5px solid var(--stamp);border-radius:50%;padding:3px 4px;margin-left:8px;display:inline-block;transform:rotate(-8deg);line-height:1}
+.notice{margin-top:14px;padding:12px;border-left:4px solid var(--stamp);background:var(--stamp-soft);border-radius:0 6px 6px 0}
+.notice b{display:block;margin-bottom:6px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:12px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl-scroll{overflow-x:auto}
+.out{color:var(--muted);text-decoration:line-through}
+details.hist{margin-top:16px;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+details.hist summary{min-height:48px;padding:0 14px;display:flex;align-items:center;cursor:pointer;font-weight:700}
+details.hist ul{list-style:none;margin:0;padding:0 14px 10px}
+details.hist li{border-top:1px solid var(--line);padding:8px 0;font-size:13px}
+details.hist li b{display:block;font-size:14px}
+.resume{border:2px solid var(--accent);background:var(--accent-soft);border-radius:6px;padding:12px 14px;margin-bottom:12px}
+.resume p{margin:0 0 8px;font-weight:700}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:8px;padding:10px 16px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (hover:hover){.btn:not(:disabled):hover,.icon-btn:hover{border-color:var(--accent)}.vopt:not(:disabled):hover{border-color:var(--accent)}.star:hover{color:var(--stamp)}}
+@media (max-width:380px){.types label{font-size:13px}.settings{grid-template-columns:1fr}h2.q{font-size:21px}}
+@media (max-width:520px){.settings{grid-template-columns:1fr}}
+@media (max-height:500px){.hand{min-height:auto}.hand .big{font-size:24px}.hand .nth b{font-size:34px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+<header class="top">
+  <h1><span class="box" aria-hidden="true"></span>投票器</h1>
+  <button class="icon-btn" id="btn-theme" type="button" aria-label="切換主題"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span id="theme-label">自動</span></button>
+</header>
+
+<!-- 1. 建立 -->
+<section id="s-setup">
+  <div class="resume" id="resume" hidden>
+    <p id="resume-text">有一場進行中的投票</p>
+    <div class="row"><button class="btn primary grow" id="btn-resume" type="button">繼續投票</button><button class="btn" id="btn-discard" type="button">放棄</button></div>
+  </div>
+  <div class="layout">
+    <div class="sheet">
+      <p class="kicker">建立投票</p>
+      <label class="lbl" for="question" style="margin-top:4px">題目 <span class="tag" id="sample-tag">範例</span></label>
+      <input type="text" id="question" maxlength="60" value="晚餐吃什麼？">
+      <div class="lbl" id="opt-lbl">選項（2–20 項）</div>
+      <ol class="opt-list" id="opt-list" aria-labelledby="opt-lbl"></ol>
+      <div class="row"><button class="btn grow" id="btn-add" type="button">＋ 新增選項</button><button class="btn" id="btn-clear-sample" type="button">清空</button></div>
+      <p class="err" id="setup-err" role="alert" hidden></p>
+
+      <div class="lbl" id="type-lbl">投票方式</div>
+      <div class="types" role="radiogroup" aria-labelledby="type-lbl">
+        <label><input type="radio" name="ptype" id="type-single" value="single" checked>單選</label>
+        <label><input type="radio" name="ptype" id="type-multi" value="multi">複選</label>
+        <label><input type="radio" name="ptype" id="type-rank" value="rank">排序</label>
+        <label><input type="radio" name="ptype" id="type-rating" value="rating">評分</label>
+      </div>
+      <p class="hint" id="type-hint"></p>
+      <div class="settings">
+        <div class="num" id="maxn-row" hidden><label for="max-n">複選上限</label><input type="number" id="max-n" min="1" max="20" value="2" inputmode="numeric"></div>
+        <div class="num"><label for="expected">預期投票人數</label><input type="number" id="expected" min="1" max="999" placeholder="不限" inputmode="numeric"></div>
+        <label class="sw" for="anon">匿名投票<input type="checkbox" id="anon" checked></label>
+        <label class="sw" for="abstain">允許棄權<input type="checkbox" id="abstain"></label>
+        <label class="sw" for="shuffle">每人選項順序打亂<input type="checkbox" id="shuffle"></label>
+      </div>
+      <div class="foot"><button class="btn primary block" id="btn-start" type="button" style="min-height:54px;font-size:17px">開始投票</button></div>
+      <details class="hist" id="hist"><summary>最近結果</summary><ul id="hist-list"></ul></details>
+    </div>
+    <aside class="preview" aria-label="選票預覽">
+      <div class="sheet ballot"><p class="kicker">選票預覽</p><h2 class="q" id="pv-q"></h2><p class="hint" id="pv-hint"></p><div id="pv-body"></div></div>
+    </aside>
+  </div>
+</section>
+
+<!-- 2. 交接 -->
+<section id="s-hand" hidden>
+  <div class="hand">
+    <p class="big" id="hand-big">請把手機交給下一位</p>
+    <p class="nth">第 <b id="hand-k">1</b> 位投票者</p>
+    <div id="name-wrap" hidden style="width:100%;max-width:320px;text-align:left"><label class="lbl" for="voter-name">你的名字（非匿名投票）</label><input type="text" id="voter-name" maxlength="20" autocomplete="off"></div>
+    <button class="hold" id="hold-ready" type="button"><span>按住 1 秒・我準備好了</span></button>
+    <div class="counter"><span>已投 <b id="hand-count">0</b> 票</span><span id="hand-exp"></span></div>
+    <div class="confirm-box" id="all-done" hidden><p>全員已投，公布結果？</p><div class="row"><button class="btn stamp grow" id="btn-publish-now" type="button">公布結果</button><button class="btn" id="btn-keep" type="button">繼續投票</button></div></div>
+    <button class="hold small" id="hold-end" type="button"><span>按住 1 秒・結束並公布</span></button>
+    <button class="btn" id="btn-abort" type="button" style="border-style:dashed">放棄這次投票</button>
+    <div class="confirm-box" id="abort-box" hidden><p>確定放棄？已投的票會全部清除。</p><div class="row"><button class="btn stamp grow" id="btn-abort-yes" type="button">放棄</button><button class="btn" id="btn-abort-no" type="button">取消</button></div></div>
+  </div>
+</section>
+
+<!-- 3. 投票 -->
+<section id="s-vote" hidden>
+  <div class="sheet ballot" style="max-width:640px;margin:0 auto">
+    <p class="kicker" id="vote-kicker">選票</p>
+    <h2 class="q" id="vote-q"></h2>
+    <p class="hint" id="vote-hint"></p>
+    <div id="vote-body"></div>
+    <div class="vote-foot">
+      <button class="btn" id="btn-abstain-vote" type="button" hidden>棄權</button>
+      <button class="btn stamp" id="btn-submit" type="button" style="flex:1;font-size:17px" disabled>送出</button>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 結果 -->
+<section id="s-result" hidden>
+  <div class="res-wrap">
+    <div class="sheet">
+      <p class="kicker" id="res-kicker">開票結果</p>
+      <h2 class="q" id="res-q"></h2>
+      <div class="summary" id="res-summary"></div>
+      <div class="tabs" role="tablist"><button id="tab-chart" role="tab" aria-selected="true" type="button">長條圖</button><button id="tab-table" role="tab" aria-selected="false" type="button">明細表</button></div>
+      <div id="pane-chart" role="tabpanel" aria-labelledby="tab-chart"><ul class="bars" id="bars"></ul><div id="tie-box"></div><div id="irv-brief"></div></div>
+      <div id="pane-table" role="tabpanel" aria-labelledby="tab-table" hidden></div>
+      <p class="hint" id="res-note"></p>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn primary grow" id="btn-copy" type="button" style="flex-basis:100%">複製結果</button>
+      <button class="btn grow" id="btn-again" type="button">再投一次（同題）</button>
+      <button class="btn grow" id="btn-new" type="button">新投票</button>
+    </div>
+  </div>
+</section>
+</div>
+<div class="done" id="done" hidden><div>已記錄</div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const KEY = k => 'quick-poll:v1:' + k;
+const store = {
+  get(k, d) { let raw = null; try { raw = localStorage.getItem(KEY(k)); } catch { return d; } if (raw == null) return d; try { return JSON.parse(raw); } catch { try { localStorage.setItem(KEY('corrupt'), raw); } catch {} return d; } },
+  set(k, v) { try { localStorage.setItem(KEY(k), JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(KEY(k)); } catch {} }
+};
+const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function randInt(n) {
+  if (n <= 1) return 0;
+  if (!(window.crypto && crypto.getRandomValues)) return Math.floor(Math.random() * n);
+  const lim = Math.floor(0x100000000 / n) * n, a = new Uint32Array(1);
+  do crypto.getRandomValues(a); while (a[0] >= lim);
+  return a[0] % n;
+}
+function shuffled(arr) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = randInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+let toastT; function toast(m, ms = 2400) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
+
+/* theme */
+const THEMES = ['auto', 'light', 'dark'], TL = { auto: '自動', light: '淺色', dark: '深色' };
+let theme = store.get('theme', 'auto'); if (!THEMES.includes(theme)) theme = 'auto';
+function applyTheme() { if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme; $('theme-label').textContent = TL[theme]; }
+applyTheme();
+$('btn-theme').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; applyTheme(); store.set('theme', theme); });
+
+function show(id) { for (const s of ['s-setup', 's-hand', 's-vote', 's-result']) $(s).hidden = s !== id; window.scrollTo(0, 0); }
+
+/* ================= counting ================= */
+function tallyChoice(poll) {
+  const n = poll.options.length, counts = new Array(n).fill(0); let valid = 0, abstain = 0;
+  for (const b of poll.ballots) { if (b.choice == null) { abstain++; continue; } valid++; for (const i of b.choice) counts[i]++; }
+  return { counts, valid, abstain };
+}
+function irv(n, ballots, rng = randInt) {
+  const active = new Set([...Array(n).keys()]), rounds = [];
+  if (!ballots.length) return { rounds, winner: -1 };
+  for (let guard = 0; guard < n + 1; guard++) {
+    const counts = {}; for (const i of active) counts[i] = 0;
+    let exhausted = 0;
+    for (const b of ballots) { const f = b.find(i => active.has(i)); if (f === undefined) exhausted++; else counts[f]++; }
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    const round = { counts, exhausted, total, eliminated: null, lotto: false, byPrev: false };
+    rounds.push(round);
+    if (!total) { return { rounds, winner: -1 }; }
+    const top = Math.max(...Object.values(counts));
+    const leader = [...active].filter(i => counts[i] === top);
+    if (top * 2 > total && leader.length === 1) { round.winner = leader[0]; return { rounds, winner: leader[0] }; }
+    if (active.size === 1) { round.winner = [...active][0]; return { rounds, winner: round.winner }; }
+    const min = Math.min(...Object.values(counts));
+    let cand = [...active].filter(i => counts[i] === min);
+    for (let r = rounds.length - 2; r >= 0 && cand.length > 1; r--) {
+      const pc = rounds[r].counts, pm = Math.min(...cand.map(i => pc[i]));
+      const next = cand.filter(i => pc[i] === pm); if (next.length < cand.length) round.byPrev = true; cand = next;
+    }
+    if (cand.length > 1) { round.lotto = true; round.byPrev = false; }
+    const out = cand.length > 1 ? cand[rng(cand.length)] : cand[0];
+    round.eliminated = out; active.delete(out);
+  }
+  return { rounds, winner: -1 };
+}
+function ratingStats(poll) {
+  const n = poll.options.length, sum = new Array(n).fill(0), cnt = new Array(n).fill(0), five = new Array(n).fill(0);
+  let valid = 0, abstain = 0;
+  for (const b of poll.ballots) { if (b.choice == null) { abstain++; continue; } valid++; b.choice.forEach((s, i) => { if (s > 0) { sum[i] += s; cnt[i]++; if (s === 5) five[i]++; } }); }
+  const rows = poll.options.map((name, i) => ({ i, name, avg: cnt[i] ? sum[i] / cnt[i] : 0, n: cnt[i], five: five[i] }));
+  rows.sort((a, b) => (b.avg.toFixed(1) - a.avg.toFixed(1)) || b.five - a.five || a.i - b.i);
+  return { rows, valid, abstain };
+}
+function computeResult(poll) {
+  const total = poll.ballots.length;
+  if (poll.type === 'rating') {
+    const st = ratingStats(poll), top = st.rows[0];
+    const winners = top && top.n ? st.rows.filter(r => r.avg.toFixed(1) === top.avg.toFixed(1) && r.five === top.five).map(r => r.i) : [];
+    return { kind: 'rating', total, ...st, winners };
+  }
+  if (poll.type === 'rank') {
+    const valid = poll.ballots.filter(b => b.choice != null), res = irv(poll.options.length, valid.map(b => b.choice));
+    const last = res.rounds[res.rounds.length - 1] || { counts: {} };
+    const first = res.rounds[0] || { counts: {} };
+    const rows = poll.options.map((name, i) => ({ i, name, count: last.counts[i] ?? 0, first: first.counts[i] ?? 0, out: res.rounds.length > 0 && !(i in last.counts) }))
+      .sort((a, b) => (a.out - b.out) || b.count - a.count || b.first - a.first || a.i - b.i);
+    return { kind: 'rank', total, valid: valid.length, abstain: total - valid.length, rows, irv: res, base: last.total || 0, winners: res.winner >= 0 ? [res.winner] : [] };
+  }
+  const t = tallyChoice(poll);
+  const rows = poll.options.map((name, i) => ({ i, name, count: t.counts[i] })).sort((a, b) => b.count - a.count || a.i - b.i);
+  const max = rows.length ? rows[0].count : 0;
+  return { kind: 'choice', total, valid: t.valid, abstain: t.abstain, rows, base: t.valid, winners: max > 0 ? rows.filter(r => r.count === max).map(r => r.i) : [] };
+}
+const pct = (c, base) => base ? Math.round(c * 100 / base) : 0;
+function resultText(poll, R) {
+  const lines = [`📊 ${poll.question}（共 ${R.total} 票${R.abstain ? `，棄權 ${R.abstain}` : ''}）`];
+  if (R.kind === 'rating') R.rows.forEach((r, k) => lines.push(`${k + 1}. ${r.name} 平均 ${r.avg.toFixed(1)} 分（${r.n} 人評分）`));
+  else R.rows.forEach((r, k) => lines.push(`${k + 1}. ${r.name} ${r.out ? `第 ${R.irv.rounds.findIndex(x => x.eliminated === r.i) + 1} 輪淘汰` : `${r.count} 票 ${pct(r.count, R.base)}%`}`));
+  if (R.kind === 'rank' && R.irv.rounds.length > 1) lines.push(`（排序投票，經 ${R.irv.rounds.length} 輪決選）`);
+  if (R.winners.length > 1) lines.push('結果：平手');
+  return lines.join('\n');
+}
+
+/* ================= setup ================= */
+const TYPE_HINT = { single: '每人選一項。', multi: '每人可選多項，至多「複選上限」項。', rank: '每人把選項依喜好排序，以即時決選制（IRV）計票。', rating: '每人為每個選項打 1–5 顆星，依平均分排序。' };
+let draft = store.get('draft', null);
+const SAMPLE = { question: '晚餐吃什麼？', options: ['火鍋', '拉麵', '披薩'] };
+function getType() { return document.querySelector('input[name=ptype]:checked').value; }
+function optInputs() { return [...$('opt-list').querySelectorAll('input')]; }
+function addOption(val = '', focus = false) {
+  const n = optInputs().length; if (n >= 20) { toast('最多 20 個選項'); return; }
+  const li = document.createElement('li'), inp = document.createElement('input');
+  inp.type = 'text'; inp.maxLength = 40; inp.value = val; inp.id = 'opt-' + (Date.now().toString(36) + n); inp.setAttribute('aria-label', '選項');
+  inp.placeholder = '選項內容';
+  inp.addEventListener('input', () => { inp.classList.remove('bad'); onSetupChange(); });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const all = optInputs(), i = all.indexOf(inp); if (i === all.length - 1) addOption('', true); else all[i + 1].focus(); } });
+  const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '×'; del.setAttribute('aria-label', '刪除選項');
+  del.addEventListener('click', () => { if (optInputs().length <= 2) { inp.value = ''; inp.focus(); onSetupChange(); return; } li.remove(); renumberIds(); onSetupChange(); });
+  li.append(inp, del); $('opt-list').append(li); renumberIds();
+  if (focus) inp.focus();
+  onSetupChange();
+}
+function renumberIds() { optInputs().forEach((inp, i) => { inp.id = 'opt-' + (i + 1); inp.setAttribute('aria-label', '選項 ' + (i + 1)); }); $('btn-add').disabled = optInputs().length >= 20; }
+function readSetup() {
+  return {
+    question: $('question').value.trim(), options: optInputs().map(i => i.value.trim()), type: getType(),
+    maxN: Math.max(1, Math.min(20, parseInt($('max-n').value, 10) || 1)), expected: parseInt($('expected').value, 10) || 0,
+    anon: $('anon').checked, abstain: $('abstain').checked, shuffle: $('shuffle').checked
+  };
+}
+function onSetupChange() {
+  const s = readSetup();
+  $('maxn-row').hidden = s.type !== 'multi';
+  $('type-hint').textContent = TYPE_HINT[s.type];
+  $('sample-tag').hidden = !(s.question === SAMPLE.question && s.options.join('|') === SAMPLE.options.join('|'));
+  $('setup-err').hidden = true;
+  store.set('draft', s);
+  renderPreview(s);
+}
+function validate(s) {
+  const ins = optInputs(); let msg = '';
+  ins.forEach(i => i.classList.remove('bad')); $('question').classList.remove('bad');
+  const seen = new Map(); let bad = false;
+  ins.forEach((inp, k) => { const v = s.options[k]; if (!v) { inp.classList.add('bad'); bad = true; return; } const key = v.toLowerCase(); if (seen.has(key)) { inp.classList.add('bad'); ins[seen.get(key)].classList.add('bad'); bad = true; } else seen.set(key, k); });
+  if (!s.question) { $('question').classList.add('bad'); msg = '請輸入題目'; }
+  else if (s.options.length < 2) msg = '至少需要 2 個選項';
+  else if (bad) msg = '有空白或重複的選項（已標紅）';
+  else if (s.type === 'multi' && s.maxN >= s.options.length && s.options.length > 1) { /* allow all */ }
+  return msg;
+}
+$('question').addEventListener('input', onSetupChange);
+$('btn-add').addEventListener('click', () => addOption('', true));
+$('btn-clear-sample').addEventListener('click', () => { $('question').value = ''; $('opt-list').textContent = ''; addOption(''); addOption(''); $('question').focus(); });
+document.querySelectorAll('input[name=ptype], #max-n, #expected, #anon, #abstain, #shuffle').forEach(el => el.addEventListener('change', onSetupChange));
+$('max-n').addEventListener('input', onSetupChange);
+
+function renderPreview(s) {
+  if (!matchMedia('(min-width:900px)').matches) return;
+  $('pv-q').textContent = s.question || '（題目）';
+  $('pv-hint').textContent = hintFor({ type: s.type, maxN: s.maxN, options: s.options });
+  const body = $('pv-body'); body.textContent = '';
+  const ul = document.createElement('ul'); ul.className = 'vlist';
+  s.options.forEach((o, i) => { const li = document.createElement('li'); const b = document.createElement('div'); b.className = 'vopt' + (s.type === 'multi' ? ' multi' : ''); b.innerHTML = '<span class="name"></span><span class="mark">卜</span>'; b.firstChild.textContent = s.type === 'rank' ? `${i + 1}. ${o || '（空白）'}` : (o || '（空白）'); li.append(b); ul.append(li); });
+  body.append(ul);
+}
+addEventListener('resize', () => renderPreview(readSetup()));
+
+/* ================= poll lifecycle ================= */
+let poll = null, cur = null;   // cur = current ballot UI state
+function savePoll() { if (poll) store.set('active', poll); }
+function startPoll(s) {
+  poll = { question: s.question, options: s.options.slice(), type: s.type, settings: { maxN: Math.min(s.maxN, s.options.length), expected: s.expected, anon: s.anon, abstain: s.abstain, shuffle: s.shuffle }, ballots: [], startedAt: Date.now(), done: false };
+  savePoll(); toHand();
+}
+$('btn-start').addEventListener('click', () => {
+  const s = readSetup(), msg = validate(s);
+  if (msg) { const e = $('setup-err'); e.textContent = msg; e.hidden = false; e.scrollIntoView({ block: 'center' }); return; }
+  startPoll(s);
+});
+function toHand() {
+  show('s-hand');
+  const k = poll.ballots.length, exp = poll.settings.expected;
+  $('hand-k').textContent = k + 1;
+  $('hand-big').textContent = k === 0 ? '第一位，請準備投票' : '請把手機交給下一位';
+  $('hand-count').textContent = k;
+  $('hand-exp').textContent = exp ? `預期 ${exp} 人` : '';
+  $('name-wrap').hidden = poll.settings.anon; $('voter-name').value = '';
+  $('hold-end').disabled = k === 0;
+  $('hold-end').querySelector('span').textContent = k === 0 ? '尚無投票，無法公布' : '按住 1 秒・結束並公布';
+  $('all-done').hidden = !(exp && k >= exp);
+  $('abort-box').hidden = true; $('btn-abort').hidden = false;
+}
+function makeHold(btn, ms, fn) {
+  let t0 = 0, raf = 0, pressAt = 0;
+  const stop = () => { cancelAnimationFrame(raf); t0 = 0; btn.style.setProperty('--p', 0); btn.classList.remove('filling'); };
+  const tick = () => { const p = Math.min(1, (performance.now() - t0) / ms); btn.style.setProperty('--p', p); if (p >= 1) { stop(); fn(); } else raf = requestAnimationFrame(tick); };
+  const start = e => { if (btn.disabled || t0) return; pressAt = performance.now(); if (e && e.pointerId != null) try { btn.setPointerCapture(e.pointerId); } catch {} t0 = performance.now(); btn.classList.add('filling'); raf = requestAnimationFrame(tick); };
+  btn.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); start(e); });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => btn.addEventListener(ev, stop));
+  btn.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); start(); } });
+  btn.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') stop(); });
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+  btn.addEventListener('click', e => { if (e.detail > 0 && performance.now() - pressAt < 300 && !btn.disabled) toast('請按住按鈕 1 秒'); });
+}
+makeHold($('hold-ready'), 1000, () => toVote());
+makeHold($('hold-end'), 1000, () => publish());
+$('btn-publish-now').addEventListener('click', publish);
+$('btn-keep').addEventListener('click', () => { $('all-done').hidden = true; });
+$('btn-abort').addEventListener('click', () => { $('abort-box').hidden = false; $('btn-abort').hidden = true; });
+$('btn-abort-no').addEventListener('click', () => { $('abort-box').hidden = true; $('btn-abort').hidden = false; });
+$('btn-abort-yes').addEventListener('click', () => { poll = null; store.del('active'); backToSetup(); toast('已放棄這次投票'); });
+
+/* ================= vote ================= */
+function hintFor(p) {
+  const n = p.options.length;
+  return p.type === 'single' ? '請選一項，再按「送出」。'
+    : p.type === 'multi' ? `可選 1–${Math.min(p.maxN ?? p.settings.maxN, n)} 項。`
+    : p.type === 'rank' ? '拖曳右側把手或用 ↑↓ 排出喜好順序，第 1 名最想要。'
+    : '為每個選項打 1–5 顆星（至少評一項）。';
+}
+const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4L2.8 9.5l6.4-.8z"/></svg>';
+function toVote() {
+  const name = $('voter-name').value.trim();
+  if (!poll.settings.anon && !name) { toast('請先輸入名字'); $('voter-name').focus(); return; }
+  const n = poll.options.length, order = poll.settings.shuffle ? shuffled([...Array(n).keys()]) : [...Array(n).keys()];
+  cur = { name, order, sel: new Set(), rank: order.slice(), rate: new Array(n).fill(0) };
+  show('s-vote');
+  $('vote-kicker').textContent = `選票・第 ${poll.ballots.length + 1} 位` + (name ? `・${name}` : '');
+  $('vote-q').textContent = poll.question;
+  $('vote-hint').textContent = hintFor(poll);
+  $('btn-abstain-vote').hidden = !poll.settings.abstain;
+  renderBallot();
+}
+function renderBallot() {
+  const body = $('vote-body'); body.textContent = '';
+  const ul = document.createElement('ul'); ul.className = 'vlist'; ul.id = 'ballot';
+  const t = poll.type;
+  if (t === 'single' || t === 'multi') {
+    ul.setAttribute('role', t === 'single' ? 'radiogroup' : 'group'); ul.setAttribute('aria-label', poll.question);
+    const full = t === 'multi' && cur.sel.size >= poll.settings.maxN;
+    cur.order.forEach(i => {
+      const li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button'; b.className = 'vopt' + (t === 'multi' ? ' multi' : ''); b.id = 'vopt-' + i;
+      b.setAttribute('role', t === 'single' ? 'radio' : 'checkbox'); b.setAttribute('aria-checked', cur.sel.has(i));
+      b.innerHTML = '<span class="name"></span><span class="mark" aria-hidden="true">卜</span>'; b.firstChild.textContent = poll.options[i];
+      if (full && !cur.sel.has(i)) b.disabled = true;
+      b.addEventListener('click', () => {
+        if (t === 'single') { cur.sel = new Set([i]); }
+        else { if (cur.sel.has(i)) cur.sel.delete(i); else if (cur.sel.size < poll.settings.maxN) cur.sel.add(i); }
+        renderBallot(); const nb = $('vopt-' + i); if (nb) nb.focus();
+      });
+      li.append(b); ul.append(li);
+    });
+    if (t === 'multi') { const p = document.createElement('p'); p.className = 'hint'; p.id = 'multi-count'; p.textContent = `已選 ${cur.sel.size} / 最多 ${poll.settings.maxN} 項`; body.append(p); }
+  } else if (t === 'rank') {
+    cur.rank.forEach((i, pos) => {
+      const li = document.createElement('li'); li.className = 'rank-row'; li.dataset.i = i;
+      li.innerHTML = `<span class="pos">${pos + 1}</span><span class="name"></span>`;
+      li.querySelector('.name').textContent = poll.options[i];
+      const up = document.createElement('button'), dn = document.createElement('button');
+      up.type = dn.type = 'button'; up.className = dn.className = 'mv'; up.textContent = '↑'; dn.textContent = '↓';
+      up.setAttribute('aria-label', `${poll.options[i]} 往前`); dn.setAttribute('aria-label', `${poll.options[i]} 往後`);
+      up.disabled = pos === 0; dn.disabled = pos === cur.rank.length - 1;
+      up.addEventListener('click', () => { moveRank(pos, pos - 1); focusMv(i, 0); });
+      dn.addEventListener('click', () => { moveRank(pos, pos + 1); focusMv(i, 1); });
+      const h = document.createElement('span'); h.className = 'handle'; h.setAttribute('aria-hidden', 'true');
+      h.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+      h.addEventListener('pointerdown', e => dragStart(e, li));
+      li.append(up, dn, h); ul.append(li);
+    });
+  } else {
+    cur.order.forEach(i => {
+      const li = document.createElement('li'); li.className = 'rate-row';
+      const nm = document.createElement('div'); nm.className = 'name'; nm.textContent = poll.options[i];
+      const st = document.createElement('div'); st.className = 'stars'; st.setAttribute('role', 'radiogroup'); st.setAttribute('aria-label', poll.options[i] + ' 評分');
+      for (let s = 1; s <= 5; s++) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'star' + (cur.rate[i] >= s ? ' on' : ''); b.id = `star-${i}-${s}`;
+        b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', cur.rate[i] === s); b.setAttribute('aria-label', `${s} 顆星`); b.innerHTML = STAR;
+        b.addEventListener('click', () => { cur.rate[i] = cur.rate[i] === s ? 0 : s; renderBallot(); $(`star-${i}-${s}`)?.focus(); });
+        st.append(b);
+      }
+      li.append(nm, st); ul.append(li);
+    });
+  }
+  body.append(ul);
+  $('btn-submit').disabled = !ballotValid();
+}
+function focusMv(i, k) { const row = $('ballot').querySelector(`[data-i="${i}"]`); const b = row && row.querySelectorAll('.mv')[k]; if (b && !b.disabled) b.focus(); else row && row.querySelector('.mv:not(:disabled)')?.focus(); }
+function moveRank(a, b) { if (b < 0 || b >= cur.rank.length) return; const [x] = cur.rank.splice(a, 1); cur.rank.splice(b, 0, x); renderBallot(); }
+function dragStart(e, li) {
+  e.preventDefault();
+  const ul = li.parentElement, rows = [...ul.children], from = rows.indexOf(li);
+  const rects = rows.map(r => r.getBoundingClientRect()), startY = e.clientY;
+  li.classList.add('dragging'); try { e.target.setPointerCapture(e.pointerId); } catch {}
+  let to = from;
+  const move = ev => {
+    const dy = ev.clientY - startY; li.style.transform = `translateY(${dy}px)`;
+    const mid = rects[from].top + rects[from].height / 2 + dy;
+    to = rects.reduce((n, r, k) => n + (k !== from && mid > r.top + r.height / 2 ? 1 : 0), 0);
+    const h = rects[from].height + 10;
+    rows.forEach((r, k) => { if (r === li) return; let s = 0; if (from < to && k > from && k <= to) s = -h; if (from > to && k >= to && k < from) s = h; r.style.transform = s ? `translateY(${s}px)` : ''; });
+  };
+  const end = () => { e.target.removeEventListener('pointermove', move); e.target.removeEventListener('pointerup', end); e.target.removeEventListener('pointercancel', end); rows.forEach(r => r.style.transform = ''); li.classList.remove('dragging'); moveRank(from, to); };
+  e.target.addEventListener('pointermove', move); e.target.addEventListener('pointerup', end); e.target.addEventListener('pointercancel', end);
+}
+function ballotValid() {
+  const t = poll.type;
+  if (t === 'single') return cur.sel.size === 1;
+  if (t === 'multi') return cur.sel.size >= 1 && cur.sel.size <= poll.settings.maxN;
+  if (t === 'rank') return true;
+  return cur.rate.some(x => x > 0);
+}
+function castBallot(choice) {
+  const b = { choice };
+  if (!poll.settings.anon) b.name = cur.name;
+  poll.ballots.push(b); savePoll(); cur = null;
+  const d = $('done'); d.hidden = false;
+  setTimeout(() => { d.hidden = true; toHand(); }, RM() ? 400 : 1000);
+}
+$('btn-submit').addEventListener('click', () => {
+  if (!cur || !ballotValid()) return;
+  const t = poll.type;
+  castBallot(t === 'single' || t === 'multi' ? [...cur.sel].sort((a, b) => a - b) : t === 'rank' ? cur.rank.slice() : cur.rate.slice());
+});
+$('btn-abstain-vote').addEventListener('click', () => { if (cur) castBallot(null); });
+
+/* ================= results ================= */
+let lastR = null;
+function publish() {
+  if (!poll || !poll.ballots.length) { toast('尚無投票'); return; }
+  poll.done = true; savePoll();
+  const R = computeResult(poll); lastR = R;
+  const hist = store.get('history', []);
+  const top = R.rows[0];
+  hist.unshift({ ts: Date.now(), question: poll.question, type: poll.type, total: R.total, winner: R.winners.length === 1 ? poll.options[R.winners[0]] : R.winners.length ? '平手' : '—', text: resultText(poll, R) });
+  store.set('history', hist.slice(0, 20));
+  renderResult(R); show('s-result'); setTab('chart');
+}
+function renderResult(R) {
+  $('res-q').textContent = poll.question;
+  const typeName = { single: '單選', multi: `複選（上限 ${poll.settings.maxN}）`, rank: '排序投票・即時決選', rating: '評分 1–5' }[poll.type];
+  $('res-kicker').textContent = '開票結果・' + typeName;
+  $('res-summary').innerHTML = `<span><b>${R.total}</b>票</span>` + (R.abstain ? `<span><b>${R.abstain}</b>棄權</span>` : '') + (poll.type === 'rank' ? `<span><b>${R.irv.rounds.length}</b>輪</span>` : '');
+  const ul = $('bars'); ul.textContent = '';
+  const fills = [];
+  R.rows.forEach(r => {
+    const li = document.createElement('li'); if (R.winners.includes(r.i) && R.winners.length === 1) li.className = 'win';
+    let val, w;
+    if (R.kind === 'rating') { val = r.n ? `${r.avg.toFixed(1)} 分・${r.n} 人` : '無人評分'; w = r.avg / 5 * 100; }
+    else if (r.out) { const k = R.irv.rounds.findIndex(x => x.eliminated === r.i); val = `第 ${k + 1} 輪淘汰（首輪 ${r.first} 票）`; w = 0; }
+    else { val = `${r.count} 票・${pct(r.count, R.base)}%`; w = R.base ? r.count / R.base * 100 : 0; }
+    li.innerHTML = '<div class="lab"><span></span><span></span></div><div class="track"><div class="fill"></div></div>';
+    li.querySelector('.lab span').textContent = r.name; li.querySelector('.lab span:last-child').textContent = val;
+    if (r.out) li.querySelector('.lab span').className = 'out';
+    fills.push([li.querySelector('.fill'), w]); ul.append(li);
+  });
+  if (RM()) fills.forEach(([f, w]) => f.style.width = w + '%');
+  else requestAnimationFrame(() => requestAnimationFrame(() => fills.forEach(([f, w], k) => setTimeout(() => f.style.width = w + '%', k * 150))));
+  // tie
+  const tb = $('tie-box'); tb.textContent = '';
+  if (R.winners.length > 1) {
+    const d = document.createElement('div'); d.className = 'notice';
+    d.innerHTML = '<b>平手</b><p class="hint" style="margin:0 0 8px"></p><div class="row"><button class="btn grow" id="btn-tie-revote" type="button">在平手項目間再投一次</button><button class="btn stamp grow" id="btn-tie-random" type="button">交給隨機決定</button></div><p id="tie-pick" style="font-weight:800;margin:10px 0 0" hidden></p>';
+    d.querySelector('p.hint').textContent = R.winners.map(i => poll.options[i]).join('、') + ' 同為最高。';
+    tb.append(d);
+    $('btn-tie-revote').addEventListener('click', () => {
+      const s = { question: poll.question + '（決選）', options: R.winners.map(i => poll.options[i]), type: poll.type === 'rating' ? 'single' : poll.type === 'multi' ? 'single' : poll.type, maxN: 1, expected: poll.settings.expected, anon: poll.settings.anon, abstain: poll.settings.abstain, shuffle: poll.settings.shuffle };
+      startPoll(s);
+    });
+    $('btn-tie-random').addEventListener('click', () => { const w = R.winners[randInt(R.winners.length)]; const p = $('tie-pick'); p.hidden = false; p.textContent = `隨機選中：${poll.options[w]}`; $('btn-tie-random').disabled = true; });
+  }
+  // irv brief
+  const ib = $('irv-brief'); ib.textContent = '';
+  if (R.kind === 'rank') {
+    const p = document.createElement('p'); p.className = 'hint';
+    const steps = R.irv.rounds.filter(r => r.eliminated != null).map((r, k) => `第 ${k + 1} 輪淘汰 ${poll.options[r.eliminated]}${r.lotto ? '（抽籤淘汰）' : r.byPrev ? '（依上一輪票數）' : ''}`);
+    p.textContent = (!R.irv.rounds.length ? '沒有有效選票。' : steps.length ? steps.join('，') + '。' : '首輪即過半。') + (R.winners.length ? `最終由「${poll.options[R.winners[0]]}」以過半數當選。` : '');
+    ib.append(p);
+  }
+  renderTable(R);
+  const sum = R.kind !== 'rating' ? R.rows.filter(r => !r.out).reduce((a, r) => a + pct(r.count, R.base), 0) : 100;
+  $('res-note').textContent = (poll.type === 'multi' ? '複選的百分比為「選這項的人數 ÷ 投票人數」，總和會超過 100%。' : sum !== 100 && R.base ? `百分比四捨五入，總和為 ${sum}%。` : '') + (R.abstain ? ' 棄權票計入總票數，不計入百分比。' : '');
+}
+function renderTable(R) {
+  const pane = $('pane-table'); pane.textContent = '';
+  const wrap = document.createElement('div'); wrap.className = 'tbl-scroll';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let html = '';
+  if (R.kind === 'rating') {
+    html = '<table><thead><tr><th>選項</th><th class="n">平均</th><th class="n">評分人數</th><th class="n">5 星</th></tr></thead><tbody>' + R.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.n ? r.avg.toFixed(1) : '—'}</td><td class="n">${r.n}</td><td class="n">${r.five}</td></tr>`).join('') + '</tbody></table>';
+  } else if (R.kind === 'rank') {
+    const rs = R.irv.rounds;
+    html = '<table id="irv-table"><thead><tr><th>選項</th>' + rs.map((_, k) => `<th class="n">第 ${k + 1} 輪</th>`).join('') + '</tr></thead><tbody>' +
+      poll.options.map((o, i) => `<tr><td>${esc(o)}</td>` + rs.map(r => `<td class="n">${i in r.counts ? r.counts[i] + (r.eliminated === i ? ' ✕' : '') + (r.winner === i ? ' ✓' : '') : ''}</td>`).join('') + '</tr>').join('') +
+      '<tr><td>已用盡選票</td>' + rs.map(r => `<td class="n">${r.exhausted}</td>`).join('') + '</tr></tbody></table><p class="hint">✕ 該輪淘汰，票轉給下一志願；✓ 過半當選。</p>';
+  } else {
+    html = '<table><thead><tr><th>選項</th><th class="n">票數</th><th class="n">百分比</th></tr></thead><tbody>' + R.rows.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.count}</td><td class="n">${pct(r.count, R.base)}%</td></tr>`).join('') + (R.abstain ? `<tr><td>棄權</td><td class="n">${R.abstain}</td><td class="n">—</td></tr>` : '') + '</tbody></table>';
+  }
+  if (!poll.settings.anon) {
+    const desc = b => b.choice == null ? '棄權' : poll.type === 'rating' ? b.choice.map((s, i) => s ? `${poll.options[i]} ${s}★` : '').filter(Boolean).join('、') : poll.type === 'rank' ? b.choice.map(i => poll.options[i]).join(' > ') : b.choice.map(i => poll.options[i]).join('、');
+    html += '<table><thead><tr><th>投票者</th><th>選擇</th></tr></thead><tbody>' + poll.ballots.map(b => `<tr><td>${esc(b.name || '—')}</td><td>${esc(desc(b))}</td></tr>`).join('') + '</tbody></table>';
+  } else html += '<p class="hint">匿名投票：只記錄選擇內容，不記錄是誰投的。</p>';
+  wrap.innerHTML = html; pane.append(wrap);
+}
+function setTab(t) { $('tab-chart').setAttribute('aria-selected', t === 'chart'); $('tab-table').setAttribute('aria-selected', t === 'table'); $('pane-chart').hidden = t !== 'chart'; $('pane-table').hidden = t !== 'table'; }
+$('tab-chart').addEventListener('click', () => setTab('chart'));
+$('tab-table').addEventListener('click', () => setTab('table'));
+{ let sx = 0, sy = 0; const el = $('s-result');
+  el.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; });
+  el.addEventListener('pointerup', e => { const dx = e.clientX - sx, dy = e.clientY - sy; if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && !e.target.closest('.tbl-scroll')) setTab(dx < 0 ? 'table' : 'chart'); }); }
+$('btn-copy').addEventListener('click', async () => {
+  const text = resultText(poll, lastR);
+  try { await navigator.clipboard.writeText(text); toast('結果已複製'); }
+  catch { const pane = $('pane-table'); setTab('table'); let pre = $('copy-fallback'); if (!pre) { pre = document.createElement('textarea'); pre.id = 'copy-fallback'; pre.readOnly = true; pre.rows = 6; pre.style.cssText = 'width:100%;margin-top:10px;font:inherit;padding:8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface)'; pane.append(pre); } pre.value = text; pre.focus(); pre.select(); toast('無法自動複製，已選取文字，請手動複製'); }
+});
+$('btn-again').addEventListener('click', () => startPoll({ question: poll.question, options: poll.options, type: poll.type, maxN: poll.settings.maxN, ...poll.settings }));
+$('btn-new').addEventListener('click', () => { store.del('active'); poll = null; backToSetup(); });
+
+/* ================= history / resume / boot ================= */
+function renderHist() {
+  const h = store.get('history', []), ul = $('hist-list'); ul.textContent = '';
+  $('hist').hidden = !h.length;
+  for (const it of h) {
+    const li = document.createElement('li'), b = document.createElement('b'); b.textContent = it.question;
+    const d = new Date(it.ts); const sp = document.createElement('span');
+    sp.textContent = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}・${it.total} 票・${it.winner}`;
+    li.append(b, sp); ul.append(li);
+  }
+}
+function backToSetup() { show('s-setup'); renderHist(); checkResume(); onSetupChange(); }
+function checkResume() {
+  const a = store.get('active', null);
+  const ok = a && Array.isArray(a.options) && Array.isArray(a.ballots) && !a.done;
+  $('resume').hidden = !ok;
+  if (ok) $('resume-text').textContent = `繼續上次投票「${a.question}」（已 ${a.ballots.length} 票）？`;
+}
+$('btn-resume').addEventListener('click', () => { poll = store.get('active', null); if (poll) toHand(); });
+$('btn-discard').addEventListener('click', () => { store.del('active'); $('resume').hidden = true; toast('已放棄上次投票'); });
+
+(function boot() {
+  const d = draft && Array.isArray(draft.options) && draft.options.length >= 2 ? draft : null;
+  const s = d || { ...SAMPLE, type: 'single', maxN: 2, expected: 0, anon: true, abstain: false, shuffle: false };
+  $('question').value = s.question || '';
+  s.options.slice(0, 20).forEach(o => addOption(o));
+  const r = document.querySelector(`input[name=ptype][value="${s.type}"]`); if (r) r.checked = true;
+  $('max-n').value = s.maxN || 2; $('expected').value = s.expected || ''; $('anon').checked = s.anon !== false; $('abstain').checked = !!s.abstain; $('shuffle').checked = !!s.shuffle;
+  backToSetup();
+})();
+</script>
+</body></html>
