@@ -1,0 +1,519 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>圖片裁切旋轉</title>
+<style>
+:root{
+  --bg:#e4e6e9; --surface:#f7f8f9; --surface-2:#ffffff; --ink:#14161a; --muted:#565c66; --line:#c8ccd2; --line-2:#d9dce1;
+  --accent:#8a5600; --accent-ink:#ffffff; --accent-soft:#f3e4c4; --err:#b3261e; --err-soft:#f8dcd9;
+  --editor:#1c1e22; --editor-ink:#f2f2f2; --handle:#ffc23d; --shade:rgba(10,12,16,.55);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e0f11; --surface:#17191c; --surface-2:#1e2024; --ink:#e7e8ea; --muted:#9a9fa8; --line:#30333a; --line-2:#25282d;
+  --accent:#ffc23d; --accent-ink:#2a1a00; --accent-soft:#3a2c0c; --err:#ff8f86; --err-soft:#3d1b19;
+  --editor:#060708; --editor-ink:#f2f2f2; --handle:#ffc23d; --shade:rgba(0,0,0,.72); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e0f11; --surface:#17191c; --surface-2:#1e2024; --ink:#e7e8ea; --muted:#9a9fa8; --line:#30333a; --line-2:#25282d;
+  --accent:#ffc23d; --accent-ink:#2a1a00; --accent-soft:#3a2c0c; --err:#ff8f86; --err-soft:#3d1b19;
+  --editor:#060708; --editor-ink:#f2f2f2; --handle:#ffc23d; --shade:rgba(0,0,0,.72); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;padding:8px 16px calc(20px + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1280px;margin:0 auto}
+header.top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;min-height:50px;margin-bottom:6px}
+header h1{margin:0;text-align:center;font-size:17px;font-weight:700;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{min-height:44px;padding:0 14px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap}
+.btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn.accent{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.45;cursor:default}
+.note{font-size:13px;background:var(--accent-soft);padding:6px 10px;border-radius:4px;margin-bottom:8px;border-left:3px solid var(--accent)}
+.work{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
+.editCol,.side{min-width:0}
+.editor{position:relative;background:var(--editor);border-radius:6px;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;outline:none}
+.editor:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+#cv{position:absolute;inset:0;display:block;width:100%;height:100%}
+.box{position:absolute;border:1px solid rgba(255,255,255,.9);pointer-events:none}
+.box .g{position:absolute;background:rgba(255,255,255,.45);opacity:0;transition:opacity .15s}
+.box.grid .g{opacity:1}
+.box .g.v1{left:33.333%;top:0;bottom:0;width:1px}.box .g.v2{left:66.666%;top:0;bottom:0;width:1px}
+.box .g.h1{top:33.333%;left:0;right:0;height:1px}.box .g.h2{top:66.666%;left:0;right:0;height:1px}
+.hd{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;pointer-events:auto;touch-action:none;background:none;border:0;padding:0}
+.hd::before{content:"";position:absolute;left:50%;top:50%;border-color:var(--handle);border-style:solid;border-width:0}
+.hd.c::before{width:24px;height:24px}
+.hd[data-h="nw"]::before{border-width:4px 0 0 4px;margin:-4px 0 0 -4px}
+.hd[data-h="ne"]::before{border-width:4px 4px 0 0;margin:-4px 0 0 -20px}
+.hd[data-h="se"]::before{border-width:0 4px 4px 0;margin:-20px 0 0 -20px}
+.hd[data-h="sw"]::before{border-width:0 0 4px 4px;margin:-20px 0 0 -4px}
+.hd[data-h="n"]::before,.hd[data-h="s"]::before{width:22px;height:0;border-top-width:4px;margin:-2px 0 0 -11px}
+.hd[data-h="e"]::before,.hd[data-h="w"]::before{height:22px;width:0;border-left-width:4px;margin:-11px 0 0 -2px}
+.hd[data-h="nw"],.hd[data-h="se"]{cursor:nwse-resize}.hd[data-h="ne"],.hd[data-h="sw"]{cursor:nesw-resize}
+.hd[data-h="n"],.hd[data-h="s"]{cursor:ns-resize}.hd[data-h="e"],.hd[data-h="w"]{cursor:ew-resize}
+.empty{position:absolute;inset:0;display:grid;place-items:center;z-index:2}
+.empty .btn{min-height:56px;font-size:17px;padding:0 28px}
+.sizeTag{position:absolute;left:8px;bottom:8px;font-family:var(--mono);font-size:12px;color:var(--editor-ink);background:rgba(0,0,0,.55);padding:2px 7px;border-radius:3px;pointer-events:none}
+.dialWrap{margin-top:8px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:4px 0 0}
+.dialTop{display:flex;justify-content:center}
+#angleBtn{min-height:32px;min-width:88px;border:0;background:none;font-family:var(--mono);font-weight:700;font-size:15px;cursor:pointer;color:var(--ink);position:relative}
+#angleBtn::after{content:"";position:absolute;inset:-6px 0}
+#angleBtn.zero{color:var(--muted)}
+#dial{display:block;width:100%;height:56px;touch-action:none;cursor:ew-resize;outline:none}
+#dial:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.ratios{display:flex;gap:6px;align-items:center;margin-top:8px}
+.rscroll{display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none;padding:2px}
+.rscroll::-webkit-scrollbar{display:none}
+.chip{flex:none;min-height:44px;min-width:52px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;font-size:14px;font-weight:600}
+.chip.num{font-family:var(--mono)}
+.chip[aria-checked="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.swapBtn{flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--surface-2);cursor:pointer;display:grid;place-items:center}
+.custom{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.custom input{width:84px;min-height:44px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:0 10px;font-family:var(--mono)}
+.err{color:var(--err);font-size:13px;width:100%}
+.tools{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+.tool{min-height:56px;border:1px solid var(--line);background:var(--surface-2);border-radius:6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:var(--muted);padding:2px}
+.tool svg{width:22px;height:22px;color:var(--ink)}
+.small{font-size:12px;color:var(--muted)}
+#fileInput{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.ov{position:fixed;inset:0;background:var(--shade);display:flex;align-items:flex-end;justify-content:center;z-index:20;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+.sheet{background:var(--surface);border-radius:10px;width:100%;max-width:520px;max-height:100%;overflow:auto;padding:16px}
+.sheet h3{margin:0 0 8px;font-size:17px}
+.seg{display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap;align-items:center}
+.seg input[type=number]{width:110px;min-height:44px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);padding:0 10px;font-family:var(--mono)}
+.qrow{display:grid;grid-template-columns:1fr 52px;align-items:center;gap:8px}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--accent)}
+.outInfo{font-family:var(--mono);font-size:14px;font-weight:700;margin:6px 0}
+.outimg{display:block;max-width:100%;max-height:46vh;margin:8px auto;border:1px solid var(--line)}
+.sheetBtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:6px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+@media (hover:hover){.btn:hover,.chip:hover,.tool:hover,.swapBtn:hover{border-color:var(--ink)}}
+@media (min-width:900px){
+  .work{grid-template-columns:minmax(0,1fr) 300px;align-items:start}
+  .side{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px}
+  .side .ratios{flex-direction:column;align-items:stretch}
+  .side .rscroll{flex-wrap:wrap}
+  .side .swapBtn{width:100%;border-radius:6px;display:flex;gap:8px;justify-content:center;align-items:center;font-weight:600;font-size:14px}
+  .side .swapTxt{display:inline}
+  .side h2{display:block!important}
+}
+@media (orientation:landscape) and (max-height:520px){ .work{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start} }
+.swapTxt{display:none}
+.side h2{display:none;font-size:12px;letter-spacing:.12em;color:var(--muted);margin:10px 0 4px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <button class="btn" type="button" id="openBtn">換照片</button>
+    <h1>圖片裁切旋轉</h1>
+    <button class="btn accent" type="button" id="doneBtn">完成</button>
+  </header>
+  <div class="note" id="sampleNote" hidden><b>範例</b>：程式產生的示範照片，地平線故意歪了 4°，試著用下方轉盤拉正。按「換照片」載入你的圖片。</div>
+  <div class="work">
+    <section class="editCol">
+      <div class="editor" id="editor" tabindex="0" aria-label="裁切編輯區：方向鍵移動裁切框，Shift 加速；滾輪縮放">
+        <canvas id="cv"></canvas>
+        <div class="box" id="box">
+          <i class="g v1"></i><i class="g v2"></i><i class="g h1"></i><i class="g h2"></i>
+        </div>
+        <span class="sizeTag" id="sizeTag"></span>
+        <div class="empty" id="empty" hidden><button class="btn accent" type="button" id="pickBig">選擇照片</button></div>
+      </div>
+      <div class="dialWrap">
+        <div class="dialTop"><button type="button" id="angleBtn" class="zero" aria-label="角度，點一下歸零">0.0°</button></div>
+        <canvas id="dial" tabindex="0" role="slider" aria-label="微調角度" aria-valuemin="-45" aria-valuemax="45" aria-valuenow="0"></canvas>
+      </div>
+    </section>
+    <aside class="side">
+      <h2>比例</h2>
+      <div class="ratios">
+        <div class="rscroll" role="radiogroup" aria-label="裁切比例" id="ratioRow"></div>
+        <button class="swapBtn" type="button" id="swapBtn" aria-label="直橫互換" title="直橫互換"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="10" height="14" rx="1"/><path d="M17 3h-4m4 0v4M21 13v-2a4 4 0 0 0-4-4"/><path d="M19 15l2-2 2 2" transform="translate(-2 0)"/></svg><span class="swapTxt">直橫互換</span></button>
+      </div>
+      <div class="custom" id="customRow" hidden>
+        <label for="cw" class="small">自訂</label><input id="cw" inputmode="decimal" aria-label="自訂寬"> <span>:</span> <input id="ch" inputmode="decimal" aria-label="自訂高">
+        <button class="btn" type="button" id="cApply">套用</button>
+        <div class="err" id="cErr" role="alert"></div>
+      </div>
+      <h2>工具</h2>
+      <div class="tools">
+        <button class="tool" type="button" id="rotL" aria-label="左轉 90 度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h5"/><path d="M4.5 9A8 8 0 1 1 6 17"/></svg>左轉</button>
+        <button class="tool" type="button" id="rotR" aria-label="右轉 90 度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 4v5h-5"/><path d="M19.5 9A8 8 0 1 0 18 17"/></svg>右轉</button>
+        <button class="tool" type="button" id="flipH" aria-label="水平翻轉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 6L3 18h6zM15 6l6 12h-6z"/></svg>水平</button>
+        <button class="tool" type="button" id="flipV" aria-label="垂直翻轉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18" stroke-dasharray="2 2"/><path d="M6 9L18 3v6zM6 15l12 6v-6z"/></svg>垂直</button>
+        <button class="tool" type="button" id="resetBtn" aria-label="重設"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>重設</button>
+      </div>
+      <p class="small">拖曳框內移動圖片、拖把手改裁切範圍、雙指或滾輪縮放。輸出為原圖解析度。</p>
+    </aside>
+  </div>
+</div>
+<input type="file" id="fileInput" accept="image/*" aria-label="選擇照片">
+
+<div class="ov" id="exportOv" hidden role="dialog" aria-modal="true" aria-labelledby="exTitle">
+  <div class="sheet">
+    <h3 id="exTitle">匯出裁切結果</h3>
+    <div class="small">格式</div>
+    <div class="seg" id="fmtSeg" role="radiogroup" aria-label="格式"></div>
+    <div id="qWrap"><div class="small">品質</div><div class="qrow"><input type="range" id="quality" min="50" max="100" step="1" aria-label="品質"><output id="qOut" class="small"></output></div></div>
+    <div class="small">輸出尺寸</div>
+    <div class="seg" id="sizeSeg" role="radiogroup" aria-label="輸出尺寸">
+      <button class="chip" type="button" role="radio" id="size-orig" data-s="orig">原始</button>
+      <button class="chip" type="button" role="radio" id="size-width" data-s="width">指定寬度</button>
+      <input type="number" id="outWidth" min="16" max="8192" step="1" aria-label="輸出寬度 px">
+    </div>
+    <div class="outInfo" id="outInfo"></div>
+    <img class="outimg" id="outImg" alt="裁切結果" hidden>
+    <p class="small" id="outHint" hidden>此環境無法直接下載：請長按（或右鍵）圖片另存。</p>
+    <div class="sheetBtns"><button class="btn" type="button" id="exClose">返回編輯</button><button class="btn accent" type="button" id="exGo">下載</button></div>
+  </div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const KEY='image-crop:v1:settings';
+const RATIOS=[['free','自由',null],['orig','原始',null],['1:1','1:1',[1,1]],['4:5','4:5',[4,5]],['3:4','3:4',[3,4]],['2:3','2:3',[2,3]],['9:16','9:16',[9,16]],['16:9','16:9',[16,9]],['custom','自訂',null]];
+const set={ratioId:'free',custom:[3,2],fmt:'jpg',q:92,sizeMode:'orig',width:1080};
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s&&typeof s==='object'){ Object.assign(set,s);
+  if(!RATIOS.some(r=>r[0]===set.ratioId)) set.ratioId='free'; if(!['jpg','png','webp'].includes(set.fmt)) set.fmt='jpg';
+  if(!(Array.isArray(set.custom)&&set.custom.length===2&&set.custom.every(v=>v>0))) set.custom=[3,2]; set.q=Math.max(50,Math.min(100,+set.q||92)); }}catch(e){}
+function saveSet(){ try{ localStorage.setItem(KEY,JSON.stringify(set)); }catch(e){} }
+
+/* ---------- state ---------- */
+const S={img:null,prev:null,iw:0,ih:0,name:'image',sample:false,
+  P:{x:0,y:0},s:1,k:0,a:0,fx:1,fy:1,box:{x:0,y:0,w:0,h:0},swap:false};
+let EW=300,EH=300;
+const M=12; // editor margin
+const theta=()=>(S.k*90+S.a)*Math.PI/180;
+const lockR=()=>{ // w/h ratio or null
+  if(set.ratioId==='free') return null;
+  let r;
+  if(set.ratioId==='orig') r=(S.k%2? S.ih/S.iw : S.iw/S.ih);
+  else if(set.ratioId==='custom') r=set.custom[0]/set.custom[1];
+  else { const p=RATIOS.find(x=>x[0]===set.ratioId)[2]; r=p[0]/p[1]; }
+  return S.swap&&set.ratioId!=='orig'?1/r:r; };
+
+/* ---------- 2D affine helpers [a,b,c,d,e,f] ---------- */
+const mul=(m,n)=>[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];
+const inv=m=>{const d=m[0]*m[3]-m[1]*m[2];return [m[3]/d,-m[1]/d,-m[2]/d,m[0]/d,(m[2]*m[5]-m[3]*m[4])/d,(m[1]*m[4]-m[0]*m[5])/d];};
+const app=(m,p)=>({x:m[0]*p.x+m[2]*p.y+m[4],y:m[1]*p.x+m[3]*p.y+m[5]});
+const T=(x,y)=>[1,0,0,1,x,y], Rm=t=>[Math.cos(t),Math.sin(t),-Math.sin(t),Math.cos(t),0,0], Sm=(x,y)=>[x,0,0,y,0,0];
+// image-centred coords -> editor screen
+const imgMatrix=()=>mul(mul(mul(T(S.P.x,S.P.y),Rm(theta())),Sm(S.s,S.s)),Sm(S.fx,S.fy));
+
+/* ---------- constraints ---------- */
+const EPS=1e-6;
+function contains(b,P,s){ P=P||S.P; s=s||S.s; const m=inv(mul(mul(T(P.x,P.y),Rm(theta())),Sm(s,s)));
+  for(const c of [[b.x,b.y],[b.x+b.w,b.y],[b.x,b.y+b.h],[b.x+b.w,b.y+b.h]]){ const q=app(m,{x:c[0],y:c[1]});
+    if(Math.abs(q.x)>S.iw/2+1e-3||Math.abs(q.y)>S.ih/2+1e-3) return false; } return true; }
+function sMin(b){ const t=theta(),c=Math.abs(Math.cos(t)),n=Math.abs(Math.sin(t)); return Math.max((b.w*c+b.h*n)/S.iw,(b.w*n+b.h*c)/S.ih); }
+function enforce(){
+  const b=S.box, C={x:b.x+b.w/2,y:b.y+b.h/2}, sm=sMin(b);
+  if(S.s<sm*(1+EPS)){ const f=sm*(1+EPS)/S.s; S.P={x:C.x+(S.P.x-C.x)*f,y:C.y+(S.P.y-C.y)*f}; S.s*=f; }
+  const t=theta(),c=Math.cos(t),n=Math.sin(t),ac=Math.abs(c),an=Math.abs(n);
+  // box centre in image-local (pre-flip) coords
+  const dx=C.x-S.P.x, dy=C.y-S.P.y; let lx=(c*dx+n*dy)/S.s, ly=(-n*dx+c*dy)/S.s;
+  const hx=(b.w*ac+b.h*an)/(2*S.s), hy=(b.w*an+b.h*ac)/(2*S.s);
+  const mx=Math.max(0,S.iw/2-hx), my=Math.max(0,S.ih/2-hy);
+  lx=Math.max(-mx,Math.min(mx,lx)); ly=Math.max(-my,Math.min(my,ly));
+  S.P={x:C.x-S.s*(c*lx-n*ly), y:C.y-S.s*(n*lx+c*ly)};
+}
+const maxS=()=>Math.max(40, 1);
+function fitBox(anim){
+  const b=S.box, aw=EW-2*M, ah=EH-2*M; let f=Math.min(aw/b.w,ah/b.h); if(S.s*f>maxS()) f=Math.max(maxS()/S.s,Math.min(1,f));
+  const C={x:b.x+b.w/2,y:b.y+b.h/2}, C2={x:EW/2,y:EH/2};
+  const to={box:{x:C2.x-b.w*f/2,y:C2.y-b.h*f/2,w:b.w*f,h:b.h*f},P:{x:C2.x+(S.P.x-C.x)*f,y:C2.y+(S.P.y-C.y)*f},s:S.s*f};
+  if(!anim||matchMedia('(prefers-reduced-motion: reduce)').matches){ S.box=to.box; S.P=to.P; S.s=to.s; enforce(); draw(); return; }
+  const from={box:{...S.box},P:{...S.P},s:S.s}, t0=performance.now(), D=260; animating=true;
+  const step=now=>{ const u=Math.min(1,(now-t0)/D), e=1-Math.pow(1-u,3), L=(a,b)=>a+(b-a)*e;
+    // interpolate in log-scale to keep the box glued to the same image region
+    const sc=from.s*Math.pow(to.s/from.s,e), g=sc/from.s;
+    const bc={x:L(from.box.x+from.box.w/2,to.box.x+to.box.w/2),y:L(from.box.y+from.box.h/2,to.box.y+to.box.h/2)};
+    const fc={x:from.box.x+from.box.w/2,y:from.box.y+from.box.h/2};
+    S.box={x:bc.x-from.box.w*g/2,y:bc.y-from.box.h*g/2,w:from.box.w*g,h:from.box.h*g};
+    S.P={x:bc.x+(from.P.x-fc.x)*g,y:bc.y+(from.P.y-fc.y)*g}; S.s=sc;
+    if(u<1) requestAnimationFrame(step); else { S.box=to.box; S.P=to.P; S.s=to.s; enforce(); animating=false; } drawNow(); };
+  requestAnimationFrame(step);
+}
+let animating=false;
+function resetView(keepRatio){
+  S.k=0; S.a=0; S.fx=1; S.fy=1; S.swap=false;
+  const aw=EW-2*M, ah=EH-2*M; S.s=Math.min(aw/S.iw,ah/S.ih); S.P={x:EW/2,y:EH/2};
+  S.box={x:EW/2-S.iw*S.s/2,y:EH/2-S.ih*S.s/2,w:S.iw*S.s,h:S.ih*S.s};
+  if(keepRatio && lockR()) applyRatio(false); else draw();
+}
+function applyRatio(anim){
+  const r=lockR(); if(!r){ draw(); return; }
+  const t=theta(),c=Math.abs(Math.cos(t)),n=Math.abs(Math.sin(t));
+  // largest box with ratio r centred on the box centre (projected into image) that fits the image
+  const C={x:S.box.x+S.box.w/2,y:S.box.y+S.box.h/2};
+  let h=Math.min(S.iw*S.s/(r*c+n),S.ih*S.s/(r*n+c)); let w=h*r;
+  // keep it centred on the image centre to maximise size
+  S.box={x:S.P.x-w/2,y:S.P.y-h/2,w,h}; void C;
+  enforce(); fitBox(anim);
+}
+
+/* ---------- drawing ---------- */
+const ed=$('#editor'), cv=$('#cv'), ctx=cv.getContext('2d'), boxEl=$('#box');
+let dpr=1, raf=0;
+function draw(){ if(raf) return; raf=requestAnimationFrame(()=>{raf=0; drawNow();}); }
+function drawNow(){
+  const W=cv.width,H=cv.height; ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=getComputedStyle(ed).backgroundColor; ctx.fillRect(0,0,W,H);
+  if(!S.img){ boxEl.hidden=true; $('#sizeTag').textContent=''; return; }
+  const m=imgMatrix(); ctx.setTransform(dpr*m[0],dpr*m[1],dpr*m[2],dpr*m[3],dpr*m[4],dpr*m[5]);
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+  ctx.drawImage(S.prev,-S.iw/2,-S.ih/2,S.iw,S.ih);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const b=S.box; ctx.fillStyle='rgba(0,0,0,.6)'; ctx.beginPath(); ctx.rect(0,0,EW,EH); ctx.rect(b.x,b.y,b.w,b.h); ctx.fill('evenodd');
+  boxEl.hidden=false; Object.assign(boxEl.style,{left:b.x+'px',top:b.y+'px',width:b.w+'px',height:b.h+'px'});
+  placeHandles();
+  const o=outSize(); $('#sizeTag').textContent=`${o.w} × ${o.h}`;
+  const ab=$('#angleBtn'); ab.textContent=(S.a>0?'+':'')+S.a.toFixed(1)+'°'; ab.classList.toggle('zero',Math.abs(S.a)<0.05);
+  $('#dial').setAttribute('aria-valuenow',S.a.toFixed(1)); drawDial();
+}
+const HANDLES=['nw','n','ne','e','se','s','sw','w'];
+const handleEls={};
+HANDLES.forEach(h=>{ const d=document.createElement('button'); d.type='button'; d.tabIndex=-1; d.className='hd'+(h.length===2?' c':''); d.dataset.h=h; d.setAttribute('aria-label','裁切框把手 '+h); ed.appendChild(d); handleEls[h]=d; });
+function placeHandles(){ const b=S.box; const pos={nw:[0,0],n:[.5,0],ne:[1,0],e:[1,.5],se:[1,1],s:[.5,1],sw:[0,1],w:[0,.5]};
+  for(const h of HANDLES){ handleEls[h].style.left=(b.x+b.w*pos[h][0])+'px'; handleEls[h].style.top=(b.y+b.h*pos[h][1])+'px'; handleEls[h].hidden=!S.img; } }
+function outSize(){ return {w:Math.max(1,Math.round(S.box.w/S.s)),h:Math.max(1,Math.round(S.box.h/S.s))}; }
+
+/* ---------- sizing ---------- */
+function sizeEditor(){
+  const wide=matchMedia('(min-width:900px)').matches, land=innerWidth>innerHeight&&innerHeight<=520;
+  const w=ed.clientWidth; const h=Math.round(wide?Math.max(360,innerHeight-240):land?Math.max(180,innerHeight-170):Math.max(260,Math.min(innerHeight*0.56,w*1.25)));
+  ed.style.height=h+'px';
+  const oW=EW,oH=EH; EW=w; EH=h; dpr=Math.min(3,window.devicePixelRatio||1);
+  cv.width=Math.round(EW*dpr); cv.height=Math.round(EH*dpr);
+  if(S.img && oW>0){ const f=Math.min(EW/oW,EH/oH), C={x:oW/2,y:oH/2}, C2={x:EW/2,y:EH/2};
+    S.box={x:C2.x+(S.box.x-C.x)*f,y:C2.y+(S.box.y-C.y)*f,w:S.box.w*f,h:S.box.h*f}; S.P={x:C2.x+(S.P.x-C.x)*f,y:C2.y+(S.P.y-C.y)*f}; S.s*=f; fitBox(false); }
+  sizeDial(); drawNow();
+}
+
+/* ---------- pointer gestures on editor ---------- */
+const pts=new Map(); let G=null, fitT=0;
+const rel=e=>{const r=ed.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
+ed.addEventListener('pointerdown',e=>{
+  if(!S.img||animating) return; if(e.target.closest('.empty')) return;
+  e.preventDefault(); ed.setPointerCapture(e.pointerId); pts.set(e.pointerId,rel(e)); clearTimeout(fitT);
+  const h=e.target.closest('.hd');
+  if(pts.size===1){ G=h?{mode:'resize',h:h.dataset.h,start:{...S.box},p0:rel(e)}:{mode:'pan',last:rel(e)}; boxEl.classList.add('grid'); }
+  else if(pts.size===2){ const [a,b]=[...pts.values()]; G={mode:'pinch',d0:Math.hypot(a.x-b.x,a.y-b.y)||1,s0:S.s,P0:{...S.P},m0:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}; }
+});
+ed.addEventListener('pointermove',e=>{
+  if(!pts.has(e.pointerId)||!G) return; const p=rel(e); pts.set(e.pointerId,p);
+  if(G.mode==='pan'){ S.P={x:S.P.x+p.x-G.last.x,y:S.P.y+p.y-G.last.y}; G.last=p; enforce(); draw(); }
+  else if(G.mode==='resize'){ resizeTo(G,p); draw(); }
+  else if(G.mode==='pinch'&&pts.size>=2){ const [a,b]=[...pts.values()]; const f=Math.min(maxS(),G.s0*Math.hypot(a.x-b.x,a.y-b.y)/G.d0)/G.s0;
+    const m={x:(a.x+b.x)/2,y:(a.y+b.y)/2}; S.s=G.s0*f; S.P={x:m.x+(G.P0.x-G.m0.x)*f,y:m.y+(G.P0.y-G.m0.y)*f}; enforce(); draw(); }
+});
+function endPtr(e){ if(!pts.has(e.pointerId)) return; pts.delete(e.pointerId);
+  if(pts.size===0){ const wasResize=G&&G.mode==='resize'; G=null; boxEl.classList.remove('grid'); if(wasResize) fitT=setTimeout(()=>fitBox(true),300); }
+  else if(G&&G.mode==='pinch'){ G={mode:'pan',last:[...pts.values()][0]}; } }
+ed.addEventListener('pointerup',endPtr); ed.addEventListener('pointercancel',endPtr);
+ed.addEventListener('wheel',e=>{ if(!S.img) return; e.preventDefault(); const p=rel(e); const f=Math.exp(-e.deltaY*0.0015), s2=Math.min(maxS(),S.s*f), g=s2/S.s;
+  S.P={x:p.x+(S.P.x-p.x)*g,y:p.y+(S.P.y-p.y)*g}; S.s=s2; enforce(); draw(); },{passive:false});
+
+function candidateBox(G,p){
+  const b0=G.start, h=G.h, r=lockR(), dx=p.x-G.p0.x, dy=p.y-G.p0.y;
+  let x0=b0.x,y0=b0.y,x1=b0.x+b0.w,y1=b0.y+b0.h;
+  if(h.includes('w')) x0+=dx; if(h.includes('e')) x1+=dx; if(h.includes('n')) y0+=dy; if(h.includes('s')) y1+=dy;
+  const MIN=48;
+  if(h.includes('w')) x0=Math.min(x0,x1-MIN); if(h.includes('e')) x1=Math.max(x1,x0+MIN);
+  if(h.includes('n')) y0=Math.min(y0,y1-MIN); if(h.includes('s')) y1=Math.max(y1,y0+MIN);
+  let w=x1-x0, hh=y1-y0;
+  if(r){
+    if(h.length===2){ // corner: anchor opposite corner
+      if(w/hh>r) hh=w/r; else w=hh*r;
+      if(w<MIN){w=MIN;hh=w/r;} if(hh<MIN){hh=MIN;w=hh*r;}
+      x0=h.includes('w')?x1-w:x0; x1=x0+w; y0=h.includes('n')?y1-hh:y0; y1=y0+hh;
+    } else if(h==='e'||h==='w'){ hh=w/r; const cy=b0.y+b0.h/2; y0=cy-hh/2; y1=cy+hh/2; }
+    else { w=hh*r; const cx=b0.x+b0.w/2; x0=cx-w/2; x1=cx+w/2; }
+  }
+  return {x:x0,y:y0,w:x1-x0,h:y1-y0};
+}
+const inEditor=b=>b.x>=-0.5&&b.y>=-0.5&&b.x+b.w<=EW+0.5&&b.y+b.h<=EH+0.5;
+function resizeTo(G,p){
+  const cand=candidateBox(G,p), b0=G.start, ok=b=>inEditor(b)&&contains(b);
+  if(ok(cand)){ S.box=cand; return; }
+  let lo=0,hi=1; const lerp=t=>({x:b0.x+(cand.x-b0.x)*t,y:b0.y+(cand.y-b0.y)*t,w:b0.w+(cand.w-b0.w)*t,h:b0.h+(cand.h-b0.h)*t});
+  for(let i=0;i<18;i++){ const m=(lo+hi)/2; if(ok(lerp(m))) lo=m; else hi=m; }
+  S.box=lerp(lo);
+}
+// keyboard: move crop box
+ed.addEventListener('keydown',e=>{
+  if(!S.img) return; const step=e.shiftKey?10:1; let dx=0,dy=0;
+  if(e.key==='ArrowLeft')dx=-step; else if(e.key==='ArrowRight')dx=step; else if(e.key==='ArrowUp')dy=-step; else if(e.key==='ArrowDown')dy=step;
+  else if(e.key==='+'||e.key==='='){ zoomBy(1.1); e.preventDefault(); return; } else if(e.key==='-'){ zoomBy(1/1.1); e.preventDefault(); return; } else return;
+  e.preventDefault(); const b=S.box; const nb={...b,x:b.x+dx,y:b.y+dy}; if(inEditor(nb)&&contains(nb)){ S.box=nb; draw(); }
+});
+function zoomBy(f){ const C={x:S.box.x+S.box.w/2,y:S.box.y+S.box.h/2}; const s2=Math.min(maxS(),S.s*f), g=s2/S.s; S.P={x:C.x+(S.P.x-C.x)*g,y:C.y+(S.P.y-C.y)*g}; S.s=s2; enforce(); draw(); }
+
+/* ---------- rotate / flip ---------- */
+function setAngle(a){
+  a=Math.max(-45,Math.min(45,a)); if(!S.img){ S.a=a; drawDial(); return; }
+  const old=S.a; const C={x:S.box.x+S.box.w/2,y:S.box.y+S.box.h/2};
+  // keep the image point under the box centre fixed
+  const t0=theta(); const c0=Math.cos(t0),n0=Math.sin(t0),dx=C.x-S.P.x,dy=C.y-S.P.y; const lx=(c0*dx+n0*dy)/S.s, ly=(-n0*dx+c0*dy)/S.s;
+  S.a=a; const t=theta(),c=Math.cos(t),n=Math.sin(t); S.P={x:C.x-S.s*(c*lx-n*ly),y:C.y-S.s*(n*lx+c*ly)};
+  enforce(); draw();
+  for(const m of [0,15,-15,30,-30,45,-45]) if((old-m)*(a-m)<0||(a===m&&old!==m)){ try{navigator.vibrate?.(5);}catch(_){} break; }
+}
+function rot90(dir){ if(!S.img) return;
+  const C={x:S.box.x+S.box.w/2,y:S.box.y+S.box.h/2}, dx=S.P.x-C.x, dy=S.P.y-C.y;
+  S.P=dir>0?{x:C.x-dy,y:C.y+dx}:{x:C.x+dy,y:C.y-dx}; S.k=(S.k+(dir>0?1:3))%4;
+  S.box={x:C.x-S.box.h/2,y:C.y-S.box.w/2,w:S.box.h,h:S.box.w};
+  if(set.ratioId!=='free'&&set.ratioId!=='orig') S.swap=!S.swap;
+  enforce(); fitBox(false); buildRatios(); }
+function flip(hor){ if(!S.img) return; const C={x:S.box.x+S.box.w/2,y:S.box.y+S.box.h/2};
+  if(hor){ S.P={x:2*C.x-S.P.x,y:S.P.y}; S.fx=-S.fx; } else { S.P={x:S.P.x,y:2*C.y-S.P.y}; S.fy=-S.fy; }
+  S.k=(4-S.k)%4; S.a=-S.a; enforce(); draw(); }
+$('#rotL').addEventListener('click',()=>rot90(-1)); $('#rotR').addEventListener('click',()=>rot90(1));
+$('#flipH').addEventListener('click',()=>flip(true)); $('#flipV').addEventListener('click',()=>flip(false));
+$('#resetBtn').addEventListener('click',()=>{ if(!S.img) return; set.ratioId='free'; saveSet(); buildRatios(); resetView(false); });
+
+/* ---------- angle dial ---------- */
+const dial=$('#dial'), dctx=dial.getContext('2d'); const PX=8; let DW=300, dvel=0, dIner=0;
+function sizeDial(){ DW=dial.clientWidth||300; const r=Math.min(3,window.devicePixelRatio||1); dial.width=Math.round(DW*r); dial.height=Math.round(56*r); dctx.setTransform(r,0,0,r,0,0); drawDial(); }
+function drawDial(){
+  const cs=getComputedStyle(document.documentElement); const ink=cs.getPropertyValue('--ink').trim()||'#000', mut=cs.getPropertyValue('--muted').trim()||'#666', acc=cs.getPropertyValue('--accent').trim()||'#a60';
+  dctx.clearRect(0,0,DW,56); const mid=DW/2;
+  dctx.font='600 11px ui-monospace, Menlo, monospace'; dctx.textAlign='center'; dctx.textBaseline='top';
+  for(let d=-45; d<=45; d++){ const x=mid+(d-S.a)*PX; if(x<-10||x>DW+10) continue;
+    const big=d%15===0, med=d%5===0; dctx.fillStyle=big?ink:mut; dctx.globalAlpha=big?1:med?.75:.45;
+    const h=big?20:med?13:8; dctx.fillRect(Math.round(x)-(big?1:0.5),40-h,big?2:1,h);
+    if(big){ dctx.globalAlpha=1; dctx.fillText(String(d),x,43); } }
+  dctx.globalAlpha=1; dctx.fillStyle=acc; dctx.fillRect(Math.round(mid)-1.5,4,3,40);
+  dctx.beginPath(); dctx.moveTo(mid-6,2); dctx.lineTo(mid+6,2); dctx.lineTo(mid,9); dctx.fill();
+}
+let DG=null;
+dial.addEventListener('pointerdown',e=>{ dial.setPointerCapture(e.pointerId); cancelAnimationFrame(dIner); DG={x:e.clientX,a0:S.a,lastX:e.clientX,lastT:performance.now(),v:0}; });
+dial.addEventListener('pointermove',e=>{ if(!DG) return; const now=performance.now(); const da=-(e.clientX-DG.lastX)/PX; const dt=Math.max(1,now-DG.lastT);
+  DG.v=0.6*DG.v+0.4*(da/dt*16.7); DG.lastX=e.clientX; DG.lastT=now; setAngle(DG.a0-(e.clientX-DG.x)/PX); });
+function dialEnd(){ if(!DG) return; let v=performance.now()-DG.lastT>80?0:DG.v; DG=null;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches; if(reduce) v=0;
+  const tick=()=>{ if(Math.abs(v)<0.02){ if(Math.abs(S.a)<0.25&&S.a!==0) setAngle(0); else setAngle(Math.round(S.a*10)/10); return; }
+    setAngle(S.a+v); v*=0.92; if(Math.abs(S.a)>=45) v=0; dIner=requestAnimationFrame(tick); };
+  tick(); }
+dial.addEventListener('pointerup',dialEnd); dial.addEventListener('pointercancel',dialEnd);
+dial.addEventListener('keydown',e=>{ const map={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1,PageUp:15,PageDown:-15};
+  if(e.key in map){ e.preventDefault(); setAngle(Math.round((S.a+map[e.key]*(e.shiftKey?0.1:1))*10)/10); } else if(e.key==='Home'||e.key==='0'){ e.preventDefault(); setAngle(0); } });
+$('#angleBtn').addEventListener('click',()=>setAngle(0));
+
+/* ---------- ratio UI ---------- */
+function ratioLabel(r){ if(!S.swap||!r[2]) return r[1]; return r[2][1]+':'+r[2][0]; }
+function buildRatios(){ const row=$('#ratioRow'); row.innerHTML='';
+  RATIOS.forEach(r=>{ const b=document.createElement('button'); b.type='button'; b.className='chip'+(r[2]?' num':''); b.id='ratio-'+r[0].replace(':','x'); b.dataset.r=r[0];
+    b.setAttribute('role','radio'); b.setAttribute('aria-checked',String(set.ratioId===r[0]));
+    b.textContent=r[0]==='custom'&&set.ratioId==='custom'?(S.swap?set.custom[1]+':'+set.custom[0]:set.custom[0]+':'+set.custom[1]):ratioLabel(r); row.appendChild(b); });
+  $('#customRow').hidden=set.ratioId!=='custom'; $('#cw').value=set.custom[0]; $('#ch').value=set.custom[1]; }
+$('#ratioRow').addEventListener('click',e=>{ const b=e.target.closest('[data-r]'); if(!b) return; const id=b.dataset.r;
+  if(id!==set.ratioId) S.swap=false; set.ratioId=id; saveSet(); buildRatios(); $('#cErr').textContent=''; if(S.img) applyRatio(true); });
+$('#swapBtn').addEventListener('click',()=>{ if(set.ratioId==='free'){ toast('自由比例不需互換'); return; }
+  if(set.ratioId==='orig'){ toast('原始比例跟著圖片方向'); return; } S.swap=!S.swap; buildRatios(); if(S.img) applyRatio(true); });
+$('#cApply').addEventListener('click',applyCustom);
+['cw','ch'].forEach(id=>$('#'+id).addEventListener('keydown',e=>{ if(e.key==='Enter') applyCustom(); }));
+function applyCustom(){ const w=$('#cw').value.trim(), h=$('#ch').value.trim(), err=$('#cErr');
+  const W=Number(w), H=Number(h);
+  if(!/^\d+(\.\d+)?$/.test(w)||!/^\d+(\.\d+)?$/.test(h)||!(W>0)||!(H>0)){ err.textContent='請輸入大於 0 的數字，例如 3 : 2'; return; }
+  if(Math.max(W/H,H/W)>100){ err.textContent='比例不可超過 100 : 1'; return; }
+  err.textContent=''; set.custom=[W,H]; S.swap=false; saveSet(); buildRatios(); if(S.img) applyRatio(true); }
+
+/* ---------- loading ---------- */
+function toast(msg){ const t=document.createElement('div'); t.className='toast'; t.setAttribute('role','status'); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
+async function decodeFile(file){
+  try{ return await createImageBitmap(file,{imageOrientation:'from-image'}); }catch(e){}
+  const url=URL.createObjectURL(file);
+  try{ const img=new Image(); img.src=url; await img.decode(); const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext('2d').drawImage(img,0,0); return c; }
+  finally{ URL.revokeObjectURL(url); }
+}
+function scaled(src,maxEdge){ const sc=Math.min(1,maxEdge/Math.max(src.width,src.height)); if(sc>=1) return src;
+  const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(src.width*sc)); c.height=Math.max(1,Math.round(src.height*sc));
+  const x=c.getContext('2d'); x.imageSmoothingQuality='high'; x.drawImage(src,0,0,c.width,c.height); return c; }
+function setImage(src,name,sample){
+  if(S.img&&S.img!==src&&S.img.close) try{S.img.close();}catch(e){}
+  if(Math.max(src.width,src.height)>8192){ const o=src; src=scaled(src,8192); if(o.close) o.close(); toast(`已縮小至 ${src.width}×${src.height} 以免記憶體不足`); }
+  S.img=src; S.iw=src.width; S.ih=src.height; S.prev=scaled(src,2560); S.name=name; S.sample=sample;
+  $('#sampleNote').hidden=!sample; $('#empty').hidden=true; resetView(true);
+}
+async function loadFile(f){ if(!f) return;
+  try{ const b=await decodeFile(f); setImage(b,(f.name||'image').replace(/\.[^.]+$/,''),false); }
+  catch(e){ toast(/heic|heif/i.test(f.name)?'此格式無法解碼，請先轉成 JPG':'無法讀取這個檔案'); } }
+$('#fileInput').addEventListener('change',e=>loadFile(e.target.files[0]));
+const pick=()=>{ const fi=$('#fileInput'); fi.value=''; fi.click(); };
+$('#openBtn').addEventListener('click',pick); $('#pickBig').addEventListener('click',pick);
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{ e.preventDefault(); const f=e.dataTransfer&&e.dataTransfer.files[0]; if(f) loadFile(f); });
+document.addEventListener('paste',e=>{ const f=e.clipboardData&&e.clipboardData.files[0]; if(f) loadFile(f); });
+
+function makeSample(){
+  const W=2400,H=1600,c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d');
+  x.fillStyle='#2a3e57'; x.fillRect(0,0,W,H);
+  x.save(); x.translate(W/2,H/2); x.rotate(4*Math.PI/180); x.translate(-W*0.7,-H*0.7);
+  const W2=W*1.4,H2=H*1.4;
+  let g=x.createLinearGradient(0,0,0,H2*0.55); g.addColorStop(0,'#1f3b63'); g.addColorStop(.6,'#e48a5a'); g.addColorStop(1,'#f6c58b'); x.fillStyle=g; x.fillRect(0,0,W2,H2*0.55);
+  g=x.createLinearGradient(0,H2*0.55,0,H2); g.addColorStop(0,'#3b5f7d'); g.addColorStop(1,'#14263a'); x.fillStyle=g; x.fillRect(0,H2*0.55,W2,H2*0.45);
+  x.fillStyle='#ffe2b0'; x.beginPath(); x.arc(W2*0.6,H2*0.5,110,Math.PI,0); x.fill();
+  x.fillStyle='rgba(255,226,176,.5)'; for(let i=0;i<14;i++){ x.fillRect(W2*0.6-120+i*4,H2*0.56+i*26,240-i*8,8); }
+  x.strokeStyle='rgba(255,255,255,.65)'; x.lineWidth=4; x.setLineDash([24,18]); x.beginPath(); x.moveTo(0,H2*0.55); x.lineTo(W2,H2*0.55); x.stroke(); x.setLineDash([]);
+  x.fillStyle='#1b2433'; x.fillRect(W2*0.3,H2*0.33,46,H2*0.22); x.fillStyle='#d9433b'; x.fillRect(W2*0.3-6,H2*0.33,58,40);
+  x.restore();
+  x.fillStyle='rgba(0,0,0,.5)'; x.fillRect(60,60,820,120); x.fillStyle='#fff'; x.font='700 64px system-ui, sans-serif'; x.textBaseline='middle'; x.fillText('範例照片・地平線歪 4°',96,122);
+  return c;
+}
+
+/* ---------- export ---------- */
+let dl=null;
+(async()=>{ try{ dl=await window.claude?.use?.('downloads')||null; }catch(e){ dl=null; } $('#exGo').textContent=dl?'下載':'產生圖片'; })();
+function finalSize(){ const o=outSize(); if(set.sizeMode==='width'){ const w=Math.max(16,Math.min(8192,Math.round(+set.width||o.w))); return {w,h:Math.max(1,Math.round(o.h*w/o.w))}; } return o; }
+function renderOutput(){
+  const o=outSize(), f=finalSize(), q=f.w/o.w; const c=document.createElement('canvas'); c.width=f.w; c.height=f.h; const x=c.getContext('2d');
+  if(set.fmt==='jpg'){ x.fillStyle='#ffffff'; x.fillRect(0,0,f.w,f.h); }
+  // output = (screen - boxTopLeft)/s * q
+  const k=q/S.s; const m=mul(mul(Sm(k,k),T(-S.box.x,-S.box.y)),imgMatrix());
+  x.setTransform(m[0],m[1],m[2],m[3],m[4],m[5]); x.imageSmoothingEnabled=true; x.imageSmoothingQuality='high';
+  x.drawImage(S.img,-S.iw/2,-S.ih/2,S.iw,S.ih);
+  const type={jpg:'image/jpeg',png:'image/png',webp:'image/webp'}[set.fmt];
+  return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('toBlob')),type,set.q/100));
+}
+function buildExport(){
+  const fs=$('#fmtSeg'); fs.innerHTML=''; [['jpg','JPG'],['png','PNG'],['webp','WebP']].forEach(([f,t])=>{ const b=document.createElement('button'); b.type='button'; b.className='chip'; b.id='fmt-'+f; b.dataset.f=f; b.textContent=t; b.setAttribute('role','radio'); b.setAttribute('aria-checked',String(set.fmt===f)); fs.appendChild(b); });
+  $('#qWrap').hidden=set.fmt==='png'; $('#quality').value=set.q; $('#qOut').textContent=set.q+'%';
+  $('#size-orig').setAttribute('aria-checked',String(set.sizeMode==='orig')); $('#size-width').setAttribute('aria-checked',String(set.sizeMode==='width'));
+  $('#outWidth').hidden=set.sizeMode!=='width'; $('#outWidth').value=set.width;
+  const f=finalSize(); $('#outInfo').textContent=`${f.w} × ${f.h} px`+(set.sizeMode==='orig'?'（原圖解析度）':'');
+}
+let outURL=null; function hideOut(){ $('#outImg').hidden=true; $('#outHint').hidden=true; if(outURL){ URL.revokeObjectURL(outURL); outURL=null; } }
+$('#fmtSeg').addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b) return; set.fmt=b.dataset.f; saveSet(); buildExport(); hideOut(); });
+$('#quality').addEventListener('input',e=>{ set.q=+e.target.value; $('#qOut').textContent=set.q+'%'; saveSet(); hideOut(); });
+$('#sizeSeg').addEventListener('click',e=>{ const b=e.target.closest('[data-s]'); if(!b) return; set.sizeMode=b.dataset.s; saveSet(); buildExport(); hideOut(); if(set.sizeMode==='width') $('#outWidth').focus(); });
+$('#outWidth').addEventListener('input',e=>{ const v=+e.target.value; if(v>=16&&v<=8192){ set.width=Math.round(v); saveSet(); const f=finalSize(); $('#outInfo').textContent=`${f.w} × ${f.h} px`; hideOut(); } });
+$('#doneBtn').addEventListener('click',()=>{ if(!S.img){ toast('先選擇照片'); return; } buildExport(); hideOut(); $('#exportOv').hidden=false; $('#exGo').focus(); });
+$('#exClose').addEventListener('click',()=>{ $('#exportOv').hidden=true; hideOut(); $('#doneBtn').focus(); });
+$('#exportOv').addEventListener('click',e=>{ if(e.target.id==='exportOv') $('#exClose').click(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('#exportOv').hidden) $('#exClose').click(); });
+$('#exGo').addEventListener('click',async()=>{
+  const btn=$('#exGo'), old=btn.textContent; btn.disabled=true; btn.textContent='處理中…';
+  try{ const blob=await renderOutput(); const name=`${S.name}-crop.${set.fmt==='jpg'?'jpg':set.fmt}`; window.__lastOut={name,blob};
+    if(dl){ try{ await dl.save({filename:name,data:blob}); toast('已送出儲存：'+name); } catch(err){ const m=String(err&&err.message||err); toast(/declin|denied|cancel/i.test(m)?'已取消儲存':'儲存失敗：'+m); } }
+    else { hideOut(); outURL=URL.createObjectURL(blob); $('#outImg').src=outURL; $('#outImg').hidden=false; $('#outHint').hidden=false; }
+  }catch(e){ toast('輸出失敗，請改用較小尺寸'); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+});
+
+/* ---------- init ---------- */
+buildRatios(); sizeEditor();
+setImage(makeSample(),'範例照片',true);
+let rt=0; addEventListener('resize',()=>{ clearTimeout(rt); rt=setTimeout(sizeEditor,80); });
+if(window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>drawNow());
+window.__ic={S,set,contains:b=>contains(b||S.box),outSize,finalSize,setAngle,applyRatio,renderOutput,enforce,sMin};
+})();
+</script>

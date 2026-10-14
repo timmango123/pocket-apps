@@ -1,0 +1,512 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>證件照排版</title>
+<style>
+:root{
+  --bg:#edf0f3; --surface:#ffffff; --surface-2:#f6f8fa; --ink:#14223b; --muted:#56637a; --line:#c6cfdb; --line-2:#dfe5ec;
+  --accent:#1d4f9c; --accent-ink:#ffffff; --accent-soft:#dde7f6; --guide:#14945a; --warn:#8a5a00; --warn-soft:#fbefd2; --err:#b3261e;
+  --editor:#2b3340; --paper-shadow:rgba(20,34,59,.18);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --surface:#171e29; --surface-2:#1d2533; --ink:#e3e8f0; --muted:#9aa6b8; --line:#2f3a4b; --line-2:#242d3b;
+  --accent:#8db4f2; --accent-ink:#0b1a33; --accent-soft:#1d2c46; --guide:#4fd08f; --warn:#f2c46b; --warn-soft:#3a2e14; --err:#ff8f86;
+  --editor:#070a0f; --paper-shadow:rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --surface:#171e29; --surface-2:#1d2533; --ink:#e3e8f0; --muted:#9aa6b8; --line:#2f3a4b; --line-2:#242d3b;
+  --accent:#8db4f2; --accent-ink:#0b1a33; --accent-soft:#1d2c46; --guide:#4fd08f; --warn:#f2c46b; --warn-soft:#3a2e14; --err:#ff8f86;
+  --editor:#070a0f; --paper-shadow:rgba(0,0,0,.5); color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;padding:6px 16px calc(20px + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{max-width:1200px;margin:0 auto}
+header.top{display:flex;align-items:center;gap:10px;min-height:52px}
+header h1{margin:0;font-size:17px;font-weight:700;letter-spacing:.06em;white-space:nowrap;margin-right:auto}
+.btn{min-height:44px;padding:0 14px;border-radius:4px;border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:600;font-size:14px;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.45;cursor:default}
+@media (hover:hover){.btn:not(:disabled):hover{border-color:var(--accent)}}
+.steps{display:flex;align-items:center;gap:0;margin:2px 0 12px;counter-reset:s}
+.steps button{flex:1;display:flex;align-items:center;gap:8px;min-height:44px;background:none;border:0;padding:0 4px;cursor:pointer;font-weight:600;color:var(--muted);font-size:14px;position:relative}
+.steps button .n{flex:0 0 26px;height:26px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--line);font-family:var(--mono);font-size:13px;background:var(--surface)}
+.steps button::after{content:"";flex:1;height:1px;background:var(--line);min-width:6px}
+.steps button:last-child::after{display:none}
+.steps button[aria-current="step"]{color:var(--ink)}
+.steps button[aria-current="step"] .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.steps button.done .n{border-color:var(--accent);color:var(--accent)}
+.steps button:disabled{cursor:default;opacity:.55}
+.sec h2{font-size:15px;margin:0 0 8px;letter-spacing:.04em}
+.note{font-size:13px;color:var(--muted);margin:6px 0}
+.warn{font-size:13px;background:var(--warn-soft);color:var(--warn);border-left:3px solid var(--warn);padding:6px 10px;margin:8px 0;border-radius:2px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.card{display:grid;grid-template-columns:46px 1fr;gap:10px;align-items:center;text-align:left;background:var(--surface);border:1.5px solid var(--line-2);border-radius:5px;padding:10px;cursor:pointer;min-height:76px}
+.card[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.card .shape{justify-self:center;border:1.5px solid var(--ink);background:var(--surface-2);position:relative;max-width:44px;max-height:56px}
+.card .shape::after{content:"";position:absolute;left:28%;right:28%;top:14%;height:46%;border-radius:50% 50% 45% 45%;background:var(--line)}
+.card b{display:block;font-size:14px}
+.card .mm{font-family:var(--mono);font-size:12px;color:var(--muted);display:block}
+.card .hd{font-size:11px;color:var(--muted);display:block}
+.custom{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px;padding:10px;background:var(--surface);border:1px solid var(--line-2);border-radius:5px}
+.field{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+.field input,.field select{min-height:44px;border:1px solid var(--line);border-radius:4px;background:var(--surface-2);padding:0 10px;width:100%;font-size:15px}
+.custom .field{width:96px}
+.srcRow{display:flex;gap:10px;align-items:center;margin-top:14px;padding:10px;background:var(--surface);border:1px solid var(--line-2);border-radius:5px}
+.srcRow canvas{width:56px;height:70px;object-fit:cover;border:1px solid var(--line);background:var(--surface-2)}
+.srcRow .t{flex:1;min-width:0;font-size:14px}
+.srcRow .t small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{display:inline-block;font-size:11px;font-weight:700;background:var(--accent);color:var(--accent-ink);padding:1px 6px;border-radius:2px;letter-spacing:.06em}
+.navRow{display:flex;justify-content:space-between;gap:8px;margin-top:14px}
+.editorWrap{position:relative;background:var(--editor);border-radius:5px;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;height:min(60vh,560px);min-height:300px}
+.editorWrap canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.editorWrap .tag{position:absolute;left:8px;top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:6px 0}
+.legend i{display:inline-block;width:14px;height:8px;vertical-align:middle;margin-right:4px;background:var(--guide);opacity:.55}
+.legend i.l{height:2px;opacity:1;background:#e7b400}
+.ctl{display:grid;grid-template-columns:56px 1fr 60px;gap:8px;align-items:center;min-height:44px}
+.ctl label{font-size:14px;font-weight:600}
+.ctl output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--muted)}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--accent);cursor:pointer}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--surface)}
+.seg button{flex:1;min-height:44px;border:0;border-right:1px solid var(--line);background:none;cursor:pointer;font-weight:600;font-size:14px;padding:0 6px}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+details.adv{margin-top:10px;background:var(--surface);border:1px solid var(--line-2);border-radius:5px;padding:0 10px}
+details.adv summary{min-height:44px;display:flex;align-items:center;font-weight:600;cursor:pointer}
+details.adv[open]{padding-bottom:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.paperBox{background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:14px;display:grid;place-items:center}
+#paper{display:block;max-width:100%;max-height:62vh;height:auto;background:#fff;box-shadow:0 2px 10px var(--paper-shadow)}
+.count{font-family:var(--mono);font-size:14px;margin:8px 0 0;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.count b{font-size:18px;color:var(--accent)}
+.out{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.out .btn{flex:1 1 160px}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;z-index:30;padding:16px}
+.sheet .box{width:min(560px,100%);background:var(--surface);border-radius:6px;padding:16px;max-height:calc(100% - 16px);overflow:auto}
+.sheet img{display:block;max-width:100%;max-height:56vh;margin:8px auto;border:1px solid var(--line)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:4px;font-size:14px;z-index:40;max-width:calc(100% - 32px)}
+.stepPane{min-width:0}
+@media (min-width:1000px){
+  .app[data-step="2"] .panes,.app[data-step="3"] .panes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+  .app[data-step="2"] #step3,.app[data-step="3"] #step2{display:block!important}
+  .app[data-step="2"] #step2 .navRow,.app[data-step="3"] #step3 .navRow{display:none}
+}
+@media (max-height:600px) and (orientation:landscape){
+  .s3grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+  .editorWrap{height:calc(100vh - 40px);min-height:240px}
+  #paper{max-height:calc(100vh - 60px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app" id="app" data-step="1">
+  <header class="top">
+    <h1>證件照排版</h1>
+    <button class="btn" id="openBtn" type="button">開啟照片</button>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </header>
+  <nav class="steps" aria-label="步驟">
+    <button type="button" id="st1" aria-current="step"><span class="n">1</span>選規格</button>
+    <button type="button" id="st2"><span class="n">2</span>裁切</button>
+    <button type="button" id="st3"><span class="n">3</span>排版輸出</button>
+  </nav>
+  <div class="panes">
+  <section class="stepPane sec" id="step1">
+    <h2>證件照規格</h2>
+    <div class="cards" id="cards" role="radiogroup" aria-label="規格"></div>
+    <div class="custom" id="customBox" hidden>
+      <div class="field"><label for="cw">寬（mm）</label><input id="cw" type="number" inputmode="decimal" min="10" max="300" step="0.5"></div>
+      <div class="field"><label for="ch">高（mm）</label><input id="ch" type="number" inputmode="decimal" min="10" max="300" step="0.5"></div>
+      <p class="note" id="customMsg" style="flex:1 1 140px">範圍 10–300mm，會記住這組尺寸。</p>
+    </div>
+    <div class="srcRow">
+      <canvas id="srcThumb" width="112" height="140"></canvas>
+      <div class="t"><span id="srcLabel">範例照片 <span class="tag">範例</span></span><small id="srcInfo">先用範例試試看，或開啟自己的照片</small></div>
+      <button class="btn" id="openBtn2" type="button">換照片</button>
+    </div>
+    <p class="note">建議在單色牆前、光線均勻處拍攝，臉部正面、雙耳露出。</p>
+    <div class="navRow"><span></span><button class="btn primary" id="next1" type="button">下一步：裁切</button></div>
+  </section>
+
+  <section class="stepPane sec" id="step2" hidden>
+    <div class="editorWrap" id="editor" tabindex="0" aria-label="裁切畫面：拖動移動照片，雙指或滾輪縮放，方向鍵微調">
+      <canvas id="ed"></canvas>
+      <span class="tag" id="edSample">範例照片</span>
+    </div>
+    <div class="legend"><span><i></i>頭頂、下巴應落在綠色帶內</span><span><i class="l"></i>眼睛參考線</span></div>
+    <p class="note" id="guideTip">讓頭頂與下巴落在綠色帶內。</p>
+    <div class="warn" id="resWarn" hidden></div>
+    <div class="ctl"><label for="zoom">縮放</label><input type="range" id="zoom" min="0" max="100" step="0.5"><output id="zoomOut"></output></div>
+    <div class="ctl"><label for="rot">旋轉</label><input type="range" id="rot" min="-15" max="15" step="0.5" value="0"><output id="rotOut">0°</output></div>
+    <details class="adv" id="bgAdv">
+      <summary>背景色（進階）</summary>
+      <div class="seg" role="group" aria-label="背景">
+        <button type="button" id="bg-keep" aria-pressed="true">保留原背景</button>
+        <button type="button" id="bg-white" aria-pressed="false">換白底</button>
+        <button type="button" id="bg-blue" aria-pressed="false">換淺藍底</button>
+      </div>
+      <div class="ctl" style="margin-top:6px"><label for="tol">閾值</label><input type="range" id="tol" min="5" max="40" step="1" value="16"><output id="tolOut">16</output></div>
+      <p class="note">從照片上緣兩角與頂邊往內找顏色相近的區域換色。建議在單色牆前拍攝效果最好；頭髮與背景顏色太接近時請調低閾值。</p>
+    </details>
+    <div class="navRow"><button class="btn" id="back2" type="button">上一步</button><button class="btn primary" id="next2" type="button">下一步：排版</button></div>
+  </section>
+
+  <section class="stepPane sec" id="step3" hidden>
+    <div class="s3grid"><div class="s3ctl">
+    <div class="grid2">
+      <div class="field"><label for="paperSel">相紙</label><select id="paperSel"></select></div>
+      <div class="field"><label for="countSel">張數</label><select id="countSel"></select></div>
+      <div class="field"><label for="mixSel">混排第二規格</label><select id="mixSel"></select></div>
+      <div class="field"><label for="limitSel">單張檔案大小</label><select id="limitSel"><option value="0">不限制</option><option value="204800">≤ 200KB</option><option value="512000">≤ 500KB</option><option value="1048576">≤ 1MB</option></select></div>
+    </div>
+    <div class="ctl"><label for="gap">間距</label><input type="range" id="gap" min="0" max="5" step="0.5" value="2"><output id="gapOut">2mm</output></div>
+    <label class="check"><input type="checkbox" id="cutLines" checked>畫裁切線（角線不壓到照片）</label>
+    </div><div class="s3prev">
+    <div class="paperBox"><canvas id="paper" width="1200" height="1800" aria-label="相紙預覽"></canvas></div>
+    <div class="count"><span>共 <b id="countN">0</b> 張</span><span id="paperPx"></span></div>
+    <p class="note" id="layoutNote"></p>
+    <div class="warn" id="resWarn3" hidden></div>
+    <div class="out">
+      <button class="btn primary" id="outPaper" type="button">下載相紙 JPG</button>
+      <button class="btn" id="outSingle" type="button">下載單張電子檔</button>
+    </div>
+    <p class="note">沖印時請選擇「原尺寸／不裁切」，輸出解析度 300 dpi。</p>
+    </div></div>
+    <div class="navRow"><button class="btn" id="back3" type="button">上一步</button><span></span></div>
+  </section>
+  </div>
+</div>
+
+<div class="sheet" id="resSheet" hidden>
+  <div class="box" role="dialog" aria-modal="true" aria-labelledby="resTitle">
+    <h2 id="resTitle" style="margin:0 0 4px;font-size:16px">輸出完成</h2>
+    <p class="note" id="resInfo"></p>
+    <img id="resImg" alt="輸出的證件照">
+    <p class="note">長按或右鍵圖片即可儲存。沖印時請選擇「原尺寸／不裁切」。</p>
+    <div class="navRow"><span></span><button class="btn primary" id="resClose" type="button">關閉</button></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const KEY='id-photo:v1:';
+const store={get(k,d){try{const v=localStorage.getItem(KEY+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(KEY+k,JSON.stringify(v));}catch(e){}}};
+const toast=(m,ms=2400)=>{const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,ms);};
+let dl=null;
+const DPI=300, mm2px=mm=>mm/25.4*DPI;
+
+/* ---------- data ---------- */
+const SPECS=[
+  {id:'1in',name:'一吋',wMM:28,hMM:35,headMinMM:21,headMaxMM:26,topMinMM:3,topMaxMM:5,note:'駕照、學生證、履歷常用'},
+  {id:'2in',name:'二吋大頭',wMM:35,hMM:45,headMinMM:32,headMaxMM:36,topMinMM:3,topMaxMM:5,note:'身分證、護照：頭頂至下巴 3.2–3.6cm'},
+  {id:'2in-half',name:'二吋半身',wMM:42,hMM:47,headMinMM:25,headMaxMM:29,topMinMM:5,topMaxMM:8,note:'畢業紀念冊、報名表'},
+  {id:'us',name:'美國簽證',wMM:51,hMM:51,headMinMM:25,headMaxMM:35,topMinMM:4,topMaxMM:8,note:'頭部 25–35mm'},
+  {id:'jp',name:'日本簽證',wMM:35,hMM:45,headMinMM:32,headMaxMM:36,topMinMM:2,topMaxMM:6,note:'頭部 32–36mm'},
+  {id:'cn',name:'中國簽證',wMM:33,hMM:48,headMinMM:28,headMaxMM:33,topMinMM:3,topMaxMM:5,note:'頭部 28–33mm'},
+  {id:'custom',name:'自訂',wMM:30,hMM:40,note:'輸入寬高'},
+];
+const PAPERS=[
+  {id:'4x6',name:'4×6 吋',wMM:101.6,hMM:152.4},
+  {id:'5x7',name:'5×7 吋',wMM:127,hMM:177.8},
+  {id:'a4',name:'A4',wMM:210,hMM:297},
+  {id:'L',name:'L 版',wMM:89,hMM:127},
+];
+const MARGIN=3;
+function specOf(id){ const s=SPECS.find(s=>s.id===id)||SPECS[1]; if(s.id!=='custom') return s;
+  const w=S.custom.w, h=S.custom.h; return {...s,wMM:w,hMM:h,headMinMM:h*.62,headMaxMM:h*.74,topMinMM:h*.06,topMaxMM:h*.11}; }
+
+/* ---------- state ---------- */
+const saved=store.get('settings',{})||{};
+const S={ step:1, spec:SPECS.some(s=>s.id===saved.spec)?saved.spec:'2in', custom:{w:+((store.get('custom-specs',[])||[])[0]?.w)||30,h:+((store.get('custom-specs',[])||[])[0]?.h)||40},
+  paper:PAPERS.some(p=>p.id===saved.paper)?saved.paper:'4x6', gap:saved.gap>=0&&saved.gap<=5?+saved.gap:2, cut:saved.cut!==false, bg:['keep','white','blue'].includes(saved.bg)?saved.bg:'keep',
+  tol:saved.tol>=5&&saved.tol<=40?+saved.tol:16, mix:saved.mix||'none', count:'auto', limit:+saved.limit||0,
+  src:null, srcName:'sample', sample:true, headBox:null, crop:null, bgCache:null };
+function saveSettings(){ store.set('settings',{spec:S.spec,paper:S.paper,gap:S.gap,cut:S.cut,bg:S.bg,tol:S.tol,mix:S.mix,limit:S.limit}); }
+
+/* ---------- sample portrait ---------- */
+function makeSample(){
+  const W=1200,H=1500,c=document.createElement('canvas'); c.width=W;c.height=H; const x=c.getContext('2d');
+  let g=x.createLinearGradient(0,0,0,H); g.addColorStop(0,'#d4d9de'); g.addColorStop(1,'#c7cdd3'); x.fillStyle=g; x.fillRect(0,0,W,H);
+  // shoulders / shirt
+  x.fillStyle='#24324a'; x.beginPath(); x.moveTo(140,H); x.bezierCurveTo(170,1080,360,1010,600,1000); x.bezierCurveTo(840,1010,1030,1080,1060,H); x.fill();
+  x.fillStyle='#f4f4f2'; x.beginPath(); x.moveTo(520,1000); x.lineTo(600,1120); x.lineTo(680,1000); x.fill();
+  // neck
+  x.fillStyle='#dcae8e'; x.fillRect(530,820,140,200); x.fillStyle='rgba(120,70,40,.18)'; x.fillRect(530,880,140,40);
+  // ears
+  x.fillStyle='#d8a888'; x.beginPath(); x.ellipse(395,620,34,62,0,0,7); x.ellipse(805,620,34,62,0,0,7); x.fill();
+  // face
+  x.fillStyle='#e6b998'; x.beginPath(); x.moveTo(600,900); x.bezierCurveTo(470,900,400,780,398,620); x.bezierCurveTo(396,430,480,330,600,330); x.bezierCurveTo(720,330,804,430,802,620); x.bezierCurveTo(800,780,730,900,600,900); x.fill();
+  // hair
+  x.fillStyle='#231a14'; x.beginPath(); x.moveTo(392,600); x.bezierCurveTo(370,420,450,300,600,300); x.bezierCurveTo(760,300,836,420,808,600); x.bezierCurveTo(790,500,760,450,700,430); x.bezierCurveTo(620,470,520,450,470,430); x.bezierCurveTo(420,470,405,520,392,600); x.fill();
+  // brows, eyes, nose, mouth
+  x.strokeStyle='#2a1d15'; x.lineWidth=11; x.lineCap='round'; x.beginPath(); x.moveTo(470,545); x.quadraticCurveTo(510,528,555,540); x.moveTo(645,540); x.quadraticCurveTo(690,528,730,545); x.stroke();
+  x.fillStyle='#fff'; x.beginPath(); x.ellipse(512,600,32,15,0,0,7); x.ellipse(688,600,32,15,0,0,7); x.fill();
+  x.fillStyle='#3a2a1f'; x.beginPath(); x.arc(512,600,13,0,7); x.arc(688,600,13,0,7); x.fill();
+  x.strokeStyle='rgba(140,80,50,.55)'; x.lineWidth=6; x.beginPath(); x.moveTo(600,610); x.lineTo(588,715); x.quadraticCurveTo(600,728,618,716); x.stroke();
+  x.strokeStyle='#a5584a'; x.lineWidth=9; x.beginPath(); x.moveTo(548,790); x.quadraticCurveTo(600,808,652,790); x.stroke();
+  return {canvas:c, head:{top:300,chin:900,cx:600}};
+}
+
+/* ---------- source ---------- */
+const MAXSIDE=8192, MAXPIX=16777216;
+function setSource(img,name,isSample,head){
+  let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height, sc=1;
+  if(Math.max(w,h)>MAXSIDE) sc=MAXSIDE/Math.max(w,h); if(w*h*sc*sc>MAXPIX) sc=Math.sqrt(MAXPIX/(w*h));
+  const c=document.createElement('canvas'); c.width=Math.round(w*sc); c.height=Math.round(h*sc); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  if(sc<1) toast(`已縮小至 ${c.width}×${c.height} 以免記憶體不足`,3500);
+  if(img.close) try{img.close();}catch(e){}
+  S.src=c; S.srcName=name; S.sample=isSample; S.headBox=head||null; S.bgCache=null; S.crop=null;
+  $('#edSample').hidden=!isSample;
+  $('#srcLabel').innerHTML=isSample?'範例照片 <span class="tag">範例</span>':''; if(!isSample) $('#srcLabel').textContent=name;
+  $('#srcInfo').textContent=isSample?'先用範例試試看，或開啟自己的照片':`${c.width}×${c.height}px`;
+  const t=$('#srcThumb').getContext('2d'); t.fillStyle='#fff'; t.fillRect(0,0,112,140); const s=Math.max(112/c.width,140/c.height); t.drawImage(c,(112-c.width*s)/2,(140-c.height*s)/2,c.width*s,c.height*s);
+}
+async function loadFile(file){
+  if(!file) return; if(file.type&&!file.type.startsWith('image/')){ toast('請選擇圖片檔'); return; }
+  let img=null; try{ img=await createImageBitmap(file,{imageOrientation:'from-image'}); }catch(e){
+    const u=URL.createObjectURL(file); try{ const im=new Image(); im.src=u; await im.decode(); img=im; }catch(e2){ img=null; } finally{ URL.revokeObjectURL(u); } }
+  if(!img){ toast(/heic|heif/i.test(file.name+file.type)?'此格式無法解碼，請先轉成 JPG':'無法讀取這張照片',3500); return; }
+  setSource(img,file.name||'photo.jpg',false,null); toast('已開啟照片'); if(S.step===1) goStep(2); else { resetCrop(); drawEditor(); updateLayout(); }
+}
+
+/* ---------- crop model (source px) ---------- */
+// crop = {cx, cy, fh, rot}: frame centre in source px, frame height in source px, image rotation (deg)
+function aspect(){ const s=specOf(S.spec); return s.wMM/s.hMM; }
+function resetCrop(){
+  const s=specOf(S.spec), a=s.wMM/s.hMM, iw=S.src.width, ih=S.src.height;
+  if(S.headBox){ const hb=S.headBox, topMid=(s.topMinMM+s.topMaxMM)/2, headMid=(s.headMinMM+s.headMaxMM)/2, k=(hb.chin-hb.top)/headMid; // src px per mm
+    const fh=s.hMM*k; S.crop={cx:hb.cx, cy:hb.top-topMid*k+fh/2, fh, rot:0}; }
+  else { let fh=Math.min(ih,iw/a)*0.9; S.crop={cx:iw/2, cy:Math.min(ih-fh/2, ih*0.42+fh*0.0), fh, rot:0}; if(S.crop.cy<fh/2) S.crop.cy=fh/2; }
+  syncCropUI();
+}
+function clampCrop(){ const c=S.crop, iw=S.src.width, ih=S.src.height; const maxH=Math.max(iw,ih)*1.2, minH=Math.min(iw,ih)*0.08;
+  c.fh=Math.min(maxH,Math.max(minH,c.fh)); c.cx=Math.min(iw,Math.max(0,c.cx)); c.cy=Math.min(ih,Math.max(0,c.cy)); }
+const zoomRange=()=>{ const iw=S.src.width, ih=S.src.height; return [Math.min(iw,ih)*0.08, Math.max(iw,ih)*1.2]; };
+function syncCropUI(){ const [a,b]=zoomRange(); const t=Math.log(b/S.crop.fh)/Math.log(b/a); $('#zoom').value=(t*100).toFixed(1); $('#zoomOut').textContent=Math.round(t*100)+'%';
+  $('#rot').value=S.crop.rot; $('#rotOut').textContent=(S.crop.rot>0?'+':'')+S.crop.rot+'°'; checkRes(); }
+function drawPhoto(ctx,tw,th,spec,crop){ // render crop to a tw×th area at current ctx origin
+  const src=effectiveSrc(); const k=th/crop.fh;
+  ctx.save(); ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,tw,th); ctx.beginPath(); ctx.rect(0,0,tw,th); ctx.clip();
+  ctx.translate(tw/2,th/2); ctx.scale(k,k); ctx.rotate(crop.rot*Math.PI/180); ctx.translate(-crop.cx,-crop.cy);
+  ctx.imageSmoothingQuality='high'; ctx.drawImage(src,0,0); ctx.restore();
+}
+function renderSingle(specId,crop){ const s=specOf(specId); const tw=Math.round(mm2px(s.wMM)), th=Math.round(mm2px(s.hMM));
+  const c=document.createElement('canvas'); c.width=tw; c.height=th; drawPhoto(c.getContext('2d'),tw,th,s,crop); return c; }
+function checkRes(){ const s=specOf(S.spec); const need=mm2px(s.hMM); const ok=S.crop.fh>=need*0.8;
+  const msg=`解析度不足，列印可能模糊（裁切區約 ${Math.round(S.crop.fh*aspect())}×${Math.round(S.crop.fh)}px，建議至少 ${Math.round(mm2px(s.wMM)*.8)}×${Math.round(need*.8)}px）`;
+  for(const id of ['#resWarn','#resWarn3']){ $(id).hidden=ok; $(id).textContent=msg; } }
+/* crop for a second spec, aligned on the same head top & scale of head */
+function deriveCrop(specId){ const p=specOf(S.spec), q=specOf(specId), c=S.crop; const k1=c.fh/p.hMM;
+  const k2=k1*((p.headMinMM+p.headMaxMM)/2)/((q.headMinMM+q.headMaxMM)/2); const r=c.rot*Math.PI/180;
+  const topY=-c.fh/2+(p.topMinMM+p.topMaxMM)/2*k1; // in frame coords (y down), head top
+  const newCenterLocalY=topY-(q.topMinMM+q.topMaxMM)/2*k2+q.hMM*k2/2; // frame-local
+  // frame axes are rotated by -rot relative to source
+  const dx=0, dy=newCenterLocalY; const cos=Math.cos(-r), sin=Math.sin(-r);
+  return {cx:c.cx+dx*cos-dy*sin, cy:c.cy+dx*sin+dy*cos, fh:q.hMM*k2, rot:c.rot}; }
+
+/* ---------- background replace ---------- */
+function effectiveSrc(){ if(S.bg==='keep') return S.src; const key=S.bg+':'+S.tol; if(S.bgCache&&S.bgCache.key===key&&S.bgCache.src===S.src) return S.bgCache.canvas;
+  const canvas=replaceBg(S.src,S.bg==='white'?[255,255,255]:[219,233,247],S.tol); S.bgCache={key,src:S.src,canvas}; return canvas; }
+function toLab(r,g,b){ const f=v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4);}; const R=f(r),G=f(g),B=f(b);
+  let X=(R*.4124+G*.3576+B*.1805)/.95047, Y=R*.2126+G*.7152+B*.0722, Z=(R*.0193+G*.1192+B*.9505)/1.08883;
+  const h=t=>t>.008856?Math.cbrt(t):7.787*t+16/116; X=h(X);Y=h(Y);Z=h(Z); return [116*Y-16,500*(X-Y),200*(Y-Z)]; }
+function bgMask(src,tol){ // returns {mask Float32 (0..1), w, h} on a ≤800px working copy
+  const sc=Math.min(1,800/Math.max(src.width,src.height)), w=Math.max(1,Math.round(src.width*sc)), h=Math.max(1,Math.round(src.height*sc));
+  const c=document.createElement('canvas'); c.width=w;c.height=h; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(src,0,0,w,h); const d=x.getImageData(0,0,w,h).data;
+  const L=new Float32Array(w*h),A=new Float32Array(w*h),B=new Float32Array(w*h); const cache=new Map();
+  for(let i=0;i<w*h;i++){ const r=d[i*4]>>2,g=d[i*4+1]>>2,b=d[i*4+2]>>2, key=(r<<12)|(g<<6)|b; let v=cache.get(key); if(!v){ v=toLab(r*4+2,g*4+2,b*4+2); cache.set(key,v);} L[i]=v[0];A[i]=v[1];B[i]=v[2]; }
+  const m=new Uint8Array(w*h); const seeds=[[0,0],[w-1,0]]; for(let k=1;k<8;k++) seeds.push([Math.round(k*(w-1)/8),0]); seeds.push([0,Math.round(h*.3)],[w-1,Math.round(h*.3)]);
+  for(const [sx,sy] of seeds){ const si=sy*w+sx; if(m[si]) continue; const l0=L[si],a0=A[si],b0=B[si]; const t2=tol*tol;
+    const near=i=>{ const dl=L[i]-l0,da=A[i]-a0,db=B[i]-b0; return dl*dl+da*da+db*db<t2; };
+    if(!near(si)) continue; const stack=[sx,sy];
+    while(stack.length){ let y=stack.pop(), x0=stack.pop(); let xl=x0; while(xl>0&&!m[y*w+xl-1]&&near(y*w+xl-1)) xl--; let xr=x0; while(xr<w-1&&!m[y*w+xr+1]&&near(y*w+xr+1)) xr++;
+      for(let xx=xl;xx<=xr;xx++) m[y*w+xx]=1;
+      for(const ny of [y-1,y+1]){ if(ny<0||ny>=h) continue; let inRun=false; for(let xx=xl;xx<=xr;xx++){ const i=ny*w+xx; const ok=!m[i]&&near(i); if(ok&&!inRun){ stack.push(xx,ny); inRun=true; } else if(!ok) inRun=false; } } } }
+  // 3px feather (box blur x2)
+  let f=new Float32Array(w*h); for(let i=0;i<w*h;i++) f[i]=m[i];
+  const R=3; for(let pass=0;pass<2;pass++){ const t=new Float32Array(w*h);
+    for(let y=0;y<h;y++){ let acc=0,n=0; for(let x=-R;x<w;x++){ if(x+R<w){acc+=f[y*w+x+R];n++;} if(x-R-1>=0){acc-=f[y*w+x-R-1];n--;} if(x>=0) t[y*w+x]=acc/n; } }
+    for(let x=0;x<w;x++){ let acc=0,n=0; for(let y=-R;y<h;y++){ if(y+R<h){acc+=t[(y+R)*w+x];n++;} if(y-R-1>=0){acc-=t[(y-R-1)*w+x];n--;} if(y>=0) f[y*w+x]=acc/n; } } }
+  return {mask:f,w,h,count:m.reduce((a,v)=>a+v,0)};
+}
+function replaceBg(src,rgb,tol){
+  const {mask,w,h}=bgMask(src,tol); const mc=document.createElement('canvas'); mc.width=w; mc.height=h; const mx=mc.getContext('2d'); const id=mx.createImageData(w,h);
+  for(let i=0;i<w*h;i++){ id.data[i*4]=rgb[0];id.data[i*4+1]=rgb[1];id.data[i*4+2]=rgb[2];id.data[i*4+3]=Math.round(mask[i]*255); } mx.putImageData(id,0,0);
+  const out=document.createElement('canvas'); out.width=src.width; out.height=src.height; const ox=out.getContext('2d'); ox.drawImage(src,0,0); ox.imageSmoothingQuality='high'; ox.drawImage(mc,0,0,out.width,out.height); return out;
+}
+
+/* ---------- editor ---------- */
+const ed=$('#ed'), edWrap=$('#editor'); let frame={x:0,y:0,w:0,h:0};
+function drawEditor(){
+  if(S.step<2&&!matchMedia('(min-width:1000px)').matches) return; if(!S.crop) resetCrop();
+  const dpr=Math.min(2,devicePixelRatio||1), W=edWrap.clientWidth, H=edWrap.clientHeight; if(!W||!H) return;
+  ed.width=Math.round(W*dpr); ed.height=Math.round(H*dpr); const x=ed.getContext('2d'); x.setTransform(dpr,0,0,dpr,0,0);
+  const a=aspect(), pad=28; let fh=H-pad*2, fw=fh*a; if(fw>W-pad*2){ fw=W-pad*2; fh=fw/a; } frame={x:(W-fw)/2,y:(H-fh)/2,w:fw,h:fh};
+  const c=S.crop, k=fh/c.fh; x.fillStyle=getComputedStyle(edWrap).backgroundColor; x.fillRect(0,0,W,H);
+  x.save(); x.translate(frame.x+fw/2,frame.y+fh/2); x.scale(k,k); x.rotate(c.rot*Math.PI/180); x.translate(-c.cx,-c.cy); x.drawImage(effectiveSrc(),0,0); x.restore();
+  x.fillStyle='rgba(8,12,20,.62)'; x.beginPath(); x.rect(0,0,W,H); x.rect(frame.x,frame.y+fh,fw,-fh); x.fill('evenodd');
+  // white fill hint where the frame isn't covered is left as the image (white in output)
+  const s=specOf(S.spec), pm=fh/s.hMM, Y=mm=>frame.y+mm*pm;
+  x.fillStyle='rgba(30,190,110,.30)';
+  x.fillRect(frame.x,Y(s.topMinMM),fw,(s.topMaxMM-s.topMinMM)*pm);
+  const topMid=(s.topMinMM+s.topMaxMM)/2; const c0=topMid+s.headMinMM, c1=Math.min(s.hMM,topMid+s.headMaxMM);
+  x.fillRect(frame.x,Y(c0),fw,(c1-c0)*pm);
+  x.strokeStyle='rgba(60,220,140,.95)'; x.lineWidth=1; x.setLineDash([]);
+  for(const v of [s.topMinMM,s.topMaxMM,c0,c1]){ x.beginPath(); x.moveTo(frame.x,Y(v)+.5); x.lineTo(frame.x+fw,Y(v)+.5); x.stroke(); }
+  x.strokeStyle='rgba(255,255,255,.55)'; x.setLineDash([4,4]); x.beginPath(); x.moveTo(frame.x+fw/2,frame.y); x.lineTo(frame.x+fw/2,frame.y+fh); x.stroke();
+  const eye=topMid+(s.headMinMM+s.headMaxMM)/2*0.5; x.strokeStyle='rgba(231,180,0,.95)'; x.setLineDash([6,4]); x.beginPath(); x.moveTo(frame.x,Y(eye)); x.lineTo(frame.x+fw,Y(eye)); x.stroke(); x.setLineDash([]);
+  x.strokeStyle='#fff'; x.lineWidth=1.5; x.strokeRect(frame.x,frame.y,fw,fh);
+  x.fillStyle='#fff'; x.font='600 11px '+getComputedStyle(document.body).fontFamily; x.textBaseline='bottom';
+  x.fillText(`${s.wMM}×${s.hMM}mm`,frame.x,frame.y-6); x.textBaseline='middle';
+  x.fillText('頭頂',frame.x+fw+4>W-30?frame.x+4:frame.x+fw+4,Y((s.topMinMM+s.topMaxMM)/2)); x.fillText('下巴',frame.x+fw+4>W-30?frame.x+4:frame.x+fw+4,Y((c0+c1)/2));
+}
+(()=>{
+  const pts=new Map(); let last=null;
+  const move=(dx,dy)=>{ const c=S.crop, k=frame.h/c.fh, r=-c.rot*Math.PI/180; const sx=dx/k, sy=dy/k; c.cx-=sx*Math.cos(r)-sy*Math.sin(r); c.cy-=sx*Math.sin(r)+sy*Math.cos(r); clampCrop(); };
+  edWrap.addEventListener('pointerdown',e=>{ edWrap.setPointerCapture(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); last=null; });
+  edWrap.addEventListener('pointermove',e=>{ if(!pts.has(e.pointerId)) return; const p=pts.get(e.pointerId); const nx=e.clientX, ny=e.clientY;
+    if(pts.size===1){ move(nx-p.x,ny-p.y); }
+    else if(pts.size===2){ const [a,b]=[...pts.values()]; const d0=Math.hypot(a.x-b.x,a.y-b.y); p.x=nx;p.y=ny; const [a2,b2]=[...pts.values()]; const d1=Math.hypot(a2.x-b2.x,a2.y-b2.y); if(d0>0){ S.crop.fh*=d0/d1; clampCrop(); } }
+    p.x=nx;p.y=ny; syncCropUI(); drawEditor(); });
+  const end=e=>{ pts.delete(e.pointerId); if(!pts.size) updateLayout(); };
+  edWrap.addEventListener('pointerup',end); edWrap.addEventListener('pointercancel',end);
+  edWrap.addEventListener('wheel',e=>{ e.preventDefault(); S.crop.fh*=Math.exp(e.deltaY*0.0015); clampCrop(); syncCropUI(); drawEditor(); clearTimeout(edWrap._t); edWrap._t=setTimeout(updateLayout,200); },{passive:false});
+  edWrap.addEventListener('keydown',e=>{ const st=e.shiftKey?10:2; const m={ArrowLeft:[st,0],ArrowRight:[-st,0],ArrowUp:[0,st],ArrowDown:[0,-st]}[e.key];
+    if(m){ move(m[0],m[1]); } else if(e.key==='+'||e.key==='='){ S.crop.fh/=1.04; clampCrop(); } else if(e.key==='-'){ S.crop.fh*=1.04; clampCrop(); } else return;
+    e.preventDefault(); syncCropUI(); drawEditor(); updateLayout(); });
+})();
+$('#zoom').addEventListener('input',e=>{ const [a,b]=zoomRange(); S.crop.fh=b*Math.pow(a/b,e.target.value/100); clampCrop(); $('#zoomOut').textContent=Math.round(+e.target.value)+'%'; checkRes(); drawEditor(); });
+$('#zoom').addEventListener('change',updateLayout);
+$('#rot').addEventListener('input',e=>{ S.crop.rot=+e.target.value; $('#rotOut').textContent=(S.crop.rot>0?'+':'')+S.crop.rot+'°'; drawEditor(); });
+$('#rot').addEventListener('change',updateLayout);
+for(const k of ['keep','white','blue']) $('#bg-'+k).onclick=()=>{ S.bg=k; for(const j of ['keep','white','blue']) $('#bg-'+j).setAttribute('aria-pressed',j===k); saveSettings(); drawEditor(); updateLayout(); };
+$('#tol').addEventListener('input',e=>{ S.tol=+e.target.value; $('#tolOut').textContent=S.tol; });
+$('#tol').addEventListener('change',()=>{ saveSettings(); drawEditor(); updateLayout(); });
+
+/* ---------- layout ---------- */
+function grid(W,H,w,h,gap){ const cols=Math.floor((W+gap)/(w+gap)), rows=Math.floor((H+gap)/(h+gap)); return {cols:Math.max(0,cols),rows:Math.max(0,rows)}; }
+function bestFit(W,H,w,h,gap){ const a=grid(W,H,w,h,gap), b=grid(W,H,h,w,gap); const na=a.cols*a.rows, nb=b.cols*b.rows;
+  return nb>na?{...b,rot:true,n:nb,w:h,h:w}:{...a,rot:false,n:na,w,h}; }
+function computeLayout(){
+  const P=PAPERS.find(p=>p.id===S.paper), s=specOf(S.spec), gap=S.gap; const W=P.wMM-2*MARGIN, H=P.hMM-2*MARGIN;
+  const prim=bestFit(W,H,s.wMM,s.hMM,gap); const items=[]; let usedH=0, note='';
+  if(!prim.n) return {P,items,n:0,err:'單張超過相紙尺寸'};
+  let want=S.count==='auto'?Infinity:+S.count; let mixSpec=S.mix!=='none'&&S.mix!==S.spec?specOf(S.mix):null;
+  let rowsUse=prim.rows; if(mixSpec&&S.count==='auto') rowsUse=Math.ceil(prim.rows/2);
+  let n1=Math.min(want,rowsUse*prim.cols); rowsUse=Math.ceil(n1/prim.cols);
+  const blockW1=prim.cols*prim.w+(prim.cols-1)*gap;
+  for(let i=0;i<n1;i++){ const r=Math.floor(i/prim.cols), c=i%prim.cols; items.push({spec:S.spec,x:c*(prim.w+gap),y:r*(prim.h+gap),w:prim.w,h:prim.h,rot:prim.rot}); }
+  usedH=rowsUse*(prim.h+gap)-gap; let blockW=blockW1, n2=0;
+  if(mixSpec){ const remH=H-usedH-gap; const sec=bestFit(W,remH,mixSpec.wMM,mixSpec.hMM,gap);
+    if(sec.n>0){ const bw=sec.cols*sec.w+(sec.cols-1)*gap; blockW=Math.max(blockW,bw); const y0=usedH+gap;
+      for(let i=0;i<sec.n;i++){ const r=Math.floor(i/sec.cols), c=i%sec.cols; items.push({spec:S.mix,x:c*(sec.w+gap)+(bw<blockW1?(blockW1-bw)/2:0),y:y0+r*(sec.h+gap),w:sec.w,h:sec.h,rot:sec.rot}); }
+      usedH=y0+sec.rows*(sec.h+gap)-gap; n2=sec.n; note=`${s.name} ${n1} 張＋${mixSpec.name} ${n2} 張`; }
+    else note=`剩餘空間放不下 ${mixSpec.name}`; }
+  // centre block (primary rows also centred relative to wider secondary block)
+  const ox=MARGIN+(W-blockW)/2, oy=MARGIN+(H-usedH)/2;
+  for(const it of items){ if(it.spec===S.spec&&blockW>blockW1) it.x+=(blockW-blockW1)/2; it.x+=ox; it.y+=oy; }
+  if(prim.rot) note=(note?note+'。':'')+'照片轉 90° 排列可放更多張（預覽中以 ↻ 標示）';
+  return {P,items,n:items.length,n1,n2,rot:prim.rot,note};
+}
+function renderPaper(L,forPreview){
+  const pw=Math.round(mm2px(L.P.wMM)), ph=Math.round(mm2px(L.P.hMM)); const c=forPreview?$('#paper'):document.createElement('canvas'); c.width=pw; c.height=ph;
+  const x=c.getContext('2d'); x.fillStyle='#ffffff'; x.fillRect(0,0,pw,ph);
+  const singles={}; const get=(id,rot)=>{ const k=id+(rot?'r':''); if(singles[k]) return singles[k]; const base=renderSingle(id,id===S.spec?S.crop:deriveCrop(id));
+    if(!rot) return singles[k]=base; const r=document.createElement('canvas'); r.width=base.height; r.height=base.width; const rx=r.getContext('2d'); rx.translate(r.width,0); rx.rotate(Math.PI/2); rx.drawImage(base,0,0); return singles[k]=r; };
+  if(S.cut){ x.fillStyle='#8a8f98'; const len=mm2px(3), th=Math.max(1,mm2px(.2));
+    for(const it of L.items){ const X0=mm2px(it.x),Y0=mm2px(it.y),X1=mm2px(it.x+it.w),Y1=mm2px(it.y+it.h);
+      for(const [cx,cy,sx,sy] of [[X0,Y0,-1,-1],[X1,Y0,1,-1],[X0,Y1,-1,1],[X1,Y1,1,1]]){
+        x.fillRect(sx<0?cx-len:cx,cy-th/2,len,th); x.fillRect(cx-th/2,sy<0?cy-len:cy,th,len); } } }
+  for(const it of L.items){ const X0=Math.round(mm2px(it.x)),Y0=Math.round(mm2px(it.y)); const img=get(it.spec,it.rot); x.drawImage(img,X0,Y0);
+    if(forPreview&&it.rot){ x.fillStyle='rgba(29,79,156,.85)'; x.beginPath(); x.arc(X0+28,Y0+28,20,0,7); x.fill(); x.fillStyle='#fff'; x.font='bold 26px sans-serif'; x.textAlign='center'; x.textBaseline='middle'; x.fillText('↻',X0+28,Y0+29); x.textAlign='start'; } }
+  return c;
+}
+let layoutQ=0;
+function updateLayout(){ if(!S.crop) resetCrop(); cancelAnimationFrame(layoutQ); layoutQ=requestAnimationFrame(()=>{
+  const L=computeLayout(); S.lastLayout=L; renderPaper(L,true);
+  $('#countN').textContent=L.n; $('#paperPx').textContent=`${Math.round(L.P.wMM)}×${Math.round(L.P.hMM)}mm・${$('#paper').width}×${$('#paper').height}px・300dpi`;
+  $('#layoutNote').textContent=L.err||L.note||''; $('#outPaper').disabled=!L.n; }); }
+function fillCountSel(){ const P=PAPERS.find(p=>p.id===S.paper), s=specOf(S.spec); const f=bestFit(P.wMM-2*MARGIN,P.hMM-2*MARGIN,s.wMM,s.hMM,S.gap);
+  const sel=$('#countSel'); const cur=S.count; sel.innerHTML='<option value="auto">自動排滿</option>'; for(let i=1;i<=f.n;i++) sel.add(new Option(i+' 張',i));
+  if(cur!=='auto'&&+cur<=f.n) sel.value=cur; else { sel.value='auto'; S.count='auto'; } }
+function fillMixSel(){ const sel=$('#mixSel'); sel.innerHTML='<option value="none">不混排</option>'; for(const s of SPECS) if(s.id!==S.spec) sel.add(new Option(s.id==='custom'?`自訂 ${S.custom.w}×${S.custom.h}mm`:`${s.name} ${s.wMM/10}×${s.hMM/10}cm`,s.id)); sel.value=[...sel.options].some(o=>o.value===S.mix)?S.mix:'none'; S.mix=sel.value; }
+for(const p of PAPERS) $('#paperSel').add(new Option(p.name,p.id));
+$('#paperSel').value=S.paper; $('#gap').value=S.gap; $('#gapOut').textContent=S.gap+'mm'; $('#cutLines').checked=S.cut; $('#limitSel').value=String(S.limit); $('#tol').value=S.tol; $('#tolOut').textContent=S.tol;
+for(const j of ['keep','white','blue']) $('#bg-'+j).setAttribute('aria-pressed',j===S.bg);
+$('#paperSel').onchange=e=>{ S.paper=e.target.value; fillCountSel(); saveSettings(); updateLayout(); };
+$('#countSel').onchange=e=>{ S.count=e.target.value; updateLayout(); };
+$('#mixSel').onchange=e=>{ S.mix=e.target.value; saveSettings(); updateLayout(); };
+$('#limitSel').onchange=e=>{ S.limit=+e.target.value; saveSettings(); };
+$('#gap').addEventListener('input',e=>{ S.gap=+e.target.value; $('#gapOut').textContent=S.gap+'mm'; fillCountSel(); updateLayout(); });
+$('#gap').addEventListener('change',saveSettings);
+$('#cutLines').onchange=e=>{ S.cut=e.target.checked; saveSettings(); updateLayout(); };
+
+/* ---------- step 1 cards ---------- */
+function buildCards(){ const box=$('#cards'); box.innerHTML='';
+  for(const s0 of SPECS){ const s=specOf(s0.id); const b=document.createElement('button'); b.type='button'; b.className='card'; b.id='spec-'+s0.id; b.setAttribute('role','radio'); b.setAttribute('aria-checked',S.spec===s0.id);
+    const sc=Math.min(44/s.wMM,56/s.hMM);
+    b.innerHTML=`<span class="shape" style="width:${(s.wMM*sc).toFixed(1)}px;height:${(s.hMM*sc).toFixed(1)}px"></span><span><b></b><span class="mm"></span><span class="hd"></span></span>`;
+    b.querySelector('b').textContent=s0.name; b.querySelector('.mm').textContent=`${s.wMM}×${s.hMM}mm`;
+    b.querySelector('.hd').textContent=s0.id==='custom'?'輸入寬高':`頭部 ${s.headMinMM}–${s.headMaxMM}mm`;
+    b.title=s0.note; b.onclick=()=>chooseSpec(s0.id); box.appendChild(b); }
+  $('#customBox').hidden=S.spec!=='custom'; $('#cw').value=S.custom.w; $('#ch').value=S.custom.h; }
+function chooseSpec(id){ S.spec=id; S.crop=null; buildCards(); fillCountSel(); fillMixSel(); saveSettings(); if(S.src){ resetCrop(); drawEditor(); updateLayout(); } }
+for(const id of ['cw','ch']) $('#'+id).addEventListener('change',()=>{ const w=+$('#cw').value, h=+$('#ch').value;
+  if(!(w>=10&&w<=300&&h>=10&&h<=300)){ $('#customMsg').textContent='尺寸需介於 10–300mm'; $('#customMsg').style.color='var(--err)'; return; }
+  $('#customMsg').textContent='範圍 10–300mm，會記住這組尺寸。'; $('#customMsg').style.color=''; S.custom={w,h}; store.set('custom-specs',[{w,h}]); S.crop=null; buildCards(); fillCountSel(); fillMixSel(); resetCrop(); drawEditor(); updateLayout(); });
+
+/* ---------- steps ---------- */
+function goStep(n){
+  if(n>=2&&!S.src){ toast('請先選擇照片'); return; }
+  S.step=n; $('#app').dataset.step=n;
+  for(let i=1;i<=3;i++){ $('#step'+i).hidden=i!==n; const b=$('#st'+i); if(i===n) b.setAttribute('aria-current','step'); else b.removeAttribute('aria-current'); b.classList.toggle('done',i<n); }
+  if(n>=2){ if(!S.crop) resetCrop(); requestAnimationFrame(()=>{ drawEditor(); updateLayout(); }); }
+  scrollTo({top:0});
+}
+$('#st1').onclick=()=>goStep(1); $('#st2').onclick=()=>goStep(2); $('#st3').onclick=()=>goStep(3);
+$('#next1').onclick=()=>goStep(2); $('#next2').onclick=()=>goStep(3); $('#back2').onclick=()=>goStep(1); $('#back3').onclick=()=>goStep(2);
+$('#openBtn').onclick=$('#openBtn2').onclick=()=>$('#fileInput').click();
+$('#fileInput').onchange=e=>{ loadFile(e.target.files[0]); e.target.value=''; };
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{ e.preventDefault(); const f=[...(e.dataTransfer?.files||[])].find(f=>f.type.startsWith('image/')); if(f) loadFile(f); });
+addEventListener('paste',e=>{ const f=[...(e.clipboardData?.files||[])].find(f=>f.type.startsWith('image/')); if(f) loadFile(f); });
+addEventListener('resize',()=>{ if(S.step>=2) drawEditor(); });
+
+/* ---------- output ---------- */
+async function toJpeg(canvas,q){ return new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error('blob')),'image/jpeg',q)); }
+async function setDpi(blob){ const u=new Uint8Array(await blob.arrayBuffer());
+  if(u[0]===0xFF&&u[1]===0xD8&&u[2]===0xFF&&u[3]===0xE0&&u[6]===0x4A&&u[7]===0x46&&u[8]===0x49&&u[9]===0x46&&u[10]===0){ u[13]=1; u[14]=DPI>>8; u[15]=DPI&255; u[16]=DPI>>8; u[17]=DPI&255; return new Blob([u],{type:'image/jpeg'}); }
+  const app0=new Uint8Array([0xFF,0xE0,0,16,0x4A,0x46,0x49,0x46,0,1,1,1,DPI>>8,DPI&255,DPI>>8,DPI&255,0,0]);
+  return new Blob([u.subarray(0,2),app0,u.subarray(2)],{type:'image/jpeg'}); }
+const baseName=()=>S.sample?'sample':S.srcName.replace(/\.[^.]+$/,'');
+async function deliver(blob,filename,info){
+  window.__lastOut={blob,filename};
+  if(dl){ try{ await dl.save({filename,data:blob}); toast('已儲存 '+filename); return; }catch(e){ if(/declin|cancel|abort/i.test(String(e&&(e.name||e.message)))){ toast('已取消下載'); return; } toast('下載失敗，改以圖片顯示'); } }
+  const im=$('#resImg'); if(im.dataset.u) URL.revokeObjectURL(im.dataset.u); const u=URL.createObjectURL(blob); im.dataset.u=u; im.src=u; $('#resInfo').textContent=info; $('#resSheet').hidden=false; $('#resClose').focus(); }
+$('#resClose').onclick=()=>{ $('#resSheet').hidden=true; };
+$('#outPaper').onclick=async()=>{ const L=computeLayout(); if(!L.n) return; const c=renderPaper(L,false); const b=await setDpi(await toJpeg(c,.95));
+  await deliver(b,`${baseName()}-${specOf(S.spec).name}-${S.paper}.jpg`,`相紙 ${c.width}×${c.height}px・共 ${L.n} 張・${(b.size/1024).toFixed(0)}KB`); };
+$('#outSingle').onclick=async()=>{ const c=renderSingle(S.spec,S.crop); let q=.95, b=await toJpeg(c,q);
+  if(S.limit&&b.size>S.limit){ let lo=.1, hi=.95, best=null; for(let i=0;i<8;i++){ const m=(lo+hi)/2; const t=await toJpeg(c,m); if(t.size<=S.limit){ best=t; lo=m; } else hi=m; } b=best||await toJpeg(c,.1); if(b.size>S.limit) toast('已用最低品質仍超過上限'); }
+  b=await setDpi(b); await deliver(b,`${baseName()}-${specOf(S.spec).name}.jpg`,`單張 ${c.width}×${c.height}px・${(b.size/1024).toFixed(0)}KB`); };
+
+/* ---------- init ---------- */
+const smp=makeSample(); setSource(smp.canvas,'sample',true,smp.head);
+buildCards(); fillCountSel(); fillMixSel(); resetCrop(); goStep(1);
+if(matchMedia('(min-width:1000px)').matches) updateLayout();
+(async()=>{ try{ dl=await window.claude?.use?.('downloads')||null; }catch(e){ dl=null; } if(!dl){ $('#outPaper').textContent='產生相紙 JPG'; $('#outSingle').textContent='產生單張電子檔'; } })();
+window.__id={S,SPECS,PAPERS,computeLayout,bestFit,bgMask,goStep,renderSingle,mm2px};
+})();
+</script>

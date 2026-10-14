@@ -1,0 +1,150 @@
+--- gomoku/index.html (before)
++++ gomoku/index.html (after)
+@@ -212,2 +212,3 @@
+     <button class="btn" id="tAI">對戰電腦</button>
++    <button class="btn sec" id="tNet" hidden>連線對戰 <small id="tNetInfo"></small></button>
+     <div class="row"><button class="btn sec" id="tPz">殘局挑戰 <small id="tPzInfo"></small></button><button class="btn sec" id="tDaily">每日殘局</button></div>
+@@ -353,2 +354,3 @@
+ 
++<!--NETPLAY-START--><!--NETPLAY-END-->
+ <script id="coreScript">
+@@ -1152,2 +1154,3 @@
+   if (G.mode === 'pz') return G.toMove === G.pz.att;
++  if (G.mode === 'net') return NET.canMove();
+   return false;
+@@ -1520,2 +1523,3 @@
+   else if (G.mode === 'pvp') show = SET.fbMark;
++  else if (G.mode === 'net') show = SET.fbMark && NET.mySide() === 0;
+   else if (G.mode === 'pz') show = G.pz.n < 60 && G.pz.att === 1;
+@@ -1541,2 +1545,3 @@
+   play(p, c); G.moves.push([p, c]); G.toMove = 3 - c;
++  if (G.mode === 'net' && human) NET.moved(p);
+   anims.push({ p: p, t: now() }); lastMoveT = now();
+@@ -1603,3 +1608,4 @@
+   if (G.mode === 'pz') { pzFinish(winner === G.pz.att, reason); return; }
+-  var humanWon = G.mode === 'ai' ? winner === G.human : winner !== 0;
++  if (G.mode === 'net') NET.refresh();
++  var humanWon = G.mode === 'ai' ? winner === G.human : G.mode === 'net' ? winner === NET.mySide() + 1 : winner !== 0;
+   if (winner === 0) SND.draw(); else if (humanWon) { SND.win(); vib([20, 30, 60]); } else { SND.lose(); vib(60); }
+@@ -1614,2 +1620,6 @@
+     msg = (w ? colName(w) + '方' : '') + r.reason + '・對手：' + LVN[G.lv] + '（' + RULEN[G.rule] + '）';
++  } else if (G.mode === 'net' && NET.mySide() >= 0) {
++    var mine0 = NET.mySide() + 1;
++    big = w ? (w === mine0 ? '勝' : '敗') : '和'; title = w ? (w === mine0 ? '你贏了！' : ((G.netNames || [])[2 - mine0] || '對手') + ' 獲勝') : '和局';
++    msg = (w ? colName(w) + '方' : '') + r.reason + '・' + RULEN[G.rule];
+   } else { big = w ? (w === 1 ? '黑' : '白') : '和'; title = w ? colName(w) + '方獲勝' : '和局'; msg = r.reason; }
+@@ -1618,2 +1628,4 @@
+   $('rStats').innerHTML = '<div>手數<b>' + G.moves.length + '</b></div><div>' + (G.mode === 'ai' ? '你的用時' : '總用時') + '<b>' + fmtT(mine) + '</b></div>' + (G.mode === 'ai' ? '<div>連勝<b>' + STATS.streak + '</b></div>' : '');
++  $('rReplay').classList.toggle('hidden', G.mode === 'net'); $('rAgain').textContent = G.mode === 'net' ? '再來一局（換邊）' : '再來一局';
++  $('rHome').textContent = G.mode === 'net' ? '離開房間' : '主選單';
+   show('ovResult');
+@@ -1646,3 +1658,3 @@
+ function undo() {
+-  if (G.mode === 'replay' || G.swapPending) return;
++  if (G.mode === 'replay' || G.mode === 'net' || G.swapPending) return;
+   if (!G.moves.length) return;
+@@ -1671,3 +1683,3 @@
+ function hint() {
+-  if (!isHumanTurn()) return;
++  if (!isHumanTurn() || G.mode === 'net') return;
+   var tok = G.token, msg;
+@@ -1833,2 +1845,6 @@
+     $('sbW').innerHTML = hb ? LVN[G.lv] + ' ' + lvPips(G.lv) : '白方・後手';
++  } else if (G.mode === 'net') {
++    var nm = G.netNames || ['黑方', '白方'];
++    $('nmB').textContent = nm[0]; $('nmW').textContent = nm[1];
++    $('sbB').textContent = '黑方・先手'; $('sbW').textContent = '白方・後手';
+   } else { $('nmB').textContent = '黑方'; $('nmW').textContent = '白方'; $('sbB').textContent = '先手'; $('sbW').textContent = '後手'; }
+@@ -1843,6 +1859,8 @@
+     else h = w ? '<b>' + colName(w) + '方勝</b>・' + G.result.reason : '<b>和局</b>';
++    if (G.mode === 'net' && /再來/.test(NETST)) h += '・' + NETST;
+   } else if (G.swapPending) h = '等待你決定是否交換';
+   else if (G.thinking) h = G.mode === 'pz' ? '對手思考防守中…' : '<b>電腦思考中…</b>';
++  else if (G.mode === 'net' && !isHumanTurn()) h = NETST || '連線中…';
+   else if (isHumanTurn()) {
+-    var who = G.mode === 'pvp' ? colName(G.toMove) + '方落子' : '輪到你落子（' + colName(G.toMove) + '）';
++    var who = G.mode === 'net' ? '<b>' + NETST + '</b>' : G.mode === 'pvp' ? colName(G.toMove) + '方落子' : '輪到你落子（' + colName(G.toMove) + '）';
+     if (G.mode === 'pz') who = '<b>' + colName(G.pz.att) + '先</b>・' + G.pz.N + ' 手內連五・須連續衝四／活三';
+@@ -1874,4 +1892,4 @@
+   if (G.mode === 'replay') { $('chipB').classList.remove('on'); $('chipW').classList.remove('on'); labelChips(); }
+-  $('bUndo').disabled = G.mode === 'replay' || !G.moves.length || G.swapPending;
+-  $('bHint').disabled = !isHumanTurn();
++  $('bUndo').disabled = G.mode === 'replay' || G.mode === 'net' || !G.moves.length || G.swapPending;
++  $('bHint').disabled = !isHumanTurn() || G.mode === 'net';
+   tickClock(); updateStatus();
+@@ -1883,3 +1901,3 @@
+ function tickClock() {
+-  if (G.mode !== 'ai' && G.mode !== 'pvp') return;
++  if (G.mode !== 'ai' && G.mode !== 'pvp' && G.mode !== 'net') return;
+   var c1 = G.clock[1], c2 = G.clock[2];
+@@ -2023,2 +2041,3 @@
+ $('tPvp').addEventListener('click', function () { audio(); SND.ui(); openNew('pvp'); });
++$('tNet').addEventListener('click', function () { audio(); SND.ui(); NET.open(); });
+ $('tResume').addEventListener('click', function () { audio(); SND.ui(); resumeGame(); });
+@@ -2037,2 +2056,3 @@
+   if (G.mode === 'pz') { openSelect(); return; }
++  if (G.mode === 'net') { NET.open(); return; }
+   $('mInfo').textContent = (G.mode === 'ai' ? '對手：' + LVN[G.lv] + '・' : '雙人・') + RULEN[G.rule] + '・' + G.size + ' 路・第 ' + (G.moves.length + 1) + ' 手';
+@@ -2053,2 +2073,3 @@
+   hide('ovResult');
++  if (G.mode === 'net') { NET.rematch(); return; }
+   if (G.mode === 'ai') startGame({ mode: 'ai', size: G.size, rule: G.rule, lv: G.lv, human: LAST.col || (Math.random() < 0.5 ? 1 : 2), tengen: G.tengen, swap: G.swap });
+@@ -2059,3 +2080,3 @@
+ $('rBoard').addEventListener('click', function () { hide('ovResult'); });
+-$('rHome').addEventListener('click', function () { G.mode = 'none'; showScreen('scrTitle'); });
++$('rHome').addEventListener('click', function () { if (G.mode === 'net') { NET.leave(); return; } G.mode = 'none'; showScreen('scrTitle'); });
+ $('pwNext').addEventListener('click', function () { if (G.pz && G.pz.n < NPZ) startPuzzle(G.pz.n + 1, false); });
+@@ -2095,3 +2116,3 @@
+   if (k === 'u') undo(); else if (k === 'h') hint();
+-  else if (k === 'n') { if (G.mode === 'pz') startPuzzle(G.pz.n, G.pz.daily); else openNew(G.mode === 'pvp' ? 'pvp' : 'ai'); }
++  else if (k === 'n') { if (G.mode === 'net') return; if (G.mode === 'pz') startPuzzle(G.pz.n, G.pz.daily); else openNew(G.mode === 'pvp' ? 'pvp' : 'ai'); }
+   else if ((k === 'enter' || k === ' ') && preview >= 0) { e.preventDefault(); tryPlace(preview, false); }
+@@ -2105,2 +2126,48 @@
+ if (window.matchMedia) try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { wood = null; kick(); refreshTitle(); }); } catch (e) {}
++
++/* ================= online play ================= */
++var NETST = '';
++function netReplay(mv) { // silent replay of a received move list; returns how many were legal
++  for (var i = 0; i < mv.length; i++) {
++    var p = mv[i], c = G.toMove;
++    if (G.over || typeof p !== 'number' || p !== (p | 0) || p < 0 || p >= NN || B[p]) return i;
++    var forb = G.rule === 2 && c === 1 && !isFive(p, 1) && isForbidden(p), ftype = forb ? fbType(p) : '';
++    play(p, c); G.moves.push([p, c]); G.toMove = 3 - c;
++    var wl = winLine(p);
++    if (wl) { G.wl = wl; winT = now() - 5000; G.over = true; G.result = { winner: c, reason: '連成五子' }; }
++    else if (forb) { G.over = true; G.result = { winner: 3 - c, reason: '黑方禁手（' + ftype + '）' }; }
++    else if (STONES >= NN) { G.over = true; G.result = { winner: 0, reason: '棋盤下滿' }; }
++  }
++  return mv.length;
++}
++NET.init({
++  game: 'gomoku', title: '五子棋', sides: ['黑', '白'], button: $('tNet'),
++  choices: [{ key: 'rule', label: '規則', def: 0, items: [[0, '自由'], [1, '標準'], [2, '連珠']] }, { key: 'size', label: '盤面', def: 15, items: [[9, '9 路'], [15, '15 路'], [19, '19 路']] }],
++  start: function (o, side, mv) {
++    hideAllOv();
++    startGame({ mode: 'net', size: o.size, rule: o.rule, tengen: false });
++    var n = netReplay(mv);
++    computeFb(); computeThreats(); labelChips(); updateUI(); kick();
++    if (G.over) setTimeout(function () { if (G.mode === 'net' && G.over) showResult(); }, 400);
++    return n;
++  },
++  play: function (p) {
++    if (G.mode !== 'net' || G.over || typeof p !== 'number' || p !== (p | 0) || p < 0 || p >= NN || B[p]) return false;
++    preview = -1; hover = -1; hideMag();
++    doMove(p, G.toMove, false); return true;
++  },
++  toMove: function () { return G.mode !== 'net' || G.over ? -1 : G.toMove - 1; },
++  resigned: function (side) { if (G.mode !== 'net' || G.over) return; G.token++; finish(2 - side, colName(side + 1) + '方認輸'); },
++  exit: function () { G.mode = 'none'; showScreen('scrTitle'); },
++  names: function (a, b) { G.netNames = [a, b]; if (G.mode === 'net') labelChips(); },
++  onStatus: function (t) { NETST = t; if (G.mode === 'net') updateStatus(); },
++  resumeHint: function (code) { $('tNetInfo').textContent = '房間 ' + code; },
++  snapshot: function () { return G.size + ':' + G.moves.map(function (m) { return m[0]; }).join(',') + '|' + (G.over && G.result ? G.result.winner : '-'); },
++  randomMove: function () {
++    var c = G.toMove, ok = [];
++    for (var q = 0; q < NN; q++) if (!B[q] && legal(q, c)) ok.push(q);
++    if (!ok.length) return false;
++    tryPlace(ok[(Math.random() * ok.length) | 0], false); return true;
++  }
++});
+ 

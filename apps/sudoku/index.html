@@ -1,0 +1,1695 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>和紙數獨</title>
+<style>
+:root{
+  --bg:#f4ecd8; --paper:#f8f1df; --card:#fbf6ea; --ink:#2b2b2b; --ink2:#6e604c; --red:#b8332a; --redt:#fff6ec; --bad:#e0241b; --badbg:rgba(224,36,27,.16);
+  --note:#8a7a62; --line:#2b2b2b; --thin:rgba(43,43,43,.42); --hl:rgba(120,92,52,.10); --hlsame:rgba(184,51,42,.17); --sel:rgba(184,51,42,.26);
+  --gold:rgba(214,160,40,.32); --edge:rgba(60,44,20,.16); --shadow:0 2px 0 rgba(60,44,20,.14),0 6px 16px rgba(60,44,20,.10);
+  --speck:#5a4630; --keybg:#fbf6ea; --dim:#c9bda4;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  --serif:"Noto Serif TC","Source Han Serif TC","Songti TC","PMingLiU","MingLiU",Georgia,serif;
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme]){
+    --bg:#1c1a17; --paper:#221f1b; --card:#2a2621; --ink:#e8dcc2; --ink2:#b3a385; --red:#e8796c; --redt:#2a1714; --bad:#ff5a4e; --badbg:rgba(255,90,78,.20);
+    --note:#a8987c; --line:#d9ccb0; --thin:rgba(217,204,176,.30); --hl:rgba(232,220,194,.07); --hlsame:rgba(232,121,108,.20); --sel:rgba(232,121,108,.30);
+    --gold:rgba(230,180,70,.28); --edge:rgba(0,0,0,.4); --shadow:0 2px 0 rgba(0,0,0,.35),0 6px 16px rgba(0,0,0,.3); --speck:#d8c8a8; --keybg:#2a2621; --dim:#5b5246;
+  }
+}
+:root[data-theme="night"]{
+  --bg:#1c1a17; --paper:#221f1b; --card:#2a2621; --ink:#e8dcc2; --ink2:#b3a385; --red:#e8796c; --redt:#2a1714; --bad:#ff5a4e; --badbg:rgba(255,90,78,.20);
+  --note:#a8987c; --line:#d9ccb0; --thin:rgba(217,204,176,.30); --hl:rgba(232,220,194,.07); --hlsame:rgba(232,121,108,.20); --sel:rgba(232,121,108,.30);
+  --gold:rgba(230,180,70,.28); --edge:rgba(0,0,0,.4); --shadow:0 2px 0 rgba(0,0,0,.35),0 6px 16px rgba(0,0,0,.3); --speck:#d8c8a8; --keybg:#2a2621; --dim:#5b5246;
+}
+:root[data-theme="notebook"]{
+  --bg:#f3f5f8; --paper:#fdfdfb; --card:#ffffff; --ink:#22304d; --ink2:#5d6b86; --red:#d0453a; --redt:#fff; --bad:#e0241b; --badbg:rgba(224,36,27,.14);
+  --note:#7d8aa3; --line:#2f4a7a; --thin:rgba(70,110,170,.38); --hl:rgba(70,110,170,.09); --hlsame:rgba(208,69,58,.15); --sel:rgba(208,69,58,.24);
+  --gold:rgba(240,190,40,.34); --edge:rgba(40,60,100,.14); --shadow:0 2px 0 rgba(40,60,100,.12),0 6px 16px rgba(40,60,100,.08); --speck:#9fb3d6; --keybg:#ffffff; --dim:#c3cad8;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--bg) var(--tex,none);color:var(--ink);font-family:var(--sans);-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;padding:0}
+svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hidden{display:none !important}
+
+/* ---------- game layout ---------- */
+#app{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:100%;
+  padding:calc(var(--sat) + 8px) calc(var(--sar) + 16px) calc(var(--sab) + 12px) calc(var(--sal) + 16px);gap:10px}
+.hud{display:flex;align-items:center;gap:10px;min-height:52px}
+.ibtn{width:44px;height:44px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;flex:none;color:var(--ink)}
+.ibtn:active{transform:scale(.94)}
+.hinfo{flex:1;min-width:0}
+.lvrow{display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden}
+.lvname{font-family:var(--serif);font-weight:800;font-size:19px;letter-spacing:1px}
+.techtag{font-size:11px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis}
+.diffrow{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2);margin-top:3px}
+.dots{display:flex;gap:3px}
+.dots i{width:7px;height:7px;border-radius:50%;background:var(--dim);opacity:.55}
+.dots i.on{background:var(--ink);opacity:1;box-shadow:0 0 0 .5px var(--ink)}
+.dots i.on.hot{background:var(--red);box-shadow:none}
+.hstat{text-align:right;flex:none}
+.htime{font-family:var(--serif);font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.hsm{font-size:11px;color:var(--ink2);white-space:nowrap;margin-top:2px}
+.hsm b{color:var(--ink);font-size:13px}
+.hsm b.bad{color:var(--bad)}
+.boardwrap{position:relative;min-height:0;display:flex;align-items:center;justify-content:center}
+#board{display:block;touch-action:none;border-radius:4px;box-shadow:0 1px 0 var(--edge),0 10px 30px var(--edge)}
+.hintbar{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);width:min(94%,520px);background:var(--card);color:var(--ink);border-radius:14px;
+  box-shadow:var(--shadow);padding:10px 12px 10px 14px;font-size:14px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;z-index:3;border-left:4px solid var(--red);animation:rise .25s ease}
+.hintbar .x{flex:none;width:44px;height:44px;margin:-10px -8px -10px 0;display:grid;place-items:center;color:var(--ink2)}
+.hintbar b{color:var(--red)}
+@keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.hintbar.top{bottom:auto;top:6px}
+@keyframes rise2{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (min-aspect-ratio: 1/1){ .hintbar,.hintbar.top{position:fixed;left:auto;top:auto;right:calc(var(--sar) + 16px);bottom:calc(var(--sab) + 10px);transform:none;width:min(440px,calc(100vw - 100vh - 40px));animation:rise2 .25s ease} }
+.controls{display:flex;flex-direction:column;gap:10px;width:100%;max-width:560px;margin:0 auto}
+.tools{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.tool{height:clamp(50px,6.6vh,58px);border-radius:14px;background:var(--card);box-shadow:var(--shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;color:var(--ink);position:relative}
+.tool:active{transform:translateY(1px) scale(.97)}
+.tool[disabled]{opacity:.4}
+.tool .badge{position:absolute;top:4px;right:6px;min-width:18px;height:18px;border-radius:9px;background:var(--red);color:var(--redt);font-size:11px;font-weight:800;display:grid;place-items:center;padding:0 4px}
+.tool .badge.zero{background:var(--dim)}
+.tool.on{background:var(--red);color:var(--redt)}
+.tool .st{font-size:11px;font-weight:800}
+.pad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.key{height:clamp(48px,7.2vh,64px);border-radius:14px;background:var(--keybg);box-shadow:var(--shadow);font-family:var(--serif);font-size:27px;font-weight:700;color:var(--ink);position:relative;display:grid;place-items:center;transition:background .15s,color .15s}
+.key:active{transform:translateY(2px);box-shadow:0 0 0 var(--edge)}
+.key .cnt{position:absolute;right:7px;bottom:4px;font-family:var(--sans);font-size:11px;font-weight:700;color:var(--ink2)}
+.key.full{color:var(--dim)}
+.key.full .cnt{opacity:0}
+.key.lockd{background:var(--red);color:var(--redt)}
+.key.lockd .cnt{color:var(--redt)}
+.pad.notes .key:not(.lockk){font-size:19px;color:var(--note);outline:2px dashed var(--note);outline-offset:-5px}
+.key.lockk{font-family:var(--sans);font-size:11px;font-weight:700;display:flex;flex-direction:column;gap:1px;align-items:center;justify-content:center}
+.key.lockk.on{background:var(--ink);color:var(--paper)}
+@media (min-aspect-ratio: 1/1){
+  #app{grid-template-columns:auto minmax(280px,440px);grid-template-rows:auto 1fr;justify-content:center;column-gap:24px;row-gap:8px;
+    padding:calc(var(--sat) + 10px) calc(var(--sar) + 16px) calc(var(--sab) + 10px) calc(var(--sal) + 16px)}
+  .boardwrap{grid-column:1;grid-row:1 / span 2}
+  .hud{grid-column:2;grid-row:1}
+  .controls{grid-column:2;grid-row:2;justify-content:center}
+}
+@media (min-aspect-ratio: 1/1) and (max-height: 500px){
+  .tool{height:46px}.key{height:44px;font-size:23px}.controls{gap:8px}.pad,.tools{gap:6px}
+  .hud{min-height:46px}
+}
+
+/* ---------- overlays ---------- */
+.ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 16px) 16px calc(var(--sab) + 16px);
+  background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .22s ease;overflow-y:auto}
+@media (max-height: 600px){ .ov{align-items:flex-start} }
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{transform:scale(.88);opacity:0}70%{transform:scale(1.02)}100%{transform:scale(1);opacity:1}}
+.card{background:var(--card);border-radius:18px;box-shadow:0 1px 0 var(--edge),0 20px 50px var(--edge);padding:22px 20px;width:min(380px,100%);text-align:center;animation:pop .32s cubic-bezier(.2,.9,.3,1.2);
+  border:1px solid var(--edge);position:relative;margin:auto}
+.card h2{margin:2px 0 10px;font-family:var(--serif);font-size:25px;letter-spacing:3px}
+.card p{margin:6px 0;color:var(--ink2);line-height:1.65;font-size:15px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;border-radius:14px;margin-top:10px;font-weight:800;font-size:16px;letter-spacing:1px;
+  background:var(--red);color:var(--redt);box-shadow:0 4px 0 color-mix(in srgb,var(--red) 60%,#000),0 8px 18px var(--edge)}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 color-mix(in srgb,var(--red) 60%,#000)}
+.btn.sec{background:var(--paper);color:var(--ink);box-shadow:0 3px 0 var(--edge);border:1.5px solid var(--edge)}
+.btn.sec:active{box-shadow:0 0 0 var(--edge)}
+.row2{display:flex;gap:10px}.row2 .btn{flex:1}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;font-weight:700;color:var(--ink);min-height:48px;padding:0 2px;width:100%;text-align:left}
+.sw small{display:block;font-weight:400;font-size:12px;color:var(--ink2);margin-top:2px}
+.trk{width:48px;height:28px;border-radius:14px;background:var(--dim);position:relative;transition:background .2s;flex:none}
+.trk::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 4px #0003;transition:transform .2s}
+.sw[aria-checked="true"] .trk{background:var(--red)}
+.sw[aria-checked="true"] .trk::after{transform:translateX(20px)}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:6px 0 4px}
+.seg button{min-height:44px;border-radius:12px;background:var(--paper);border:1.5px solid var(--edge);font-size:13px;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.setlist{text-align:left;margin:4px 0}
+.setlist .lab{font-size:12px;color:var(--ink2);margin:10px 0 0}
+hr.ink{border:0;height:1px;background:var(--edge);margin:8px 0}
+
+/* title */
+#title{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;flex-direction:column;justify-content:space-around;align-items:center}
+.tmain{display:flex;flex-direction:column;align-items:center;margin-top:max(3vh,8px)}
+#tcv{width:min(230px,52vw,34vh);height:min(230px,52vw,34vh);display:block}
+.tname{font-family:var(--serif);font-size:clamp(38px,12vw,58px);font-weight:900;letter-spacing:10px;margin:10px 0 0 10px;line-height:1.1}
+.tsub{color:var(--ink2);font-size:14px;margin-top:6px;letter-spacing:2px}
+.tbtns{width:min(340px,100%);display:flex;flex-direction:column;padding-bottom:6px}
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tgrid .btn{margin-top:10px}
+.dailytag{font-size:12px;font-weight:600;opacity:.85}
+@media (min-aspect-ratio: 1/1) and (max-height: 520px){
+  #title{flex-direction:row;justify-content:center;gap:28px;align-items:center}
+  #tcv{width:150px;height:150px}.tname{font-size:40px}.tmain{margin-top:0}
+}
+
+/* level select */
+#select{align-items:stretch;padding:0;background:var(--bg) var(--tex,none);backdrop-filter:none;-webkit-backdrop-filter:none}
+.selwrap{display:flex;flex-direction:column;width:100%;height:100%;max-width:720px;margin:0 auto}
+.selhead{padding:calc(var(--sat) + 10px) calc(var(--sar) + 14px) 6px calc(var(--sal) + 14px);display:flex;align-items:center;gap:10px}
+.selhead h2{flex:1;margin:0;font-size:21px;font-family:var(--serif);letter-spacing:2px;white-space:nowrap}
+.selhead .sw{width:auto;font-size:13px}
+.selsum{padding:0 18px 6px;font-size:13px;color:var(--ink2)}
+.lscroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 calc(var(--sar) + 14px) calc(var(--sab) + 24px) calc(var(--sal) + 14px);touch-action:pan-y}
+.band{margin:14px 2px 8px;display:flex;align-items:baseline;gap:8px;font-family:var(--serif)}
+.band b{font-size:15px}
+.band span{font-size:12px;color:var(--ink2);font-family:var(--sans)}
+.lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));gap:8px}
+.lt{height:72px;border-radius:12px;background:var(--card);box-shadow:var(--shadow);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;position:relative;border:1px solid var(--edge)}
+.lt .n{font-family:var(--serif);font-size:19px;font-weight:800;line-height:1}
+.lt .st{font-size:11px;letter-spacing:1px;color:var(--dim);line-height:1}
+.lt .st .on{color:var(--red)}
+.lt .dots{gap:1.5px}.lt .dots i{width:4px;height:4px}
+.lt.done{background:color-mix(in srgb,var(--card) 80%,var(--red) 7%)}
+.lt.cur{outline:2.5px solid var(--red);outline-offset:1px}
+.lt.lock{opacity:.55;box-shadow:none}
+.lt:active{transform:scale(.95)}
+
+.stars{font-size:40px;letter-spacing:6px;margin:4px 0;color:var(--dim)}
+.stars span{display:inline-block}
+.stars .on{color:var(--red);animation:starpop .5s cubic-bezier(.2,.9,.3,1.6) both}
+@keyframes starpop{from{transform:scale(0) rotate(-40deg)}to{transform:scale(1) rotate(0)}}
+.res{display:flex;justify-content:center;gap:18px;margin:6px 0;font-size:13px;color:var(--ink2)}
+.res b{display:block;font-size:21px;color:var(--ink);font-family:var(--serif);font-variant-numeric:tabular-nums}
+.sealt{display:flex;flex-direction:column;align-items:center;justify-content:center;width:78px;height:78px;border-radius:12px;background:var(--red);color:var(--redt);font-family:var(--serif);font-size:27px;font-weight:900;
+  line-height:1.02;transform:rotate(-8deg);box-shadow:inset 0 0 0 4px var(--red),inset 0 0 0 6px var(--redt);margin:2px auto 8px;animation:stampin .45s cubic-bezier(.2,.9,.3,1.3) both}
+@keyframes stampin{from{transform:rotate(-8deg) scale(1.6);opacity:0}to{transform:rotate(-8deg) scale(1);opacity:1}}
+.scroll{max-height:58vh;overflow-y:auto;margin:4px -8px;padding:0 8px;touch-action:pan-y;text-align:left}
+.scroll h3{font-family:var(--serif);font-size:16px;margin:14px 0 4px}
+.scroll p,.scroll li{font-size:14px;line-height:1.65;color:var(--ink2);margin:4px 0}
+.scroll ul{padding-left:20px;margin:4px 0}
+.kbd{display:inline-block;border:1px solid var(--edge);border-radius:5px;padding:0 5px;font-size:12px;background:var(--paper)}
+.stt{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
+.stt th,.stt td{padding:7px 4px;border-bottom:1px solid var(--edge);text-align:center}
+.stt th{color:var(--ink2);font-weight:600;font-size:12px}
+.stt td:first-child,.stt th:first-child{text-align:left}
+.ach{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.ach div{border:1.5px solid var(--edge);border-radius:12px;padding:8px;font-size:12px;color:var(--ink2);line-height:1.4}
+.ach div b{display:block;font-size:14px;color:var(--ink);font-family:var(--serif)}
+.ach div.got{border-color:var(--red);background:color-mix(in srgb,var(--card) 85%,var(--red) 10%)}
+.ach div.got b::after{content:" 印";color:var(--red);font-size:11px}
+.icard .eg{background:var(--paper);border:1px solid var(--edge);border-radius:12px;padding:10px 12px;margin:10px 0;text-align:left;font-size:14px;line-height:1.65;color:var(--ink2)}
+.icard .eg b{color:var(--ink)}
+.icard canvas{display:block;margin:8px auto 0;border-radius:6px}
+.toast{position:fixed;left:50%;top:calc(var(--sat) + 70px);transform:translateX(-50%);z-index:40;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;font-weight:600;
+  max-width:88vw;text-align:center;pointer-events:none;transition:opacity .35s;box-shadow:var(--shadow)}
+.sharebox{width:100%;min-height:90px;border-radius:12px;border:1.5px solid var(--edge);background:var(--paper);color:var(--ink);padding:10px;font-size:16px;font-family:var(--sans);resize:none;-webkit-user-select:text;user-select:text}
+@media (hover:hover){ .btn:hover{filter:brightness(1.05)} .tool:hover,.key:hover,.lt:hover{filter:brightness(1.03)} }
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<div id="app" class="hidden">
+  <header class="hud">
+    <button class="ibtn" id="bMenu" aria-label="暫停選單"><svg class="i" viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
+    <div class="hinfo">
+      <div class="lvrow"><span class="lvname" id="hLevel">第 1 關</span><span class="techtag" id="hTech"></span></div>
+      <div class="diffrow">難度<span class="dots" id="hDots"></span><span id="hDiffN"></span></div>
+    </div>
+    <div class="hstat">
+      <div class="htime" id="hTime">00:00</div>
+      <div class="hsm">錯誤 <b id="hErr">0</b>　提示 <b id="hHintN">3</b></div>
+    </div>
+  </header>
+  <div class="boardwrap" id="boardWrap">
+    <canvas id="board" aria-label="數獨盤面"></canvas>
+    <div class="hintbar hidden" id="hintBar" role="status"><div id="hintText"></div><button class="x" id="hintX" aria-label="關閉提示"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  </div>
+  <div class="controls">
+    <div class="tools">
+      <button class="tool" id="tUndo" aria-label="悔棋"><svg class="i" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>悔棋</button>
+      <button class="tool" id="tRedo" aria-label="重做"><svg class="i" viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg>重做</button>
+      <button class="tool" id="tErase" aria-label="清除"><svg class="i" viewBox="0 0 24 24"><path d="M20 20H9L4 15a2 2 0 010-2.8L13.2 3a2 2 0 012.8 0l4 4a2 2 0 010 2.8L11 19"/><path d="M8 10l6 6"/></svg>清除</button>
+      <button class="tool" id="tNotes" aria-label="筆記模式" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg><span>筆記 <span class="st" id="notesSt">關</span></span></button>
+      <button class="tool" id="tHint" aria-label="提示"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/></svg>提示<span class="badge" id="hintBadge">3</span></button>
+    </div>
+    <div class="pad" id="pad"></div>
+  </div>
+</div>
+
+<div class="ov" id="title">
+  <div class="tmain">
+    <canvas id="tcv" width="460" height="460" aria-hidden="true"></canvas>
+    <div class="tname">和紙數獨</div>
+    <div class="tsub">墨印和紙・百關技巧漸進</div>
+  </div>
+  <div class="tbtns">
+    <button class="btn" id="tPlay">開始遊戲</button>
+    <div class="tgrid">
+      <button class="btn sec" id="tSelect">選擇關卡</button>
+      <button class="btn sec" id="tDaily"><span>每日數獨<br><span class="dailytag" id="dailyTag"></span></span></button>
+      <button class="btn sec" id="tStats">統計成就</button>
+      <button class="btn sec" id="tSettings">設定</button>
+    </div>
+    <button class="btn sec" id="tHelp">玩法說明</button>
+  </div>
+</div>
+
+<div class="ov hidden" id="select">
+  <div class="selwrap">
+    <div class="selhead">
+      <button class="ibtn" id="sBack" aria-label="返回"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <h2>選擇關卡</h2>
+      <button class="sw" id="unlockSw" role="switch" aria-checked="false"><span>解鎖全部關卡</span><span class="trk"></span></button>
+    </div>
+    <div class="selsum" id="selSum"></div>
+    <div class="lscroll" id="lscroll"></div>
+  </div>
+</div>
+
+<div class="ov hidden" id="pause"><div class="card">
+  <h2>暫停</h2>
+  <p id="pInfo"></p>
+  <button class="btn" id="pResume">繼續</button>
+  <button class="btn sec" id="pAuto">自動填入筆記<span style="font-size:12px;font-weight:600;opacity:.75">（本關最多 2 星）</span></button>
+  <div class="row2"><button class="btn sec" id="pRestart">重新開始</button><button class="btn sec" id="pSettings">設定</button></div>
+  <div class="row2"><button class="btn sec" id="pSelect">關卡選擇</button><button class="btn sec" id="pHome">主選單</button></div>
+</div></div>
+
+<div class="ov hidden" id="settings"><div class="card">
+  <h2>設定</h2>
+  <div class="setlist">
+    <button class="sw" role="switch" data-k="err" aria-checked="true"><span>錯誤提示<small>填錯立即標紅並計錯；關閉時只標出重複數字</small></span><span class="trk"></span></button>
+    <button class="sw" role="switch" data-k="autoClear" aria-checked="true"><span>自動清除筆記<small>填入數字時移除同行、列、宮的該候選</small></span><span class="trk"></span></button>
+    <button class="sw" role="switch" data-k="sound" aria-checked="true"><span>音效</span><span class="trk"></span></button>
+    <button class="sw" role="switch" data-k="vib" aria-checked="true"><span>震動</span><span class="trk"></span></button>
+    <div class="lab">主題</div>
+    <div class="seg" id="themeSeg">
+      <button data-t="auto">自動</button><button data-t="washi">和紙</button><button data-t="night">墨夜</button><button data-t="notebook">筆記本</button>
+    </div>
+  </div>
+  <button class="btn" id="setOk">完成</button>
+</div></div>
+
+<div class="ov hidden" id="win"><div class="card">
+  <div class="sealt" id="wSeal">過<br>關</div>
+  <h2 id="wTitle">第 1 關</h2>
+  <div class="stars" id="wStars"></div>
+  <div class="res"><div>時間<b id="wTime">0</b></div><div>錯誤<b id="wErr">0</b></div><div>提示<b id="wHint">0</b></div><div>最佳<b id="wBest">0</b></div></div>
+  <p id="wMsg"></p>
+  <button class="btn" id="wNext">下一關</button>
+  <div class="row2"><button class="btn sec" id="wRetry">再玩一次</button><button class="btn sec" id="wShare">分享成績</button></div>
+  <button class="btn sec" id="wSelect">關卡選擇</button>
+</div></div>
+
+<div class="ov hidden" id="intro"><div class="card icard">
+  <h2 id="iTitle">新技巧</h2>
+  <div id="iBody"></div>
+  <button class="btn" id="iOk">開始挑戰</button>
+</div></div>
+
+<div class="ov hidden" id="help"><div class="card">
+  <h2>玩法說明</h2>
+  <div class="scroll">
+    <h3>規則</h3>
+    <p>在 9×9 盤面填入 1–9，讓每一列、每一行、每個 3×3 宮都恰好出現一次 1–9。黑色是題目給定的數字，朱紅色是你填的。</p>
+    <h3>操作</h3>
+    <ul>
+      <li>先點格子、再點下方數字填入；再點一次同數字可擦掉。</li>
+      <li>「連填」開啟後：先點數字鎖定，再連續點格子快速填寫。</li>
+      <li>「筆記」開啟後，數字會以小字記成候選。</li>
+      <li>悔棋／重做可無限次，包含筆記操作。</li>
+      <li>每關 3 次提示：指出下一步可用的最簡單技巧並填入。</li>
+    </ul>
+    <h3>評星</h3>
+    <p>零錯誤且不用提示 ★★★；錯誤 ≤ 3 且提示 ≤ 1 ★★；其餘 ★。使用「自動填入筆記」最多 2 星。</p>
+    <h3>鍵盤</h3>
+    <p><span class="kbd">方向鍵</span> 移動　<span class="kbd">1–9</span> 填入　<span class="kbd">N</span> 筆記　<span class="kbd">Backspace</span> 清除　<span class="kbd">Ctrl+Z</span> 悔棋　<span class="kbd">Ctrl+Y</span> 重做　<span class="kbd">H</span> 提示　<span class="kbd">Esc</span> 暫停</p>
+    <h3>難度</h3>
+    <p>百關依「需要的解題技巧」分段：唯一候選與隱藏單一 → 區塊摒除 → 數對 → 三數與 X-Wing → Swordfish 與 XY-Wing → XYZ-Wing 與單鏈著色。墨點越多越難。</p>
+  </div>
+  <button class="btn" id="helpOk">知道了</button>
+</div></div>
+
+<div class="ov hidden" id="stats"><div class="card">
+  <h2>統計與成就</h2>
+  <div class="scroll" id="statsBody"></div>
+  <button class="btn" id="statsOk">關閉</button>
+</div></div>
+
+<div class="ov hidden" id="share"><div class="card">
+  <h2>分享成績</h2>
+  <p>長按下方文字即可複製。</p>
+  <textarea class="sharebox" id="shareText" readonly></textarea>
+  <button class="btn" id="shareOk">好</button>
+</div></div>
+
+<div class="toast hidden" id="toast"></div>
+<script>
+/*CORE-START*/
+/* ===== Sudoku core: geometry, DLX exact-cover solver, human-technique solver/rater, generator ===== */
+var UNITS = [], PEERS = [], CELLU = [];
+(function () {
+  var u, i, r, c, b;
+  for (u = 0; u < 27; u++) UNITS.push([]);
+  for (i = 0; i < 81; i++) {
+    r = (i / 9) | 0; c = i % 9; b = ((r / 3) | 0) * 3 + ((c / 3) | 0);
+    UNITS[r].push(i); UNITS[9 + c].push(i); UNITS[18 + b].push(i); CELLU.push([r, 9 + c, 18 + b]);
+  }
+  for (i = 0; i < 81; i++) {
+    var s = {}, out = [];
+    for (var k = 0; k < 3; k++) { var U = UNITS[CELLU[i][k]]; for (var j = 0; j < 9; j++) if (U[j] !== i && !s[U[j]]) { s[U[j]] = 1; out.push(U[j]); } }
+    PEERS.push(out);
+  }
+})();
+var POP = new Uint8Array(1024); for (var _m = 1; _m < 1024; _m++) POP[_m] = POP[_m >> 1] + (_m & 1);
+function rowOf(i) { return (i / 9) | 0; }
+function colOf(i) { return i % 9; }
+function boxOf(i) { return ((i / 27) | 0) * 3 + (((i % 9) / 3) | 0); }
+function sees(a, b) { return a !== b && (rowOf(a) === rowOf(b) || colOf(a) === colOf(b) || boxOf(a) === boxOf(b)); }
+function lowDigit(m) { for (var d = 1; d <= 9; d++) if (m >> d & 1) return d; return 0; }
+function digitsOf(m) { var a = []; for (var d = 1; d <= 9; d++) if (m >> d & 1) a.push(d); return a; }
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function shuffle(a, rnd) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(rnd() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function parseGrid(s) { var g = new Int8Array(81); for (var i = 0; i < 81; i++) { var v = s.charCodeAt(i) - 48; g[i] = v >= 1 && v <= 9 ? v : 0; } return g; }
+function gridStr(g) { var s = ''; for (var i = 0; i < 81; i++) s += g[i] ? g[i] : '.'; return s; }
+function countGivens(g) { var n = 0; for (var i = 0; i < 81; i++) if (g[i]) n++; return n; }
+
+/* ---- DLX (Dancing Links, Algorithm X). Returns {count, sol} counting up to `limit` solutions. ---- */
+function dlxSolve(grid, limit) {
+  limit = limit || 2;
+  var NC = 324, ROOT = NC, MAXN = NC + 1 + 729 * 4;
+  var L = new Int32Array(MAXN), R = new Int32Array(MAXN), U = new Int32Array(MAXN), D = new Int32Array(MAXN), C = new Int32Array(MAXN), RID = new Int32Array(MAXN), S = new Int32Array(NC + 1);
+  var c, n = NC + 1, i, d;
+  for (c = 0; c <= NC; c++) { L[c] = c === 0 ? ROOT : c - 1; R[c] = c === ROOT ? 0 : c + 1; U[c] = D[c] = c; C[c] = c; }
+  R[NC - 1] = ROOT; L[ROOT] = NC - 1; R[ROOT] = 0;
+  for (i = 0; i < 81; i++) {
+    var r = (i / 9) | 0, cc = i % 9, b = ((r / 3) | 0) * 3 + ((cc / 3) | 0);
+    for (d = 1; d <= 9; d++) {
+      if (grid[i] && grid[i] !== d) continue;
+      var cols = [i, 81 + r * 9 + d - 1, 162 + cc * 9 + d - 1, 243 + b * 9 + d - 1], first = n;
+      for (var k = 0; k < 4; k++) {
+        var col = cols[k];
+        C[n] = col; RID[n] = i * 9 + d - 1;
+        U[n] = U[col]; D[n] = col; D[U[col]] = n; U[col] = n; S[col]++;
+        L[n] = k === 0 ? first + 3 : n - 1; R[n] = k === 3 ? first : n + 1;
+        n++;
+      }
+    }
+  }
+  function cover(c) {
+    L[R[c]] = L[c]; R[L[c]] = R[c];
+    for (var i = D[c]; i !== c; i = D[i]) for (var j = R[i]; j !== i; j = R[j]) { U[D[j]] = U[j]; D[U[j]] = D[j]; S[C[j]]--; }
+  }
+  function uncover(c) {
+    for (var i = U[c]; i !== c; i = U[i]) for (var j = L[i]; j !== i; j = L[j]) { S[C[j]]++; U[D[j]] = j; D[U[j]] = j; }
+    L[R[c]] = c; R[L[c]] = c;
+  }
+  var count = 0, stack = new Int32Array(81), sol = null;
+  function search(k) {
+    if (R[ROOT] === ROOT) {
+      count++;
+      if (!sol) { sol = new Int8Array(81); for (var q = 0; q < k; q++) sol[(stack[q] / 9) | 0] = stack[q] % 9 + 1; }
+      return count >= limit;
+    }
+    var best = -1, bs = 1e9;
+    for (var c = R[ROOT]; c !== ROOT; c = R[c]) if (S[c] < bs) { bs = S[c]; best = c; if (bs < 2) break; }
+    if (bs === 0) return false;
+    cover(best);
+    for (var r = D[best]; r !== best; r = D[r]) {
+      stack[k] = RID[r];
+      for (var j = R[r]; j !== r; j = R[j]) cover(C[j]);
+      if (search(k + 1)) return true;
+      for (j = L[r]; j !== r; j = L[j]) uncover(C[j]);
+    }
+    uncover(best);
+    return false;
+  }
+  search(0);
+  return { count: count, sol: sol };
+}
+
+/* ---- Human-technique solver ---- */
+var TECH = {
+  hs: { n: '隱藏單一', w: 1, tier: 0 },
+  ns: { n: '唯一候選數', w: 1, tier: 0 },
+  pt: { n: '區塊摒除（Pointing）', w: 3, tier: 1 },
+  cl: { n: '區塊摒除（Claiming）', w: 3, tier: 1 },
+  np: { n: '裸數對', w: 6, tier: 2 },
+  hp: { n: '隱藏數對', w: 6, tier: 2 },
+  nt: { n: '裸三數', w: 10, tier: 3 },
+  ht: { n: '隱藏三數', w: 10, tier: 3 },
+  xw: { n: 'X-Wing', w: 10, tier: 3 },
+  sf: { n: 'Swordfish', w: 15, tier: 4 },
+  xy: { n: 'XY-Wing', w: 15, tier: 4 },
+  xyz: { n: 'XYZ-Wing', w: 18, tier: 5 },
+  sc: { n: '單鏈著色', w: 20, tier: 5 }
+};
+var TIER_NAMES = ['唯一候選・隱藏單一', '區塊摒除', '數對', '三數・X-Wing', 'Swordfish・XY-Wing', 'XYZ-Wing・單鏈著色'];
+function bandTier(L) { return L <= 15 ? 0 : L <= 35 ? 1 : L <= 55 ? 2 : L <= 75 ? 3 : L <= 90 ? 4 : 5; }
+function targetGivens(L) { return Math.max(23, Math.round(46 - 22 * (1 - Math.pow(0.966, L)))); }
+function unitName(u) { return u < 9 ? '第 ' + (u + 1) + ' 列' : u < 18 ? '第 ' + (u - 8) + ' 行' : '第 ' + (u - 17) + ' 宮'; }
+
+function initCands(g) {
+  var cand = new Uint16Array(81);
+  for (var i = 0; i < 81; i++) {
+    if (g[i]) continue;
+    var used = 0, P = PEERS[i];
+    for (var k = 0; k < 20; k++) used |= 1 << g[P[k]];
+    cand[i] = 0x3FE & ~used;
+  }
+  return cand;
+}
+function posIn(u, d, g, cand) { var a = [], U = UNITS[u]; for (var k = 0; k < 9; k++) { var c = U[k]; if (!g[c] && (cand[c] >> d & 1)) a.push(c); } return a; }
+function elimStep(t, els, cells, extra) { var s = { t: t, el: els, cells: cells }; if (extra) for (var k in extra) s[k] = extra[k]; return s; }
+
+function findStep(g, cand, maxTier) {
+  if (maxTier === undefined) maxTier = 9;
+  var i, u, d, k, U, a, els;
+  // contradiction check + naked singles collected
+  for (i = 0; i < 81; i++) if (!g[i] && !cand[i]) return { t: 'bad', p: i };
+  // hidden single (boxes first, then rows, cols)
+  for (var uu = 0; uu < 27; uu++) {
+    u = (uu + 18) % 27;
+    for (d = 1; d <= 9; d++) {
+      U = UNITS[u]; var cnt = 0, pos = -1, placed = false;
+      for (k = 0; k < 9; k++) { var c = U[k]; if (g[c] === d) { placed = true; break; } if (!g[c] && (cand[c] >> d & 1)) { cnt++; pos = c; } }
+      if (placed) continue;
+      if (cnt === 0) return { t: 'bad', u: u };
+      if (cnt === 1) return { t: 'hs', p: pos, d: d, u: u };
+    }
+  }
+  for (i = 0; i < 81; i++) if (!g[i] && POP[cand[i]] === 1) return { t: 'ns', p: i, d: lowDigit(cand[i]) };
+  if (maxTier < 1) return null;
+  // pointing
+  for (u = 18; u < 27; u++) for (d = 1; d <= 9; d++) {
+    a = posIn(u, d, g, cand); if (a.length < 2) continue;
+    var r0 = rowOf(a[0]), c0 = colOf(a[0]), sameR = true, sameC = true;
+    for (k = 1; k < a.length; k++) { if (rowOf(a[k]) !== r0) sameR = false; if (colOf(a[k]) !== c0) sameC = false; }
+    var lines = []; if (sameR) lines.push(r0); if (sameC) lines.push(9 + c0);
+    for (var li = 0; li < lines.length; li++) {
+      els = []; U = UNITS[lines[li]];
+      for (k = 0; k < 9; k++) { var c2 = U[k]; if (!g[c2] && boxOf(c2) !== u - 18 && (cand[c2] >> d & 1)) els.push(c2 * 10 + d); }
+      if (els.length) return elimStep('pt', els, a, { d: d, u: u, u2: lines[li] });
+    }
+  }
+  // claiming (box-line reduction)
+  for (u = 0; u < 18; u++) for (d = 1; d <= 9; d++) {
+    a = posIn(u, d, g, cand); if (a.length < 2) continue;
+    var b0 = boxOf(a[0]), same = true;
+    for (k = 1; k < a.length; k++) if (boxOf(a[k]) !== b0) { same = false; break; }
+    if (!same) continue;
+    els = []; U = UNITS[18 + b0];
+    for (k = 0; k < 9; k++) { var c3 = U[k]; if (!g[c3] && a.indexOf(c3) < 0 && (cand[c3] >> d & 1)) els.push(c3 * 10 + d); }
+    if (els.length) return elimStep('cl', els, a, { d: d, u: u, u2: 18 + b0 });
+  }
+  if (maxTier < 2) return null;
+  var r;
+  r = nakedSubset(g, cand, 2); if (r) return r;
+  r = hiddenSubset(g, cand, 2); if (r) return r;
+  if (maxTier < 3) return null;
+  r = nakedSubset(g, cand, 3); if (r) return r;
+  r = hiddenSubset(g, cand, 3); if (r) return r;
+  r = fish(g, cand, 2); if (r) return r;
+  if (maxTier < 4) return null;
+  r = fish(g, cand, 3); if (r) return r;
+  r = xyWing(g, cand); if (r) return r;
+  if (maxTier < 5) return null;
+  r = xyzWing(g, cand); if (r) return r;
+  r = coloring(g, cand); if (r) return r;
+  return null;
+}
+function combos(n, k, cb) { // calls cb(indexArray) for each k-combination of 0..n-1; stops when cb returns truthy
+  var idx = []; for (var i = 0; i < k; i++) idx.push(i);
+  if (k > n) return null;
+  while (true) {
+    var res = cb(idx); if (res) return res;
+    var j = k - 1; while (j >= 0 && idx[j] === n - k + j) j--;
+    if (j < 0) return null;
+    idx[j]++; for (var t = j + 1; t < k; t++) idx[t] = idx[t - 1] + 1;
+  }
+}
+function nakedSubset(g, cand, size) {
+  for (var u = 0; u < 27; u++) {
+    var U = UNITS[u], cells = [];
+    for (var k = 0; k < 9; k++) { var c = U[k]; if (!g[c] && POP[cand[c]] >= 2 && POP[cand[c]] <= size) cells.push(c); }
+    if (cells.length < size) continue;
+    var res = combos(cells.length, size, function (ix) {
+      var m = 0; for (var q = 0; q < size; q++) m |= cand[cells[ix[q]]];
+      if (POP[m] !== size) return null;
+      var set = ix.map(function (q) { return cells[q]; }), els = [];
+      for (var k2 = 0; k2 < 9; k2++) { var c2 = U[k2]; if (g[c2] || set.indexOf(c2) >= 0) continue; var hit = cand[c2] & m; if (hit) digitsOf(hit).forEach(function (d) { els.push(c2 * 10 + d); }); }
+      return els.length ? elimStep(size === 2 ? 'np' : 'nt', els, set, { m: m, u: u }) : null;
+    });
+    if (res) return res;
+  }
+  return null;
+}
+function hiddenSubset(g, cand, size) {
+  for (var u = 0; u < 27; u++) {
+    var U = UNITS[u], digs = [], pm = {};
+    for (var d = 1; d <= 9; d++) {
+      var m = 0, placed = false;
+      for (var k = 0; k < 9; k++) { var c = U[k]; if (g[c] === d) { placed = true; break; } if (!g[c] && (cand[c] >> d & 1)) m |= 1 << k; }
+      if (placed) continue;
+      if (POP[m] >= 2 && POP[m] <= size) { digs.push(d); pm[d] = m; }
+    }
+    if (digs.length < size) continue;
+    var res = combos(digs.length, size, function (ix) {
+      var m = 0, dm = 0; for (var q = 0; q < size; q++) { m |= pm[digs[ix[q]]]; dm |= 1 << digs[ix[q]]; }
+      if (POP[m] !== size) return null;
+      var set = [], els = [];
+      for (var k2 = 0; k2 < 9; k2++) if (m >> k2 & 1) {
+        var c2 = U[k2]; set.push(c2);
+        var extra = cand[c2] & ~dm; if (extra) digitsOf(extra).forEach(function (dd) { els.push(c2 * 10 + dd); });
+      }
+      return els.length ? elimStep(size === 2 ? 'hp' : 'ht', els, set, { m: dm, u: u }) : null;
+    });
+    if (res) return res;
+  }
+  return null;
+}
+function fish(g, cand, size) {
+  for (var d = 1; d <= 9; d++) for (var orient = 0; orient < 2; orient++) {
+    var base = [], pm = [];
+    for (var line = 0; line < 9; line++) {
+      var m = 0, placed = false;
+      for (var k = 0; k < 9; k++) {
+        var c = orient === 0 ? line * 9 + k : k * 9 + line;
+        if (g[c] === d) { placed = true; break; }
+        if (!g[c] && (cand[c] >> d & 1)) m |= 1 << k;
+      }
+      if (placed) continue;
+      if (POP[m] >= 2 && POP[m] <= size) { base.push(line); pm.push(m); }
+    }
+    if (base.length < size) continue;
+    var res = combos(base.length, size, function (ix) {
+      var m = 0; for (var q = 0; q < size; q++) m |= pm[ix[q]];
+      if (POP[m] !== size) return null;
+      var lines = ix.map(function (q) { return base[q]; }), els = [], cells = [];
+      for (var k2 = 0; k2 < 9; k2++) if (m >> k2 & 1) for (var l2 = 0; l2 < 9; l2++) {
+        var c2 = orient === 0 ? l2 * 9 + k2 : k2 * 9 + l2;
+        if (g[c2] || !(cand[c2] >> d & 1)) continue;
+        if (lines.indexOf(l2) >= 0) cells.push(c2); else els.push(c2 * 10 + d);
+      }
+      return els.length ? elimStep(size === 2 ? 'xw' : 'sf', els, cells, { d: d, orient: orient, lines: lines }) : null;
+    });
+    if (res) return res;
+  }
+  return null;
+}
+function xyWing(g, cand) {
+  for (var p = 0; p < 81; p++) {
+    if (g[p] || POP[cand[p]] !== 2) continue;
+    var mp = cand[p], P = PEERS[p], wings = [];
+    for (var k = 0; k < 20; k++) { var c = P[k]; if (!g[c] && POP[cand[c]] === 2 && POP[cand[c] & mp] === 1) wings.push(c); }
+    for (var a = 0; a < wings.length; a++) for (var b = a + 1; b < wings.length; b++) {
+      var A = wings[a], B = wings[b], mA = cand[A], mB = cand[B];
+      if (mA === mB) continue;
+      var z = mA & mB; if (POP[z] !== 1 || (z & mp)) continue;
+      if (((mA | mB) & ~z) !== mp) continue;
+      var d = lowDigit(z), els = [];
+      for (var i = 0; i < 81; i++) if (!g[i] && i !== p && i !== A && i !== B && (cand[i] & z) && sees(i, A) && sees(i, B)) els.push(i * 10 + d);
+      if (els.length) return elimStep('xy', els, [p, A, B], { d: d });
+    }
+  }
+  return null;
+}
+function xyzWing(g, cand) {
+  for (var p = 0; p < 81; p++) {
+    if (g[p] || POP[cand[p]] !== 3) continue;
+    var mp = cand[p], P = PEERS[p], wings = [];
+    for (var k = 0; k < 20; k++) { var c = P[k]; if (!g[c] && POP[cand[c]] === 2 && (cand[c] | mp) === mp) wings.push(c); }
+    for (var a = 0; a < wings.length; a++) for (var b = a + 1; b < wings.length; b++) {
+      var A = wings[a], B = wings[b], mA = cand[A], mB = cand[B];
+      if (mA === mB) continue;
+      var z = mA & mB; if (POP[z] !== 1) continue;
+      var d = lowDigit(z), els = [];
+      for (var i = 0; i < 81; i++) if (!g[i] && i !== p && i !== A && i !== B && (cand[i] & z) && sees(i, p) && sees(i, A) && sees(i, B)) els.push(i * 10 + d);
+      if (els.length) return elimStep('xyz', els, [p, A, B], { d: d });
+    }
+  }
+  return null;
+}
+function coloring(g, cand) {
+  for (var d = 1; d <= 9; d++) {
+    var adj = {}, nodes = [];
+    for (var u = 0; u < 27; u++) {
+      var a = posIn(u, d, g, cand);
+      if (a.length === 2) {
+        (adj[a[0]] = adj[a[0]] || []).push(a[1]); (adj[a[1]] = adj[a[1]] || []).push(a[0]);
+      }
+    }
+    var color = {};
+    for (var key in adj) {
+      var s = +key; if (color[s] !== undefined) continue;
+      var comp = [s], q = [s]; color[s] = 0;
+      while (q.length) { var x = q.shift(); adj[x].forEach(function (y) { if (color[y] === undefined) { color[y] = 1 - color[x]; comp.push(y); q.push(y); } }); }
+      if (comp.length < 3) continue;
+      var cls = [[], []]; comp.forEach(function (c) { cls[color[c]].push(c); });
+      // color wrap
+      for (var k = 0; k < 2; k++) {
+        var bad = false, C = cls[k];
+        for (var i = 0; i < C.length && !bad; i++) for (var j = i + 1; j < C.length; j++) if (sees(C[i], C[j])) { bad = true; break; }
+        if (bad) return elimStep('sc', C.map(function (c) { return c * 10 + d; }), comp, { d: d, rule: 'wrap', cls: cls });
+      }
+      // color trap
+      var els = [];
+      for (var i2 = 0; i2 < 81; i2++) {
+        if (g[i2] || !(cand[i2] >> d & 1) || comp.indexOf(i2) >= 0) continue;
+        var s0 = false, s1 = false;
+        for (var j2 = 0; j2 < comp.length; j2++) if (sees(i2, comp[j2])) { if (color[comp[j2]]) s1 = true; else s0 = true; }
+        if (s0 && s1) els.push(i2 * 10 + d);
+      }
+      if (els.length) return elimStep('sc', els, comp, { d: d, rule: 'trap', cls: cls });
+    }
+  }
+  return null;
+}
+function applyStep(g, cand, st) {
+  if (st.p !== undefined && st.d) {
+    g[st.p] = st.d; cand[st.p] = 0;
+    var P = PEERS[st.p], bit = ~(1 << st.d);
+    for (var k = 0; k < 20; k++) cand[P[k]] &= bit;
+  } else for (var i = 0; i < st.el.length; i++) { var c = (st.el[i] / 10) | 0, d = st.el[i] % 10; cand[c] &= ~(1 << d); }
+}
+// Solve like a human. Returns {solved, D, tier, counts, steps?}
+function rateGrid(g0, keepSteps, maxTier) {
+  var g = new Int8Array(g0), cand = initCands(g), D = 0, tier = 0, counts = {}, steps = keepSteps ? [] : null, empty = 81 - countGivens(g);
+  for (var guard = 0; guard < 2000 && empty > 0; guard++) {
+    var st = findStep(g, cand, maxTier);
+    if (!st || st.t === 'bad') return { solved: false, D: D, tier: tier, counts: counts, steps: steps, grid: g, bad: !!st };
+    applyStep(g, cand, st);
+    if (st.p !== undefined && st.d) empty--;
+    var T = TECH[st.t]; D += T.w; if (T.tier > tier) tier = T.tier; counts[st.t] = (counts[st.t] || 0) + 1;
+    if (steps) steps.push(st);
+  }
+  return { solved: empty === 0, D: D, tier: tier, counts: counts, steps: steps, grid: g };
+}
+// Explain a step in plain Traditional Chinese
+function rcName(c) { return '第 ' + (rowOf(c) + 1) + ' 列第 ' + (colOf(c) + 1) + ' 行'; }
+function describeStep(st) {
+  switch (st.t) {
+    case 'ns': return '唯一候選數：此格只能是 ' + st.d;
+    case 'hs': return '隱藏單一：' + st.d + ' 在' + unitName(st.u) + '只能放在此格';
+    case 'pt': return '區塊摒除：' + unitName(st.u) + '的 ' + st.d + ' 都在' + unitName(st.u2) + '，同' + (st.u2 < 9 ? '列' : '行') + '其他格不能是 ' + st.d;
+    case 'cl': return '區塊摒除：' + unitName(st.u) + '的 ' + st.d + ' 都在' + unitName(st.u2) + '，此宮其他格不能是 ' + st.d;
+    case 'np': return '裸數對：' + unitName(st.u) + '有兩格只能是 ' + digitsOf(st.m).join('、') + '，其他格排除這兩個數';
+    case 'hp': return '隱藏數對：' + digitsOf(st.m).join('、') + ' 在' + unitName(st.u) + '只能放在同兩格，這兩格排除其他候選';
+    case 'nt': return '裸三數：' + unitName(st.u) + '有三格只用 ' + digitsOf(st.m).join('、') + '，其他格排除這三個數';
+    case 'ht': return '隱藏三數：' + digitsOf(st.m).join('、') + ' 在' + unitName(st.u) + '只能放在同三格';
+    case 'xw': return 'X-Wing：數字 ' + st.d + ' 在兩' + (st.orient ? '行' : '列') + '形成矩形，交叉的' + (st.orient ? '列' : '行') + '可排除 ' + st.d;
+    case 'sf': return 'Swordfish：數字 ' + st.d + ' 在三' + (st.orient ? '行' : '列') + '形成魚形，交叉的' + (st.orient ? '列' : '行') + '可排除 ' + st.d;
+    case 'xy': return 'XY-Wing：樞紐格與兩翼格夾擊，同時看見兩翼的格子不能是 ' + st.d;
+    case 'xyz': return 'XYZ-Wing：三候選樞紐與兩翼夾擊，同時看見三格的格子不能是 ' + st.d;
+    case 'sc': return '單鏈著色：數字 ' + st.d + (st.rule === 'wrap' ? ' 的強鏈出現同色衝突，該色全部排除' : ' 的強鏈兩色同時看見的格子不能是 ' + st.d);
+  }
+  return '';
+}
+
+/* ---- Generator ---- */
+function genSolution(rnd) {
+  var g = new Int8Array(81), digs = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  // fill the three diagonal boxes first (independent), then backtrack the rest
+  for (var b = 0; b < 3; b++) { var p = shuffle(digs.slice(), rnd); for (var k = 0; k < 9; k++) g[UNITS[18 + b * 4][k]] = p[k]; }
+  var order = []; for (var i = 0; i < 81; i++) if (!g[i]) order.push(i);
+  var opts = [];
+  function bt(n) {
+    if (n === order.length) return true;
+    var i = order[n], used = 0, P = PEERS[i];
+    for (var k = 0; k < 20; k++) used |= 1 << g[P[k]];
+    var ds = shuffle(digs.slice(), rnd);
+    for (var j = 0; j < 9; j++) { var d = ds[j]; if (used >> d & 1) continue; g[i] = d; if (bt(n + 1)) return true; }
+    g[i] = 0; return false;
+  }
+  bt(0);
+  return g;
+}
+// Dig holes in 180°-symmetric pairs, keeping a unique solution (DLX). stopAt = min givens to keep.
+function digPuzzle(sol, rnd, stopAt) {
+  var g = new Int8Array(sol), pairs = [];
+  for (var i = 0; i <= 40; i++) pairs.push(i);
+  shuffle(pairs, rnd);
+  var givens = 81;
+  for (var k = 0; k < pairs.length; k++) {
+    var a = pairs[k], b = 80 - a, n = a === b ? 1 : 2;
+    if (givens - n < (stopAt || 17)) continue;
+    var va = g[a], vb = g[b];
+    g[a] = 0; g[b] = 0;
+    if (dlxSolve(g, 2).count !== 1) { g[a] = va; g[b] = vb; } else givens -= n;
+  }
+  return g;
+}
+// Runtime generator used for the daily puzzle (medium difficulty: needs pointing/claiming or pairs, ~30 givens)
+function genDaily(seed) {
+  var rnd = mulberry32(seed);
+  for (var attempt = 0; attempt < 60; attempt++) {
+    var sol = genSolution(rnd), g = digPuzzle(sol, rnd, 28);
+    var r = rateGrid(g, false, 9);
+    if (r.solved && r.tier >= 1 && r.tier <= 2) return { puzzle: gridStr(g), sol: gridStr(sol), D: r.D, tier: r.tier };
+  }
+  var sol2 = genSolution(rnd), g2 = digPuzzle(sol2, rnd, 30);
+  return { puzzle: gridStr(g2), sol: gridStr(sol2), D: rateGrid(g2).D, tier: 1 };
+}
+/*CORE-END*/
+/*LEVELS-START*/
+var LEVELS = [
+["841.5937692.637814..7.4.2...5.98...76.3.2.4.84...76.2...4.1.5..536492.8121876.943",30,0],
+["..4835..9.2576948.3984...7..63.9.74.28.147.56.17.5.89..5...3.64.3651492.9..6825..",31,0],
+["6348.9....1.453..69581...348.973..154.1.8.9.357..914.834...76891..946.2....3.8541",32,0],
+["8647...21.7.469.3835..2..6..429.6.53..35.27..51.3.729..2..5..8943.198.7.69...3145",33,0],
+["94..261..1673.4..82...1.64.871.429...2.937.8...916.752.52.8...43..4.9267..427..15",34,0],
+[".2.746.31.173.95...4.8.1.2958.1.3....34.8.61...24.5.7825.6.8.4...82.715.37.514.8.",35,0],
+[".9..7.8..14..26.73736.5..24823....476..317..891....63526..3.48947.86..52..9.4..1.",36,0],
+["..1572...8..4...212..18.7..9.3.24.75.8296714367.31.8.2..9.48..714...3..8...6514..",37,0],
+[".2...9..19.1.48.7..8723...52...83.9713.725.6887.96...23...5781..6.81.3.95..3...2.",38,0],
+[".74.36.9...6.8...589.27.6437..4..1.6..36.79..4.1..9..2942.68.173...9.4...1.74.23.",39,0],
+[".6.18..2.9..2.4....24...19.74.51..366.27934.181..62.57.35...76....9.6..3.9..57.1.",40,0],
+["3.64....1.5.3.9.6794..173.....87....8.92457.6....93.....273..8468.9.4.5.1..5.89.2",41,0],
+["..6.....938.69471.49.5..8..1..72.658....6....628.51..4..4..6.85.71345.965.....4..",42,0],
+[".4.1.632.38...2....9.3.76.8...2...879.58.41.282...5...7.39.1.4....7...95.694.8.1.",43,0],
+["..2681..96......423...74.18.3..5.8..1..867..3..7.2..6.59.34...627......48..7925..",44,0],
+[".81735..627.468......921...1...7.....6..5..8.....9...5...642......317.4963.58917.",48,1],
+["....2.67.5628.7..41..6.4.8.7.9...8..3...7...9..1...4.7.8.7.9..34..2.5796.75.6....",49,1],
+["..3..5.....72.3.9.5..9....426143....83..9..279...284317....9..2.1.8.27.....1..9..",50,1],
+["....3.6.16..12..3.1.45...7..15..638...6...1...938..45......38.9.6..47..33.2.8....",51,1],
+["8127.49.3..31.9.....6..8.4..4......6.813.647.6......8..6.9........5.76..7.86.1295",52,1],
+[".3.5.6...9....34....5...27.7.632..4.4..759..2.5..147.9.68...9....98....4...195.6.",53,1],
+[".38.67...17..4.8....68...9..2.715....6..9..5....682.3..8...65....7.5..26...17.38.",54,1],
+[".6..5..28.4..72.611..8.6..5..6.3.....8.....4.....2.1..3..6.5..282.41..5.61..8..9.",55,1],
+["6....4.9..3..7.84.4..1.8..3...74..39...381...54..29.1.3..8.7..1.94.1..8..8.4....7",56,1],
+["7.41...355...7.9..6....847....93..1.3.1...8.9.2..81....786....4..6.4...343...5..2",57,1],
+["4...16....184..57..9.5.73..923..........3..........183..49.1.3..698.325....65...9",58,1],
+["..9...7...5.8.3.....36.4..5798...124....4....341...6571..5.93.....4.6.9...2...5..",59,1],
+["4...6.21.8..312...71.8......4....86.6.......2.58....3......6.59...489..3.26.3...4",60,1],
+[".1..5.....5.78..3...8.....45..9.8.2.237.4.968.8.3.2..57.....6...4..25.8.....37.1.",61,1],
+["...64752..5....63.24.....8.3....5..2.7..8..4.4..2....5.1.....98.93....5..24159...",62,1],
+["..4..5..3..938..4..5.49....867...3....5...8....1...675....72.8..9..412..2..6..4..",63,1],
+[".9.4..6.....6....1.....2.54.6...5.2.183.6.495.2.3...6.91.8.....5....6.....6..1.4.",64,1],
+["2.1..4.7...92...6..875...1.19.7..5.....1.3.....8..5.31.1...768..2...61...7.4....3",65,1],
+["..8...4.2...492...2..........1.53.7.94.278.15.5.16.8..........1...815...1.6...7..",67,1],
+["...37...2...1..94..2..4...68..7.13...97...62...39.4..79...1..5..14..5...2...98...",69,1],
+["9..37.....62.....7....1.6.96...4.9..7..5.8..6..4.6...8216.8....3.....85.....37..2",70,2],
+["2....57.9..5..1..3.6.78..4......63...2.....5...64.8.....1.67.9.8..5..4....78....5",71,2],
+["....6...9...98...1..93.17..931....74.6..9..5.74....698..75..8..8...36...5...7....",72,2],
+["...6..9...4..3...262.14..5.....2.83...2...5...96.8.....5.394.873...5..9...4..7...",73,2],
+["....1...88..2.5...32..8....9.71..5...5.7.6.1...3..87.9....6..27...9.4..16...5....",74,2],
+[".5.........357...27..1.6.5.94.2.....1.....4.9.....5.81.9.8.4..36...531.........6.",75,2],
+["..568.19..9..4..7.8..........6..9..7.7.5.8.6.3..2....8........2.61.......28.5.7..",76,2],
+["...2.89....4...32..2..7.6.47..1..5......8......3..9..69.7.2..1..485..7....64.7...",77,2],
+["...78.9.6.9.....4....4.2.3..6.....7.8..9.4..1.2...8.9..7.5.1....1.....8.4.2.37...",78,2],
+[".4..8..6.9...2.1.3..3...827.1.63.................47.3.892...4..3.4.1...........72",79,2],
+["..8..14..9.4.5.....7...9...2..1...4...92481...8...3..2...5...3.....972.4..53..6..",80,2],
+["86.574...4..8.....3.5......7..1564....9...8.....3...71......6.3.....5..4...289..7",81,2],
+["...51...78..6...2...7..28....3...7..6.5.8...4..9...1....69..2...1...6..97...34...",82,2],
+["...5..7.3......5.9..5.62.....7..3.1252..1..34.1.9..6...7.2..3..2.6......8.1..9...",83,2],
+["563..4........183....2...7.3.5....19.......8.8....35.4.7...5....391.......8...743",84,2],
+["...41.8.9.......4..9.56...3..5....1.9.......7.6....9..2...54.71.13.9......7.32...",85,2],
+[".....9.25...24...1..1.3.....7.69.8...6.7.4.9...9.83.6.....2.6..4...61...32.9.....",86,2],
+["..4......7....31.....845.9...9.6..38..6.9.5..37..8.4...3..56.....7....542.....8..",87,2],
+["..5.8.72..94.7.......5.1..4.8........2...6.5.7.....21.9.61.7.......9.6...12.3.5..",90,2],
+[".2...4.1.9......8..74......6....51..5..9.1..2..13....6.5....36..8.1....4.6.2...9.",91,2],
+["..19.......4..3.1..98.6....6...9..2...9...85..2..5...7....1.483.8.7..1.......87..",92,3],
+["...94.....6...8.1.52....9....2.....4..63.41..7.....2....47...28.1.....97....83...",93,3],
+["2...7....1..2...7..385..2......6.1.....7.5..8..13.......4..762.87...4..5....9...4",95,3],
+["94...32.....28..7......1....9..4.53.5.......7.87....1..3.7......2..39......5...83",96,3],
+["3.4......91.........5..17.4.3..28.....6.5.9.....61..8.7.83..1.........75...2..3.6",98,3],
+["2....7...74......8691........9.38.6..1.....9..7.56.8........23.9......87...6....1",99,3],
+["....9516....7...8.3.5.4....54....8..6...3...2..7....49....8.4.......6....723.....",100,3],
+[".....5..1.29.6..8.5..4..9...54.....7....84...3.....24...7..1..2.3..5.17.6..8.....",101,3],
+["......3....9.3..26..68.5....8...39...5.9.1.8...75...4....6.28..37.........4......",103,3],
+[".2...7.1.3.......7...8....993..1.5......65.....1.2..632....6...8...4...2.9....14.",105,3],
+[".1..7.....428.......6..2.5.6.......5...7.9...3.....6.4.9.2..3.......314..3..1..7.",106,3],
+["3.5.....8...375....72....3....65..9...8...1...2..91..5.6....71....9.7...8....23..",107,3],
+[".25.....9917........89..1.....41...8...2.3..17....8.....4..63......5.6943.....7..",110,3],
+["3.5.....2.276...8.....9...5...9...1...35.6....7...4...8...4.7.......54..1.....3.8",112,3],
+["..8..9..5..2..5....4..2..8.7.35.8....9.....6....4.3....7..8..5....9..2..68....1..",115,3],
+[".....379.49.........3.4.82..7.85.1.............8.27.5..51.7.3.........69.296.....",116,3],
+["8..6........5..94.7....9..2..3...42.5.......8.4....6..1..4...73.28...........2..5",117,3],
+["..4..8.......6..31..9.2....72......4...6.72..6......9.....3.7..43..5..1....4.25..",118,3],
+["1...4....4....21..8...9..63.....3..5.6.4.7.3.5..9.....65......9..87....6....1...2",121,3],
+["17..946......2..8.......1.....2..3..7.......6..5861.....2.......5..8....8.195..34",124,3],
+["..5..3.1..2...9.....8...4.....5..87....8.4....96..1.....7...1.....7...3..321..5..",125,4],
+[".2....41......8.65.4.23......6.......914.36........5......92.7.98........12....9.",127,4],
+["...5.....3...647..69.....54...8..34...........84..3.2.56..1..89..725..1..........",129,4],
+["..6.4.3...8.......7....19..1...5....32.....68..4.1...3...2....9....6..2...978....",132,4],
+[".17.5.2..9.47...............2...31..8...4...26.31...9...............87.64.2.6.53.",133,4],
+["....48....5.......1.8..5..9..6...2.5.1.....7.7.3.8.4..2.59....1.......3....46....",135,4],
+["8......21...9.1.7....3...4.....7...8..5...9..1...2..5..3..6.........4..224......6",137,4],
+["....4...83....56.........49..9.....68..6.2..41.....38.59....1....18.6..7....1....",138,4],
+[".....538.....3.6.9..1..8.2.........4.32..985.9.........9.7..2..1.3.6.....745.....",140,4],
+["4....6....1.....5.587.....1..67...8.....9.....4...59..3....4697.2.....4....8....3",141,4],
+[".......35...3..64..5...2.1.....8.5.7..4...8..7.1.6.....3.....5.....97...19.6.....",142,4],
+["9..6.4..5....8.4...6........2.7..1...4...5.2...1..2.8........6...9.1....8.35....9",147,4],
+["...9..835....3847....6..9......7..9......9..4.1..8......2..4.....659....457.6....",149,4],
+["1.....9...3.6.7.8.....4..1...7..1.92...8.2...3.....4...6..7.....2.5.6.7...9.....3",150,4],
+["..28...3.....93....3.6..81.......6.2..8.1.5..2.5.......76..2.4....96...3.8...4...",158,4],
+[".65....39...6.35....4.........4.5.1...1...2...9...86...2.........93.7...45....82.",159,5],
+["5..1.8....469..7....1......2..4..8.....8513....8..9..1......4.......365...9..4..3",160,5],
+["..6.1.....9.....28...287....39.....7...632...1.....43....895...41.....7.....4.6..",162,5],
+[".......53......874.....2..64....1..2.3..9....8..4.7..93..5.....158....3.62..3....",167,5],
+[".4...3..6..2....8.87......5..847..3...4...5...5..296..6......7..8..6.2..1..9.....",169,5],
+["7..3.5.1.8...7.....42....5.....1.9.7....24...6.3.5.....5....38.....3...2...1.8..9",171,5],
+["...1.57..3......518......94...5.1....9.....2.....83...243.....768......5...7.6...",173,5],
+[".1..9...3..4.....8....8..9.......5....61.4...7.9.......9.64....3.....6..1...7..52",174,5],
+["3.9.6.8......4....5....3.9.2......5..7.8.2....6......2.2.6....8....1......1.8.4.9",175,5],
+["..9..342......29...3.......7...4.2.6..2....3.6.3.8...4.......7.5.68......94...5..",177,5]
+];
+/*LEVELS-END*/
+</script>
+<script>
+(function () {
+'use strict';
+/* ---------------- storage (all keys prefixed "sudoku.") ---------------- */
+var PFX = 'sudoku.';
+function sget(k, d) { try { var v = localStorage.getItem(PFX + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function sset(k, v) { try { localStorage.setItem(PFX + k, JSON.stringify(v)); } catch (e) { } }
+function sdel(k) { try { localStorage.removeItem(PFX + k); } catch (e) { } }
+var $ = function (id) { return document.getElementById(id); };
+var NL = LEVELS.length;
+var prog = sget('progress', {}); if (!prog || typeof prog !== 'object') prog = {};
+var unlockAll = !!sget('unlockAll', false);
+var SET = { err: true, autoClear: true, sound: true, vib: true, theme: 'auto' };
+(function () { var s = sget('settings', null); if (s && typeof s === 'object') for (var k in SET) if (k in s) SET[k] = s[k]; })();
+var seen = sget('seen', []); if (!Array.isArray(seen)) seen = [];
+var dailyRec = sget('daily', {}); if (!dailyRec || typeof dailyRec !== 'object') dailyRec = {};
+var DMIN = LEVELS[0][1], DMAX = LEVELS[NL - 1][1];
+function dotsOf(D) { return Math.max(1, Math.min(10, 1 + Math.round(9 * Math.log(D / DMIN) / Math.log(DMAX / DMIN)))); }
+function dotsHTML(n) { var s = ''; for (var i = 1; i <= 10; i++) s += '<i class="' + (i <= n ? 'on' + (n >= 8 && i <= n ? ' hot' : '') : '') + '"></i>'; return s; }
+function fmt(ms) { var s = Math.floor(ms / 1000), m = Math.floor(s / 60); s %= 60; return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s; }
+function bandRange(t) { return [[1, 15], [16, 35], [36, 55], [56, 75], [76, 90], [91, 100]][t]; }
+
+/* ---------------- audio (synthesised) ---------------- */
+var AC = null, master = null, noiseBuf = null;
+function audio() {
+  if (!AC) {
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      master = AC.createGain(); master.gain.value = 0.6; master.connect(AC.destination);
+      noiseBuf = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.4), AC.sampleRate);
+      var dd = noiseBuf.getChannelData(0); for (var i = 0; i < dd.length; i++) dd[i] = Math.random() * 2 - 1;
+    } catch (e) { AC = null; }
+  }
+  if (AC && AC.state === 'suspended') { try { AC.resume(); } catch (e) { } }
+  return AC;
+}
+function osc(f, dur, type, vol, f2, delay) {
+  if (!SET.sound || !AC) return;
+  var t = AC.currentTime + (delay || 0), o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, freq, q, vol, delay) {
+  if (!SET.sound || !AC || !noiseBuf) return;
+  var t = AC.currentTime + (delay || 0), s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.02);
+}
+function pluck(f, delay, vol) { // koto-ish pluck
+  osc(f, 1.3, 'triangle', vol || 0.16, f * 0.995, delay); osc(f * 2, 0.5, 'sine', (vol || 0.16) * 0.35, 0, delay); noise(0.03, f * 3, 2, 0.05, delay);
+}
+var SFX = {
+  tap: function () { osc(1180, 0.08, 'sine', 0.11, 880); noise(0.025, 2600, 1.2, 0.05); },
+  note: function () { osc(2200, 0.04, 'sine', 0.05, 1900); },
+  click: function () { osc(950, 0.045, 'sine', 0.06, 760); },
+  erase: function () { noise(0.07, 1800, 0.8, 0.06); osc(600, 0.07, 'sine', 0.05, 420); },
+  mokugyo: function (delay) { delay = delay || 0; osc(620, 0.18, 'triangle', 0.3, 470, delay); osc(1240, 0.05, 'sine', 0.06, 1000, delay); noise(0.045, 1500, 5, 0.14, delay); },
+  err: function () { osc(180, 0.16, 'square', 0.05, 120); osc(110, 0.22, 'sine', 0.16, 75); },
+  stamp: function (delay) { osc(92, 0.2, 'sine', 0.32, 55, delay); noise(0.09, 500, 0.9, 0.16, delay); },
+  undo: function () { osc(760, 0.06, 'sine', 0.06, 560); },
+  hint: function () { pluck(659.3, 0, 0.1); pluck(987.8, 0.09, 0.08); },
+  win: function () { var sc = [329.6, 349.2, 440, 493.9, 523.3, 659.3, 698.5, 880]; [0, 2, 3, 4, 5, 7].forEach(function (k, i) { pluck(sc[k], i * 0.12, 0.15); }); [2, 4, 5].forEach(function (k) { pluck(sc[k], 0.85, 0.09); }); }
+};
+function vib(ms) { if (SET.vib && navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) { } } }
+
+/* ---------------- theme & paper texture ---------------- */
+var PAL = {};
+var mqDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+function applyTheme() {
+  var root = document.documentElement;
+  if (SET.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', SET.theme);
+  var cs = getComputedStyle(root);
+  ['bg', 'paper', 'ink', 'ink2', 'red', 'bad', 'badbg', 'note', 'line', 'thin', 'hl', 'hlsame', 'sel', 'gold', 'speck', 'redt'].forEach(function (k) { PAL[k] = cs.getPropertyValue('--' + k).trim(); });
+  PAL.dark = SET.theme === 'night' || (SET.theme === 'auto' && mqDark && mqDark.matches);
+  PAL.notebook = SET.theme === 'notebook';
+  var meta = document.querySelector('meta[name=theme-color]');
+  if (!meta) { meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.appendChild(meta); }
+  meta.content = PAL.bg;
+  makeTexture();
+  sealCache = {};
+  layout(); drawTitleArt(); need = true;
+}
+var texCanvas = null;
+function makeTexture() {
+  var c = document.createElement('canvas'), N = 220; c.width = c.height = N;
+  var x = c.getContext('2d'), rnd = mulberry32(20240917);
+  if (PAL.notebook) {
+    x.strokeStyle = 'rgba(90,130,200,.16)'; x.lineWidth = 1;
+    for (var k = 0; k <= N; k += 22) { x.beginPath(); x.moveTo(k + .5, 0); x.lineTo(k + .5, N); x.moveTo(0, k + .5); x.lineTo(N, k + .5); x.stroke(); }
+  } else {
+    x.fillStyle = PAL.speck;
+    for (var i = 0; i < 900; i++) { x.globalAlpha = 0.025 + rnd() * 0.05; var r = rnd() * 1.1 + 0.2; x.beginPath(); x.arc(rnd() * N, rnd() * N, r, 0, 7); x.fill(); }
+    x.strokeStyle = PAL.speck; x.lineCap = 'round';
+    for (var j = 0; j < 70; j++) {
+      x.globalAlpha = 0.03 + rnd() * 0.05; x.lineWidth = 0.4 + rnd() * 0.6;
+      var sx = rnd() * N, sy = rnd() * N, a = rnd() * 6.28, L = 6 + rnd() * 22;
+      x.beginPath(); x.moveTo(sx, sy); x.quadraticCurveTo(sx + Math.cos(a + 0.5) * L * 0.5, sy + Math.sin(a + 0.5) * L * 0.5, sx + Math.cos(a) * L, sy + Math.sin(a) * L); x.stroke();
+    }
+  }
+  texCanvas = c;
+  try { document.documentElement.style.setProperty('--tex', 'url(' + c.toDataURL() + ')'); } catch (e) { }
+}
+var sealCache = {};
+function seal(text, size) { // pre-rendered vermilion seal with rough edges
+  var key = text + '|' + Math.round(size) + '|' + DPR;
+  if (sealCache[key]) return sealCache[key];
+  var px = Math.ceil(size * DPR), c = document.createElement('canvas'); c.width = c.height = px;
+  var x = c.getContext('2d'), rnd = mulberry32(text.charCodeAt(0) * 31 + px);
+  x.scale(DPR, DPR);
+  var r = size * 0.12, m = size * 0.04, w = size - 2 * m;
+  x.fillStyle = PAL.dark ? '#d8594b' : '#b8332a';
+  x.beginPath(); x.moveTo(m + r, m); x.arcTo(m + w, m, m + w, m + w, r); x.arcTo(m + w, m + w, m, m + w, r); x.arcTo(m, m + w, m, m, r); x.arcTo(m, m, m + w, m, r); x.closePath(); x.fill();
+  x.strokeStyle = 'rgba(255,248,235,.92)'; x.lineWidth = size * 0.035; var in2 = size * 0.12;
+  x.strokeRect(in2, in2, size - 2 * in2, size - 2 * in2);
+  x.fillStyle = 'rgba(255,248,235,.95)'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  if (text.length === 1) { x.font = '900 ' + (size * 0.56) + 'px ' + SERIF; x.fillText(text, size / 2, size / 2 + size * 0.03); }
+  else { x.font = '900 ' + (size * 0.32) + 'px ' + SERIF; x.fillText(text[0], size / 2, size * 0.33); x.fillText(text[1], size / 2, size * 0.69); }
+  x.globalCompositeOperation = 'destination-out';
+  for (var i = 0; i < 70; i++) { x.globalAlpha = 0.3 + rnd() * 0.7; x.beginPath(); x.arc(rnd() * size, rnd() * size, rnd() * size * 0.018 + 0.3, 0, 7); x.fill(); }
+  for (var j = 0; j < 22; j++) { // nibbled edges
+    var side = j % 4, t = rnd() * size, rr = size * (0.01 + rnd() * 0.025);
+    var ex = side === 0 ? t : side === 1 ? size - m : side === 2 ? t : m, ey = side === 0 ? m : side === 1 ? t : side === 2 ? size - m : t;
+    x.globalAlpha = 1; x.beginPath(); x.arc(ex, ey, rr, 0, 7); x.fill();
+  }
+  sealCache[key] = c; return c;
+}
+var SERIF = '"Noto Serif TC","Source Han Serif TC","Songti TC","PMingLiU",Georgia,"Times New Roman",serif';
+
+/* ---------------- board canvas ---------------- */
+var cv = $('board'), ctx = cv.getContext('2d'), DPR = 1, BS = 300, CSZ = BS / 9, need = true;
+var paperLayer = null, linesLayer = null;
+function layout() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  var wrap = $('boardWrap'), W = window.innerWidth;
+  if ($('app').classList.contains('hidden')) return;
+  var ww = wrap.clientWidth, wh = wrap.clientHeight;
+  var s = Math.min(ww, wh, 620);
+  if (W < window.innerHeight) s = Math.min(s, W - 32);
+  s = Math.max(180, Math.floor(s / 9) * 9);
+  BS = s; CSZ = s / 9;
+  cv.style.width = s + 'px'; cv.style.height = s + 'px';
+  cv.width = Math.round(s * DPR); cv.height = Math.round(s * DPR);
+  buildLayers(); need = true;
+}
+function buildLayers() {
+  var px = Math.round(BS * DPR);
+  paperLayer = document.createElement('canvas'); paperLayer.width = paperLayer.height = px;
+  var x = paperLayer.getContext('2d');
+  x.fillStyle = PAL.paper; x.fillRect(0, 0, px, px);
+  if (texCanvas && !PAL.notebook) { x.save(); x.scale(DPR * 0.8, DPR * 0.8); x.fillStyle = x.createPattern(texCanvas, 'repeat'); x.fillRect(0, 0, px / DPR / 0.8, px / DPR / 0.8); x.restore(); }
+  // faint fibres in the board itself
+  var rnd = mulberry32(77);
+  x.save(); x.scale(DPR, DPR); x.strokeStyle = PAL.speck; x.lineCap = 'round';
+  for (var j = 0; j < 40; j++) { x.globalAlpha = 0.03 + rnd() * 0.04; x.lineWidth = 0.5; var sx = rnd() * BS, sy = rnd() * BS, a = rnd() * 6.28, L = 10 + rnd() * 30; x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + Math.cos(a) * L, sy + Math.sin(a) * L); x.stroke(); }
+  x.restore();
+  linesLayer = document.createElement('canvas'); linesLayer.width = linesLayer.height = px;
+  var y = linesLayer.getContext('2d'), cs = CSZ * DPR;
+  y.strokeStyle = PAL.thin; y.lineWidth = Math.max(1, 0.75 * DPR);
+  y.beginPath();
+  for (var k = 1; k < 9; k++) { if (k % 3 === 0) continue; var p = Math.round(k * cs) + 0.5; y.moveTo(p, 0); y.lineTo(p, px); y.moveTo(0, p); y.lineTo(px, p); }
+  y.stroke();
+  y.strokeStyle = PAL.line; y.lineWidth = 2.5 * DPR; y.lineCap = 'square';
+  y.beginPath();
+  for (var k2 = 3; k2 < 9; k2 += 3) { var p2 = Math.round(k2 * cs); y.moveTo(p2, 0); y.lineTo(p2, px); y.moveTo(0, p2); y.lineTo(px, p2); }
+  y.stroke();
+  y.lineWidth = 3 * DPR; y.strokeRect(1.5 * DPR, 1.5 * DPR, px - 3 * DPR, px - 3 * DPR);
+}
+
+/* ---------------- game state ---------------- */
+var G = null;              // current game
+var screen = 'title';      // title | select | game
+var notesMode = false, lockMode = false, lockDigit = 0;
+var marks = new Uint8Array(81); // 1 = wrong/conflict
+var doneUnits = new Uint8Array(27);
+var popT = new Float64Array(81), shakeT = new Float64Array(81), stampT = new Float64Array(9);
+var fx = [], parts = [], hintFx = null;
+var lastTick = 0;
+
+function newGame(o) {
+  var puz = parseGrid(o.puzzle), sol = o.sol ? parseGrid(o.sol) : dlxSolve(puz, 2).sol;
+  var g = { key: o.key, n: o.n || 0, daily: !!o.daily, date: o.date || '', D: o.D, tier: o.tier, puz: puz, sol: sol,
+    val: new Int8Array(puz), notes: new Uint16Array(81), err: 0, hintsLeft: 3, hintsUsed: 0, t: 0, auto: false, done: false, undo: [], redo: [], sel: -1 };
+  var sv = sget('cur.' + o.key, null);
+  if (sv && typeof sv === 'object' && typeof sv.v === 'string' && sv.v.length === 81) {
+    try {
+      var v = parseGrid(sv.v), ok = true;
+      for (var i = 0; i < 81; i++) if (puz[i] && v[i] !== puz[i]) ok = false;
+      if (ok) {
+        g.val = v;
+        if (Array.isArray(sv.no)) for (var j = 0; j < 81; j++) g.notes[j] = (sv.no[j] | 0) & 0x3FE;
+        g.err = sv.e | 0; g.hintsLeft = Math.max(0, Math.min(3, sv.hl == null ? 3 : sv.hl | 0)); g.hintsUsed = sv.hu | 0; g.t = +sv.t || 0; g.auto = !!sv.a; g.sel = sv.s == null ? -1 : sv.s | 0;
+        g.resumed = true;
+      }
+    } catch (e) { }
+  }
+  return g;
+}
+function saveCur() {
+  if (!G || G.done) return;
+  var no = []; for (var i = 0; i < 81; i++) no.push(G.notes[i]);
+  sset('cur.' + G.key, { v: gridStr(G.val), no: no, e: G.err, hl: G.hintsLeft, hu: G.hintsUsed, t: Math.round(G.t), a: G.auto, s: G.sel });
+}
+function playing() { return screen === 'game' && G && !G.done && !anyOverlay() && !document.hidden; }
+function anyOverlay() { var ids = ['pause', 'settings', 'win', 'intro', 'help', 'stats', 'share', 'title', 'select']; for (var i = 0; i < ids.length; i++) if (!$(ids[i]).classList.contains('hidden')) return true; return false; }
+
+function isWrong(i) { return G.val[i] && !G.puz[i] && G.val[i] !== G.sol[i]; }
+function conflict(i) {
+  var d = G.val[i]; if (!d) return false;
+  var P = PEERS[i]; for (var k = 0; k < 20; k++) if (G.val[P[k]] === d) return true;
+  return false;
+}
+function computeMarks() {
+  for (var i = 0; i < 81; i++) marks[i] = (SET.err ? isWrong(i) : 0) || (G.val[i] && !G.puz[i] && conflict(i)) ? 1 : 0;
+}
+function unitComplete(u) {
+  var U = UNITS[u], seenM = 0;
+  for (var k = 0; k < 9; k++) { var c = U[k], d = G.val[c]; if (!d) return false; if (SET.err && d !== G.sol[c]) return false; if (seenM >> d & 1) return false; seenM |= 1 << d; }
+  return true;
+}
+function refreshDoneUnits() { for (var u = 0; u < 27; u++) doneUnits[u] = unitComplete(u) ? 1 : 0; }
+
+/* ---------------- HUD / pad ---------------- */
+var padKeys = [];
+function buildPad() {
+  var pad = $('pad'); pad.innerHTML = '';
+  for (var d = 1; d <= 9; d++) {
+    var b = document.createElement('button'); b.className = 'key'; b.dataset.d = d; b.setAttribute('aria-label', '數字 ' + d);
+    b.innerHTML = d + '<span class="cnt"></span>';
+    b.addEventListener('click', onKey); pad.appendChild(b); padKeys[d] = b;
+  }
+  var lk = document.createElement('button'); lk.className = 'key lockk'; lk.id = 'kLock'; lk.setAttribute('aria-pressed', 'false'); lk.setAttribute('aria-label', '連填模式');
+  lk.innerHTML = '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>連填';
+  lk.addEventListener('click', function () { audio(); SFX.click(); lockMode = !lockMode; if (!lockMode) lockDigit = 0; else if (G && G.sel >= 0 && G.val[G.sel]) lockDigit = G.val[G.sel]; toast(lockMode ? '連填：先點數字，再連續點格子' : '已關閉連填'); updatePad(); need = true; });
+  pad.appendChild(lk);
+}
+function updatePad() {
+  if (!G) return;
+  var cnt = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (var i = 0; i < 81; i++) if (G.val[i]) cnt[G.val[i]]++;
+  for (var d = 1; d <= 9; d++) {
+    var k = padKeys[d], left = 9 - cnt[d];
+    k.querySelector('.cnt').textContent = left > 0 ? left : '';
+    k.classList.toggle('full', left <= 0);
+    k.classList.toggle('lockd', lockMode && lockDigit === d);
+  }
+  $('kLock').classList.toggle('on', lockMode); $('kLock').setAttribute('aria-pressed', lockMode ? 'true' : 'false');
+  $('pad').classList.toggle('notes', notesMode);
+  $('tNotes').classList.toggle('on', notesMode); $('tNotes').setAttribute('aria-pressed', notesMode ? 'true' : 'false');
+  $('notesSt').textContent = notesMode ? '開' : '關';
+  $('tUndo').disabled = !G.undo.length; $('tRedo').disabled = !G.redo.length;
+  $('hintBadge').textContent = G.hintsLeft; $('hintBadge').classList.toggle('zero', !G.hintsLeft);
+  $('hHintN').textContent = G.hintsLeft; $('hErr').textContent = G.err; $('hErr').classList.toggle('bad', G.err > 0);
+}
+function updateHUD() {
+  if (!G) return;
+  $('hLevel').textContent = G.daily ? '每日 ' + G.date.slice(4, 6) + '/' + G.date.slice(6) : '第 ' + G.n + ' 關';
+  $('hTech').textContent = TIER_NAMES[G.tier] || '';
+  var dn = dotsOf(G.D); $('hDots').innerHTML = dotsHTML(dn); $('hDiffN').textContent = dn + '/10';
+  $('hTime').textContent = fmt(G.t);
+  updatePad();
+}
+
+/* ---------------- actions ---------------- */
+function snapshot() { return { v: new Int8Array(G.val), n: new Uint16Array(G.notes) }; }
+function commit(snap) { G.undo.push(snap); if (G.undo.length > 2000) G.undo.shift(); G.redo.length = 0; }
+function select(i) { if (!G) return; G.sel = i; need = true; }
+function place(i, d) {
+  if (!G || G.done || i < 0) return;
+  if (G.puz[i]) { select(i); if (lockMode) { lockDigit = G.puz[i]; updatePad(); } SFX.click(); return; }
+  var now = performance.now();
+  clearHint();
+  if (notesMode) {
+    if (G.val[i]) { toast('先清除數字才能寫筆記'); return; }
+    var s0 = snapshot(); G.notes[i] ^= 1 << d; commit(s0); SFX.note(); afterChange(); return;
+  }
+  if (G.val[i] === d) { var s1 = snapshot(); G.val[i] = 0; commit(s1); SFX.erase(); afterChange(); return; }
+  var s2 = snapshot();
+  G.val[i] = d; G.notes[i] = 0;
+  var wrong = SET.err ? d !== G.sol[i] : conflict(i);
+  if (SET.autoClear && !wrong) { var P = PEERS[i]; for (var k = 0; k < 20; k++) G.notes[P[k]] &= ~(1 << d); }
+  commit(s2);
+  popT[i] = now;
+  var cx = (i % 9 + 0.5) * CSZ, cy = (((i / 9) | 0) + 0.5) * CSZ;
+  fx.push({ k: 'bloom', x: cx, y: cy, t0: now, dur: 260, wrong: wrong });
+  if (wrong) { G.err++; shakeT[i] = now; SFX.err(); vib(50); }
+  else { SFX.tap(); vib(8); for (var q = 0; q < 6; q++) { var a = Math.random() * 6.28, sp = 0.03 + Math.random() * 0.05; parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1 + Math.random() * 1.6, life: 380, t0: now, c: PAL.red }); } }
+  afterChange(true, i);
+}
+function erase() {
+  if (!G || G.done || G.sel < 0) return; var i = G.sel;
+  if (G.puz[i]) { toast('題目給定的數字不能清除'); return; }
+  if (!G.val[i] && !G.notes[i]) return;
+  clearHint();
+  var s = snapshot(); if (G.val[i]) G.val[i] = 0; else G.notes[i] = 0; commit(s); SFX.erase(); afterChange();
+}
+function undo() {
+  if (!G || G.done || !G.undo.length) { toast('沒有可悔的步驟'); return; }
+  clearHint();
+  G.redo.push(snapshot()); var s = G.undo.pop(); G.val = s.v; G.notes = s.n; SFX.undo(); afterChange();
+}
+function redo() {
+  if (!G || G.done || !G.redo.length) { toast('沒有可重做的步驟'); return; }
+  clearHint();
+  G.undo.push(snapshot()); var s = G.redo.pop(); G.val = s.v; G.notes = s.n; SFX.undo(); afterChange();
+}
+function autoNotes() {
+  if (!G || G.done) return;
+  var s = snapshot(), g = new Int8Array(81);
+  for (var i = 0; i < 81; i++) g[i] = G.val[i];
+  for (var j = 0; j < 81; j++) {
+    if (G.val[j]) continue;
+    var used = 0, P = PEERS[j]; for (var k = 0; k < 20; k++) used |= 1 << g[P[k]];
+    G.notes[j] = 0x3FE & ~used;
+  }
+  G.auto = true; commit(s); afterChange(); toast('已填入全部候選筆記（本關最多 2 星）');
+}
+function afterChange(placed, i) {
+  computeMarks();
+  var before = doneUnits.slice();
+  refreshDoneUnits();
+  if (placed) {
+    var now = performance.now(), cnt = 0;
+    CELLU[i].forEach(function (u) {
+      if (doneUnits[u] && !before[u]) {
+        if (u >= 18) { stampT[u - 18] = now; fx.push({ k: 'stamp', b: u - 18, t0: now, dur: 520 }); SFX.stamp(0.05 + cnt * 0.07); }
+        else fx.push({ k: 'sweep', u: u, t0: now + cnt * 60, dur: 520 });
+        SFX.mokugyo(cnt * 0.11); cnt++;
+      }
+    });
+    if (cnt) vib(cnt > 1 ? [12, 40, 12] : 15);
+  }
+  updatePad(); need = true; saveCur();
+  if (placed) checkWin();
+}
+function checkWin() {
+  var full = true, ok = true;
+  for (var i = 0; i < 81; i++) { if (!G.val[i]) { full = false; break; } if (G.val[i] !== G.sol[i]) ok = false; }
+  if (!full) return;
+  if (!ok) { toast('盤面已填滿，但還有衝突的數字'); return; }
+  win();
+}
+
+/* ---------------- hint ---------------- */
+function clearHint() { if (hintFx) { hintFx = null; need = true; } $('hintBar').classList.add('hidden'); }
+function showHintText(html, target) { $('hintText').innerHTML = html; $('hintBar').classList.toggle('top', target >= 45); $('hintBar').classList.remove('hidden'); }
+function hint() {
+  if (!G || G.done) return;
+  if (G.hintsLeft <= 0) { toast('本關提示已用完'); SFX.err(); return; }
+  for (var w = 0; w < 81; w++) if (isWrong(w)) {
+    G.hintsLeft--; G.hintsUsed++;
+    var s = snapshot(); G.val[w] = 0; commit(s); select(w);
+    hintFx = { cells: [], target: w, t0: performance.now() };
+    showHintText('<b>這格填錯了</b>：' + rcName(w) + '不是 ' + s.v[w] + '，已幫你擦掉。', w);
+    SFX.hint(); afterChange(); return;
+  }
+  var g = new Int8Array(G.val), cand = initCands(g), pre = [], st = null;
+  for (var guard = 0; guard < 400; guard++) {
+    st = findStep(g, cand);
+    if (!st || st.t === 'bad') { st = null; break; }
+    if (st.p !== undefined && st.d) break;
+    pre.push(st); applyStep(g, cand, st);
+  }
+  var target, d, msg;
+  if (st) { target = st.p; d = st.d; }
+  else { for (var e = 0; e < 81; e++) if (!G.val[e]) { target = e; d = G.sol[e]; break; } }
+  if (target === undefined) return;
+  if (st) {
+    var tech = pre.length ? pre[pre.length - 1] : null;
+    msg = (tech ? '<b>' + TECH[tech.t].n + '</b>　' + describeStep(tech).replace(/^[^：]*：/, '') + (pre.length > 1 ? '（共 ' + pre.length + ' 步排除）' : '') + '。<br>於是 ' : '') +
+      '<b>' + TECH[st.t].n + '</b>　' + describeStep(st).replace(/^[^：]*：/, '') + '。';
+    hintFx = { cells: tech ? tech.cells : [], elim: tech ? tech.el.map(function (x) { return (x / 10) | 0; }) : [], target: target, t0: performance.now() };
+  } else { msg = '直接揭曉此格：' + d + '。'; hintFx = { cells: [], target: target, t0: performance.now() }; }
+  G.hintsLeft--; G.hintsUsed++;
+  select(target);
+  var wasNotes = notesMode; notesMode = false;
+  var keep = hintFx; place(target, d); hintFx = keep; notesMode = wasNotes;
+  showHintText(msg, target); SFX.hint(); updatePad();
+}
+
+/* ---------------- win ---------------- */
+function starsFor(g) { if (g.err === 0 && g.hintsUsed === 0 && !g.auto) return 3; if (g.err <= 3 && g.hintsUsed <= 1) return 2; return 1; }
+function win() {
+  G.done = true; clearHint();
+  var now = performance.now(), st = starsFor(G), best, isBest = false;
+  G.stars = st;
+  if (G.daily) {
+    var r = dailyRec[G.date] || {}; isBest = !r.t || G.t < r.t; best = isBest ? G.t : r.t;
+    dailyRec[G.date] = { s: Math.max(st, r.s || 0), t: best }; sset('daily', dailyRec);
+  } else {
+    var p = prog[G.n] || {}; isBest = !p.t || G.t < p.t; best = isBest ? G.t : p.t;
+    prog[G.n] = { s: Math.max(st, p.s || 0), t: best, e: Math.min(G.err, p.e == null ? 99 : p.e), h: Math.min(G.hintsUsed, p.h == null ? 99 : p.h) };
+    sset('progress', prog); sset('last', Math.min(NL, G.n + 1));
+  }
+  sdel('cur.' + G.key);
+  G.best = best; G.isBest = isBest;
+  fx.push({ k: 'ripple', t0: now, dur: 1400 });
+  fx.push({ k: 'bigseal', t0: now + 650, dur: 700 });
+  SFX.mokugyo(0); SFX.mokugyo(0.18); SFX.stamp(0.68); vib([20, 60, 30]);
+  setTimeout(function () {
+    var cx = BS / 2, cy = BS / 2, t = performance.now();
+    for (var q = 0; q < 70; q++) { var a = Math.random() * 6.28, sp = 0.05 + Math.random() * 0.22; parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.05, g: 0.00025, r: 1.2 + Math.random() * 3.4, life: 900 + Math.random() * 600, t0: t, c: Math.random() < 0.7 ? PAL.red : PAL.ink }); }
+  }, 680);
+  setTimeout(showWin, 1550);
+  need = true;
+}
+function showWin() {
+  if (!G || !G.done) return;
+  $('wTitle').textContent = G.daily ? '每日數獨 ' + G.date.slice(4, 6) + '/' + G.date.slice(6) : '第 ' + G.n + ' 關';
+  $('wSeal').innerHTML = (G.stars === 3 ? '完美' : '過關').split('').join('<br>');
+  var h = ''; for (var i = 0; i < 3; i++) h += '<span class="' + (i < G.stars ? 'on' : '') + '" style="animation-delay:' + (0.25 + i * 0.18) + 's">★</span>';
+  $('wStars').innerHTML = h;
+  $('wTime').textContent = fmt(G.t); $('wErr').textContent = G.err; $('wHint').textContent = G.hintsUsed; $('wBest').textContent = fmt(G.best);
+  var msg = G.stars === 3 ? '零錯誤、不靠提示，漂亮！' : G.auto ? '用了自動筆記，下次挑戰全手寫吧。' : G.err ? '錯了 ' + G.err + ' 次，再試一次拿滿星？' : '用了提示，下次試著自己推理看看。';
+  if (G.isBest && !G.daily && prog[G.n] && G.t === prog[G.n].t) msg = '新紀錄！' + msg;
+  if (!G.daily && G.n < NL && bandTier(G.n + 1) > bandTier(G.n)) msg += '<br>下一關開始需要新技巧：' + TIER_NAMES[bandTier(G.n + 1)] + '。';
+  $('wMsg').innerHTML = msg;
+  $('wNext').textContent = G.daily ? '回主選單' : G.n >= NL ? '全部完成！回關卡選擇' : '下一關';
+  show('win'); SFX.win();
+}
+function shareText() {
+  var s = '和紙數獨 ' + (G.daily ? '每日 ' + G.date.slice(0, 4) + '/' + G.date.slice(4, 6) + '/' + G.date.slice(6) : '第 ' + G.n + ' 關（難度 ' + dotsOf(G.D) + '/10）') + '\n' +
+    '★★★'.slice(0, G.stars) + '☆☆☆'.slice(0, 3 - G.stars) + '　用時 ' + fmt(G.t) + '　錯誤 ' + G.err + '　提示 ' + G.hintsUsed;
+  return s;
+}
+function doShare() {
+  var t = shareText();
+  if (navigator.share) { navigator.share({ text: t }).catch(function () { }); return; }
+  var shown = function () { $('shareText').value = t; show('share'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast('成績文字已複製'); }, shown);
+  else shown();
+}
+
+/* ---------------- drawing ---------------- */
+function ease(t) { return 1 - Math.pow(1 - t, 3); }
+function easeBack(t) { var c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+function draw(now) {
+  var px = BS * DPR;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (paperLayer) ctx.drawImage(paperLayer, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (!G) return;
+  var cs = CSZ, sel = G.sel, sd = sel >= 0 ? G.val[sel] : 0;
+  if (lockMode && lockDigit) sd = lockDigit;
+  var i, r, c;
+  // highlights
+  if (sel >= 0 && !G.done) {
+    var sr = (sel / 9) | 0, sc = sel % 9, sb = boxOf(sel);
+    ctx.fillStyle = PAL.hl;
+    for (i = 0; i < 81; i++) { r = (i / 9) | 0; c = i % 9; if (r === sr || c === sc || boxOf(i) === sb) ctx.fillRect(c * cs, r * cs, cs, cs); }
+  }
+  if (sd && !G.done) { ctx.fillStyle = PAL.hlsame; for (i = 0; i < 81; i++) if (G.val[i] === sd) ctx.fillRect((i % 9) * cs, ((i / 9) | 0) * cs, cs, cs); }
+  if (hintFx) {
+    var hp = 0.5 + 0.5 * Math.sin((now - hintFx.t0) / 260);
+    ctx.fillStyle = PAL.gold;
+    hintFx.cells.forEach(function (h) { ctx.fillRect((h % 9) * cs, ((h / 9) | 0) * cs, cs, cs); });
+    if (hintFx.elim) { ctx.save(); ctx.globalAlpha = 0.5; ctx.strokeStyle = PAL.ink2 || PAL.note; ctx.lineWidth = 1.2; hintFx.elim.forEach(function (h) { var x0 = (h % 9) * cs, y0 = ((h / 9) | 0) * cs; ctx.beginPath(); ctx.moveTo(x0 + cs * 0.2, y0 + cs * 0.8); ctx.lineTo(x0 + cs * 0.8, y0 + cs * 0.2); ctx.stroke(); }); ctx.restore(); }
+    if (hintFx.target >= 0) { ctx.save(); ctx.globalAlpha = 0.35 + 0.4 * hp; ctx.fillStyle = PAL.gold; ctx.fillRect((hintFx.target % 9) * cs, ((hintFx.target / 9) | 0) * cs, cs, cs); ctx.restore(); }
+  }
+  for (i = 0; i < 81; i++) if (marks[i]) { ctx.fillStyle = PAL.badbg; ctx.fillRect((i % 9) * cs, ((i / 9) | 0) * cs, cs, cs); }
+  if (sel >= 0 && !G.done) { ctx.fillStyle = PAL.sel; ctx.fillRect((sel % 9) * cs, ((sel / 9) | 0) * cs, cs, cs); }
+  // persistent faint seals on completed boxes
+  for (var b = 0; b < 9; b++) {
+    if (!doneUnits[18 + b]) continue;
+    var age = now - stampT[b]; if (stampT[b] && age < 520) continue;
+    drawSeal('完', ((b % 3) * 3 + 1.5) * cs, (((b / 3) | 0) * 3 + 1.5) * cs, cs * 2.3, -0.14, 1, PAL.dark ? 0.14 : 0.10);
+  }
+  // sweeps for rows / columns (under the lines)
+  fx.forEach(function (f) {
+    if (f.k !== 'sweep') return;
+    var t = (now - f.t0) / f.dur; if (t < 0 || t > 1) return;
+    var isRow = f.u < 9, idx = isRow ? f.u : f.u - 9, head = ease(Math.min(1, t * 1.6)) * BS, a = 0.28 * (1 - t);
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = PAL.red;
+    if (isRow) ctx.fillRect(0, idx * cs + cs * 0.12, head, cs * 0.76); else ctx.fillRect(idx * cs + cs * 0.12, 0, cs * 0.76, head);
+    ctx.restore();
+  });
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (linesLayer) ctx.drawImage(linesLayer, 0, 0);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // win ripple factor
+  var rip = null; fx.forEach(function (f) { if (f.k === 'ripple') rip = f; });
+  // digits
+  var fBig = Math.max(22, cs * 0.62), fNote = Math.max(10, cs * 0.27);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (i = 0; i < 81; i++) {
+    r = (i / 9) | 0; c = i % 9;
+    var x = (c + 0.5) * cs, y = (r + 0.5) * cs, v = G.val[i];
+    if (v) {
+      var sc2 = 1, dx = 0, dy = 0;
+      var pt = now - popT[i]; if (popT[i] && pt < 180) sc2 = 1 + 0.32 * (1 - easeBack(pt / 180));
+      var st2 = now - shakeT[i]; if (shakeT[i] && st2 < 360) dx = Math.sin(st2 / 18) * 4 * (1 - st2 / 360);
+      if (rip) { var dist = Math.hypot(x - BS / 2, y - BS / 2) / (BS * 0.72), k = (now - rip.t0) / rip.dur - dist * 0.6; if (k > 0 && k < 0.35) { var w2 = Math.sin(k / 0.35 * Math.PI); sc2 *= 1 + 0.28 * w2; dy = -4 * w2; } }
+      var giv = !!G.puz[i];
+      ctx.fillStyle = marks[i] ? PAL.bad : giv ? PAL.ink : PAL.red;
+      ctx.font = (giv ? '700 ' : '600 ') + fBig + 'px ' + SERIF;
+      if (sc2 !== 1 || dx || dy) { ctx.save(); ctx.translate(x + dx, y + dy + 1); ctx.scale(sc2, sc2); ctx.fillText(v, 0, 0); ctx.restore(); }
+      else ctx.fillText(v, x, y + 1);
+      if (marks[i]) { ctx.strokeStyle = PAL.bad; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - cs * 0.22, y + cs * 0.33); ctx.lineTo(x + cs * 0.22, y + cs * 0.33); ctx.stroke(); }
+    } else if (G.notes[i]) {
+      ctx.font = '600 ' + fNote + 'px ' + SERIF;
+      for (var d = 1; d <= 9; d++) {
+        if (!(G.notes[i] >> d & 1)) continue;
+        var nx = c * cs + ((d - 1) % 3 + 0.5) * cs / 3, ny = r * cs + (((d - 1) / 3 | 0) + 0.5) * cs / 3;
+        if (d === sd) { ctx.fillStyle = PAL.hlsame; ctx.beginPath(); ctx.arc(nx, ny, cs / 6.2, 0, 7); ctx.fill(); ctx.fillStyle = PAL.red; }
+        else ctx.fillStyle = PAL.note;
+        ctx.fillText(d, nx, ny + 0.5);
+      }
+    }
+  }
+  // selection frame
+  if (sel >= 0 && !G.done) {
+    ctx.strokeStyle = PAL.red; ctx.lineWidth = 2.2;
+    var sx = (sel % 9) * cs, sy = ((sel / 9) | 0) * cs;
+    roundRect(sx + 2, sy + 2, cs - 4, cs - 4, 4); ctx.stroke();
+  }
+  // effects
+  for (var f = fx.length - 1; f >= 0; f--) {
+    var e = fx[f], t = (now - e.t0) / e.dur;
+    if (t >= 1) { fx.splice(f, 1); continue; }
+    if (t < 0) continue;
+    if (e.k === 'bloom') {
+      ctx.save(); ctx.globalAlpha = 0.3 * (1 - t); ctx.fillStyle = e.wrong ? PAL.bad : PAL.red;
+      ctx.beginPath(); ctx.arc(e.x, e.y, cs * (0.3 + 0.62 * ease(t)), 0, 7); ctx.fill(); ctx.restore();
+    } else if (e.k === 'stamp') {
+      var bx = ((e.b % 3) * 3 + 1.5) * cs, by = (((e.b / 3) | 0) * 3 + 1.5) * cs;
+      var s3 = 1.3 - 0.3 * easeBack(Math.min(1, t * 1.7)), al = t < 0.6 ? 0.85 : 0.85 - (0.85 - (PAL.dark ? 0.14 : 0.10)) * ((t - 0.6) / 0.4);
+      drawSeal('完', bx, by, cs * 2.3 * s3, -0.14, 1, al);
+    } else if (e.k === 'ripple') {
+      ctx.save(); ctx.strokeStyle = PAL.ink;
+      for (var ring = 0; ring < 3; ring++) {
+        var tt = t * 1.3 - ring * 0.14; if (tt <= 0 || tt >= 1) continue;
+        ctx.globalAlpha = 0.35 * (1 - tt); ctx.lineWidth = 2 + 10 * (1 - tt);
+        ctx.beginPath(); ctx.arc(BS / 2, BS / 2, BS * 0.75 * ease(tt), 0, 7); ctx.stroke();
+      }
+      ctx.restore();
+    } else if (e.k === 'bigseal') {
+      var s4 = 1.6 - 0.6 * easeBack(Math.min(1, t * 2)), a4 = Math.min(1, t * 4) * (t > 0.85 ? (1 - t) / 0.15 * 0.25 + 0.75 : 1);
+      drawSeal(G.stars === 3 ? '完美' : '過關', BS / 2, BS / 2, BS * 0.36 * s4, -0.14, 1, a4 * 0.92);
+    }
+  }
+  // persistent big seal after win
+  if (G.done && !fx.some(function (e) { return e.k === 'bigseal'; }) && G.stars) drawSeal(G.stars === 3 ? '完美' : '過關', BS / 2, BS / 2, BS * 0.36, -0.14, 1, 0.72);
+  // particles
+  for (var p = parts.length - 1; p >= 0; p--) {
+    var q = parts[p], age = now - q.t0; if (age > q.life) { parts.splice(p, 1); continue; }
+    var k2 = age / q.life, px2 = q.x + q.vx * age, py2 = q.y + q.vy * age + 0.5 * (q.g || 0) * age * age;
+    ctx.globalAlpha = 0.85 * (1 - k2); ctx.fillStyle = q.c; ctx.beginPath(); ctx.arc(px2, py2, q.r * (1 - 0.4 * k2), 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function drawSeal(text, x, y, size, rot, sc, alpha) {
+  var img = seal(text, Math.round(size / 4) * 4 || 4);
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.drawImage(img, -size / 2, -size / 2, size, size); ctx.restore();
+}
+function animating(now) {
+  if (fx.length || parts.length || hintFx) return true;
+  for (var i = 0; i < 81; i++) if ((popT[i] && now - popT[i] < 200) || (shakeT[i] && now - shakeT[i] < 380)) return true;
+  return false;
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  if (playing()) {
+    if (lastTick) G.t += Math.min(250, now - lastTick);
+    lastTick = now;
+    var sec = Math.floor(G.t / 1000); if (sec !== frame.lastSec) { frame.lastSec = sec; $('hTime').textContent = fmt(G.t); if (sec % 5 === 0) saveCur(); }
+  } else lastTick = 0;
+  if (screen !== 'game') return;
+  if (need || animating(now)) { need = false; draw(now); }
+}
+
+/* ---------------- input ---------------- */
+cv.addEventListener('pointerdown', function (e) {
+  e.preventDefault(); audio();
+  if (!G || G.done) return;
+  var rc = cv.getBoundingClientRect(), x = e.clientX - rc.left, y = e.clientY - rc.top;
+  var c = Math.max(0, Math.min(8, Math.floor(x / (rc.width / 9)))), r = Math.max(0, Math.min(8, Math.floor(y / (rc.height / 9)))), i = r * 9 + c;
+  if (lockMode && lockDigit) { select(i); place(i, lockDigit); return; }
+  if (G.sel === i && !G.puz[i]) { select(i); return; }
+  select(i); SFX.click();
+  if (lockMode && G.val[i]) { lockDigit = G.val[i]; updatePad(); }
+});
+function onKey(e) {
+  audio();
+  var d = +e.currentTarget.dataset.d;
+  if (!G || G.done) return;
+  if (lockMode) { lockDigit = lockDigit === d ? 0 : d; SFX.click(); updatePad(); need = true; return; }
+  if (G.sel < 0) { toast('先點選一個格子'); return; }
+  place(G.sel, d);
+}
+$('tUndo').addEventListener('click', function () { audio(); undo(); });
+$('tRedo').addEventListener('click', function () { audio(); redo(); });
+$('tErase').addEventListener('click', function () { audio(); erase(); });
+$('tNotes').addEventListener('click', function () { audio(); notesMode = !notesMode; SFX.click(); updatePad(); });
+$('tHint').addEventListener('click', function () { audio(); hint(); });
+$('hintX').addEventListener('click', function () { clearHint(); });
+document.addEventListener('keydown', function (e) {
+  if (screen !== 'game' || !G) return;
+  if (anyOverlay()) { if (e.key === 'Escape' && !$('pause').classList.contains('hidden')) resume(); return; }
+  var k = e.key, mod = e.ctrlKey || e.metaKey;
+  if (mod && (k === 'z' || k === 'Z')) { e.preventDefault(); audio(); if (e.shiftKey) redo(); else undo(); return; }
+  if (mod && (k === 'y' || k === 'Y')) { e.preventDefault(); audio(); redo(); return; }
+  if (mod) return;
+  if (/^[1-9]$/.test(k)) { audio(); if (G.sel < 0) select(40); place(G.sel, +k); e.preventDefault(); return; }
+  var mv = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 }[k];
+  if (mv) {
+    e.preventDefault(); var s = G.sel < 0 ? 40 : G.sel, r = (s / 9) | 0, c = s % 9;
+    if (mv === -9) r = (r + 8) % 9; else if (mv === 9) r = (r + 1) % 9; else if (mv === -1) c = (c + 8) % 9; else c = (c + 1) % 9;
+    select(r * 9 + c); return;
+  }
+  if (k === 'n' || k === 'N') { notesMode = !notesMode; updatePad(); return; }
+  if (k === 'Backspace' || k === 'Delete' || k === '0') { e.preventDefault(); audio(); erase(); return; }
+  if (k === 'h' || k === 'H') { audio(); hint(); return; }
+  if (k === 'Escape') { pause(); }
+});
+
+/* ---------------- screens / overlays ---------------- */
+function show(id) { $(id).classList.remove('hidden'); }
+function hide(id) { $(id).classList.add('hidden'); }
+var toastTimer = 0;
+function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.style.opacity = 0; setTimeout(function () { t.classList.add('hidden'); }, 350); }, 1900); }
+function goTitle() {
+  screen = 'title'; ['select', 'pause', 'win', 'intro', 'settings', 'stats', 'help', 'share'].forEach(hide);
+  $('app').classList.add('hidden'); show('title'); refreshTitle(); drawTitleArt();
+}
+function nextLevel() { var last = sget('last', 0) | 0; if (last >= 1 && last <= NL && unlocked(last)) return last; for (var n = 1; n <= NL; n++) if (!prog[n]) return n; return NL; }
+function refreshTitle() {
+  var n = nextLevel(), cur = sget('cur.L' + n, null);
+  $('tPlay').textContent = cur ? '繼續第 ' + n + ' 關' : Object.keys(prog).length ? '挑戰第 ' + n + ' 關' : '開始遊戲';
+  var dk = todayKey(), r = dailyRec[dk];
+  $('dailyTag').textContent = r ? '今日完成 ' + fmt(r.t) : dk.slice(4, 6) + '/' + dk.slice(6) + ' 尚未挑戰';
+}
+function unlocked(n) { return unlockAll || n === 1 || !!prog[n - 1] || !!prog[n]; }
+function openSelect() {
+  screen = 'select'; hide('title'); hide('win'); hide('pause'); $('app').classList.add('hidden'); show('select'); buildSelect();
+  var cur = document.querySelector('.lt.cur'); if (cur) cur.scrollIntoView({ block: 'center' });
+}
+function buildSelect() {
+  $('unlockSw').setAttribute('aria-checked', unlockAll ? 'true' : 'false');
+  var done = 0, stars = 0; for (var k in prog) { done++; stars += prog[k].s || 0; }
+  $('selSum').textContent = '已過關 ' + done + ' / ' + NL + '　★ ' + stars + ' / ' + NL * 3;
+  var nx = nextLevel(), h = '';
+  for (var t = 0; t < 6; t++) {
+    var rg = bandRange(t);
+    h += '<div class="band"><b>第 ' + rg[0] + '–' + rg[1] + ' 關</b><span>' + TIER_NAMES[t] + '</span></div><div class="lgrid">';
+    for (var n = rg[0]; n <= rg[1]; n++) {
+      var p = prog[n], lk = !unlocked(n), dn = dotsOf(LEVELS[n - 1][1]);
+      h += '<button class="lt' + (p ? ' done' : '') + (lk ? ' lock' : '') + (n === nx ? ' cur' : '') + '" data-n="' + n + '" aria-label="第 ' + n + ' 關' + (lk ? '（未解鎖）' : '') + '">';
+      if (lk) h += '<span class="n">' + n + '</span><svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px;color:var(--ink2)"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>';
+      else {
+        var s = ''; for (var q = 0; q < 3; q++) s += '<span class="' + (p && q < p.s ? 'on' : '') + '">★</span>';
+        h += '<span class="n">' + n + '</span><span class="st">' + s + '</span><span class="dots">' + dotsHTML(dn) + '</span>';
+      }
+      h += '</button>';
+    }
+    h += '</div>';
+  }
+  $('lscroll').innerHTML = h;
+}
+$('lscroll').addEventListener('click', function (e) {
+  var b = e.target.closest('.lt'); if (!b) return; audio();
+  var n = +b.dataset.n;
+  if (!unlocked(n)) { SFX.err(); toast('先通過第 ' + (n - 1) + ' 關，或開啟「解鎖全部關卡」'); return; }
+  SFX.click(); startLevel(n);
+});
+$('unlockSw').addEventListener('click', function () { audio(); SFX.click(); unlockAll = !unlockAll; sset('unlockAll', unlockAll); buildSelect(); });
+$('sBack').addEventListener('click', function () { audio(); SFX.click(); goTitle(); });
+
+var INTRO = {
+  1: { t: '和紙數獨', b: '<div class="eg">每一<b>列</b>、每一<b>行</b>、每個 <b>3×3 宮</b>都要填入 1–9 各一次。<br>先點格子，再點下方數字；完成一宮會蓋上「完」字印章。</div><div class="eg"><b>唯一候選數</b>：某格只剩一個數字可填。<br><b>隱藏單一</b>：某數字在一列／行／宮裡只剩一格能放。</div>' },
+  16: { t: '新技巧：區塊摒除', b: '<div class="eg"><b>Pointing</b>：某宮裡數字 5 的候選格都在同一列，那麼這一列在宮外的格子都不能是 5。<br><b>Claiming</b>：某列裡 5 的候選格都在同一宮，那麼這宮其他格不能是 5。</div><p>開啟「筆記」記下候選，會更容易看出來。</p>' },
+  36: { t: '新技巧：數對', b: '<div class="eg"><b>裸數對</b>：同一列有兩格都只剩 {3,8}，這兩格必定是 3 和 8，同列其他格可刪去 3、8。<br><b>隱藏數對</b>：3 和 8 在某宮都只能放在同樣兩格，這兩格的其他候選可刪去。</div>' },
+  56: { t: '新技巧：三數與 X-Wing', b: '<div class="eg"><b>裸三數</b>：同一單位中三格的候選合起來只有三個數字，其他格刪去這三個數。</div><div class="eg"><b>X-Wing</b>：數字 4 在兩列中都只剩兩個候選，且位於相同兩行，形成矩形；這兩行的其他格都不能是 4。</div>' },
+  76: { t: '新技巧：Swordfish 與 XY-Wing', b: '<div class="eg"><b>Swordfish</b>：X-Wing 的三列版本——三列的候選只落在三行之內，那三行其他格可刪去該數。</div><div class="eg"><b>XY-Wing</b>：樞紐格 {X,Y}，兩翼 {X,Z} 與 {Y,Z} 都看得到樞紐；同時看見兩翼的格子不能是 Z。</div>' },
+  91: { t: '新技巧：XYZ-Wing 與單鏈著色', b: '<div class="eg"><b>XYZ-Wing</b>：樞紐 {X,Y,Z} 加兩翼 {X,Z}、{Y,Z}；同時看見三格的格子不能是 Z。</div><div class="eg"><b>單鏈著色</b>：把某數字「只剩兩格」的強連結交替塗兩色。同色兩格互見→該色全錯；看得見兩種顏色的格子→不能是此數。</div><p>最後十關，祝武運昌隆！</p>' }
+};
+function startLevel(n, fresh) {
+  n = Math.max(1, Math.min(NL, n | 0));
+  if (fresh) sdel('cur.L' + n);
+  var L = LEVELS[n - 1];
+  G = newGame({ key: 'L' + n, n: n, puzzle: L[0], D: L[1], tier: L[2] });
+  sset('last', n);
+  enterGame();
+  if (INTRO[n] && seen.indexOf(n) < 0) { $('iTitle').textContent = INTRO[n].t; $('iBody').innerHTML = INTRO[n].b; show('intro'); }
+}
+function todayKey(d) { d = d || new Date(); return '' + d.getFullYear() + (d.getMonth() < 9 ? '0' : '') + (d.getMonth() + 1) + (d.getDate() < 10 ? '0' : '') + d.getDate(); }
+function startDaily() {
+  var dk = todayKey();
+  toast('正在研墨，生成今日題目…');
+  setTimeout(function () {
+    var cache = sget('dailyPuz', null), gd;
+    if (cache && cache.date === dk && cache.puzzle && cache.puzzle.length === 81) gd = cache;
+    else { gd = genDaily(+dk * 7919 % 2147483647); gd.date = dk; sset('dailyPuz', gd); }
+    G = newGame({ key: 'D' + dk, daily: true, date: dk, puzzle: gd.puzzle, sol: gd.sol, D: gd.D, tier: gd.tier });
+    enterGame();
+  }, 30);
+}
+function enterGame() {
+  screen = 'game'; ['title', 'select', 'win', 'pause'].forEach(hide); $('app').classList.remove('hidden');
+  notesMode = false; lockDigit = 0; fx.length = 0; parts.length = 0; hintFx = null; clearHint();
+  popT.fill(0); shakeT.fill(0); stampT.fill(0);
+  computeMarks(); refreshDoneUnits();
+  layout(); updateHUD(); need = true;
+  if (G.resumed) toast('已接續上次的進度');
+}
+function pause() { if (screen !== 'game' || !G || G.done) return; $('pInfo').textContent = (G.daily ? '每日數獨' : '第 ' + G.n + ' 關') + '・' + fmt(G.t) + '・錯誤 ' + G.err; saveCur(); show('pause'); }
+function resume() { hide('pause'); lastTick = 0; need = true; }
+$('bMenu').addEventListener('click', function () { audio(); SFX.click(); pause(); });
+$('pResume').addEventListener('click', function () { audio(); SFX.click(); resume(); });
+$('pAuto').addEventListener('click', function () { audio(); SFX.hint(); hide('pause'); autoNotes(); });
+$('pRestart').addEventListener('click', function () { audio(); SFX.click(); hide('pause'); if (G.daily) { sdel('cur.' + G.key); startDaily(); } else startLevel(G.n, true); });
+$('pSettings').addEventListener('click', function () { audio(); SFX.click(); openSettings(); });
+$('pSelect').addEventListener('click', function () { audio(); SFX.click(); saveCur(); openSelect(); });
+$('pHome').addEventListener('click', function () { audio(); SFX.click(); saveCur(); goTitle(); });
+$('iOk').addEventListener('click', function () { audio(); SFX.click(); hide('intro'); if (G && seen.indexOf(G.n) < 0) { seen.push(G.n); sset('seen', seen); } lastTick = 0; });
+$('wNext').addEventListener('click', function () { audio(); SFX.click(); if (G.daily) goTitle(); else if (G.n >= NL) openSelect(); else startLevel(G.n + 1); });
+$('wRetry').addEventListener('click', function () { audio(); SFX.click(); if (G.daily) { hide('win'); sdel('cur.' + G.key); startDaily(); } else startLevel(G.n, true); });
+$('wShare').addEventListener('click', function () { audio(); SFX.click(); doShare(); });
+$('wSelect').addEventListener('click', function () { audio(); SFX.click(); openSelect(); });
+$('shareOk').addEventListener('click', function () { hide('share'); });
+$('tPlay').addEventListener('click', function () { audio(); SFX.click(); startLevel(nextLevel()); });
+$('tSelect').addEventListener('click', function () { audio(); SFX.click(); openSelect(); });
+$('tDaily').addEventListener('click', function () { audio(); SFX.click(); startDaily(); });
+$('tStats').addEventListener('click', function () { audio(); SFX.click(); buildStats(); show('stats'); });
+$('tSettings').addEventListener('click', function () { audio(); SFX.click(); openSettings(); });
+$('tHelp').addEventListener('click', function () { audio(); SFX.click(); show('help'); });
+$('helpOk').addEventListener('click', function () { audio(); SFX.click(); hide('help'); });
+$('statsOk').addEventListener('click', function () { audio(); SFX.click(); hide('stats'); });
+
+function openSettings() {
+  document.querySelectorAll('#settings .sw').forEach(function (b) { b.setAttribute('aria-checked', SET[b.dataset.k] ? 'true' : 'false'); });
+  document.querySelectorAll('#themeSeg button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.t === SET.theme ? 'true' : 'false'); });
+  show('settings');
+}
+document.querySelectorAll('#settings .sw').forEach(function (b) {
+  b.addEventListener('click', function () {
+    audio(); var k = b.dataset.k; SET[k] = !SET[k]; sset('settings', SET); b.setAttribute('aria-checked', SET[k] ? 'true' : 'false'); SFX.click();
+    if (k === 'err' && G) { computeMarks(); refreshDoneUnits(); need = true; }
+  });
+});
+document.querySelectorAll('#themeSeg button').forEach(function (b) {
+  b.addEventListener('click', function () { audio(); SFX.click(); SET.theme = b.dataset.t; sset('settings', SET); openSettings(); applyTheme(); });
+});
+$('setOk').addEventListener('click', function () { audio(); SFX.click(); hide('settings'); });
+if (mqDark && mqDark.addEventListener) mqDark.addEventListener('change', function () { if (SET.theme === 'auto') applyTheme(); });
+
+function buildStats() {
+  var h = '<table class="stt"><tr><th>難度段</th><th>過關</th><th>平均</th><th>最佳</th></tr>', tot = 0, s3 = 0, noHint = 0, stars = 0;
+  for (var t = 0; t < 6; t++) {
+    var rg = bandRange(t), n = 0, sum = 0, best = 0;
+    for (var L = rg[0]; L <= rg[1]; L++) { var p = prog[L]; if (!p) continue; n++; sum += p.t || 0; if (!best || p.t < best) best = p.t; }
+    h += '<tr><td>' + rg[0] + '–' + rg[1] + '<br><span style="font-size:11px;color:var(--ink2)">' + TIER_NAMES[t] + '</span></td><td>' + n + '/' + (rg[1] - rg[0] + 1) + '</td><td>' + (n ? fmt(sum / n) : '—') + '</td><td>' + (n ? fmt(best) : '—') + '</td></tr>';
+  }
+  h += '</table>';
+  for (var k in prog) { tot++; stars += prog[k].s || 0; if (prog[k].s === 3) s3++; if (prog[k].h === 0) noHint++; }
+  // zero-error streak over consecutive levels
+  var streak = 0, bestStreak = 0; for (var q = 1; q <= NL; q++) { if (prog[q] && prog[q].e === 0) { streak++; bestStreak = Math.max(bestStreak, streak); } else streak = 0; }
+  var dailyN = Object.keys(dailyRec).length;
+  var A = [
+    ['初次落款', '通過第 1 關', tot >= 1], ['獨立思考', '不用提示通關 10 關', noHint >= 10], ['心如止水', '連續 5 關零錯誤', bestStreak >= 5],
+    ['朱印收藏家', '取得 30 個三星', s3 >= 30], ['每日一題', '完成 3 次每日數獨', dailyN >= 3], ['百關制霸', '通過全部 100 關', tot >= NL]
+  ];
+  h += '<p style="text-align:center">總星數 ★ ' + stars + '　三星 ' + s3 + ' 關　每日完成 ' + dailyN + ' 次</p><div class="ach">';
+  A.forEach(function (a) { h += '<div class="' + (a[2] ? 'got' : '') + '"><b>' + a[0] + '</b>' + a[1] + '</div>'; });
+  h += '</div>';
+  $('statsBody').innerHTML = h;
+}
+
+/* ---------------- title art ---------------- */
+function drawTitleArt() {
+  var c = $('tcv'); if (!c || !PAL.paper) return;
+  var x = c.getContext('2d'), S = c.width, cs = S / 9 * 0.86, o = S * 0.07, rnd = mulberry32(5);
+  x.clearRect(0, 0, S, S);
+  x.save(); x.translate(S / 2, S / 2); x.rotate(-0.05); x.translate(-S / 2, -S / 2);
+  x.fillStyle = PAL.paper; x.shadowColor = 'rgba(60,40,10,.18)'; x.shadowBlur = 24; x.shadowOffsetY = 8; x.fillRect(o, o, cs * 9, cs * 9); x.shadowColor = 'transparent';
+  x.strokeStyle = PAL.thin; x.lineWidth = 1.5;
+  for (var k = 1; k < 9; k++) { if (k % 3) { x.beginPath(); x.moveTo(o + k * cs, o); x.lineTo(o + k * cs, o + 9 * cs); x.moveTo(o, o + k * cs); x.lineTo(o + 9 * cs, o + k * cs); x.stroke(); } }
+  x.strokeStyle = PAL.line; x.lineWidth = 5;
+  for (var k2 = 0; k2 <= 9; k2 += 3) { x.beginPath(); x.moveTo(o + k2 * cs, o); x.lineTo(o + k2 * cs, o + 9 * cs); x.moveTo(o, o + k2 * cs); x.lineTo(o + 9 * cs, o + k2 * cs); x.stroke(); }
+  var demo = '53..7....6..195....98....6.8...6...34..8.3..17...2...6.6....28....419..5....8..79', solv = '534678912672195348198342567859761423426853791713924856961537284287419635345286179';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (var i = 0; i < 81; i++) {
+    var gv = demo[i] !== '.', show2 = gv || (rnd() < 0.3 && i < 54);
+    if (!show2) continue;
+    x.fillStyle = gv ? PAL.ink : PAL.red; x.font = (gv ? '700 ' : '600 ') + cs * 0.6 + 'px ' + SERIF;
+    x.fillText(solv[i], o + (i % 9 + 0.5) * cs, o + ((i / 9 | 0) + 0.5) * cs + 2);
+  }
+  x.restore();
+  var img = seal('數', 120);
+  x.save(); x.translate(S * 0.8, S * 0.8); x.rotate(-0.14); x.globalAlpha = 0.95; x.drawImage(img, -S * 0.15, -S * 0.15, S * 0.3, S * 0.3); x.restore();
+}
+
+/* ---------------- lifecycle ---------------- */
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { if (G && screen === 'game' && !G.done) { saveCur(); if (!anyOverlay()) pause(); } }
+  lastTick = 0; need = true;
+});
+window.addEventListener('pagehide', function () { saveCur(); });
+var rT = 0;
+window.addEventListener('resize', function () { clearTimeout(rT); rT = setTimeout(function () { layout(); }, 60); });
+if (window.ResizeObserver) new ResizeObserver(function () { layout(); }).observe($('boardWrap'));
+
+buildPad();
+applyTheme();
+goTitle();
+requestAnimationFrame(frame);
+
+window.__game = {
+  state: function () { return G ? { n: G.n, done: G.done, err: G.err, hintsLeft: G.hintsLeft, hintsUsed: G.hintsUsed, stars: G.stars || 0, val: gridStr(G.val), sol: gridStr(G.sol), sel: G.sel, t: G.t } : null; },
+  geom: function () { var r = cv.getBoundingClientRect(); return { x: r.left, y: r.top, size: r.width }; },
+  screen: function () { return screen; }
+};
+})();
+</script>
+</body>
+</html>

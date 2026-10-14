@@ -1,0 +1,272 @@
+<title>口袋遊樂場</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Space+Mono:wght@700&display=swap">
+<style>
+/* Layout: a shelf of game cartridges (cover + label) in a wrapping grid; tapping one swaps the shelf for a full-height player with a slim top bar. */
+:root {
+  --bg: #e9ebf2;          /* cool shelf paper */
+  --shelf: #dfe2ec;
+  --card: #ffffff;
+  --ink: #1b1d2b;
+  --muted: #5d6278;
+  --line: #c9cddc;
+  --coin: #e8a317;        /* token-coin accent */
+  --coin-ink: #2a1d00;
+  --display: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --body: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --mono: "Space Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --tag-puzzle: #2f6fd6; --tag-reflex: #d64a2f; --tag-action: #8a3fd1; --tag-calm: #1f8f6a; --tag-board: #a2412f; --tag-card: #a87a12; --tag-world: #b0602a;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #13151d; --shelf: #1a1d28; --card: #20232f; --ink: #eceef6; --muted: #9ba0b6; --line: #2f3344;
+  --coin: #f2b544; --coin-ink: #241800;
+  --tag-puzzle: #7aa7ff; --tag-reflex: #ff8a6e; --tag-action: #c39bff; --tag-calm: #5fd3a8; --tag-board: #ef9a84; --tag-card: #e8c25e; --tag-world: #f0a56a;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #13151d; --shelf: #1a1d28; --card: #20232f; --ink: #eceef6; --muted: #9ba0b6; --line: #2f3344;
+  --coin: #f2b544; --coin-ink: #241800;
+  --tag-puzzle: #7aa7ff; --tag-reflex: #ff8a6e; --tag-action: #c39bff; --tag-calm: #5fd3a8; --tag-board: #ef9a84; --tag-card: #e8c25e; --tag-world: #f0a56a;
+  color-scheme: dark }
+
+html, body { height: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); -webkit-tap-highlight-color: transparent; }
+body.playing { overflow: hidden; overscroll-behavior: none; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--coin); outline-offset: 3px; }
+
+.wrap { max-width: 1060px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(40px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.coin { width: 46px; height: 46px; flex: none; border-radius: 50%; background: var(--coin); color: var(--coin-ink);
+  display: grid; place-items: center; font: 700 13px/1 var(--mono); box-shadow: inset 0 -4px 0 rgba(0,0,0,.18), inset 0 0 0 3px rgba(255,255,255,.25); }
+h1 { margin: 0; font: 900 clamp(26px, 6vw, 38px)/1.1 var(--display); letter-spacing: .02em; text-wrap: balance; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.count { font: 700 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; font-variant-numeric: tabular-nums; }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { min-height: 44px; padding: 7px 16px; border-radius: 999px; border: 1.5px solid var(--line); background: transparent; font-size: 14px; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 18px; }
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card:last-child:nth-child(odd) { grid-column: 1 / -1; grid-template-columns: minmax(0, 46%) 1fr; grid-template-rows: auto; }
+  .card:last-child:nth-child(odd) .label { align-content: center; }
+}
+.card { display: grid; grid-template-rows: auto 1fr; text-align: left; background: var(--card); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 1px 0 var(--line), 0 6px 18px -10px rgba(10,12,30,.35); transition: transform .18s ease, box-shadow .18s ease; min-width: 0; }
+@media (hover: hover) { .card:hover { transform: translateY(-3px); box-shadow: 0 1px 0 var(--line), 0 14px 26px -12px rgba(10,12,30,.45); }
+}
+.card:active { transform: translateY(0) scale(.98); }
+.shot { position: relative; aspect-ratio: 3 / 4; max-width: 100%; background: var(--shelf); overflow: hidden; }
+.shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shot .play { position: absolute; right: 10px; bottom: 10px; width: 40px; height: 40px; border-radius: 50%; background: var(--coin); color: var(--coin-ink);
+  display: grid; place-items: center; box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+.shot .play svg { width: 16px; height: 16px; margin-left: 2px; }
+.last { position: absolute; left: 10px; top: 10px; padding: 3px 9px; border-radius: 999px; background: var(--coin); color: var(--coin-ink); font-size: 12px; font-weight: 700; }
+.label { padding: 11px 13px 14px; display: grid; gap: 5px; align-content: start; min-width: 0; }
+.label h2 { margin: 0; font: 900 17px/1.3 var(--display); }
+.label p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.tag { font-size: 12px; font-weight: 700; color: var(--c); }
+.tag + .tag::before { content: "·"; color: var(--muted); margin-right: 6px; font-weight: 400; }
+.tag.levels { color: var(--muted); font-family: var(--mono); font-size: 12px; letter-spacing: .04em; align-self: center; }
+.foot { color: var(--muted); font-size: 13px; text-align: center; }
+
+/* Player */
+#player { position: fixed; inset: 0; z-index: 10; display: grid; grid-template-rows: auto 1fr; background: #000; }
+.bar { display: flex; align-items: center; gap: 8px; padding: calc(4px + env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); background: var(--card); border-bottom: 1px solid var(--line); min-width: 0; }
+.bar button { display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 14px; border-radius: 10px; font-size: 14px; font-weight: 700; }
+.bar .back { background: var(--coin); color: var(--coin-ink); }
+.bar .ghost { color: var(--muted); }
+@media (hover: hover) { .bar .ghost:hover { color: var(--ink); background: var(--shelf); } }
+.bar h3 { flex: 1; min-width: 0; margin: 0; font: 900 16px/1 var(--display); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar svg { width: 16px; height: 16px; }
+.stage { position: relative; min-height: 0; padding-bottom: env(safe-area-inset-bottom, 0px); background: #000; }
+.stage iframe { display: block; width: 100%; height: 100%; border: 0; background: #000; }
+.loading { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; color: #aab; font-size: 14px; pointer-events: none; text-align: center; padding: 0 24px; }
+.loading button { pointer-events: auto; min-height: 44px; padding: 0 18px; border-radius: 10px; background: var(--coin); color: var(--coin-ink); font-weight: 700; }
+.bar .fav[aria-pressed="true"] { color: var(--coin); }
+.bar .fav svg { width: 18px; height: 18px; }
+.star { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.45); color: var(--coin); display: grid; place-items: center; }
+.star svg { width: 15px; height: 15px; }
+.empty { grid-column: 1 / -1; padding: 40px 12px; text-align: center; color: var(--muted); text-wrap: pretty; }
+
+@media (prefers-reduced-motion: reduce) { .card, .card:hover { transition: none; transform: none; } }
+</style>
+
+<div class="wrap" id="hub">
+  <header>
+    <div class="brand">
+      <div class="coin" aria-hidden="true">PLAY</div>
+      <div>
+        <h1>口袋遊樂場</h1>
+        <p class="sub">這個專案做過的小遊戲都在這裡，點一下就開始玩。</p>
+      </div>
+    </div>
+    <span class="count" id="count"></span>
+  </header>
+  <div class="filters" id="filters" role="group" aria-label="依類型篩選"></div>
+  <main class="grid" id="grid"></main>
+  <p class="foot">每款遊戲的關卡進度、最高分和收藏都會留在這台裝置上。</p>
+</div>
+
+<div id="player" hidden>
+  <div class="bar">
+    <button class="back" id="back" aria-label="回到遊戲大廳"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>大廳</button>
+    <h3 id="ptitle"></h3>
+    <button class="ghost fav" id="fav" aria-pressed="false" aria-label="收藏這款遊戲"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>收藏</button>
+    <button class="ghost" id="restart" aria-label="重新載入這款遊戲"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>重來</button>
+  </div>
+  <div class="stage" id="stage"><div class="loading" id="loading"><span id="lmsg">載入中…</span><button id="retry" hidden>再試一次</button></div></div>
+</div>
+
+<!--GAME_DATA-->
+
+<script>
+(() => {
+  const META = JSON.parse(document.getElementById('hub-meta').textContent);
+  const CATS = { puzzle: '益智', reflex: '反應', action: '動作', board: '經典棋類', card: '牌類與骰子', calm: '休閒', world: '探索與模擬' };
+  const VIEWS = { recent: '最近玩過', favs: '收藏' };
+  const RECENT_MAX = 12;
+  const STAR = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="currentColor"/></svg>';
+  const $ = id => document.getElementById(id);
+  const byId = new Map(META.map(g => [g.id, g]));
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    list(k) { try { const a = JSON.parse(this.get(k)); return Array.isArray(a) ? a.filter(id => byId.has(id)) : []; } catch (e) { return []; } }
+  };
+  let filter = store.get('hub.filter') || 'all';
+  if (filter !== 'all' && !CATS[filter] && !VIEWS[filter]) filter = 'all';
+  let recent = store.list('hub.recent');
+  const lastOld = store.get('hub.last');
+  if (!recent.length && byId.has(lastOld)) recent = [lastOld];
+  let favs = new Set(store.list('hub.favs'));
+
+  const leveled = META.filter(g => g.levels).length;
+  $('count').textContent = `${META.length} 款遊戲 · ${leveled} 款各有 100 關`;
+
+  const filters = $('filters');
+  [['all', '全部'], ['recent', VIEWS.recent], ['favs', VIEWS.favs], ...Object.entries(CATS).filter(([k]) => META.some(g => g.cat === k))].forEach(([k, name]) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.dataset.k = k; b.textContent = name;
+    b.onclick = () => { filter = k; store.set('hub.filter', k); render(); };
+    filters.appendChild(b);
+  });
+
+  function shown() {
+    if (filter === 'recent') return recent.map(id => byId.get(id));
+    if (filter === 'favs') return META.filter(g => favs.has(g.id));
+    return META.filter(g => filter === 'all' || g.cat === filter);
+  }
+
+  function render() {
+    filters.querySelectorAll('.chip').forEach(c => {
+      c.setAttribute('aria-pressed', c.dataset.k === filter);
+      if (VIEWS[c.dataset.k]) {
+        const n = c.dataset.k === 'recent' ? recent.length : favs.size;
+        c.textContent = n ? `${VIEWS[c.dataset.k]} ${n}` : VIEWS[c.dataset.k];
+      }
+    });
+    const last = recent[0];
+    const grid = $('grid'); grid.textContent = '';
+    const list = shown();
+    if (!list.length) {
+      const p = document.createElement('p'); p.className = 'empty';
+      p.textContent = filter === 'favs' ? '還沒有收藏。開啟遊戲後按上方的「收藏」，就會出現在這裡。' : '還沒有玩過任何遊戲，挑一款開始吧。';
+      grid.appendChild(p); return;
+    }
+    list.forEach(g => {
+      const b = document.createElement('button');
+      b.className = 'card'; b.setAttribute('aria-label', `開始玩 ${g.name}`);
+      b.innerHTML = `
+        <div class="shot"><img alt="" loading="lazy" src="covers/${g.id}.jpg">
+          ${g.id === last ? '<span class="last">上次玩</span>' : ''}
+          ${favs.has(g.id) ? `<span class="star" aria-label="已收藏">${STAR}</span>` : ''}
+          <span class="play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg></span></div>
+        <div class="label"><h2></h2><p></p>
+          <div class="tags"><span class="tag" style="--c:var(--tag-${g.cat})">${CATS[g.cat]}</span>${g.levels ? '<span class="tag levels">100 關</span>' : ''}</div></div>`;
+      b.querySelector('h2').textContent = g.name;
+      b.querySelector('p').textContent = g.blurb;
+      b.onclick = () => open(g);
+      // Start downloading as soon as a finger lands, so the game is usually ready by the time the tap ends.
+      b.addEventListener('pointerdown', () => load(g.id).catch(() => {}), { passive: true });
+      grid.appendChild(b);
+    });
+  }
+
+  // Each game is its own published file (play/<id>.html), fetched on first open and kept for the session.
+  // It still runs through srcdoc, as before, so it shares this page's storage and saved progress carries over.
+  const cache = new Map();
+  function load(id) {
+    if (!cache.has(id)) {
+      const p = fetch(`play/${id}.html`).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); });
+      p.catch(() => cache.delete(id));
+      cache.set(id, p);
+    }
+    return cache.get(id);
+  }
+
+  let current = null, scrollY = 0, token = 0;
+  function open(g) {
+    current = g; scrollY = window.scrollY;
+    recent = [g.id, ...recent.filter(id => id !== g.id)].slice(0, RECENT_MAX);
+    store.set('hub.recent', JSON.stringify(recent));
+    store.set('hub.last', g.id);
+    $('ptitle').textContent = g.name;
+    syncFav();
+    $('hub').hidden = true; $('player').hidden = false;
+    document.body.classList.add('playing');
+    mount();
+  }
+  function syncFav() {
+    const on = favs.has(current.id);
+    $('fav').setAttribute('aria-pressed', on);
+    $('fav').setAttribute('aria-label', on ? '取消收藏這款遊戲' : '收藏這款遊戲');
+    $('fav').lastChild.textContent = on ? '已收藏' : '收藏';
+    $('fav').querySelector('path').setAttribute('fill', on ? 'currentColor' : 'none');
+  }
+  async function mount() {
+    const stage = $('stage'), g = current, my = ++token;
+    stage.querySelector('iframe')?.remove();
+    $('lmsg').textContent = '載入中…'; $('retry').hidden = true; $('loading').hidden = false;
+    let html;
+    try { html = await load(g.id); }
+    catch (e) {
+      if (my !== token) return;
+      $('lmsg').textContent = '遊戲載入失敗，請確認網路連線。'; $('retry').hidden = false;
+      return;
+    }
+    if (my !== token || current !== g) return;
+    const f = document.createElement('iframe');
+    f.title = g.name;
+    f.setAttribute('allow', 'autoplay; fullscreen; gamepad');
+    f.addEventListener('load', () => { $('loading').hidden = true; try { f.contentWindow.focus(); } catch (e) {} });
+    f.srcdoc = html;
+    stage.appendChild(f);
+  }
+  function close() {
+    if (!current) return;
+    token++;
+    $('stage').querySelector('iframe')?.remove();
+    current = null;
+    $('player').hidden = true; $('hub').hidden = false;
+    document.body.classList.remove('playing');
+    render();
+    window.scrollTo(0, scrollY);
+  }
+  $('back').onclick = close;
+  $('restart').onclick = () => current && mount();
+  $('retry').onclick = () => current && mount();
+  $('fav').onclick = () => {
+    if (!current) return;
+    favs.has(current.id) ? favs.delete(current.id) : favs.add(current.id);
+    store.set('hub.favs', JSON.stringify([...favs]));
+    syncFav();
+  };
+  render();
+})();
+</script>

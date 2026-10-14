@@ -1,0 +1,671 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>世界時鐘</title>
+<style>
+/* Day/night chart look: cool paper, cobalt ink, indigo night bands, amber daylight work bands */
+:root {
+  --bg: #edf0f4;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --ink: #131c28;
+  --ink-2: #39475a;
+  --muted: #5a6779;
+  --line: #d5dce5;
+  --line-strong: #a9b5c4;
+  --accent: #1f5ea8;
+  --accent-ink: #ffffff;
+  --accent-soft: #dde8f6;
+  --sleep: #2c3a68;
+  --general: #b7c5db;
+  --work: #e0a32c;
+  --weekend: #cfd4db;
+  --now: #d23b3b;
+  --sun: #d99312;
+  --moon: #5466a6;
+  --overlay: rgba(16, 22, 32, .45);
+  --danger: #b4302b;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d131b; --surface: #151d28; --surface-2: #1b2532; --ink: #e5ebf2; --ink-2: #c1cbd8; --muted: #8e9cae;
+    --line: #253142; --line-strong: #3f4e63; --accent: #74a8ec; --accent-ink: #0a1526; --accent-soft: #1b2b42;
+    --sleep: #222c5c; --general: #5b7095; --work: #d4982a; --weekend: #363d48; --now: #ff6b6b; --sun: #f0b23a; --moon: #95a6e6;
+    --overlay: rgba(0,0,0,.6); --danger: #ff7a72;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d131b; --surface: #151d28; --surface-2: #1b2532; --ink: #e5ebf2; --ink-2: #c1cbd8; --muted: #8e9cae;
+  --line: #253142; --line-strong: #3f4e63; --accent: #74a8ec; --accent-ink: #0a1526; --accent-soft: #1b2b42;
+  --sleep: #222c5c; --general: #5b7095; --work: #d4982a; --weekend: #363d48; --now: #ff6b6b; --sun: #f0b23a; --moon: #95a6e6;
+  --overlay: rgba(0,0,0,.6); --danger: #ff7a72;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 var(--sans);
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  padding-block: max(14px, env(safe-area-inset-top)) calc(28px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.num { font-variant-numeric: tabular-nums; }
+.app { max-width: 1080px; margin: 0 auto; }
+
+/* header */
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.here-label { font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.here-time { font-size: 52px; font-weight: 300; line-height: 1.05; letter-spacing: -.02em; margin-top: 2px; }
+.here-time .sec { font-size: 22px; color: var(--muted); margin-left: 4px; font-weight: 400; }
+.here-time .ap { font-size: 20px; margin-right: 6px; font-weight: 500; }
+.here-sub { color: var(--ink-2); font-size: 14px; margin-top: 4px; }
+.here-sub .tz { color: var(--muted); }
+.top-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn {
+  min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-strong);
+  background: var(--surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; font-size: 14px;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.icon { width: 44px; padding: 0; }
+.btn svg { width: 20px; height: 20px; }
+.btn.danger { color: var(--danger); }
+@media (hover: hover) { .btn:hover { border-color: var(--accent); } .btn.primary:hover { filter: brightness(1.08); } }
+
+.layout { display: grid; gap: 18px; margin-top: 18px; }
+@media (min-width: 900px) { .layout { grid-template-columns: minmax(320px, 400px) 1fr; align-items: start; } }
+
+section h2 { font-size: 13px; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+section h2 .tag { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 99px; }
+
+/* city list */
+.list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.row {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px;
+  padding: 10px 2px; border-bottom: 1px solid var(--line); min-height: 64px;
+}
+.row .main { display: flex; flex-direction: column; min-width: 0; border: 0; background: none; text-align: left; padding: 4px 0; min-height: 44px; justify-content: center; }
+.row .name { font-weight: 650; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.row .name svg { width: 16px; height: 16px; flex-shrink: 0; }
+.row .meta { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .meta b { color: var(--ink-2); font-weight: 600; }
+.row .clock { text-align: right; }
+.row .t { font-size: 30px; font-weight: 400; line-height: 1.1; letter-spacing: -.01em; }
+.row .t .ap { font-size: 14px; margin-right: 4px; color: var(--ink-2); }
+.row .d { font-size: 12px; color: var(--muted); }
+.row .d.shift { color: var(--accent); font-weight: 650; }
+.row.unsupported .t { font-size: 14px; color: var(--danger); }
+.sun { color: var(--sun); } .moon { color: var(--moon); }
+.list-foot { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* timeline */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.daynav { display: flex; align-items: center; gap: 4px; }
+.daynav .lbl { min-width: 110px; text-align: center; font-weight: 650; font-size: 14px; }
+.tl-scroll { overflow-x: auto; overscroll-behavior-x: contain; margin-inline: -4px; padding-inline: 4px; }
+.tl { position: relative; min-width: 300px; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.tl-row { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 8px; height: 30px; }
+.tl-row .nm { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.band { display: grid; grid-template-columns: repeat(96, 1fr); height: 20px; border-radius: 4px; overflow: hidden; }
+.band i { display: block; height: 100%; }
+.band i.s { background: var(--sleep); } .band i.g { background: var(--general); } .band i.w { background: var(--work); } .band i.x { background: var(--weekend); }
+.band i.h { box-shadow: inset 1px 0 0 color-mix(in srgb, var(--surface) 55%, transparent); }
+.band.bad { display: flex; align-items: center; font-size: 12px; color: var(--danger); background: var(--surface-2); padding-left: 8px; }
+.axis { display: grid; grid-template-columns: 74px 1fr; gap: 8px; height: 18px; font-size: 11px; color: var(--muted); }
+.axis .ticks { position: relative; }
+.axis .ticks span { position: absolute; transform: translateX(-50%); }
+.axis .ticks span:first-child { transform: none; }
+.cursor { position: absolute; top: 0; bottom: 18px; width: 2px; margin-left: -1px; background: var(--now); pointer-events: none; border-radius: 2px; }
+.cursor::before { content: ""; position: absolute; top: -4px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--now); }
+.cursor .bubble { position: absolute; top: -4px; left: 8px; background: var(--now); color: #fff; font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: 4px; white-space: nowrap; line-height: 18px; }
+.cursor.flip .bubble { left: auto; right: 8px; }
+.slider-wrap { display: grid; grid-template-columns: 74px 1fr; gap: 8px; align-items: center; margin-top: 6px; }
+.slider-wrap label { font-size: 12px; color: var(--muted); }
+input[type=range] { width: 100%; height: 44px; accent-color: var(--accent); margin: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 10px; border-radius: 2px; display: inline-block; }
+.scrub-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; min-height: 44px; }
+.scrub-bar .info { font-size: 13px; color: var(--ink-2); }
+.scrub-bar .info b { color: var(--now); }
+
+/* suggestions */
+.sugg { margin-top: 14px; }
+.sugg ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sugg li { border: 1px solid var(--line); border-left: 4px solid var(--work); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
+.sugg li.alt { border-left-color: var(--general); }
+.sugg .rng { font-weight: 700; font-size: 16px; }
+.sugg .dur { color: var(--muted); font-size: 12px; margin-left: 6px; font-weight: 500; }
+.sugg .per { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+.sugg .note { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.sugg button.go { border: 0; background: none; padding: 0; text-align: left; width: 100%; min-height: 44px; }
+
+/* dialogs */
+.scrim { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: flex-end; justify-content: center; z-index: 20; padding: 12px; }
+@media (min-width: 640px) { .scrim { align-items: center; } }
+@media (max-height: 600px) { .scrim { align-items: flex-start; overflow-y: auto; } }
+.sheet { background: var(--surface); width: 100%; max-width: 480px; border-radius: 16px; padding: 16px; max-height: calc(100% - 8px); display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.25); margin-bottom: env(safe-area-inset-bottom); }
+@media (max-height: 600px) { .sheet { max-height: none; } }
+.sheet h3 { margin: 0 0 12px; font-size: 17px; display: flex; justify-content: space-between; align-items: center; }
+.field { display: grid; gap: 4px; margin-bottom: 12px; }
+.field label, .field .lab { font-size: 13px; color: var(--muted); font-weight: 600; }
+.field input[type=text], .field input[type=search], .field select, .field input[type=time] {
+  min-height: 44px; border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 12px; background: var(--surface-2); width: 100%;
+}
+.results { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 120px; max-height: 50vh; border-top: 1px solid var(--line); }
+@media (max-height: 600px) { .results { max-height: 260px; } }
+.results button { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; min-height: 48px; padding: 6px 4px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.results .c { color: var(--muted); font-size: 12.5px; }
+.results .o { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+@media (hover: hover) { .results button:hover { background: var(--surface-2); } }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; }
+.seg button { min-height: 44px; min-width: 64px; border: 0; background: transparent; padding: 0 12px; font-weight: 600; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
+.hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+@media (prefers-reduced-motion: no-preference) { .sheet { animation: up .18s ease-out; } @keyframes up { from { transform: translateY(12px); opacity: 0; } } }
+@media (max-width: 380px) { .here-time { font-size: 44px; } .row .t { font-size: 26px; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="here-label">本地時間</div>
+      <div class="here-time num" id="hereTime">--:--</div>
+      <div class="here-sub"><span id="hereDate"></span> · <span class="tz" id="hereTz"></span></div>
+    </div>
+    <div class="top-actions">
+      <button class="btn icon" id="btnSettings" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+      <button class="btn primary" id="btnAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>城市</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section>
+      <h2><span>城市</span><span class="tag" id="sampleTag" hidden>範例清單</span></h2>
+      <ul class="list" id="list"></ul>
+      <p class="hint">點城市可改名、調整順序或刪除。最多 12 個城市。</p>
+    </section>
+
+    <section>
+      <div class="panel">
+        <div class="tl-head">
+          <h2 style="margin:0"><span>時間軸與開會時段</span></h2>
+          <div class="daynav">
+            <button class="btn icon ghost" id="dayPrev" aria-label="前一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <span class="lbl" id="dayLbl">今天</span>
+            <button class="btn icon ghost" id="dayNext" aria-label="後一天"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+          </div>
+        </div>
+        <div class="tl-scroll">
+          <div class="tl" id="tl"></div>
+        </div>
+        <div class="slider-wrap">
+          <label for="scrub">拖曳時間</label>
+          <input type="range" id="scrub" min="0" max="95" step="1" value="0" aria-label="選擇時刻（本地時間，每格 15 分鐘）">
+        </div>
+        <div class="scrub-bar">
+          <div class="info" id="scrubInfo">即時</div>
+          <button class="btn" id="btnNow" hidden>回到現在</button>
+        </div>
+        <div class="legend">
+          <span><i style="background:var(--work)"></i>上班</span>
+          <span><i style="background:var(--general)"></i>清醒</span>
+          <span><i style="background:var(--sleep)"></i>睡眠</span>
+          <span><i style="background:var(--weekend)"></i>週末</span>
+        </div>
+        <div class="sugg" id="sugg"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="scrim" id="dlgAdd" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+    <h3><span id="addTitle">新增城市</span><button class="btn icon ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></h3>
+    <div class="field"><input type="search" id="search" placeholder="搜尋城市、國家或英文名稱" autocomplete="off" aria-label="搜尋城市"></div>
+    <ul class="results" id="results"></ul>
+  </div>
+</div>
+
+<div class="scrim" id="dlgEdit" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <h3><span id="editTitle">城市</span><button class="btn icon ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></h3>
+    <div class="field"><label for="editLabel">顯示名稱（可改成「客戶 A」「媽媽」）</label><input type="text" id="editLabel" maxlength="20"></div>
+    <div class="field"><span class="lab">這個城市的上班時段（留空則用預設）</span>
+      <div class="two"><input type="time" id="editWs" step="900" aria-label="上班開始"><input type="time" id="editWe" step="900" aria-label="上班結束"></div>
+    </div>
+    <div class="row-actions">
+      <button class="btn" id="editUp">上移</button>
+      <button class="btn" id="editDown">下移</button>
+      <span style="flex:1"></span>
+      <button class="btn danger" id="editDel">刪除</button>
+      <button class="btn primary" id="editSave">儲存</button>
+    </div>
+    <div id="delConfirm" hidden style="margin-top:12px;padding:10px;border:1px solid var(--danger);border-radius:10px">
+      <div style="font-size:14px;margin-bottom:8px">確定從清單移除這個城市？</div>
+      <div class="row-actions"><button class="btn" id="delNo">取消</button><button class="btn danger" id="delYes">移除</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="dlgSet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <h3><span id="setTitle">設定</span><button class="btn icon ghost" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></h3>
+    <div class="field"><span class="lab">時間格式</span><div class="seg" id="segFmt"><button data-v="24">24 小時</button><button data-v="12">12 小時</button></div></div>
+    <div class="field"><span class="lab">預設上班時段（週一至週五）</span>
+      <div class="two"><input type="time" id="setWs" step="900" aria-label="預設上班開始"><input type="time" id="setWe" step="900" aria-label="預設上班結束"></div>
+    </div>
+    <div class="field"><span class="lab">外觀</span><div class="seg" id="segTheme"><button data-v="auto">自動</button><button data-v="light">淺色</button><button data-v="dark">深色</button></div></div>
+    <p class="hint">時差與夏令時間由瀏覽器內建時區資料計算，離線也能使用。</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'world-clock:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) {} }
+};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// name|english|tz|country
+const RAW = `台北|Taipei|Asia/Taipei|台灣;台中|Taichung|Asia/Taipei|台灣;高雄|Kaohsiung|Asia/Taipei|台灣;東京|Tokyo|Asia/Tokyo|日本;大阪|Osaka|Asia/Tokyo|日本;首爾|Seoul|Asia/Seoul|韓國;釜山|Busan|Asia/Seoul|韓國;北京|Beijing|Asia/Shanghai|中國;上海|Shanghai|Asia/Shanghai|中國;深圳|Shenzhen|Asia/Shanghai|中國;廣州|Guangzhou|Asia/Shanghai|中國;成都|Chengdu|Asia/Shanghai|中國;香港|Hong Kong|Asia/Hong_Kong|香港;澳門|Macau|Asia/Macau|澳門;烏蘭巴托|Ulaanbaatar|Asia/Ulaanbaatar|蒙古;馬尼拉|Manila|Asia/Manila|菲律賓;新加坡|Singapore|Asia/Singapore|新加坡;吉隆坡|Kuala Lumpur|Asia/Kuala_Lumpur|馬來西亞;曼谷|Bangkok|Asia/Bangkok|泰國;清邁|Chiang Mai|Asia/Bangkok|泰國;河內|Hanoi|Asia/Ho_Chi_Minh|越南;胡志明市|Ho Chi Minh City|Asia/Ho_Chi_Minh|越南;金邊|Phnom Penh|Asia/Phnom_Penh|柬埔寨;永珍|Vientiane|Asia/Vientiane|寮國;仰光|Yangon|Asia/Yangon|緬甸;雅加達|Jakarta|Asia/Jakarta|印尼;峇里島|Bali Denpasar|Asia/Makassar|印尼;汶萊|Bandar Seri Begawan|Asia/Brunei|汶萊;達卡|Dhaka|Asia/Dhaka|孟加拉;加德滿都|Kathmandu|Asia/Kathmandu|尼泊爾;新德里|New Delhi|Asia/Kolkata|印度;孟買|Mumbai|Asia/Kolkata|印度;班加羅爾|Bengaluru Bangalore|Asia/Kolkata|印度;加爾各答|Kolkata|Asia/Kolkata|印度;可倫坡|Colombo|Asia/Colombo|斯里蘭卡;馬列|Male Maldives|Indian/Maldives|馬爾地夫;喀拉蚩|Karachi|Asia/Karachi|巴基斯坦;喀布爾|Kabul|Asia/Kabul|阿富汗;塔什干|Tashkent|Asia/Tashkent|烏茲別克;阿拉木圖|Almaty|Asia/Almaty|哈薩克;杜拜|Dubai|Asia/Dubai|阿聯;阿布達比|Abu Dhabi|Asia/Dubai|阿聯;多哈|Doha|Asia/Qatar|卡達;利雅德|Riyadh|Asia/Riyadh|沙烏地阿拉伯;德黑蘭|Tehran|Asia/Tehran|伊朗;巴格達|Baghdad|Asia/Baghdad|伊拉克;科威特市|Kuwait City|Asia/Kuwait|科威特;馬斯喀特|Muscat|Asia/Muscat|阿曼;耶路撒冷|Jerusalem|Asia/Jerusalem|以色列;特拉維夫|Tel Aviv|Asia/Jerusalem|以色列;安曼|Amman|Asia/Amman|約旦;貝魯特|Beirut|Asia/Beirut|黎巴嫩;伊斯坦堡|Istanbul|Europe/Istanbul|土耳其;第比利斯|Tbilisi|Asia/Tbilisi|喬治亞;巴庫|Baku|Asia/Baku|亞塞拜然;葉里溫|Yerevan|Asia/Yerevan|亞美尼亞;海參崴|Vladivostok|Asia/Vladivostok|俄羅斯;新西伯利亞|Novosibirsk|Asia/Novosibirsk|俄羅斯;葉卡捷琳堡|Yekaterinburg|Asia/Yekaterinburg|俄羅斯;雪梨|Sydney|Australia/Sydney|澳洲;墨爾本|Melbourne|Australia/Melbourne|澳洲;布里斯本|Brisbane|Australia/Brisbane|澳洲;伯斯|Perth|Australia/Perth|澳洲;阿德雷德|Adelaide|Australia/Adelaide|澳洲;達爾文|Darwin|Australia/Darwin|澳洲;荷巴特|Hobart|Australia/Hobart|澳洲;奧克蘭|Auckland|Pacific/Auckland|紐西蘭;威靈頓|Wellington|Pacific/Auckland|紐西蘭;查塔姆群島|Chatham Islands|Pacific/Chatham|紐西蘭;蘇瓦|Suva Fiji|Pacific/Fiji|斐濟;關島|Guam|Pacific/Guam|美國;帛琉|Palau Koror|Pacific/Palau|帛琉;檀香山|Honolulu Hawaii|Pacific/Honolulu|美國;大溪地|Tahiti Papeete|Pacific/Tahiti|法屬玻里尼西亞;努瓜婁發|Nuku'alofa Tonga|Pacific/Tongatapu|東加;阿皮亞|Apia Samoa|Pacific/Apia|薩摩亞;聖誕島|Kiritimati|Pacific/Kiritimati|吉里巴斯;倫敦|London|Europe/London|英國;愛丁堡|Edinburgh|Europe/London|英國;都柏林|Dublin|Europe/Dublin|愛爾蘭;里斯本|Lisbon|Europe/Lisbon|葡萄牙;馬德里|Madrid|Europe/Madrid|西班牙;巴塞隆納|Barcelona|Europe/Madrid|西班牙;巴黎|Paris|Europe/Paris|法國;布魯塞爾|Brussels|Europe/Brussels|比利時;阿姆斯特丹|Amsterdam|Europe/Amsterdam|荷蘭;盧森堡|Luxembourg|Europe/Luxembourg|盧森堡;柏林|Berlin|Europe/Berlin|德國;慕尼黑|Munich|Europe/Berlin|德國;法蘭克福|Frankfurt|Europe/Berlin|德國;蘇黎世|Zurich|Europe/Zurich|瑞士;日內瓦|Geneva|Europe/Zurich|瑞士;維也納|Vienna|Europe/Vienna|奧地利;布拉格|Prague|Europe/Prague|捷克;華沙|Warsaw|Europe/Warsaw|波蘭;布達佩斯|Budapest|Europe/Budapest|匈牙利;羅馬|Rome|Europe/Rome|義大利;米蘭|Milan|Europe/Rome|義大利;哥本哈根|Copenhagen|Europe/Copenhagen|丹麥;斯德哥爾摩|Stockholm|Europe/Stockholm|瑞典;奧斯陸|Oslo|Europe/Oslo|挪威;赫爾辛基|Helsinki|Europe/Helsinki|芬蘭;雷克雅維克|Reykjavik|Atlantic/Reykjavik|冰島;雅典|Athens|Europe/Athens|希臘;布加勒斯特|Bucharest|Europe/Bucharest|羅馬尼亞;索菲亞|Sofia|Europe/Sofia|保加利亞;基輔|Kyiv Kiev|Europe/Kiev|烏克蘭;莫斯科|Moscow|Europe/Moscow|俄羅斯;聖彼得堡|Saint Petersburg|Europe/Moscow|俄羅斯;明斯克|Minsk|Europe/Minsk|白俄羅斯;維爾紐斯|Vilnius|Europe/Vilnius|立陶宛;里加|Riga|Europe/Riga|拉脫維亞;塔林|Tallinn|Europe/Tallinn|愛沙尼亞;貝爾格勒|Belgrade|Europe/Belgrade|塞爾維亞;札格雷布|Zagreb|Europe/Zagreb|克羅埃西亞;亞速群島|Azores Ponta Delgada|Atlantic/Azores|葡萄牙;開羅|Cairo|Africa/Cairo|埃及;卡薩布蘭加|Casablanca|Africa/Casablanca|摩洛哥;拉哥斯|Lagos|Africa/Lagos|奈及利亞;阿克拉|Accra|Africa/Accra|迦納;奈洛比|Nairobi|Africa/Nairobi|肯亞;阿迪斯阿貝巴|Addis Ababa|Africa/Addis_Ababa|衣索比亞;約翰尼斯堡|Johannesburg|Africa/Johannesburg|南非;開普敦|Cape Town|Africa/Johannesburg|南非;達喀爾|Dakar|Africa/Dakar|塞內加爾;突尼斯|Tunis|Africa/Tunis|突尼西亞;阿爾及爾|Algiers|Africa/Algiers|阿爾及利亞;金夏沙|Kinshasa|Africa/Kinshasa|剛果民主共和國;三蘭港|Dar es Salaam|Africa/Dar_es_Salaam|坦尚尼亞;路易士港|Port Louis Mauritius|Indian/Mauritius|模里西斯;吉佳利|Kigali|Africa/Kigali|盧安達;紐約|New York|America/New_York|美國;波士頓|Boston|America/New_York|美國;華盛頓|Washington DC|America/New_York|美國;邁阿密|Miami|America/New_York|美國;亞特蘭大|Atlanta|America/New_York|美國;多倫多|Toronto|America/Toronto|加拿大;蒙特婁|Montreal|America/Toronto|加拿大;芝加哥|Chicago|America/Chicago|美國;休士頓|Houston|America/Chicago|美國;達拉斯|Dallas|America/Chicago|美國;墨西哥城|Mexico City|America/Mexico_City|墨西哥;坎昆|Cancun|America/Cancun|墨西哥;丹佛|Denver|America/Denver|美國;鹽湖城|Salt Lake City|America/Denver|美國;鳳凰城|Phoenix|America/Phoenix|美國;洛杉磯|Los Angeles|America/Los_Angeles|美國;舊金山|San Francisco|America/Los_Angeles|美國;西雅圖|Seattle|America/Los_Angeles|美國;拉斯維加斯|Las Vegas|America/Los_Angeles|美國;溫哥華|Vancouver|America/Vancouver|加拿大;卡加利|Calgary|America/Edmonton|加拿大;安克拉治|Anchorage|America/Anchorage|美國;哈利法克斯|Halifax|America/Halifax|加拿大;聖約翰斯|St. John's|America/St_Johns|加拿大;努克|Nuuk|America/Godthab|格陵蘭;聖保羅|Sao Paulo|America/Sao_Paulo|巴西;里約熱內盧|Rio de Janeiro|America/Sao_Paulo|巴西;布宜諾斯艾利斯|Buenos Aires|America/Argentina/Buenos_Aires|阿根廷;聖地牙哥|Santiago|America/Santiago|智利;利馬|Lima|America/Lima|秘魯;波哥大|Bogota|America/Bogota|哥倫比亞;卡拉卡斯|Caracas|America/Caracas|委內瑞拉;基多|Quito|America/Guayaquil|厄瓜多;蒙特維多|Montevideo|America/Montevideo|烏拉圭;拉巴斯|La Paz|America/La_Paz|玻利維亞;巴拿馬城|Panama City|America/Panama|巴拿馬;聖荷西|San Jose Costa Rica|America/Costa_Rica|哥斯大黎加;哈瓦那|Havana|America/Havana|古巴;聖胡安|San Juan Puerto Rico|America/Puerto_Rico|波多黎各;京斯敦|Kingston Jamaica|America/Jamaica|牙買加;瓜地馬拉市|Guatemala City|America/Guatemala|瓜地馬拉;協調世界時|UTC GMT|UTC|標準時間`;
+const CITIES = RAW.split(';').map((r, i) => { const [name, en, tz, country] = r.split('|'); return { id: i, name, en, tz, country }; });
+const cityKey = (c) => c.tz + '|' + c.name;
+
+const LOCAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) { return 'UTC'; } })();
+
+// ---------- time zone math (Intl only) ----------
+const dtfCache = new Map();
+function dtf(tz) {
+  if (dtfCache.has(tz)) return dtfCache.get(tz);
+  let f = null;
+  try {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  } catch (e) { f = null; }
+  dtfCache.set(tz, f);
+  return f;
+}
+function supported(tz) { return !!dtf(tz); }
+// wall-clock parts of instant t in tz
+function partsAt(tz, t) {
+  const f = dtf(tz); if (!f) return null;
+  const o = {};
+  for (const p of f.formatToParts(new Date(t))) if (p.type !== 'literal') o[p.type] = +p.value;
+  const h = o.hour % 24;
+  const wall = Date.UTC(o.year, o.month - 1, o.day, h, o.minute, o.second);
+  return { y: o.year, mo: o.month, d: o.day, h, mi: o.minute, s: o.second, wd: new Date(Date.UTC(o.year, o.month - 1, o.day)).getUTCDay(),
+    offset: Math.round((wall - Math.floor(t / 1000) * 1000) / 60000), dayNum: Math.floor(wall / 86400000) };
+}
+function offsetMin(tz, t) { const p = partsAt(tz, t); return p ? p.offset : null; }
+
+// ---------- state ----------
+const DEFAULT_SETTINGS = { fmt: 24, ws: 540, we: 1080, theme: 'auto' };
+let settings = Object.assign({}, DEFAULT_SETTINGS, store.get('settings', {}));
+let cities = store.get('cities', null);
+let isSample = false;
+if (!Array.isArray(cities)) {
+  isSample = true;
+  cities = [
+    { tz: 'America/New_York', name: '紐約' },
+    { tz: 'Europe/London', name: '倫敦' },
+    { tz: 'Asia/Tokyo', name: '東京' },
+    { tz: 'Asia/Kathmandu', name: '加德滿都' }
+  ];
+}
+cities = cities.filter(c => c && typeof c.tz === 'string').slice(0, 12).map(c => ({ tz: c.tz, name: String(c.name || c.tz), label: c.label ? String(c.label) : '', ws: Number.isFinite(c.ws) ? c.ws : null, we: Number.isFinite(c.we) ? c.we : null }));
+function saveCities() { isSample = false; store.set('cities', cities); }
+function saveSettings() { store.set('settings', settings); }
+
+let dayOffset = 0;       // timeline day relative to today (local)
+let scrubSlot = null;    // null = live
+const SLOT = 15 * 60000;
+
+function applyTheme() {
+  const r = document.documentElement;
+  if (settings.theme === 'light' || settings.theme === 'dark') r.setAttribute('data-theme', settings.theme); else r.removeAttribute('data-theme');
+}
+applyTheme();
+
+// ---------- formatting ----------
+const pad = (n) => String(n).padStart(2, '0');
+function fmtHM(h, mi, withAp = true) {
+  if (settings.fmt === 12) {
+    const ap = h < 12 ? '上午' : '下午'; const hh = h % 12 === 0 ? 12 : h % 12;
+    return withAp ? `<span class="ap">${ap}</span>${hh}:${pad(mi)}` : `${ap} ${hh}:${pad(mi)}`;
+  }
+  return `${pad(h)}:${pad(mi)}`;
+}
+function fmtPlainHM(h, mi) { return fmtHM(h, mi, false); }
+function fmtDiff(min) {
+  if (min === 0) return '同時區';
+  const sign = min > 0 ? '+' : '−'; const a = Math.abs(min); const h = Math.floor(a / 60), m = a % 60;
+  return `${sign}${h ? h + ' 小時' : ''}${h && m ? ' ' : ''}${m ? m + ' 分' : ''}`;
+}
+function fmtUtc(min) { const sign = min >= 0 ? '+' : '−'; const a = Math.abs(min); return `UTC${sign}${Math.floor(a / 60)}${a % 60 ? ':' + pad(a % 60) : ''}`; }
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+function workRange(c) { return [c && c.ws != null ? c.ws : settings.ws, c && c.we != null ? c.we : settings.we]; }
+// classify minute-of-day for a city
+function kind(c, p) {
+  const m = p.h * 60 + p.mi;
+  const [ws, we] = workRange(c);
+  const weekend = p.wd === 0 || p.wd === 6;
+  if (m < 7 * 60) return 's';
+  if (!weekend && m >= ws && m < we) return 'w';
+  if (m >= 22 * 60) return 'g';
+  return weekend ? 'x' : 'g';
+}
+function isSleep(p) { return p.h < 7 || p.h >= 23; }
+
+const ICON_SUN = '<svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="白天"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const ICON_MOON = '<svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-label="夜晚"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>';
+
+// ---------- render: header + list ----------
+function displayInstant() { return scrubSlot == null ? Date.now() : slotTime(scrubSlot); }
+function dayStart() { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate() + dayOffset).getTime(); }
+// start of 15-min slot i by local wall clock (DST-safe: a 23h/25h day still maps slot i to i*15 min after local midnight)
+function slotTime(i) { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate() + dayOffset, 0, i * 15).getTime(); }
+
+function renderHeader(t) {
+  const p = partsAt(LOCAL_TZ, t) || partsAt('UTC', t);
+  const live = scrubSlot == null;
+  $('#hereTime').innerHTML = fmtHM(p.h, p.mi) + (live ? `<span class="sec">${pad(p.s)}</span>` : '');
+  $('#hereDate').textContent = `${p.y} 年 ${p.mo} 月 ${p.d} 日 星期${WD[p.wd]}`;
+  $('#hereTz').textContent = `${LOCAL_TZ.replace(/_/g, ' ')} ${fmtUtc(p.offset)}`;
+}
+function renderList() {
+  const t = displayInstant();
+  const lp = partsAt(LOCAL_TZ, t) || partsAt('UTC', t);
+  const ul = $('#list');
+  ul.innerHTML = cities.map((c, i) => {
+    const disp = esc(c.label || c.name);
+    if (!supported(c.tz)) {
+      return `<li class="row unsupported"><button class="main" data-edit="${i}"><span class="name">${disp}</span><span class="meta">${esc(c.tz)}</span></button><div class="clock"><div class="t">此裝置不支援</div></div></li>`;
+    }
+    const p = partsAt(c.tz, t);
+    const diff = p.offset - lp.offset;
+    const dd = p.dayNum - lp.dayNum;
+    const day = p.h >= 6 && p.h < 18;
+    const dtxt = dd === 0 ? '今天' : dd < 0 ? '昨天' : '明天';
+    const sub = c.label ? `${esc(c.name)} · ` : '';
+    return `<li class="row"><button class="main" data-edit="${i}" aria-label="${disp}，編輯">
+      <span class="name">${day ? ICON_SUN : ICON_MOON}${disp}</span>
+      <span class="meta">${sub}<b>${fmtDiff(diff)}</b> · ${fmtUtc(p.offset)}</span></button>
+      <div class="clock"><div class="t num">${fmtHM(p.h, p.mi)}</div><div class="d ${dd ? 'shift' : ''}">${dtxt} ${p.mo}/${p.d} 週${WD[p.wd]}</div></div></li>`;
+  }).join('') || '<li class="row"><span class="meta">還沒有城市，按右上「＋ 城市」新增。</span></li>';
+  $('#sampleTag').hidden = !isSample;
+}
+
+// ---------- timeline ----------
+let slotCache = null; // [{c, parts[96]}]
+function computeSlots() {
+  const start = dayStart();
+  const rows = [{ c: null, tz: LOCAL_TZ, name: '本地' }].concat(cities.map(c => ({ c, tz: c.tz, name: c.label || c.name })));
+  slotCache = rows.map(r => {
+    if (!supported(r.tz)) return { ...r, bad: true };
+    const parts = []; for (let i = 0; i < 96; i++) parts.push(partsAt(r.tz, slotTime(i)));
+    return { ...r, parts, kinds: parts.map(p => kind(r.c, p)) };
+  });
+  return start;
+}
+let tlStart = 0;
+function renderTimeline() {
+  tlStart = computeSlots();
+  const tl = $('#tl');
+  let html = '';
+  for (const r of slotCache) {
+    html += `<div class="tl-row"><span class="nm" title="${esc(r.name)}">${esc(r.name)}</span>`;
+    if (r.bad) { html += `<div class="band bad">此裝置不支援</div></div>`; continue; }
+    html += '<div class="band">' + r.kinds.map((k, i) => `<i class="${k}${r.parts[i].mi === 0 && i ? ' h' : ''}"></i>`).join('') + '</div></div>';
+  }
+  html += `<div class="axis"><span></span><div class="ticks">${[0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%;${h === 24 ? 'transform:translateX(-100%)' : ''}">${h === 24 ? '24' : pad(h)}</span>`).join('')}</div></div>`;
+  html += '<div class="cursor" id="cursor"><span class="bubble" id="bubble"></span></div>';
+  tl.innerHTML = html;
+  const d = new Date(dayStart());
+  $('#dayLbl').textContent = (dayOffset === 0 ? '今天' : dayOffset === -1 ? '昨天' : dayOffset === 1 ? '明天' : '') + ` ${d.getMonth() + 1}/${d.getDate()} 週${WD[d.getDay()]}`;
+  renderSuggestions();
+  placeCursor();
+}
+function placeCursor() {
+  const cur = $('#cursor'); if (!cur) return;
+  const band = document.querySelector('#tl .band');
+  const tl = $('#tl');
+  let frac;
+  if (scrubSlot == null) {
+    if (dayOffset !== 0) { cur.hidden = true; return; }
+    const n = new Date(); frac = (n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60) / 1440;
+  } else frac = scrubSlot / 96;
+  cur.hidden = false;
+  frac = Math.max(0, Math.min(1, frac));
+  const tlr = tl.getBoundingClientRect(), br = band.getBoundingClientRect();
+  const x = br.left - tlr.left + frac * br.width;
+  cur.style.left = x + 'px';
+  const lp = partsAt(LOCAL_TZ, displayInstant());
+  $('#bubble').textContent = lp ? fmtPlainHM(lp.h, lp.mi) : '';
+  cur.classList.toggle('flip', frac > .7);
+  if (scrubSlot == null) $('#scrub').value = Math.min(95, Math.floor(frac * 96));
+}
+
+function slotLabel(i) { const p = slotCache[0].parts[i]; return fmtPlainHM(p.h, p.mi); }
+function endLabel(i) { // label for end of slot i-1 (=start of i)
+  if (i < 96) return slotLabel(i);
+  const p = partsAt(LOCAL_TZ, slotTime(96)); return p ? fmtPlainHM(p.h, p.mi) + (settings.fmt === 24 && p.h === 0 && p.mi === 0 ? '' : '') : '';
+}
+function runsWhere(pred) {
+  const out = []; let s = -1;
+  for (let i = 0; i <= 96; i++) {
+    const ok = i < 96 && pred(i);
+    if (ok && s < 0) s = i;
+    if (!ok && s >= 0) { out.push([s, i]); s = -1; }
+  }
+  return out;
+}
+function cityRangeText(r, a, b) {
+  const p1 = r.parts[a], p2 = partsAt(r.tz, slotTime(b));
+  return `${esc(r.name)} ${fmtPlainHM(p1.h, p1.mi)}–${fmtPlainHM(p2.h, p2.mi)}`;
+}
+function durText(n) { const m = n * 15; const h = Math.floor(m / 60), mm = m % 60; return (h ? h + ' 小時' : '') + (mm ? (h ? ' ' : '') + mm + ' 分' : ''); }
+function suggestions() {
+  const rows = slotCache.filter(r => !r.bad);
+  const cityRows = rows.slice(1).length ? rows : rows; // include local
+  const all = runsWhere(i => cityRows.every(r => r.kinds[i] === 'w')).filter(([a, b]) => b - a >= 2);
+  if (all.length) return { type: 'overlap', runs: all.sort((x, y) => (y[1] - y[0]) - (x[1] - x[0])).slice(0, 3).sort((x, y) => x[0] - y[0]), rows: cityRows };
+  // fallback: fewest people asleep, then most people at work
+  let best = Infinity;
+  const score = (i) => { const sl = cityRows.filter(r => isSleep(r.parts[i])).length; const wk = cityRows.filter(r => r.kinds[i] === 'w').length; return sl * 100 - wk; };
+  for (let i = 0; i < 96; i++) best = Math.min(best, score(i));
+  const runs = runsWhere(i => score(i) === best).filter(([a, b]) => b - a >= 2);
+  const use = (runs.length ? runs : runsWhere(i => score(i) === best)).sort((x, y) => (y[1] - y[0]) - (x[1] - x[0])).slice(0, 3).sort((x, y) => x[0] - y[0]);
+  return { type: 'fallback', runs: use, rows: cityRows };
+}
+function renderSuggestions() {
+  const box = $('#sugg');
+  if (slotCache.filter(r => !r.bad).length < 2) { box.innerHTML = '<h2><span>開會建議</span></h2><p class="note">新增至少一個城市即可計算共同上班時段。</p>'; return; }
+  const s = suggestions();
+  let html = '<h2><span>開會建議（本地時間）</span></h2>';
+  if (s.type === 'overlap') html += '<p class="note">以下時段所有城市都在上班時間內：</p>';
+  else {
+    html += '<p class="note">沒有所有人都在上班的時段，以下是最少人需要在睡眠時間（23:00–07:00）參加的時段：</p>';
+  }
+  html += '<ol>' + s.runs.map(([a, b]) => {
+    const per = s.rows.slice(1).map(r => {
+      const asleep = isSleep(r.parts[a]);
+      return cityRangeText(r, a, b) + (s.type === 'fallback' ? (r.kinds[a] === 'w' ? '（上班）' : asleep ? '（睡眠時間）' : '（非上班）') : '');
+    }).join('、');
+    return `<li class="${s.type === 'fallback' ? 'alt' : ''}"><button class="go" data-slot="${a}"><span class="rng num">${slotLabel(a)} – ${endLabel(b)}</span><span class="dur">${durText(b - a)}</span><div class="per">${per}</div></button></li>`;
+  }).join('') + '</ol>';
+  box.innerHTML = html;
+}
+
+// ---------- scrub ----------
+function setScrub(i) {
+  scrubSlot = Math.max(0, Math.min(95, i));
+  $('#scrub').value = scrubSlot;
+  $('#btnNow').hidden = false;
+  const lp = partsAt(LOCAL_TZ, displayInstant());
+  $('#scrubInfo').innerHTML = `檢視時刻：<b>${fmtPlainHM(lp.h, lp.mi)}</b>（本地）`;
+  renderHeader(displayInstant()); renderList(); placeCursor();
+}
+function goLive() {
+  scrubSlot = null; $('#btnNow').hidden = true; $('#scrubInfo').textContent = '即時';
+  if (dayOffset !== 0) { dayOffset = 0; renderTimeline(); }
+  lastMinute = -1; tick();
+}
+$('#scrub').addEventListener('input', (e) => setScrub(+e.target.value));
+(function dragBands() {
+  const tl = $('#tl');
+  let dragging = false, startX = 0, startY = 0, decided = false;
+  const toSlot = (x) => { const b = tl.querySelector('.band').getBoundingClientRect(); return Math.round((x - b.left) / b.width * 96 - .5); };
+  tl.addEventListener('pointerdown', (e) => {
+    if (!tl.querySelector('.band:not(.bad)')) return;
+    dragging = true; decided = e.pointerType === 'mouse'; startX = e.clientX; startY = e.clientY;
+    if (decided) { tl.setPointerCapture(e.pointerId); setScrub(toSlot(e.clientX)); }
+  });
+  tl.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    if (!decided) {
+      const dx = Math.abs(e.clientX - startX), dy = Math.abs(e.clientY - startY);
+      if (dy > 8 && dy > dx) { dragging = false; return; }
+      if (dx > 6) { decided = true; try { tl.setPointerCapture(e.pointerId); } catch (_) {} }
+      else return;
+    }
+    setScrub(toSlot(e.clientX));
+  });
+  const end = (e) => { if (dragging && !decided && e.type === 'pointerup') setScrub(toSlot(e.clientX)); dragging = false; };
+  tl.addEventListener('pointerup', end); tl.addEventListener('pointercancel', () => { dragging = false; });
+})();
+$('#btnNow').addEventListener('click', goLive);
+$('#dayPrev').addEventListener('click', () => { dayOffset = Math.max(-7, dayOffset - 1); renderTimeline(); if (scrubSlot != null) setScrub(scrubSlot); else { renderList(); } });
+$('#dayNext').addEventListener('click', () => { dayOffset = Math.min(7, dayOffset + 1); renderTimeline(); if (scrubSlot != null) setScrub(scrubSlot); else { renderList(); } });
+$('#sugg').addEventListener('click', (e) => { const b = e.target.closest('[data-slot]'); if (b) setScrub(+b.dataset.slot); });
+
+// ---------- live tick ----------
+let tickTimer = 0, lastMinute = -1;
+function tick() {
+  clearTimeout(tickTimer);
+  if (scrubSlot == null) {
+    const now = Date.now();
+    renderHeader(now);
+    const m = Math.floor(now / 60000);
+    if (m !== lastMinute) {
+      lastMinute = m;
+      const n = new Date(); const ds = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+      if (!slotCache || (dayOffset === 0 && slotCache[0].parts && ds !== tlStart)) { renderTimeline(); }
+      renderList(); placeCursor();
+    }
+  }
+  if (!document.hidden) tickTimer = setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { lastMinute = -1; tick(); } });
+window.addEventListener('resize', placeCursor);
+
+// ---------- dialogs ----------
+let lastFocus = null;
+function openDlg(id) { lastFocus = document.activeElement; const d = $(id); d.hidden = false; const f = d.querySelector('input, button:not([data-close])'); if (f) setTimeout(() => f.focus(), 30); }
+function closeDlg(d) { d.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+document.querySelectorAll('.scrim').forEach(d => {
+  d.addEventListener('click', (e) => { if (e.target === d || e.target.closest('[data-close]')) closeDlg(d); });
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.scrim:not([hidden])').forEach(closeDlg); });
+let toastT = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+
+// add
+function norm(s) { return s.toLowerCase().replace(/[\s.'’-]/g, ''); }
+function renderResults() {
+  const q = norm($('#search').value.trim());
+  const now = Date.now();
+  const lo = offsetMin(LOCAL_TZ, now) || 0;
+  const list = CITIES.filter(c => !q || norm(c.name + c.en + c.country + c.tz).includes(q)).slice(0, 60);
+  $('#results').innerHTML = list.map(c => {
+    const o = supported(c.tz) ? fmtDiff(offsetMin(c.tz, now) - lo) : '不支援';
+    return `<li><button data-city="${c.id}"><span><b>${esc(c.name)}</b> <span class="c">${esc(c.en.split(' ')[0] === c.en ? c.en : c.en)} · ${esc(c.country)}</span></span><span class="o">${o}</span></button></li>`;
+  }).join('') || '<li style="padding:12px 4px;color:var(--muted)">找不到符合的城市</li>';
+}
+$('#btnAdd').addEventListener('click', () => { $('#search').value = ''; renderResults(); openDlg('#dlgAdd'); });
+$('#search').addEventListener('input', renderResults);
+$('#results').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-city]'); if (!b) return;
+  const c = CITIES[+b.dataset.city];
+  if (cities.some(x => x.tz === c.tz && x.name === c.name)) { toast(`${c.name} 已在清單中`); return; }
+  if (cities.length >= 12) { toast('最多 12 個城市，請先刪除一個'); return; }
+  cities.push({ tz: c.tz, name: c.name, label: '', ws: null, we: null });
+  saveCities(); closeDlg($('#dlgAdd')); renderTimeline(); renderList(); toast(`已加入 ${c.name}`);
+});
+
+// edit
+let editIdx = -1;
+const toTime = (m) => m == null ? '' : pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+const fromTime = (s) => { if (!s) return null; const [h, m] = s.split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+$('#list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-edit]'); if (!b) return;
+  editIdx = +b.dataset.edit; const c = cities[editIdx];
+  $('#editTitle').textContent = `${c.name} · ${c.tz.replace(/_/g, ' ')}`;
+  $('#editLabel').value = c.label || ''; $('#editLabel').placeholder = c.name;
+  $('#editWs').value = toTime(c.ws); $('#editWe').value = toTime(c.we);
+  $('#delConfirm').hidden = true;
+  openDlg('#dlgEdit');
+});
+function moveCity(d) {
+  const j = editIdx + d; if (j < 0 || j >= cities.length) return;
+  [cities[editIdx], cities[j]] = [cities[j], cities[editIdx]]; editIdx = j;
+  saveCities(); renderTimeline(); renderList();
+}
+$('#editUp').addEventListener('click', () => moveCity(-1));
+$('#editDown').addEventListener('click', () => moveCity(1));
+$('#editSave').addEventListener('click', () => {
+  const c = cities[editIdx]; if (!c) return;
+  c.label = $('#editLabel').value.trim().slice(0, 20);
+  const ws = fromTime($('#editWs').value), we = fromTime($('#editWe').value);
+  if (ws != null && we != null && we <= ws) { toast('結束時間要晚於開始時間'); return; }
+  c.ws = ws; c.we = we;
+  saveCities(); closeDlg($('#dlgEdit')); renderTimeline(); renderList();
+});
+$('#editDel').addEventListener('click', () => { $('#delConfirm').hidden = false; $('#delYes').focus(); });
+$('#delNo').addEventListener('click', () => { $('#delConfirm').hidden = true; });
+$('#delYes').addEventListener('click', () => {
+  const c = cities.splice(editIdx, 1)[0]; saveCities(); closeDlg($('#dlgEdit')); renderTimeline(); renderList(); toast(`已移除 ${c.label || c.name}`);
+});
+
+// settings
+function syncSettingsUI() {
+  document.querySelectorAll('#segFmt button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === settings.fmt)));
+  document.querySelectorAll('#segTheme button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === settings.theme)));
+  $('#setWs').value = toTime(settings.ws); $('#setWe').value = toTime(settings.we);
+}
+$('#btnSettings').addEventListener('click', () => { syncSettingsUI(); openDlg('#dlgSet'); });
+$('#segFmt').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; settings.fmt = +b.dataset.v; saveSettings(); syncSettingsUI(); lastMinute = -1; renderTimeline(); renderList(); renderHeader(displayInstant()); });
+$('#segTheme').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; settings.theme = b.dataset.v; saveSettings(); applyTheme(); syncSettingsUI(); });
+function onWork() {
+  const ws = fromTime($('#setWs').value), we = fromTime($('#setWe').value);
+  if (ws == null || we == null || we <= ws) return;
+  settings.ws = ws; settings.we = we; saveSettings(); renderTimeline();
+}
+$('#setWs').addEventListener('change', onWork); $('#setWe').addEventListener('change', onWork);
+
+// test hook
+window.__worldClock = { partsAt, offsetMin, fmtDiff, suggestions: () => { computeSlots(); return suggestions(); }, setCities(list) { cities = list.map(c => ({ tz: c.tz, name: c.name, label: '', ws: null, we: null })); renderTimeline(); renderList(); }, setScrub, goLive, get cities() { return cities; }, CITIES };
+
+renderTimeline();
+tick();
+})();
+</script>

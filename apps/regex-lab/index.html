@@ -1,0 +1,624 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>正規表示式測試</title>
+<style>
+/* Proofreader's desk: crisp white galley, editor's crimson for marks, alternating highlighter strips */
+:root{
+  --bg:#f1f2f4; --surface:#ffffff; --sunk:#f6f7f9; --ink:#17181c; --muted:#585c66; --faint:#878b95;
+  --line:#dcdee3; --line-strong:#bfc3cb; --accent:#a8123f; --accent-ink:#ffffff; --accent-soft:#fbe4ea;
+  --m0:#ffe27a; --m1:#b9e2ff; --m-ink:#17181c; --grp:#a8123f; --flash:#ff9f43;
+  --bad:#b0221a; --bad-soft:#fbe3df; --ok:#22693a; --warn:#8a5600; --warn-soft:#fdf0d5;
+  --shadow:0 14px 36px rgba(20,22,30,.2);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121317; --surface:#1a1c21; --sunk:#16171b; --ink:#e7e8ec; --muted:#a2a6b0; --faint:#757a85;
+  --line:#2a2d34; --line-strong:#3e424b; --accent:#ff6f93; --accent-ink:#2a0410; --accent-soft:#3c1622;
+  --m0:#6b5512; --m1:#174766; --m-ink:#f4f5f7; --grp:#ff8fab; --flash:#c56a10;
+  --bad:#ff8a7c; --bad-soft:#3d1a17; --ok:#7fd49a; --warn:#f3c05c; --warn-soft:#3a2d10;
+  --shadow:0 14px 36px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121317; --surface:#1a1c21; --sunk:#16171b; --ink:#e7e8ec; --muted:#a2a6b0; --faint:#757a85;
+  --line:#2a2d34; --line-strong:#3e424b; --accent:#ff6f93; --accent-ink:#2a0410; --accent-soft:#3c1622;
+  --m0:#6b5512; --m1:#174766; --m-ink:#f4f5f7; --grp:#ff8fab; --flash:#c56a10;
+  --bad:#ff8a7c; --bad-soft:#3d1a17; --ok:#7fd49a; --warn:#f3c05c; --warn-soft:#3a2d10;
+  --shadow:0 14px 36px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding-block:0 calc(28px + env(safe-area-inset-bottom));padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right))}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1240px;margin:0 auto}
+header.top{display:flex;align-items:center;gap:8px;min-height:62px}
+.brand{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}
+.brand h1{margin:0;font-size:19px;font-weight:760;white-space:nowrap}
+.brand .glyph{font:700 18px var(--mono);color:var(--accent)}
+.btn{min-height:44px;min-width:44px;padding:0 13px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn:disabled{opacity:.4;cursor:default}
+@media (hover:hover){.btn:not(:disabled):hover{border-color:var(--accent)}}
+.pat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:8px}
+.prow{display:flex;align-items:center;border:1.5px solid var(--ink);border-radius:6px;background:var(--sunk);min-height:48px}
+.prow:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.slash{font:600 20px var(--mono);color:var(--accent);padding:0 6px;flex:none}
+#pattern{flex:1;min-width:0;border:0;background:transparent;font:15px var(--mono);min-height:44px;outline:none;padding:0}
+#flagEcho{font:600 15px var(--mono);color:var(--accent);padding-right:10px;flex:none;min-width:12px}
+.flags{display:flex;gap:6px;flex-wrap:nowrap;align-items:center}
+.flag{width:44px;height:44px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;font:700 15px var(--mono);cursor:pointer;color:var(--faint);flex:none}
+.flag[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.flags .sp{flex:1}
+.flaghelp{font-size:12px;color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.err{background:var(--bad-soft);color:var(--bad);border-radius:6px;padding:8px 10px;font-size:13.5px}
+.err b{display:block;font-weight:700}
+.err code{font:12px var(--mono);opacity:.85}
+.warn{background:var(--warn-soft);color:var(--warn)}
+.sec{margin-top:12px}
+.lab{display:flex;align-items:center;gap:8px;min-height:32px;font:700 11px var(--mono);letter-spacing:.14em;color:var(--muted);margin-bottom:4px}
+.lab .sp{flex:1}
+.lab .chip{font:700 11px var(--sans);letter-spacing:0;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent)}
+.editor{position:relative;max-height:38svh;min-height:150px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);overscroll-behavior:contain}
+.hl,#text{font:14px/1.65 var(--mono);padding:12px;margin:0;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere;tab-size:4;letter-spacing:0;font-variant-ligatures:none;border:0}
+.inner{position:relative}
+@media (pointer:coarse){.hl{font-size:max(16px,1rem)}}
+.hl{color:var(--ink);min-height:150px;pointer-events:none}
+#text{position:absolute;inset:0;width:100%;height:100%;resize:none;background:transparent;color:transparent;caret-color:var(--ink);overflow:hidden;outline:none}
+#text::selection{background:color-mix(in srgb,var(--accent) 30%,transparent);color:transparent}
+.editor:focus-within{outline:2px solid var(--accent);outline-offset:-1px}
+mark{color:var(--m-ink);border-radius:2px;padding:0}
+mark.m0{background:var(--m0)} mark.m1{background:var(--m1)}
+mark.z{display:inline;background:none;box-shadow:-1px 0 0 1px var(--accent)}
+mark.flash{background:var(--flash)}
+.g{text-decoration:underline 2px var(--grp);text-underline-offset:3px}
+.stat{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:13.5px;color:var(--muted)}
+.stat b{color:var(--ink);font-variant-numeric:tabular-nums}
+.stat .sp{flex:1}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--line-strong);margin-top:14px;overflow-x:auto}
+.tabs button{min-height:44px;padding:0 14px;border:0;background:transparent;cursor:pointer;font-weight:650;font-size:14px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap;flex:none}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.panel{background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;padding:10px;min-height:140px}
+.ml{list-style:none;margin:0;padding:0}
+.ml li{border-bottom:1px solid var(--line)}
+.ml button{all:unset;box-sizing:border-box;display:block;width:100%;padding:8px 6px;cursor:pointer;min-height:44px}
+.ml button:focus-visible{outline:2px solid var(--accent)}
+@media (hover:hover){.ml button:hover{background:var(--sunk)}}
+.mh{display:flex;gap:10px;align-items:baseline;font-size:12px;color:var(--faint);font-family:var(--mono)}
+.mh .n{color:var(--accent);font-weight:700}
+.mt{font:14px/1.4 var(--mono);word-break:break-all;margin-top:2px}
+.mt .ws{color:var(--faint)}
+.gl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin-top:4px;font:12.5px var(--mono)}
+.gl dt{color:var(--muted)} .gl dd{margin:0;word-break:break-all}
+.empty{color:var(--faint);font-size:14px;padding:16px 4px;text-align:center}
+.fld{display:block;width:100%;min-height:44px;border:1px solid var(--line-strong);border-radius:6px;padding:8px 10px;background:var(--sunk);font:14px var(--mono)}
+pre.res{font:13.5px/1.55 var(--mono);white-space:pre-wrap;word-break:break-all;background:var(--sunk);border-radius:6px;padding:10px;margin:8px 0 0;max-height:40svh;overflow:auto}
+.ex{display:grid;gap:0}
+.tok{display:grid;grid-template-columns:118px 1fr;gap:10px;padding:7px 4px;border-bottom:1px solid var(--line);align-items:baseline}
+.tok code{font:600 13px var(--mono);background:var(--accent-soft);color:var(--accent);padding:2px 6px;border-radius:4px;word-break:break-all;justify-self:start}
+.tok span{font-size:13.5px}
+.sheet-bg{position:fixed;inset:0;background:rgba(10,12,18,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:640px;border-radius:14px 14px 0 0;padding:14px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:var(--shadow);max-height:86%;overflow:auto;overscroll-behavior:contain}
+.sheet header{display:flex;align-items:center;gap:8px;position:sticky;top:-14px;background:var(--surface);padding:4px 0 8px;z-index:1}
+.sheet h2{margin:0;font-size:17px;flex:1}
+.sheet h3{font:700 11px var(--mono);letter-spacing:.14em;color:var(--muted);margin:14px 0 4px}
+.lib{display:grid;gap:0}
+.libi{display:flex;align-items:center;border-bottom:1px solid var(--line)}
+.libi>button.pick{all:unset;box-sizing:border-box;flex:1;min-width:0;padding:8px 4px;min-height:48px;cursor:pointer}
+.libi>button.pick:focus-visible{outline:2px solid var(--accent)}
+.libi .nm{font-weight:650;font-size:14.5px}
+.libi .pt{font:12.5px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (hover:hover){.libi>button.pick:hover{background:var(--sunk)}}
+.cs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.cs button{min-height:48px;border:1px solid var(--line);background:var(--sunk);border-radius:6px;text-align:left;padding:6px 8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+.cs code{font:700 13.5px var(--mono);color:var(--accent)}
+.cs small{font-size:12px;color:var(--muted)}
+@media (hover:hover){.cs button:hover{border-color:var(--accent)}}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.layout{display:grid;gap:0}
+@media (min-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+  .editor{max-height:calc(100svh - 300px);min-height:320px}
+  .right .tabs{margin-top:12px}
+  .panel{max-height:calc(100svh - 200px);overflow:auto}
+}
+@media (max-height:500px) and (orientation:landscape){ .editor{max-height:220px;min-height:120px} .hl{min-height:120px} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="glyph" aria-hidden="true">/.*/</span><h1>正規表示式測試</h1></div>
+    <button class="btn" id="libBtn" type="button">範例庫</button>
+    <button class="btn" id="csBtn" type="button">速查表</button>
+  </header>
+
+  <section class="pat" aria-label="模式">
+    <div class="prow">
+      <span class="slash" aria-hidden="true">/</span>
+      <input id="pattern" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="正規表示式模式" placeholder="輸入模式，例如 \d+">
+      <span class="slash" aria-hidden="true">/</span><span id="flagEcho" aria-hidden="true"></span>
+    </div>
+    <div class="flags" role="group" aria-label="旗標">
+      <button class="flag" type="button" id="flag-g" data-f="g" title="g：全域，找出所有匹配">g</button>
+      <button class="flag" type="button" id="flag-i" data-f="i" title="i：不分大小寫">i</button>
+      <button class="flag" type="button" id="flag-m" data-f="m" title="m：多行，^ $ 對每一行">m</button>
+      <button class="flag" type="button" id="flag-s" data-f="s" title="s：. 也匹配換行">s</button>
+      <button class="flag" type="button" id="flag-u" data-f="u" title="u：Unicode 模式">u</button>
+      <button class="flag" type="button" id="flag-y" data-f="y" title="y：黏著，從 lastIndex 開始">y</button>
+      <span class="sp"></span>
+    </div>
+    <div class="flaghelp" id="flagHelp"></div>
+    <div id="err" class="err" role="alert" hidden></div>
+  </section>
+
+  <div class="layout">
+    <div class="left">
+      <div class="sec">
+        <div class="lab">TEST TEXT<span class="chip" id="sampleChip" hidden>範例</span><span class="sp"></span><button class="btn" id="runBtn" type="button" hidden>執行</button></div>
+        <div class="editor" id="editor"><div class="inner">
+          <div class="hl" id="hl" aria-hidden="true"></div>
+          <textarea id="text" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="測試文字"></textarea>
+        </div></div>
+        <div class="stat" role="status" aria-live="polite"><span id="stat">—</span><span class="sp"></span><button class="btn" id="saveBtn" type="button">收藏模式</button></div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="tabs" role="tablist">
+        <button role="tab" type="button" id="tab-list" aria-selected="true">匹配清單</button>
+        <button role="tab" type="button" id="tab-repl" aria-selected="false">取代</button>
+        <button role="tab" type="button" id="tab-split" aria-selected="false">分割</button>
+        <button role="tab" type="button" id="tab-explain" aria-selected="false">說明</button>
+      </div>
+      <div class="panel" id="pane-list" role="tabpanel"><ol class="ml" id="mlist"></ol></div>
+      <div class="panel" id="pane-repl" role="tabpanel" hidden>
+        <label for="repl" style="font-size:13px;color:var(--muted)">取代為（支援 $1、$&lt;name&gt;、$&amp;、$$）</label>
+        <input id="repl" class="fld" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" style="margin-top:4px">
+        <pre class="res" id="replOut"></pre>
+        <div style="margin-top:8px"><button class="btn pri" id="copyRepl" type="button">複製結果</button></div>
+      </div>
+      <div class="panel" id="pane-split" role="tabpanel" hidden><pre class="res" id="splitOut" style="margin:0"></pre></div>
+      <div class="panel" id="pane-explain" role="tabpanel" hidden><div class="ex" id="explain"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-bg" id="libSheet" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="libTitle">
+  <header><h2 id="libTitle">範例庫</h2><button class="btn" type="button" data-close>關閉</button></header>
+  <div id="savedWrap"><h3>我的收藏</h3><div class="lib" id="savedList"></div></div>
+  <h3>內建範例</h3><div class="lib" id="libList"></div>
+</div></div>
+<div class="sheet-bg" id="csSheet" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="csTitle">
+  <header><h2 id="csTitle">速查表</h2><button class="btn" type="button" data-close>關閉</button></header>
+  <p style="margin:0;font-size:13px;color:var(--muted)">點一下即插入到模式的游標位置（「取代」區會插入到取代欄位）。</p>
+  <div id="csBody"></div>
+</div></div>
+<div id="toastHost" aria-live="polite"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "regex-lab:v1:";
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} }
+};
+let toastT;
+function toast(msg) { const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, 2000); }
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+let HAS_D = false; try { new RegExp("", "d"); HAS_D = true; } catch {}
+
+/* ---------- engine (runs inside a Blob Worker; same function is the no-worker fallback) ---------- */
+function engine(d) {
+  const t0 = performance.now();
+  let re; try { re = new RegExp(d.pattern, d.flags + (d.hasD ? "d" : "")); } catch (e) { return { id: d.id, error: e.message }; }
+  const text = d.text, names = d.names, LIMIT = 10000, out = [];
+  const g = d.flags.includes("g"), uni = d.flags.includes("u") || d.flags.includes("v");
+  const push = m => {
+    const groups = [];
+    for (let k = 1; k < m.length; k++) {
+      const ix = m.indices && m.indices[k];
+      groups.push({ n: k, name: names[k - 1] || null, s: ix ? ix[0] : -1, e: ix ? ix[1] : -1, t: m[k] === undefined ? null : (m[k].length > 300 ? m[k].slice(0, 300) + "…" : m[k]) });
+    }
+    out.push({ i: m.index, e: m.index + m[0].length, t: m[0].length > 300 ? m[0].slice(0, 300) + "…" : m[0], g: groups });
+  };
+  let truncated = false;
+  if (g) {
+    re.lastIndex = 0; let m;
+    while ((m = re.exec(text))) {
+      push(m);
+      if (m[0] === "") { let li = re.lastIndex; const c = text.charCodeAt(li); re.lastIndex = uni && c >= 0xD800 && c <= 0xDBFF && li + 1 < text.length ? li + 2 : li + 1; if (li >= text.length) break; }
+      if (out.length >= LIMIT) { truncated = true; break; }
+    }
+  } else { re.lastIndex = 0; const m = re.exec(text); if (m) push(m); }
+  const t1 = performance.now();
+  let replaced = null, split = null;
+  if (d.wantRepl) { re.lastIndex = 0; replaced = text.replace(new RegExp(d.pattern, d.flags), d.repl); }
+  if (d.wantSplit) { split = text.split(new RegExp(d.pattern, d.flags.replace("y", "")), 10000); }
+  return { id: d.id, matches: out, truncated, ms: t1 - t0, replaced, split };
+}
+const WORKER_SRC = "const engine = " + engine.toString() + ";\nonmessage = e => postMessage(engine(e.data));";
+let wURL = null, worker = null, noWorker = false;
+try { wURL = URL.createObjectURL(new Blob([WORKER_SRC], { type: "text/javascript" })); } catch { noWorker = true; }
+function getWorker() {
+  if (noWorker) return null;
+  if (!worker) {
+    try { worker = new Worker(wURL); } catch { noWorker = true; return null; }
+    worker.onmessage = e => onResult(e.data);
+    worker.onerror = ev => { ev.preventDefault && ev.preventDefault(); if (pending) { noWorker = true; killWorker(); toast("此環境無法使用背景執行緒，改在頁面內執行"); run(false); } };
+  }
+  return worker;
+}
+function killWorker() { if (worker) { worker.terminate(); worker = null; } }
+
+/* ---------- state ---------- */
+const pat = $("pattern"), ta = $("text"), hl = $("hl");
+let flags = new Set(["g"]);
+let curTab = "list", seq = 0, pending = null, last = null, isSample = false;
+const SAMPLES = [
+  { name: "日期 YYYY-MM-DD（具名群組）", p: "(?<year>\\d{4})-(?<month>0[1-9]|1[0-2])-(?<day>0[1-9]|[12]\\d|3[01])", f: "g", r: "$<day>/$<month>/$<year>", s: "訂單 A-1024 於 2026-10-12 成立，預計 2026-10-15 出貨。\n無效日期：2026-13-01、2026-02-32\n退貨期限 2026-11-01。" },
+  { name: "Email", p: "[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+", f: "g", r: "<$&>", s: "聯絡窗口：amy.lin@example.com.tw、service+tw@shop-demo.io\n錯誤格式：bob@、@example.com\n副本 ken_chen@mail.example.org" },
+  { name: "台灣手機", p: "^09\\d{8}$", f: "gm", r: "$&", s: "0912345678\n0987654321\n091234567\n02-23456789\n0900000000" },
+  { name: "市話", p: "^0\\d{1,2}-?\\d{6,8}$", f: "gm", r: "$&", s: "02-23456789\n07-7654321\n049-2345678\n0912345678\n2-1234567" },
+  { name: "身分證字號格式", p: "^[A-Z][12]\\d{8}$", f: "gm", r: "$&", s: "A123456789\nF223456789\nA323456789\na123456789\nB12345678" },
+  { name: "統一編號（8 碼）", p: "^\\d{8}$", f: "gm", r: "$&", s: "04595257\n12345678\n1234567\n1234567A" },
+  { name: "網址", p: "https?:\\/\\/[^\\s/$.?#][^\\s]*", f: "gi", r: "[連結]", s: "官網 https://example.com.tw/products?id=12&lang=zh 與 http://test.io\n不算：ftp://files.example.com、https://" },
+  { name: "IPv4", p: "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", f: "g", r: "x.x.x.x", s: "gateway 192.168.1.1, dns 8.8.8.8\n錯誤：256.1.1.1、10.0.0\nlocal 127.0.0.1" },
+  { name: "時間 HH:MM(:SS)", p: "\\b(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d)?\\b", f: "g", r: "$&", s: "開門 09:00，午休 12:30:00–13:30，打烊 21:45。\n錯誤：24:00、9:5" },
+  { name: "HEX 色碼", p: "#(?:[0-9a-fA-F]{3}){1,2}\\b", f: "g", r: "$&", s: "主色 #a8123f，背景 #FFF，邊框 #dcdee3\n錯誤：#12、#ggg000" },
+  { name: "中文字（需 u 旗標）", p: "\\p{Script=Han}+", f: "gu", r: "[$&]", s: "Hello 你好，世界 😀 ok 臺北101 𠮷野家" },
+  { name: "全形字元", p: "[\\uFF01-\\uFF5E\\u3000]+", f: "g", r: "$&", s: "ＡＢＣ１２３　全形空白，半形 ABC 123！" },
+  { name: "HTML 標籤", p: "<\\/?([a-zA-Z][\\w-]*)\\b[^>]*>", f: "g", r: "", s: "<p class=\"lead\">歡迎<b>光臨</b></p>\n<img src=\"a.png\" alt=\"圖\">\n<my-card>自訂元素</my-card>" },
+  { name: "重複的字", p: "\\b(\\w+)\\s+\\1\\b", f: "gi", r: "$1", s: "This is is a test test.\nThe the cat sat on the mat." },
+  { name: "行首行尾空白", p: "^[ \\t]+|[ \\t]+$", f: "gm", r: "", s: "   前面有空白\n後面有空白   \n\t兩邊都有\t \n乾淨的一行" },
+  { name: "數字千分位", p: "\\B(?=(\\d{3})+(?!\\d))", f: "g", r: ",", s: "總計 1234567 元，運費 80，人口 23400000" },
+  { name: "郵遞區號 3+2/3+3", p: "^\\d{3}(?:\\d{2,3})?$", f: "gm", r: "$&", s: "100\n10048\n100048\n1004\nabc12" },
+  { name: "密碼強度（大小寫數字符號 8 碼）", p: "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^\\w\\s]).{8,}$", f: "gm", r: "$&", s: "Passw0rd!\npassword\nPASSWORD123!\nAb1!\nGood#Pass2026" },
+  { name: "信用卡號格式", p: "\\b(?:\\d{4}[- ]?){3}\\d{4}\\b", f: "g", r: "**** **** **** ****", s: "卡號 4111 1111 1111 1111 或 5500-0000-0000-0004\n錯誤：4111 1111 1111" },
+  { name: "車牌（新舊式）", p: "^[A-Z]{3}-\\d{4}$|^\\d{4}-[A-Z]{2}$|^[A-Z]{2}-\\d{4}$", f: "gm", r: "$&", s: "ABC-1234\n1234-AB\nAB-1234\nabc-1234\nABCD-123" },
+  { name: "災難性回溯示範", p: "(a+)+$", f: "", r: "", s: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaab" },
+];
+
+function flagStr() { return "dgimsuvy".split("").filter(f => flags.has(f)).join(""); }
+function renderFlags() {
+  document.querySelectorAll(".flag").forEach(b => b.setAttribute("aria-pressed", flags.has(b.dataset.f)));
+  $("flagEcho").textContent = flagStr();
+  const desc = { g: "全域", i: "不分大小寫", m: "多行", s: "點號含換行", u: "Unicode", y: "黏著" };
+  $("flagHelp").textContent = flagStr() ? "已開啟：" + flagStr().split("").map(f => f + " " + desc[f]).join("、") : "未開啟旗標：只找第一個匹配";
+}
+document.querySelectorAll(".flag").forEach(b => b.addEventListener("click", () => { const f = b.dataset.f; flags.has(f) ? flags.delete(f) : flags.add(f); renderFlags(); markUser(); schedule(0); }));
+
+/* ---------- capture group names ---------- */
+function groupNames(p) {
+  const names = []; let cls = false;
+  for (let i = 0; i < p.length; i++) {
+    const c = p[i];
+    if (c === "\\") { i++; continue; }
+    if (cls) { if (c === "]") cls = false; continue; }
+    if (c === "[") { cls = true; continue; }
+    if (c === "(") {
+      if (p[i + 1] !== "?") names.push(null);
+      else if (p[i + 2] === "<" && p[i + 3] !== "=" && p[i + 3] !== "!") { const m = /^\(\?<([^>]+)>/.exec(p.slice(i)); names.push(m ? m[1] : null); }
+    }
+  }
+  return names;
+}
+
+/* ---------- compile errors ---------- */
+const ERRS = [
+  [/Unterminated group|missing \)/i, "括號沒有閉合：有「(」卻少了對應的「)」。"],
+  [/Unmatched '\)'|unmatched parenthes/i, "多了一個「)」，前面沒有對應的「(」。"],
+  [/Nothing to repeat/i, "量詞（* + ? {n}）前面沒有可以重複的內容，例如開頭直接寫了「*」。要匹配字面符號請加反斜線，如 \\*。"],
+  [/Invalid capture group name|Invalid named capture/i, "群組名稱不合法：名稱需以英文字母、底線或 $ 開頭，例如 (?<year>…)。"],
+  [/Duplicate capture group name/i, "群組名稱重複了。"],
+  [/Invalid named reference/i, "\\k<名稱> 參照了不存在的具名群組。"],
+  [/Unterminated character class|missing \]/i, "字元集合「[」沒有閉合，缺少「]」。"],
+  [/Range out of order/i, "字元範圍順序顛倒，例如 [z-a] 應寫成 [a-z]。"],
+  [/numbers out of order/i, "量詞 {m,n} 的 m 不能大於 n。"],
+  [/Invalid property name/i, "Unicode 屬性名稱錯誤，或忘了開啟 u 旗標（\\p{…} 需要 u）。"],
+  [/Invalid escape|Invalid Unicode escape|invalid identity escape/i, "無效的跳脫序列；開啟 u 旗標時跳脫規則較嚴格，只能跳脫有特殊意義的符號。"],
+  [/Lone quantifier brackets|Incomplete quantifier/i, "大括號「{」「}」不成對或量詞不完整；要匹配字面 { } 請寫成 \\{ \\}。"],
+  [/Invalid group/i, "群組語法錯誤，請檢查「(?」後面的寫法。"],
+  [/\\ at end of pattern/i, "模式最後多了一個反斜線。"],
+  [/Invalid flags/i, "旗標組合不合法。"],
+];
+function explainError(msg) { for (const [re, t] of ERRS) if (re.test(msg)) return t; return "模式語法有誤，請檢查括號、量詞與跳脫符號。"; }
+
+/* ---------- run ---------- */
+let runT;
+function schedule(ms) { clearTimeout(runT); runT = setTimeout(() => run(false), ms == null ? 200 : ms); }
+const BIG = 1048576;
+function run(manual) {
+  const p = pat.value, f = flagStr(), text = ta.value;
+  persist();
+  $("runBtn").hidden = text.length <= BIG;
+  renderExplain();
+  if (!p) { cancelPending(); showErr(null); last = null; paint([]); setStat("請輸入模式"); renderLists(); return; }
+  try { new RegExp(p, f); } catch (e) { cancelPending(); showErr(e.message); last = null; paint([]); setStat("模式錯誤"); renderLists(); return; }
+  showErr(null);
+  if (text.length > BIG && !manual) { setStat("測試文字超過 1MB，請按「執行」"); return; }
+  const msg = { id: ++seq, pattern: p, flags: f, text, names: groupNames(p), hasD: HAS_D, repl: $("repl").value, wantRepl: true, wantSplit: true };
+  cancelPending();
+  const w = getWorker();
+  if (!w) {
+    if (text.length > 200000) { setStat("此環境無法使用背景執行緒，文字過長時不自動執行"); return; }
+    if (!manual && /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]/.test(p)) { $("runBtn").hidden = false; last = null; paint([]); setStat("此環境無法使用背景執行緒；模式含巢狀量詞，可能讓頁面卡住，未自動執行。確定要執行請按「執行」"); renderLists(); return; }
+    pending = { id: msg.id }; onResult(engine(msg)); return;
+  }
+  setStat("執行中…");
+  pending = { id: msg.id, timer: setTimeout(() => {
+    pending = null; killWorker(); last = null; paint([]);
+    setStat("已中止");
+    showErr("TIMEOUT", "執行超過 1 秒仍未完成，已中止。可能是災難性回溯（例如 (a+)+$ 這種巢狀量詞），請簡化模式，例如改成 a+$。");
+    renderLists(true);
+  }, 1000) };
+  w.postMessage(msg);
+}
+function cancelPending() { if (pending) { clearTimeout(pending.timer); if (pending.timer) killWorker(); pending = null; } }
+function onResult(r) {
+  if (!pending || r.id !== pending.id) return;
+  clearTimeout(pending.timer); pending = null;
+  if (r.error) { showErr(r.error); last = null; paint([]); return; }
+  last = r;
+  paint(r.matches);
+  const n = r.matches.length;
+  setStat(`<b>${n.toLocaleString()}</b> 個匹配${r.truncated ? "（僅顯示前 10,000 筆）" : ""}・耗時 <b>${r.ms < 1 ? r.ms.toFixed(2) : r.ms.toFixed(1)}</b> ms`);
+  renderLists();
+}
+function setStat(html) { $("stat").innerHTML = html; }
+function showErr(msg, custom) {
+  const e = $("err");
+  if (!msg) { e.hidden = true; return; }
+  e.hidden = false; e.textContent = ""; e.classList.toggle("warn", msg === "TIMEOUT");
+  e.appendChild(el("b", null, custom || explainError(msg)));
+  if (msg !== "TIMEOUT") e.appendChild(el("code", null, msg));
+}
+
+/* ---------- overlay highlight ---------- */
+function paint(matches) {
+  const text = ta.value, frag = document.createDocumentFragment();
+  let pos = 0;
+  matches.forEach((m, k) => {
+    if (m.i < pos) return;
+    if (m.i > pos) frag.appendChild(document.createTextNode(text.slice(pos, m.i)));
+    const mk = document.createElement("mark"); mk.dataset.k = k;
+    if (m.e === m.i) { mk.className = "z"; frag.appendChild(mk); pos = m.i; return; }
+    mk.className = "m" + (k % 2);
+    // underline first-level groups (non-overlapping)
+    let p = m.i;
+    const gs = m.g.filter(g => g.s >= 0 && g.e > g.s && g.s >= m.i && g.e <= m.e).sort((a, b) => a.s - b.s || b.e - a.e);
+    for (const g of gs) {
+      if (g.s < p) continue;
+      if (g.s > p) mk.appendChild(document.createTextNode(text.slice(p, g.s)));
+      const u = el("span", "g", text.slice(g.s, g.e)); mk.appendChild(u); p = g.e;
+    }
+    if (p < m.e) mk.appendChild(document.createTextNode(text.slice(p, m.e)));
+    frag.appendChild(mk); pos = m.e;
+  });
+  if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+  frag.appendChild(document.createTextNode("\n​"));
+  hl.textContent = ""; hl.appendChild(frag);
+}
+ta.addEventListener("input", () => { markUser(); paint([]); /* keep overlay geometry in sync immediately */ schedule(120); });
+ta.addEventListener("scroll", () => { ta.scrollTop = 0; });
+
+/* ---------- lists ---------- */
+const vis = s => s.replace(/\n/g, "↵").replace(/\t/g, "→").replace(/ /g, "·");
+function renderLists(aborted) {
+  const ml = $("mlist"); ml.textContent = "";
+  const r = last;
+  if (!r || !r.matches.length) {
+    ml.appendChild(el("li", "empty", aborted ? "已中止執行" : !pat.value ? "請輸入模式" : $("err").hidden ? "沒有匹配" : "模式錯誤，無法匹配"));
+  } else {
+    const n = Math.min(r.matches.length, 500);
+    for (let k = 0; k < n; k++) {
+      const m = r.matches[k], li = el("li"), b = el("button"); b.type = "button"; b.dataset.k = k;
+      const h = el("div", "mh"); h.append(el("span", "n", "#" + (k + 1)), el("span", null, `[${m.i}, ${m.e})`), el("span", null, (m.e - m.i) + " 字元"));
+      const t = el("div", "mt"); t.textContent = m.t === "" ? "（零長度匹配）" : vis(m.t);
+      b.append(h, t);
+      if (m.g.length) {
+        const dl = el("dl", "gl");
+        for (const g of m.g) { dl.append(el("dt", null, g.name ? `${g.n} <${g.name}>` : `$${g.n}`), el("dd", null, g.t === null ? "（未參與）" : g.t === "" ? "（空字串）" : vis(g.t))); }
+        b.appendChild(dl);
+      }
+      li.appendChild(b); ml.appendChild(li);
+    }
+    if (r.matches.length > 500) ml.appendChild(el("li", "empty", `清單只列出前 500 筆，文字中已標示 ${r.matches.length.toLocaleString()} 筆`));
+  }
+  $("replOut").textContent = r && r.replaced != null ? r.replaced : (aborted ? "（已中止）" : ta.value);
+  $("splitOut").textContent = r && r.split ? r.split.map((s, i) => `${i}: ${JSON.stringify(s)}`).join("\n") : (aborted ? "（已中止）" : "");
+}
+$("mlist").addEventListener("click", e => {
+  const b = e.target.closest("button[data-k]"); if (!b) return;
+  const mk = hl.querySelector(`mark[data-k="${b.dataset.k}"]`); if (!mk) return;
+  const ed = $("editor");
+  ed.scrollTop = Math.max(0, mk.offsetTop - ed.clientHeight / 2);
+  const rect = ed.getBoundingClientRect(); if (rect.top < 0 || rect.top > innerHeight - 100) ed.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth" });
+  mk.classList.add("flash"); setTimeout(() => mk.classList.remove("flash"), 900);
+});
+$("repl").addEventListener("input", () => { markUser(); schedule(150); });
+$("copyRepl").addEventListener("click", async () => {
+  const t = $("replOut").textContent;
+  try { await navigator.clipboard.writeText(t); toast("已複製取代結果"); }
+  catch { const r = document.createRange(); r.selectNodeContents($("replOut")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("請按住選取的文字手動複製"); }
+});
+
+/* ---------- tabs ---------- */
+function setTab(t) {
+  curTab = t;
+  for (const k of ["list", "repl", "split", "explain"]) { $("tab-" + k).setAttribute("aria-selected", k === t); $("pane-" + k).hidden = k !== t; }
+  persist();
+}
+for (const k of ["list", "repl", "split", "explain"]) $("tab-" + k).addEventListener("click", () => setTab(k));
+
+/* ---------- explainer ---------- */
+const ESC = { d: "任一數字 0–9", D: "非數字", w: "英數字或底線 [A-Za-z0-9_]", W: "非英數字底線", s: "空白字元（空格、Tab、換行等）", S: "非空白字元", b: "單字邊界", B: "非單字邊界", t: "Tab", n: "換行", r: "歸位字元 \\r", f: "換頁", v: "垂直 Tab", "0": "NUL 字元" };
+function tokenize(p) {
+  const toks = []; let i = 0, depth = 0, cap = 0; const stack = [];
+  const push = (t, d, dep) => toks.push({ t, d, dep: dep == null ? depth : dep });
+  while (i < p.length) {
+    const c = p[i];
+    if (c === "\\") {
+      const n = p[i + 1];
+      if (n === undefined) { push("\\", "結尾多出的反斜線"); i++; continue; }
+      if (ESC[n]) { push("\\" + n, ESC[n]); i += 2; continue; }
+      let m;
+      if ((m = /^\\[pP]\{([^}]*)\}/.exec(p.slice(i)))) { push(m[0], (n === "P" ? "不屬於" : "屬於") + " Unicode 屬性「" + m[1] + "」的字元" + (m[1].startsWith("Script=Han") ? "（漢字）" : m[1] === "L" ? "（任何文字字母）" : m[1] === "N" ? "（任何數字）" : "") + "（需 u 旗標）"); i += m[0].length; continue; }
+      if ((m = /^\\k<([^>]+)>/.exec(p.slice(i)))) { push(m[0], "反向參照：再次匹配具名群組「" + m[1] + "」抓到的內容"); i += m[0].length; continue; }
+      if ((m = /^\\u\{[0-9a-fA-F]+\}|^\\u[0-9a-fA-F]{4}|^\\x[0-9a-fA-F]{2}/.exec(p.slice(i)))) { const hx = m[0].replace(/^\\[ux]\{?|\}$/g, ""); push(m[0], "字元 U+" + hx.toUpperCase().padStart(4, "0") + "「" + String.fromCodePoint(parseInt(hx, 16)) + "」"); i += m[0].length; continue; }
+      if ((m = /^\\[1-9]\d*/.exec(p.slice(i)))) { push(m[0], "反向參照：再次匹配第 " + m[0].slice(1) + " 個群組抓到的內容"); i += m[0].length; continue; }
+      if (n === "c" && /[A-Za-z]/.test(p[i + 2] || "")) { push(p.slice(i, i + 3), "控制字元 Ctrl+" + p[i + 2].toUpperCase()); i += 3; continue; }
+      push("\\" + n, "字面上的「" + n + "」"); i += 2; continue;
+    }
+    if (c === "[") {
+      let j = i + 1; if (p[j] === "^") j++; if (p[j] === "]") j++;
+      while (j < p.length && p[j] !== "]") { if (p[j] === "\\") j++; j++; }
+      const body = p.slice(i, j + 1), neg = p[i + 1] === "^";
+      push(body, (neg ? "不在集合中的任一字元：" : "集合中的任一字元：") + describeClass(p.slice(i + (neg ? 2 : 1), j)));
+      i = j + 1; continue;
+    }
+    if (c === "(") {
+      let m, d;
+      if (p.startsWith("(?:", i)) { d = "非捕獲群組開始（只分組，不記錄）"; m = "(?:"; }
+      else if (p.startsWith("(?=", i)) { d = "正向前瞻：後面必須接著…（不消耗字元）"; m = "(?="; }
+      else if (p.startsWith("(?!", i)) { d = "負向前瞻：後面不能接著…"; m = "(?!"; }
+      else if (p.startsWith("(?<=", i)) { d = "正向後顧：前面必須是…"; m = "(?<="; }
+      else if (p.startsWith("(?<!", i)) { d = "負向後顧：前面不能是…"; m = "(?<!"; }
+      else { const nm = /^\(\?<([^>]+)>/.exec(p.slice(i)); if (nm) { cap++; d = `具名捕獲群組「${nm[1]}」開始（第 ${cap} 組）`; m = nm[0]; } else if (p[i + 1] === "?") { d = "群組修飾語法"; m = "(?"; } else { cap++; d = `捕獲群組開始（第 ${cap} 組，$${cap}）`; m = "("; } }
+      push(m, d); stack.push(m); depth++; i += m.length; continue;
+    }
+    if (c === ")") { depth = Math.max(0, depth - 1); stack.pop(); push(")", "群組結束", depth); i++; continue; }
+    if (c === "|") { push("|", "或：左右兩邊任一成立即可"); i++; continue; }
+    if (c === "^") { push("^", flags.has("m") ? "每一行的開頭（m 旗標）" : "整段文字的開頭"); i++; continue; }
+    if (c === "$") { push("$", flags.has("m") ? "每一行的結尾（m 旗標）" : "整段文字的結尾"); i++; continue; }
+    if (c === ".") { push(".", flags.has("s") ? "任一字元（含換行，s 旗標）" : "任一字元（換行除外）"); i++; continue; }
+    if ("*+?{".includes(c)) {
+      let m = /^(\*|\+|\?|\{(\d+)(,(\d*))?\})(\?)?/.exec(p.slice(i));
+      if (m) {
+        let d = m[1] === "*" ? "前一項重複 0 次以上" : m[1] === "+" ? "前一項重複 1 次以上" : m[1] === "?" ? "前一項可有可無（0 或 1 次）" : m[3] === undefined ? `前一項剛好 ${m[2]} 次` : m[4] === "" ? `前一項至少 ${m[2]} 次` : `前一項 ${m[2]} 到 ${m[4]} 次`;
+        if (m[5]) d += "，懶惰模式（盡量少）"; else d += "，貪婪（盡量多）";
+        push(m[0], d); i += m[0].length; continue;
+      }
+      if (c === "{") { push("{", "字面上的「{」"); i++; continue; }
+    }
+    // literal run
+    let j = i; while (j < p.length && !"\\[]()|^$.*+?{".includes(p[j])) j++;
+    if (j === i) j = i + 1;
+    // if followed by quantifier, keep last char separate
+    let lit = p.slice(i, j);
+    if (lit.length > 1 && "*+?{".includes(p[j] || "")) { const cs = Array.from(lit); const lastC = cs.pop(); if (cs.length) { push(cs.join(""), "字面文字「" + cs.join("") + "」"); } push(lastC, "字面文字「" + lastC + "」"); }
+    else push(lit, "字面文字「" + lit + "」");
+    i = j;
+  }
+  return toks;
+}
+function describeClass(b) {
+  const parts = []; let i = 0;
+  while (i < b.length) {
+    if (b[i] === "\\") { const n = b[i + 1]; let m = /^\\[pP]\{[^}]*\}/.exec(b.slice(i)); if (m) { parts.push(m[0]); i += m[0].length; continue; } m = /^\\u\{[0-9a-fA-F]+\}|^\\u[0-9a-fA-F]{4}|^\\x[0-9a-fA-F]{2}/.exec(b.slice(i)); if (m) { const s = m[0]; if (b[i + s.length] === "-" && b[i + s.length + 1] !== undefined) { const m2 = /^\\u\{[0-9a-fA-F]+\}|^\\u[0-9a-fA-F]{4}|^\\x[0-9a-fA-F]{2}/.exec(b.slice(i + s.length + 1)); if (m2) { parts.push(s + " 到 " + m2[0]); i += s.length + 1 + m2[0].length; continue; } } parts.push(s); i += s.length; continue; } parts.push(ESC[n] ? ESC[n] : "「" + n + "」"); i += 2; continue; }
+    if (b[i + 1] === "-" && b[i + 2] !== undefined && b[i + 2] !== "]") { parts.push(b[i] + " 到 " + b[i + 2]); i += 3; continue; }
+    parts.push("「" + b[i] + "」"); i++;
+  }
+  return parts.join("、") || "（空集合）";
+}
+function renderExplain() {
+  const box = $("explain"); box.textContent = "";
+  if (!pat.value) { box.appendChild(el("div", "empty", "輸入模式後，這裡會逐一解釋每個語法片段")); return; }
+  let toks; try { toks = tokenize(pat.value); } catch { box.appendChild(el("div", "empty", "無法解析此模式")); return; }
+  for (const t of toks.slice(0, 400)) {
+    const r = el("div", "tok"); r.style.paddingLeft = 4 + Math.min(t.dep, 8) * 14 + "px";
+    r.append(el("code", null, t.t), el("span", null, t.d)); box.appendChild(r);
+  }
+  const fl = flagStr(); if (fl) box.appendChild(el("div", "tok")).append(el("code", null, "/" + fl), el("span", null, $("flagHelp").textContent));
+}
+
+/* ---------- library / cheat sheet ---------- */
+function openSheet(id) { const s = $(id); s.hidden = false; s.dataset.ret = document.activeElement && document.activeElement.id || ""; const b = s.querySelector("[data-close]"); b && b.focus(); }
+function closeSheet(s) { s.hidden = true; const r = s.dataset.ret && $(s.dataset.ret); if (r) r.focus(); }
+document.querySelectorAll(".sheet-bg").forEach(s => { s.addEventListener("click", e => { if (e.target === s || e.target.closest("[data-close]")) closeSheet(s); }); });
+addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".sheet-bg:not([hidden])").forEach(closeSheet); });
+function applySample(x, sample) {
+  pat.value = x.p; flags = new Set(x.f.split("")); ta.value = x.s; $("repl").value = x.r || "";
+  isSample = !!sample; $("sampleChip").hidden = !sample;
+  renderFlags(); last = null; paint([]); run(false);
+}
+function libItem(x, onDel) {
+  const row = el("div", "libi"), b = el("button", "pick"); b.type = "button";
+  b.append(el("div", "nm", x.name), el("div", "pt", "/" + x.p + "/" + x.f));
+  b.addEventListener("click", () => { applySample(x, !onDel); closeSheet($("libSheet")); toast("已載入：" + x.name); });
+  row.appendChild(b);
+  if (onDel) { const d = el("button", "btn", "刪除"); d.type = "button"; d.addEventListener("click", onDel); row.appendChild(d); }
+  return row;
+}
+function renderLib() {
+  const L = $("libList"); L.textContent = ""; SAMPLES.forEach(x => L.appendChild(libItem(x)));
+  const saved = LS.get("saved", []); const S = $("savedList"); S.textContent = "";
+  $("savedWrap").hidden = !saved.length;
+  saved.forEach((x, i) => S.appendChild(libItem({ name: x.name, p: x.pattern, f: x.flags, s: x.sample, r: x.repl }, () => { const a = LS.get("saved", []); a.splice(i, 1); LS.set("saved", a); renderLib(); toast("已刪除收藏"); })));
+}
+$("libBtn").addEventListener("click", () => { renderLib(); openSheet("libSheet"); });
+$("saveBtn").addEventListener("click", () => {
+  if (!pat.value) { toast("請先輸入模式"); return; }
+  const a = LS.get("saved", []);
+  if (a.some(x => x.pattern === pat.value && x.flags === flagStr())) { toast("這個模式已在收藏中"); return; }
+  const d = new Date(), nm = (pat.value.length > 28 ? pat.value.slice(0, 28) + "…" : pat.value);
+  a.unshift({ name: nm + `（${d.getMonth() + 1}/${d.getDate()}）`, pattern: pat.value, flags: flagStr(), sample: ta.value.slice(0, 20000), repl: $("repl").value });
+  LS.set("saved", a.slice(0, 50)); toast("已收藏，可在範例庫找到");
+});
+const CHEAT = [
+  ["字元類別", [[".", "任一字元"], ["\\d", "數字"], ["\\D", "非數字"], ["\\w", "英數字底線"], ["\\W", "非英數字"], ["\\s", "空白"], ["\\S", "非空白"], ["[abc]", "a、b 或 c"], ["[^abc]", "a b c 以外"], ["[a-z]", "a 到 z"], ["\\p{L}", "任何字母（u）"], ["\\p{Script=Han}", "漢字（u）"]]],
+  ["錨點", [["^", "開頭"], ["$", "結尾"], ["\\b", "單字邊界"], ["\\B", "非單字邊界"]]],
+  ["量詞", [["*", "0 次以上"], ["+", "1 次以上"], ["?", "0 或 1 次"], ["{3}", "剛好 3 次"], ["{2,}", "2 次以上"], ["{2,5}", "2 到 5 次"], ["*?", "懶惰 0 次以上"], ["+?", "懶惰 1 次以上"]]],
+  ["群組與參照", [["()", "捕獲群組"], ["(?:)", "非捕獲群組"], ["(?<name>)", "具名群組"], ["\\1", "參照第 1 組"], ["\\k<name>", "參照具名群組"], ["|", "或"]]],
+  ["環視", [["(?=)", "後面要接"], ["(?!)", "後面不能接"], ["(?<=)", "前面要是"], ["(?<!)", "前面不能是"]]],
+  ["跳脫", [["\\.", "字面句點"], ["\\\\", "反斜線"], ["\\t", "Tab"], ["\\n", "換行"], ["\\u4E2D", "Unicode 字元"], ["\\u{1F600}", "大碼位（u）"]]],
+  ["取代字串", [["$1", "第 1 組"], ["$<name>", "具名群組"], ["$&", "整個匹配"], ["$$", "字面 $"], ["$`", "匹配前文字"], ["$'", "匹配後文字"]], true],
+];
+function renderCheat() {
+  const B = $("csBody"); B.textContent = "";
+  for (const [title, items, toRepl] of CHEAT) {
+    B.appendChild(el("h3", null, title)); const g = el("div", "cs");
+    for (const [code, d] of items) {
+      const b = el("button"); b.type = "button"; b.append(el("code", null, code), el("small", null, d));
+      b.addEventListener("click", () => { insertAt(toRepl ? $("repl") : pat, code); closeSheet($("csSheet")); if (toRepl) setTab("repl"); });
+      g.appendChild(b);
+    }
+    B.appendChild(g);
+  }
+}
+let lastPatSel = null;
+pat.addEventListener("blur", () => { lastPatSel = [pat.selectionStart, pat.selectionEnd]; });
+function insertAt(input, s) {
+  const a = input === pat && lastPatSel ? lastPatSel[0] : input.selectionStart ?? input.value.length;
+  const b = input === pat && lastPatSel ? lastPatSel[1] : input.selectionEnd ?? input.value.length;
+  input.value = input.value.slice(0, a) + s + input.value.slice(b);
+  // place caret inside empty parens / braces
+  let caret = a + s.length; const inner = /^\((\?(:|=|!|<=|<!|<name>))?\)$/.exec(s); if (inner) caret = a + s.length - 1;
+  input.focus(); input.setSelectionRange(caret, caret); if (input === pat) lastPatSel = [caret, caret];
+  markUser(); schedule(0);
+}
+$("csBtn").addEventListener("click", () => { renderCheat(); openSheet("csSheet"); });
+
+/* ---------- persistence ---------- */
+function markUser() { if (isSample) { isSample = false; $("sampleChip").hidden = true; } }
+let pT;
+function persist() { clearTimeout(pT); pT = setTimeout(() => { if (isSample) return; LS.set("state", { pattern: pat.value, flags: flagStr(), text: ta.value.length <= 200000 ? ta.value : "", repl: $("repl").value, tab: curTab }); }, 300); }
+pat.addEventListener("input", () => { markUser(); schedule(); });
+$("runBtn").addEventListener("click", () => run(true));
+
+/* init */
+const st = LS.get("state", null);
+if (st && typeof st.pattern === "string") {
+  pat.value = st.pattern; flags = new Set(String(st.flags || "").split("").filter(f => "gimsuy".includes(f))); ta.value = st.text || ""; $("repl").value = st.repl || "";
+  renderFlags(); paint([]); if (["list", "repl", "split", "explain"].includes(st.tab)) setTab(st.tab); run(false);
+} else applySample(SAMPLES[0], true);
+window.__rl = { engine, tokenize, groupNames, applySample, SAMPLES, get last() { return last; }, get pending() { return !!pending; }, noWorker: () => noWorker };
+window.__rlReady = true;
+})();
+</script>

@@ -1,0 +1,857 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>日期計算機</title>
+<style>
+/* 日期計算機：撕頁日曆的視覺語彙（鈷藍墨色、週日紅字、等寬數字），分頁在手機為上方頁籤、桌面為左側選單 */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --ink: #17202b;
+  --muted: #5d6b7a;
+  --faint: #8b97a4;
+  --line: #d9dfe6;
+  --line-strong: #b9c3ce;
+  --accent: #2450c2;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3eafb;
+  --sun: #c0352f;
+  --sat: #2b6f9e;
+  --ok: #1d7a4c;
+  --ok-soft: #e1f2e8;
+  --err: #b3261e;
+  --err-soft: #fbe6e4;
+  --band: #2450c2;
+  --band-ink: #ffffff;
+  --shadow: 0 1px 0 rgba(23,32,43,.06), 0 6px 18px -12px rgba(23,32,43,.25);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --num: ui-rounded, system-ui, -apple-system, "SF Pro Rounded", "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151c; --surface: #18202a; --surface-2: #141b23; --ink: #e6ecf3; --muted: #9eabba; --faint: #74818f;
+    --line: #2a3542; --line-strong: #3e4b5a; --accent: #7fa2ff; --accent-ink: #0b1430; --accent-soft: #1d2b4d;
+    --sun: #ff8a80; --sat: #7cc0ef; --ok: #6fd3a0; --ok-soft: #173327; --err: #ff8a80; --err-soft: #3a1c1a;
+    --band: #3a5fc4; --band-ink: #ffffff; --shadow: 0 1px 0 rgba(0,0,0,.3), 0 8px 20px -14px rgba(0,0,0,.8);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151c; --surface: #18202a; --surface-2: #141b23; --ink: #e6ecf3; --muted: #9eabba; --faint: #74818f;
+  --line: #2a3542; --line-strong: #3e4b5a; --accent: #7fa2ff; --accent-ink: #0b1430; --accent-soft: #1d2b4d;
+  --sun: #ff8a80; --sat: #7cc0ef; --ok: #6fd3a0; --ok-soft: #173327; --err: #ff8a80; --err-soft: #3a1c1a;
+  --band: #3a5fc4; --band-ink: #ffffff; --shadow: 0 1px 0 rgba(0,0,0,.3), 0 8px 20px -14px rgba(0,0,0,.8);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  padding-block: 12px calc(28px + env(safe-area-inset-bottom));
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  overflow-x: hidden;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+
+header.top { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.brand { flex: 1; min-width: 0; }
+.brand h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: .04em; }
+.brand p { margin: 2px 0 0; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-btn {
+  min-width: 44px; height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; color: var(--muted);
+}
+.icon-btn svg { width: 18px; height: 18px; }
+
+/* tabs */
+.layout { display: block; }
+nav.tabs {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; padding: 4px; margin-bottom: 14px; position: sticky; top: 0; z-index: 5; box-shadow: var(--shadow);
+}
+nav.tabs button {
+  min-height: 44px; border: 0; background: transparent; border-radius: 9px; font-size: 13.5px; font-weight: 600; color: var(--muted);
+  padding: 4px 2px; white-space: nowrap;
+}
+nav.tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); }
+@media (hover: hover) { nav.tabs button:not([aria-selected="true"]):hover { background: var(--surface-2); color: var(--ink); } }
+
+section.panel { display: grid; gap: 12px; }
+section.panel[hidden] { display: none !important; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
+.card h2 { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
+.field { display: grid; gap: 6px; margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+.field > label, .lbl { font-size: 13px; font-weight: 600; color: var(--muted); }
+.row { display: flex; gap: 8px; align-items: stretch; }
+.row > input { flex: 1; min-width: 0; }
+input[type="date"], input[type="number"], input[type="text"], textarea, select {
+  min-height: 46px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); padding: 8px 12px; font-size: 16px;
+  width: 100%; min-width: 0;
+}
+input[type="date"] { font-variant-numeric: tabular-nums; }
+textarea { min-height: 88px; resize: vertical; }
+.btn {
+  min-height: 46px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface);
+  font-weight: 600; font-size: 14px; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+#lunar-prev, #lunar-next { min-width: 44px; padding: 0 8px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--accent); }
+.btn.danger { color: var(--err); }
+.btn.danger.armed { background: var(--err); border-color: var(--err); color: var(--surface); }
+@media (hover: hover) { .btn:hover { border-color: var(--accent); } .btn.primary:hover { filter: brightness(1.08); } }
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 1px solid var(--line-strong); border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.seg button { min-height: 44px; border: 0; background: transparent; font-weight: 600; font-size: 14px; color: var(--muted); padding: 0 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; cursor: pointer; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); margin: 0; flex: none; }
+.checks { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
+/* result */
+.result { border-top: 4px solid var(--band); }
+.big { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.big .n { font-family: var(--num); font-size: 56px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.big .u { font-size: 18px; font-weight: 700; color: var(--muted); }
+.big .tag { font-size: 13px; font-weight: 600; color: var(--sun); }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.fact { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.fact b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fact span { font-size: 12px; color: var(--muted); }
+.sentence { margin: 12px 0 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.note.warn { color: var(--sun); font-weight: 600; }
+.err { background: var(--err-soft); color: var(--err); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; }
+
+/* tear-off leaf */
+.leaf-wrap { display: flex; gap: 16px; align-items: center; }
+.leaf { width: 108px; flex: none; border-radius: 10px; overflow: hidden; border: 1px solid var(--line-strong); background: var(--surface); text-align: center; box-shadow: var(--shadow); }
+.leaf .band { background: var(--band); color: var(--band-ink); font-size: 12px; font-weight: 700; padding: 5px 4px; letter-spacing: .04em; position: relative; padding-inline: 20px; white-space: nowrap; }
+.leaf .band::before, .leaf .band::after { content: ""; position: absolute; top: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--bg); transform: translateY(-50%); }
+.leaf .band::before { left: 7px; } .leaf .band::after { right: 7px; }
+.leaf .d { font-family: var(--num); font-size: 50px; font-weight: 800; line-height: 1.05; padding-top: 6px; font-variant-numeric: tabular-nums; }
+.leaf .w { font-size: 13px; font-weight: 700; padding-bottom: 8px; color: var(--muted); }
+.leaf.is-sun .d, .leaf.is-sun .w { color: var(--sun); }
+.leaf-info { min-width: 0; flex: 1; }
+.leaf-info .main { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.leaf-info .sub { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+/* inline unit pick */
+.addrow { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px 0 12px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+.chip button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; color: var(--muted); position: relative; }
+.chip button::after { content: ""; position: absolute; inset: -4px; }
+.empty { color: var(--faint); font-size: 14px; margin: 0; }
+details.imp summary { min-height: 44px; display: flex; align-items: center; color: var(--accent); font-weight: 600; font-size: 14px; cursor: pointer; }
+
+/* anniversaries */
+.anni-list { display: grid; gap: 10px; }
+.anni { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 12px 14px; display: grid; grid-template-columns: 44px 1fr auto; gap: 4px 12px; align-items: start; box-shadow: var(--shadow); }
+.anni .ico { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 22px; line-height: 1; }
+.anni h3 { margin: 0; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.anni .dt { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.anni .count { grid-column: 2 / 4; display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+.anni .count b { font-family: var(--num); font-size: 34px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.anni .count span { font-size: 14px; color: var(--muted); font-weight: 600; }
+.anni ul { grid-column: 2 / 4; margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.anni li { display: flex; justify-content: space-between; gap: 8px; border-top: 1px dashed var(--line); padding-top: 4px; }
+.anni li em { font-style: normal; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.anni .del { min-width: 44px; height: 44px; border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--faint); font-size: 13px; }
+.anni .del.armed { background: var(--err); color: var(--surface); padding: 0 10px; }
+.sample { display: inline-block; font-size: 11px; font-weight: 700; color: var(--sat); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; margin-left: 6px; vertical-align: 2px; letter-spacing: .04em; }
+.icons { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.icons label { position: relative; }
+.icons input { position: absolute; opacity: 0; pointer-events: none; }
+.icons span { display: grid; place-items: center; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); font-size: 20px; cursor: pointer; color: var(--ink); }
+.icons input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.icons input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* lunar */
+.lunar-big { font-size: 40px; font-weight: 800; letter-spacing: .06em; line-height: 1.1; }
+.lunar-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pill { font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); }
+.pill.hot { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.pill.leap { background: var(--err-soft); border-color: transparent; color: var(--sun); }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.cal-head b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cal .wd { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); padding: 2px 0; }
+.cal .wd.s { color: var(--sun); }
+.cal button { min-height: 50px; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 3px 0; display: grid; align-content: center; gap: 1px; min-width: 0; }
+.cal button .g { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cal button .l { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.cal button .l.t { color: var(--ok); font-weight: 700; }
+.cal button .l.m { color: var(--accent); font-weight: 700; }
+.cal button.out { opacity: .38; }
+.cal button.sun .g { color: var(--sun); }
+.cal button.today { border-color: var(--line-strong); }
+.cal button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+.cal button[aria-pressed="true"] .g, .cal button[aria-pressed="true"] .l { color: var(--accent-ink); }
+@media (hover: hover) { .cal button:not([aria-pressed="true"]):hover { background: var(--surface-2); } }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100% - 32px); z-index: 30; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.hint { font-size: 12px; color: var(--faint); margin: 14px 0 0; text-align: center; }
+
+.grid2 { display: grid; gap: 12px; }
+@media (min-width: 560px) { .grid2 { grid-template-columns: 1fr 1fr; } .addrow { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 370px) { .big .n { font-size: 48px; } .leaf { width: 96px; } .leaf .d { font-size: 44px; } nav.tabs button { font-size: 13px; } .facts { gap: 6px; } .fact { padding: 8px; } }
+@media (min-width: 880px) {
+  .layout { display: grid; grid-template-columns: 180px 1fr; gap: 20px; align-items: start; }
+  nav.tabs { grid-template-columns: 1fr; gap: 4px; padding: 6px; top: 12px; }
+  nav.tabs button { text-align: left; padding: 0 14px; font-size: 15px; }
+  section.panel.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+  .big .n { font-size: 72px; }
+}
+@media (min-width: 760px) and (max-width: 879px) { section.panel.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>日期計算機</h1>
+      <p id="today-line" class="num">今天</p>
+    </div>
+    <button class="icon-btn" id="theme-btn" type="button" aria-label="切換主題"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg><span id="theme-label">自動</span></button>
+  </header>
+
+  <div class="layout">
+    <nav class="tabs" role="tablist" aria-label="功能分頁">
+      <button role="tab" id="tab-diff" data-tab="diff" aria-selected="true" aria-controls="p-diff">相差天數</button>
+      <button role="tab" id="tab-add" data-tab="add" aria-selected="false" aria-controls="p-add">加減日期</button>
+      <button role="tab" id="tab-work" data-tab="work" aria-selected="false" aria-controls="p-work">工作天</button>
+      <button role="tab" id="tab-anni" data-tab="anni" aria-selected="false" aria-controls="p-anni">紀念日</button>
+      <button role="tab" id="tab-lunar" data-tab="lunar" aria-selected="false" aria-controls="p-lunar">農曆對照</button>
+    </nav>
+
+    <main>
+      <!-- 相差天數 -->
+      <section class="panel split" id="p-diff" role="tabpanel" aria-labelledby="tab-diff">
+        <div class="card">
+          <h2>兩個日期</h2>
+          <div class="field">
+            <label for="diff-start">起日</label>
+            <div class="row"><input type="date" id="diff-start" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="diff-start">今天</button></div>
+          </div>
+          <div class="field">
+            <label for="diff-end">迄日</label>
+            <div class="row"><input type="date" id="diff-end" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="diff-end">今天</button></div>
+          </div>
+          <label class="check"><input type="checkbox" id="diff-incl"> 含首日（起日當天也算一天）</label>
+          <div class="actions"><button class="btn ghost" type="button" id="diff-swap">起迄對調</button></div>
+        </div>
+        <div class="card result" aria-live="polite">
+          <h2>相差</h2>
+          <div id="diff-out"></div>
+        </div>
+      </section>
+
+      <!-- 加減日期 -->
+      <section class="panel split" id="p-add" role="tabpanel" aria-labelledby="tab-add" hidden>
+        <div class="card">
+          <h2>基準日加減</h2>
+          <div class="field">
+            <label for="add-base">基準日</label>
+            <div class="row"><input type="date" id="add-base" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="add-base">今天</button></div>
+          </div>
+          <div class="field">
+            <span class="lbl" id="add-sign-lbl">方向</span>
+            <div class="seg" role="group" aria-labelledby="add-sign-lbl" id="add-sign">
+              <button type="button" id="add-sign-plus" data-v="1" aria-pressed="true">往後（加）</button>
+              <button type="button" id="add-sign-minus" data-v="-1" aria-pressed="false">往前（減）</button>
+            </div>
+          </div>
+          <div class="addrow">
+            <div class="field">
+              <label for="add-n">數量</label>
+              <input type="number" id="add-n" inputmode="numeric" min="0" max="3650000" step="1">
+            </div>
+            <div class="field">
+              <span class="lbl" id="add-unit-lbl">單位</span>
+              <div class="seg" role="group" aria-labelledby="add-unit-lbl" id="add-unit">
+                <button type="button" id="add-unit-d" data-v="d" aria-pressed="true">天</button>
+                <button type="button" id="add-unit-w" data-v="w" aria-pressed="false">週</button>
+                <button type="button" id="add-unit-m" data-v="m" aria-pressed="false">月</button>
+                <button type="button" id="add-unit-y" data-v="y" aria-pressed="false">年</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card result" aria-live="polite">
+          <h2>結果日期</h2>
+          <div id="add-out"></div>
+        </div>
+      </section>
+
+      <!-- 工作天 -->
+      <section class="panel split" id="p-work" role="tabpanel" aria-labelledby="tab-work" hidden>
+        <div class="card">
+          <h2>工作天計算</h2>
+          <div class="field">
+            <label for="work-start">起日</label>
+            <div class="row"><input type="date" id="work-start" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="work-start">今天</button></div>
+          </div>
+          <div class="field">
+            <span class="lbl" id="work-mode-lbl">計算方式</span>
+            <div class="seg" role="group" aria-labelledby="work-mode-lbl" id="work-mode">
+              <button type="button" id="work-mode-n" data-v="n" aria-pressed="true">往後數 N 個工作天</button>
+              <button type="button" id="work-mode-end" data-v="end" aria-pressed="false">到迄日有幾天</button>
+            </div>
+          </div>
+          <div class="field" id="work-n-field">
+            <label for="work-n">工作天數（不含起日，上限 3650）</label>
+            <input type="number" id="work-n" inputmode="numeric" min="1" max="3650" step="1">
+          </div>
+          <div class="field" id="work-end-field" hidden>
+            <label for="work-end">迄日（含起迄兩天）</label>
+            <div class="row"><input type="date" id="work-end" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="work-end">今天</button></div>
+          </div>
+          <div class="checks">
+            <label class="check"><input type="checkbox" id="work-sat" checked> 排除週六</label>
+            <label class="check"><input type="checkbox" id="work-sun" checked> 排除週日</label>
+          </div>
+        </div>
+        <div class="card result" aria-live="polite">
+          <h2>結果</h2>
+          <div id="work-out"></div>
+        </div>
+        <div class="card">
+          <h2>自訂假日 <span id="hol-count" class="num"></span></h2>
+          <div class="row">
+            <input type="date" id="hol-date" aria-label="假日日期" min="0001-01-01" max="9999-12-31">
+            <button class="btn primary" type="button" id="hol-add">加入</button>
+          </div>
+          <p class="note" id="hol-sample-note">預設的 2026-10-09、10-26、12-25 是範例假日，可刪除後換成你的行事曆。</p>
+          <div class="chips" id="hol-list" style="margin-top:12px"></div>
+          <details class="imp">
+            <summary>貼上日期清單匯入</summary>
+            <div class="field">
+              <label for="hol-import">每行一個日期，例如 2026-10-09</label>
+              <textarea id="hol-import" placeholder="2026-10-09&#10;2026-12-25"></textarea>
+            </div>
+            <div class="actions">
+              <button class="btn" type="button" id="hol-import-btn">匯入</button>
+              <button class="btn danger" type="button" id="hol-clear">清空全部假日</button>
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <!-- 紀念日 -->
+      <section class="panel split" id="p-anni" role="tabpanel" aria-labelledby="tab-anni" hidden>
+        <div class="grid-col">
+          <div class="anni-list" id="anni-list"></div>
+          <p class="hint">「第 N 天」每天自動更新；過了午夜回到這頁也會重算。</p>
+        </div>
+        <div class="card">
+          <h2>新增紀念日</h2>
+          <div class="field">
+            <label for="anni-title">名稱（1–30 字）</label>
+            <input type="text" id="anni-title" maxlength="30" placeholder="例如：交往紀念日" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="anni-date">日期</label>
+            <div class="row"><input type="date" id="anni-date" min="0001-01-01" max="9999-12-31"><button class="btn" type="button" data-today="anni-date">今天</button></div>
+          </div>
+          <div class="field">
+            <span class="lbl" id="anni-icon-lbl">圖示</span>
+            <div class="icons" role="radiogroup" aria-labelledby="anni-icon-lbl" id="anni-icons"></div>
+          </div>
+          <p class="err" id="anni-err" hidden></p>
+          <div class="actions"><button class="btn primary" type="button" id="anni-add">加入紀念日</button></div>
+          <label class="check" style="margin-top:6px"><input type="checkbox" id="anni-first" checked> 起始日當天算「第 1 天」</label>
+        </div>
+      </section>
+
+      <!-- 農曆對照 -->
+      <section class="panel split" id="p-lunar" role="tabpanel" aria-labelledby="tab-lunar" hidden>
+        <div class="card result" aria-live="polite">
+          <h2>國曆 → 農曆</h2>
+          <div class="field">
+            <label for="lunar-date">國曆日期（支援 1900–2100）</label>
+            <div class="row">
+              <button class="btn" type="button" id="lunar-prev" aria-label="前一天">‹</button>
+              <input type="date" id="lunar-date" min="1900-01-31" max="2100-12-31">
+              <button class="btn" type="button" id="lunar-next" aria-label="後一天">›</button>
+            </div>
+          </div>
+          <div id="lunar-out"></div>
+        </div>
+        <div class="card">
+          <div class="cal-head">
+            <button class="btn" type="button" id="cal-prev" aria-label="上個月">‹ 上月</button>
+            <b id="cal-title"></b>
+            <button class="btn" type="button" id="cal-next" aria-label="下個月">下月 ›</button>
+          </div>
+          <div class="cal" id="cal"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'date-calc:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) {} }
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ---------- 純函式：日序號（不經過 Date，避免時區與夏令時） ---------- */
+function toDayNumber(y, m, d) {
+  y -= m <= 2 ? 1 : 0;
+  const era = Math.floor(y / 400), yoe = y - era * 400, mp = (m + 9) % 12;
+  const doy = Math.floor((153 * mp + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+function fromDayNumber(z) {
+  z += 719468;
+  const era = Math.floor(z / 146097), doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153), d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp < 10 ? mp + 3 : mp - 9;
+  return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d };
+}
+const isLeapYear = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+const daysInMonth = (y, m) => [31, isLeapYear(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const weekday = n => ((n + 4) % 7 + 7) % 7; // 1970-01-01 = 週四
+const MIN_DAY = toDayNumber(1, 1, 1), MAX_DAY = toDayNumber(9999, 12, 31);
+function parseISO(s) {
+  const m = /^(\d{4,})-(\d{2})-(\d{2})$/.exec(s || '');
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (y < 1 || y > 9999 || mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo)) return null;
+  return toDayNumber(y, mo, d);
+}
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+function iso(n) { const g = fromDayNumber(n); return pad(g.y, 4) + '-' + pad(g.m) + '-' + pad(g.d); }
+const isoW = n => iso(n) + '（' + WD[weekday(n)] + '）';
+function addMonths(n, k) {
+  const g = fromDayNumber(n), t = g.y * 12 + (g.m - 1) + k, y = Math.floor(t / 12), m = t - y * 12 + 1;
+  if (y < 1 || y > 9999) return null;
+  const dim = daysInMonth(y, m);
+  return { n: toDayNumber(y, m, Math.min(g.d, dim)), clamped: g.d > dim };
+}
+function ymd(a, b) { // a <= b
+  const A = fromDayNumber(a), B = fromDayNumber(b);
+  let k = (B.y - A.y) * 12 + (B.m - A.m);
+  let r = addMonths(a, k);
+  while (k > 0 && r.n > b) { k--; r = addMonths(a, k); }
+  return { y: Math.floor(k / 12), m: k % 12, d: b - r.n };
+}
+function workdays(start, opt) {
+  const hol = opt.holidays, skipSat = opt.sat, skipSun = opt.sun;
+  const isOff = n => { const w = weekday(n); if (skipSat && w === 6) return 'w'; if (skipSun && w === 0) return 'w'; if (hol.has(iso(n))) return 'h'; return ''; };
+  if (opt.mode === 'n') {
+    let left = opt.n, n = start, we = 0, ho = 0;
+    while (left > 0) { n++; if (n > MAX_DAY) return { error: '超出 9999 年' }; const o = isOff(n); if (o === 'w') we++; else if (o === 'h') ho++; else left--; }
+    return { end: n, we, ho, span: n - start };
+  }
+  let count = 0, we = 0, ho = 0;
+  for (let n = start; n <= opt.end; n++) { const o = isOff(n); if (o === 'w') we++; else if (o === 'h') ho++; else count++; }
+  return { count, we, ho, span: opt.end - start + 1 };
+}
+
+/* ---------- 農曆：1900–2100 資料表（每年一個 hex：bit0-3 閏月月份、bit4-15 各月大小、bit16 閏月大小） ---------- */
+const LUNAR_INFO = [
+0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,
+0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,
+0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,
+0x06566,0x0d4a0,0x0ea50,0x16a95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,
+0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,
+0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,
+0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,
+0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,
+0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,
+0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,
+0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,
+0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,
+0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,
+0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,
+0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,
+0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,
+0x092e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,
+0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,
+0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,
+0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,
+0x0d520];
+const leapMonth = y => LUNAR_INFO[y - 1900] & 0xf;
+const leapDays = y => leapMonth(y) ? ((LUNAR_INFO[y - 1900] & 0x10000) ? 30 : 29) : 0;
+const monthDays = (y, m) => (LUNAR_INFO[y - 1900] & (0x10000 >> m)) ? 30 : 29;
+function lYearDays(y) { let s = 348; for (let i = 0x8000; i > 0x8; i >>= 1) s += (LUNAR_INFO[y - 1900] & i) ? 1 : 0; return s + leapDays(y); }
+const LUNAR_BASE = toDayNumber(1900, 1, 31), LUNAR_END = toDayNumber(2100, 12, 31);
+function solarToLunar(n) {
+  if (n < LUNAR_BASE || n > LUNAR_END) return null;
+  let off = n - LUNAR_BASE, ly = 1900, t;
+  for (; ly < 2101; ly++) { t = lYearDays(ly); if (off < t) break; off -= t; }
+  const lp = leapMonth(ly); let lm = 1, isLeap = false;
+  for (; lm <= 12; lm++) {
+    t = monthDays(ly, lm); if (off < t) break; off -= t;
+    if (lm === lp) { t = leapDays(ly); if (off < t) { isLeap = true; break; } off -= t; }
+  }
+  return { year: ly, month: lm, day: off + 1, isLeap, monthLen: isLeap ? leapDays(ly) : monthDays(ly, lm) };
+}
+const L_MONTH = ['正', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
+const L_DAY10 = ['初', '十', '廿', '三'], L_NUM = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+function lunarDayName(d) { if (d === 10) return '初十'; if (d === 20) return '二十'; if (d === 30) return '三十'; return L_DAY10[Math.floor(d / 10)] + L_NUM[(d - 1) % 10]; }
+const lunarMonthName = (m, leap) => (leap ? '閏' : '') + L_MONTH[m - 1] + '月';
+const GAN = '甲乙丙丁戊己庚辛壬癸', ZHI = '子丑寅卯辰巳午未申酉戌亥', ZODIAC = '鼠牛虎兔龍蛇馬羊猴雞狗豬';
+const ganzhi = y => GAN[(y - 4) % 10] + ZHI[(y - 4) % 12];
+/* 節氣：以低精度太陽視黃經（Meeus 第 25 章）判斷該日（台灣時間 UTC+8）是否跨過 15° 的倍數 */
+const TERM_NAMES = ['春分','清明','穀雨','立夏','小滿','芒種','夏至','小暑','大暑','立秋','處暑','白露','秋分','寒露','霜降','立冬','小雪','大雪','冬至','小寒','大寒','立春','雨水','驚蟄'];
+function sunLon(jd) {
+  const T = (jd - 2451545) / 36525, R = Math.PI / 180;
+  const L0 = 280.46646 + 36000.76983 * T + 0.0003032 * T * T;
+  const M = (357.52911 + 35999.05029 * T - 0.0001537 * T * T) * R;
+  const C = (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.sin(M) + (0.019993 - 0.000101 * T) * Math.sin(2 * M) + 0.000289 * Math.sin(3 * M);
+  const om = (125.04 - 1934.136 * T) * R;
+  let l = (L0 + C - 0.00569 - 0.00478 * Math.sin(om)) % 360; if (l < 0) l += 360; return l;
+}
+function dayStartJD(n) { const y = fromDayNumber(n).y, u = (y - 1820) / 100; return 2440587.5 + n - 8 / 24 + (-20 + 32 * u * u) / 86400; }
+const termCache = new Map();
+function termOnDay(n) {
+  if (termCache.has(n)) return termCache.get(n);
+  const a = Math.floor(sunLon(dayStartJD(n)) / 15), b = Math.floor(sunLon(dayStartJD(n + 1)) / 15);
+  const r = a !== b ? TERM_NAMES[b % 24] : null; termCache.set(n, r); return r;
+}
+function nextTerm(n) { for (let i = 1; i <= 20; i++) { const t = termOnDay(n + i); if (t) return { name: t, n: n + i, in: i }; } return null; }
+
+/* ---------- 今天 ---------- */
+let TODAY = 0;
+function refreshToday() { const d = new Date(); TODAY = toDayNumber(d.getFullYear(), d.getMonth() + 1, d.getDate()); }
+refreshToday();
+
+/* ---------- 狀態 ---------- */
+const DEF = {
+  diff: { start: '2026-10-07', end: '2026-12-25', incl: false },
+  add: { base: '', n: 100, unit: 'd', sign: 1 },
+  work: { start: '', mode: 'n', n: 10, end: '', sat: true, sun: true },
+  lunar: { date: '' },
+  anniFirst: true
+};
+let S = Object.assign({}, DEF, store.get('inputs', {}));
+['diff', 'add', 'work', 'lunar'].forEach(k => { S[k] = Object.assign({}, DEF[k], S[k] || {}); });
+if (!S.add.base) S.add.base = iso(TODAY);
+if (!S.work.start) S.work.start = iso(TODAY);
+if (!S.work.end) S.work.end = iso(TODAY + 30);
+if (!S.lunar.date) S.lunar.date = iso(TODAY);
+let holidays = store.get('holidays', null);
+if (!Array.isArray(holidays)) holidays = ['2026-10-09', '2026-10-26', '2026-12-25'];
+holidays = holidays.filter(h => parseISO(h) != null);
+const ICONS = ['♥', '★', '✿', '☀', '☾', '♪', '✈', '⌂', '☕', '✎', '◆', '✚'];
+let annis = store.get('anniversaries', null);
+if (!Array.isArray(annis)) annis = [
+  { id: 's1', title: '交往紀念日', date: '2024-02-14', icon: '♥', sample: true },
+  { id: 's2', title: '寶寶出生', date: '2026-03-01', icon: '★', sample: true }
+];
+annis = annis.filter(a => a && typeof a.title === 'string' && parseISO(a.date) != null).slice(0, 100);
+let saveT = 0;
+function flush() { clearTimeout(saveT); store.set('inputs', S); store.set('holidays', holidays); store.set('anniversaries', annis); }
+function save() { clearTimeout(saveT); saveT = setTimeout(flush, 300); }
+addEventListener('pagehide', flush);
+
+/* ---------- 共用 UI ---------- */
+let toastT = 0;
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+async function copy(text, el) {
+  try { await navigator.clipboard.writeText(text); toast('已複製結果'); }
+  catch (e) {
+    if (el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    toast('無法自動複製，已選取文字，請長按複製');
+  }
+}
+function setSeg(group, v) { group.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === String(v)))); }
+const fmt = n => n.toLocaleString('zh-TW');
+
+/* ---------- 主題 ---------- */
+const THEMES = ['auto', 'light', 'dark'], THEME_LABEL = { auto: '自動', light: '淺色', dark: '深色' };
+let theme = store.get('theme', 'auto'); if (!THEMES.includes(theme)) theme = 'auto';
+function applyTheme() { if (theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', theme); $('#theme-label').textContent = THEME_LABEL[theme]; }
+$('#theme-btn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % 3]; store.set('theme', theme); applyTheme(); });
+applyTheme();
+
+/* ---------- 分頁 ---------- */
+let tab = store.get('tab', 'diff'); if (!['diff', 'add', 'work', 'anni', 'lunar'].includes(tab)) tab = 'diff';
+function showTab(t) {
+  tab = t; store.set('tab', t);
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === t)));
+  document.querySelectorAll('section.panel').forEach(p => { p.hidden = p.id !== 'p-' + t; });
+}
+document.querySelector('nav.tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
+document.querySelector('nav.tabs').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const bs = [...document.querySelectorAll('nav.tabs button')], i = bs.findIndex(b => b.dataset.tab === tab);
+  const j = (i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length;
+  showTab(bs[j].dataset.tab); bs[j].focus(); e.preventDefault();
+});
+
+/* ---------- 今天列 ---------- */
+function renderTodayLine() {
+  const l = solarToLunar(TODAY);
+  $('#today-line').textContent = '今天 ' + isoW(TODAY) + (l ? ' · 農曆' + lunarMonthName(l.month, l.isLeap) + lunarDayName(l.day) : '');
+}
+
+/* ---------- 相差天數 ---------- */
+let diffText = '';
+function renderDiff() {
+  const out = $('#diff-out'), a = parseISO(S.diff.start), b = parseISO(S.diff.end);
+  if (a == null || b == null) { out.innerHTML = '<p class="err">請選擇有效的起日與迄日（西元 1–9999 年）。</p>'; diffText = ''; return; }
+  const neg = b < a, lo = Math.min(a, b), hi = Math.max(a, b);
+  const span = hi - lo + (S.diff.incl ? 1 : 0);
+  const days = neg ? -span : span;
+  const r = ymd(lo, hi + (S.diff.incl ? 1 : 0));
+  const sg = neg ? '−' : '';
+  const ymdStr = (r.y ? r.y + ' 年 ' : '') + (r.m || r.y ? r.m + ' 個月 ' : '') + r.d + ' 天';
+  diffText = isoW(a) + '→ ' + isoW(b) + '相差 ' + days + ' 天（' + (S.diff.incl ? '含首日' : '不含首日') + '）';
+  out.innerHTML =
+    '<div class="big"><span class="n" id="diff-days">' + sg + fmt(span) + '</span><span class="u">天</span>' + (neg ? '<span class="tag">（迄日早於起日）</span>' : '') + '</div>' +
+    '<div class="facts">' +
+      '<div class="fact"><b>' + sg + ymdStr + '</b><span>年月日</span></div>' +
+      '<div class="fact"><b>' + sg + fmt(Math.floor(span / 7)) + ' 週 ' + (span % 7) + ' 天</b><span>週數</span></div>' +
+      '<div class="fact"><b>' + sg + fmt(span * 24) + '</b><span>總時數</span></div>' +
+    '</div>' +
+    '<p class="sentence" id="diff-sentence">' + esc(diffText) + '</p>' +
+    '<div class="actions"><button class="btn" type="button" id="diff-copy">複製結果</button></div>';
+}
+
+/* ---------- 加減日期 ---------- */
+let addText = '';
+function leafHTML(n) {
+  const g = fromDayNumber(n), w = weekday(n);
+  return '<div class="leaf' + (w === 0 ? ' is-sun' : '') + '" aria-hidden="true"><div class="band num">' + g.y + ' · ' + g.m + '月</div><div class="d">' + g.d + '</div><div class="w">星期' + WD[w] + '</div></div>';
+}
+function renderAdd() {
+  const out = $('#add-out'), base = parseISO(S.add.base), k = Number(S.add.n);
+  if (base == null) { out.innerHTML = '<p class="err">請選擇有效的基準日。</p>'; addText = ''; return; }
+  if (!Number.isInteger(k) || k < 0 || k > 3650000) { out.innerHTML = '<p class="err">數量請輸入 0 以上的整數。</p>'; addText = ''; return; }
+  const s = S.add.sign, unitName = { d: '天', w: '週', m: '個月', y: '年' }[S.add.unit];
+  let res, clamped = false;
+  if (S.add.unit === 'd' || S.add.unit === 'w') { res = base + s * k * (S.add.unit === 'w' ? 7 : 1); }
+  else { const r = addMonths(base, s * k * (S.add.unit === 'y' ? 12 : 1)); if (r) { res = r.n; clamped = r.clamped; } }
+  if (res == null || res < MIN_DAY || res > MAX_DAY) { out.innerHTML = '<p class="err">結果超出西元 1–9999 年的範圍。</p>'; addText = ''; return; }
+  const dist = res - TODAY;
+  addText = isoW(base) + (s > 0 ? ' 加 ' : ' 減 ') + k + ' ' + unitName + ' → ' + isoW(res);
+  out.innerHTML =
+    '<div class="leaf-wrap">' + leafHTML(res) +
+      '<div class="leaf-info"><div class="main" id="add-result">' + iso(res) + '</div>' +
+      '<div class="sub">星期' + WD[weekday(res)] + ' · ' + (dist === 0 ? '就是今天' : dist > 0 ? '距今天還有 ' + fmt(dist) + ' 天' : '已過 ' + fmt(-dist) + ' 天') + '</div>' +
+      (clamped ? '<p class="note warn" id="add-clamp">已調整至月底（原日期在該月不存在）</p>' : '') +
+    '</div></div>' +
+    '<p class="sentence">' + esc(addText) + '</p>' +
+    '<div class="actions"><button class="btn" type="button" id="add-copy">複製結果</button></div>';
+}
+
+/* ---------- 工作天 ---------- */
+let workText = '';
+function renderWork() {
+  const out = $('#work-out'), st = parseISO(S.work.start);
+  $('#work-n-field').hidden = S.work.mode !== 'n'; $('#work-end-field').hidden = S.work.mode !== 'end';
+  workText = '';
+  if (st == null) { out.innerHTML = '<p class="err">請選擇有效的起日。</p>'; return; }
+  const opt = { holidays: new Set(holidays), sat: S.work.sat, sun: S.work.sun, mode: S.work.mode };
+  const ex = [S.work.sat ? '週六' : '', S.work.sun ? '週日' : ''].filter(Boolean).join('、');
+  const exStr = (ex ? '排除' + ex : '不排除週末') + (holidays.length ? '與 ' + holidays.length + ' 個自訂假日' : '');
+  if (S.work.mode === 'n') {
+    const n = Number(S.work.n);
+    if (!Number.isInteger(n) || n < 1) { out.innerHTML = '<p class="err">工作天數請輸入 1 以上的整數。</p>'; return; }
+    if (n > 3650) { out.innerHTML = '<p class="err">工作天數上限為 3650 天。</p>'; return; }
+    const r = workdays(st, Object.assign(opt, { n }));
+    if (r.error) { out.innerHTML = '<p class="err">' + r.error + '</p>'; return; }
+    workText = isoW(st) + ' 起算 ' + n + ' 個工作天 → ' + isoW(r.end) + '（' + exStr + '）';
+    out.innerHTML = '<div class="leaf-wrap">' + leafHTML(r.end) + '<div class="leaf-info"><div class="main" id="work-result">' + iso(r.end) + '</div><div class="sub">第 ' + n + ' 個工作天 · 共經過 ' + fmt(r.span) + ' 個日曆天</div></div></div>' +
+      '<div class="facts"><div class="fact"><b>' + fmt(n) + '</b><span>工作天</span></div><div class="fact"><b>' + fmt(r.we) + '</b><span>週末日</span></div><div class="fact"><b>' + fmt(r.ho) + '</b><span>自訂假日</span></div></div>' +
+      '<p class="sentence">' + esc(workText) + '</p><div class="actions"><button class="btn" type="button" id="work-copy">複製結果</button></div>';
+  } else {
+    const en = parseISO(S.work.end);
+    if (en == null) { out.innerHTML = '<p class="err">請選擇有效的迄日。</p>'; return; }
+    if (en < st) { out.innerHTML = '<p class="err">迄日不能早於起日。</p>'; return; }
+    if (en - st + 1 > 3650) { out.innerHTML = '<p class="err">區間上限為 3650 天，請縮短範圍。</p>'; return; }
+    const r = workdays(st, Object.assign(opt, { end: en }));
+    workText = isoW(st) + ' 到 ' + isoW(en) + ' 共 ' + r.count + ' 個工作天（' + exStr + '）';
+    out.innerHTML = '<div class="big"><span class="n" id="work-count">' + fmt(r.count) + '</span><span class="u">個工作天</span></div>' +
+      '<div class="facts"><div class="fact"><b>' + fmt(r.span) + '</b><span>日曆天</span></div><div class="fact"><b>' + fmt(r.we) + '</b><span>週末日</span></div><div class="fact"><b>' + fmt(r.ho) + '</b><span>自訂假日</span></div></div>' +
+      '<p class="sentence">' + esc(workText) + '</p><div class="actions"><button class="btn" type="button" id="work-copy">複製結果</button></div>';
+  }
+}
+function renderHolidays() {
+  holidays.sort();
+  $('#hol-count').textContent = holidays.length ? '（' + holidays.length + '）' : '';
+  $('#hol-list').innerHTML = holidays.length ? holidays.map(h => '<span class="chip">' + h + '（' + WD[weekday(parseISO(h))] + '）<button type="button" data-del-hol="' + h + '" aria-label="移除 ' + h + '">✕</button></span>').join('') : '<p class="empty">尚未加入假日。可加入補假、颱風假或公司特休。</p>';
+}
+
+/* ---------- 紀念日 ---------- */
+function renderIcons() {
+  $('#anni-icons').innerHTML = ICONS.map((ic, i) => '<label><input type="radio" name="anni-icon" id="anni-icon-' + i + '" value="' + ic + '"' + (i === 0 ? ' checked' : '') + ' aria-label="圖示 ' + (i + 1) + '"><span>' + ic + '</span></label>').join('');
+}
+function nextAnniversary(start) { // 下一個週年（今天或之後）
+  const g = fromDayNumber(start), T = fromDayNumber(TODAY);
+  for (let y = Math.max(g.y + 1, T.y); y <= g.y + 200 && y <= 9999; y++) {
+    const d = Math.min(g.d, daysInMonth(y, g.m)), n = toDayNumber(y, g.m, d);
+    if (n >= TODAY) return { k: y - g.y, n };
+  }
+  return null;
+}
+function renderAnnis() {
+  const first = S.anniFirst ? 1 : 0, list = $('#anni-list');
+  if (!annis.length) { list.innerHTML = '<div class="card"><p class="empty">還沒有紀念日。在右側（手機為下方）新增第一個吧。</p></div>'; return; }
+  list.innerHTML = annis.map(a => {
+    const n = parseISO(a.date), passed = TODAY - n;
+    let count, items = [];
+    if (passed >= 0) {
+      const N = passed + first;
+      count = '<span>' + (N === 0 ? '今天開始' : '第') + '</span><b class="num">' + fmt(N) + '</b><span>天</span>';
+      const H = (Math.floor(N / 100) + 1) * 100, hd = n + H - first;
+      items.push('<li><span>第 ' + fmt(H) + ' 天 · ' + isoW(hd) + '</span><em>還有 ' + fmt(hd - TODAY) + ' 天</em></li>');
+      const na = nextAnniversary(n);
+      if (na) items.push('<li><span>' + na.k + ' 週年 · ' + isoW(na.n) + '</span><em>' + (na.n === TODAY ? '就是今天' : '還有 ' + fmt(na.n - TODAY) + ' 天') + '</em></li>');
+    } else {
+      count = '<span>還有</span><b class="num">' + fmt(-passed) + '</b><span>天</span>';
+    }
+    return '<article class="anni" data-id="' + esc(a.id) + '"><div class="ico" aria-hidden="true">' + esc(a.icon || '♥') + '</div>' +
+      '<div><h3>' + esc(a.title) + (a.sample ? '<span class="sample">範例</span>' : '') + '</h3><div class="dt">' + isoW(n) + '</div></div>' +
+      '<button class="del" type="button" data-del-anni="' + esc(a.id) + '" aria-label="刪除 ' + esc(a.title) + '">刪除</button>' +
+      '<div class="count">' + count + '</div>' + (items.length ? '<ul>' + items.join('') + '</ul>' : '') + '</article>';
+  }).join('');
+}
+
+/* ---------- 農曆 ---------- */
+let lunarText = '', calMonth = null;
+function renderLunar() {
+  const out = $('#lunar-out'), n = parseISO(S.lunar.date);
+  lunarText = '';
+  if (n == null) { out.innerHTML = '<p class="err">請選擇有效日期。</p>'; return; }
+  const l = solarToLunar(n);
+  if (!l) { out.innerHTML = '<p class="err" id="lunar-range">超出支援範圍（1900–2100）。農曆資料表涵蓋 1900-01-31 至 2100-12-31。</p><div class="actions"><button class="btn" type="button" data-today="lunar-date">回到今天</button></div>'; calMonth = null; renderCal(); return; }
+  const t = termOnDay(n), nt = nextTerm(n);
+  const name = lunarMonthName(l.month, l.isLeap) + lunarDayName(l.day);
+  lunarText = isoW(n) + '＝農曆' + ganzhi(l.year) + '年' + name + '（' + ZODIAC[(l.year - 4) % 12] + '年）' + (t ? '，' + t : '');
+  out.innerHTML =
+    '<div class="lunar-big" id="lunar-result">' + name + '</div>' +
+    '<div class="lunar-meta">' +
+      '<span class="pill hot">' + ganzhi(l.year) + '年 · 生肖' + ZODIAC[(l.year - 4) % 12] + '</span>' +
+      '<span class="pill">' + (l.isLeap ? '閏月 · ' : '') + '本月' + (l.monthLen === 30 ? '大（30 天）' : '小（29 天）') + '</span>' +
+      (l.isLeap ? '<span class="pill leap">閏月</span>' : '') +
+      (t ? '<span class="pill hot" id="lunar-term">今日節氣：' + t + '</span>' : '') +
+    '</div>' +
+    '<p class="note">' + isoW(n) + (nt ? ' · 下一個節氣：' + nt.name + ' ' + fromDayNumber(nt.n).m + '/' + fromDayNumber(nt.n).d + '（' + nt.in + ' 天後）' : '') + '</p>' +
+    '<p class="note">節氣以台灣時間計算，交節時刻接近午夜時可能與官方萬年曆差一天。</p>' +
+    '<div class="actions"><button class="btn" type="button" id="lunar-copy">複製結果</button><button class="btn" type="button" data-today="lunar-date">回到今天</button></div>';
+  const g = fromDayNumber(n);
+  calMonth = { y: g.y, m: g.m };
+  renderCal();
+}
+function renderCal() {
+  const cal = $('#cal');
+  if (!calMonth) { const g = fromDayNumber(TODAY); calMonth = { y: g.y, m: g.m }; }
+  const { y, m } = calMonth, first = toDayNumber(y, m, 1), lead = weekday(first), sel = parseISO(S.lunar.date);
+  $('#cal-title').textContent = y + ' 年 ' + m + ' 月';
+  let h = WD.map((w, i) => '<div class="wd' + (i === 0 ? ' s' : '') + '">' + w + '</div>').join('');
+  const rows = Math.ceil((lead + daysInMonth(y, m)) / 7) * 7;
+  for (let i = 0; i < rows; i++) {
+    const n = first - lead + i, g = fromDayNumber(n), l = solarToLunar(n), t = l ? termOnDay(n) : null;
+    let lab = '', cls = 'l';
+    if (t) { lab = t; cls += ' t'; } else if (l && l.day === 1) { lab = lunarMonthName(l.month, l.isLeap); cls += ' m'; } else if (l) lab = lunarDayName(l.day);
+    h += '<button type="button" data-cal="' + iso(n) + '" class="' + (g.m !== m ? 'out ' : '') + (weekday(n) === 0 ? 'sun ' : '') + (n === TODAY ? 'today' : '') + '" aria-pressed="' + (n === sel) + '" aria-label="' + iso(n) + (l ? ' 農曆' + lunarMonthName(l.month, l.isLeap) + lunarDayName(l.day) : '') + (t ? ' ' + t : '') + '"><span class="g">' + g.d + '</span><span class="' + cls + '">' + (lab || '&nbsp;') + '</span></button>';
+  }
+  cal.innerHTML = h;
+}
+
+/* ---------- 綁定 ---------- */
+function syncInputs() {
+  $('#diff-start').value = S.diff.start; $('#diff-end').value = S.diff.end; $('#diff-incl').checked = S.diff.incl;
+  $('#add-base').value = S.add.base; $('#add-n').value = S.add.n; setSeg($('#add-unit'), S.add.unit); setSeg($('#add-sign'), S.add.sign);
+  $('#work-start').value = S.work.start; $('#work-n').value = S.work.n; $('#work-end').value = S.work.end; $('#work-sat').checked = S.work.sat; $('#work-sun').checked = S.work.sun; setSeg($('#work-mode'), S.work.mode);
+  $('#lunar-date').value = S.lunar.date; $('#anni-first').checked = S.anniFirst;
+  $('#anni-date').value = iso(TODAY);
+}
+const renderAll = () => { renderTodayLine(); renderDiff(); renderAdd(); renderWork(); renderHolidays(); renderAnnis(); renderLunar(); };
+const bindVal = (id, obj, key, fn, num) => $(id).addEventListener('input', e => { S[obj][key] = num ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value; fn(); save(); });
+bindVal('#diff-start', 'diff', 'start', renderDiff); bindVal('#diff-end', 'diff', 'end', renderDiff);
+$('#diff-incl').addEventListener('change', e => { S.diff.incl = e.target.checked; renderDiff(); save(); });
+$('#diff-swap').addEventListener('click', () => { const t = S.diff.start; S.diff.start = S.diff.end; S.diff.end = t; syncInputs(); renderDiff(); save(); });
+bindVal('#add-base', 'add', 'base', renderAdd); bindVal('#add-n', 'add', 'n', renderAdd, true);
+$('#add-unit').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.add.unit = b.dataset.v; setSeg($('#add-unit'), S.add.unit); renderAdd(); save(); });
+$('#add-sign').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.add.sign = Number(b.dataset.v); setSeg($('#add-sign'), S.add.sign); renderAdd(); save(); });
+bindVal('#work-start', 'work', 'start', renderWork); bindVal('#work-n', 'work', 'n', renderWork, true); bindVal('#work-end', 'work', 'end', renderWork);
+$('#work-mode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.work.mode = b.dataset.v; setSeg($('#work-mode'), S.work.mode); renderWork(); save(); });
+$('#work-sat').addEventListener('change', e => { S.work.sat = e.target.checked; renderWork(); save(); });
+$('#work-sun').addEventListener('change', e => { S.work.sun = e.target.checked; renderWork(); save(); });
+bindVal('#lunar-date', 'lunar', 'date', renderLunar);
+function shiftLunar(d) { const n = parseISO(S.lunar.date); if (n == null) return; const m = Math.min(Math.max(n + d, toDayNumber(1900, 1, 31)), LUNAR_END); S.lunar.date = iso(m); $('#lunar-date').value = S.lunar.date; renderLunar(); save(); }
+$('#lunar-prev').addEventListener('click', () => shiftLunar(-1)); $('#lunar-next').addEventListener('click', () => shiftLunar(1));
+function shiftCal(k) { let t = calMonth.y * 12 + calMonth.m - 1 + k; const y = Math.floor(t / 12); if (y < 1900 || y > 2100) return; calMonth = { y, m: t - y * 12 + 1 }; renderCal(); }
+$('#cal-prev').addEventListener('click', () => shiftCal(-1)); $('#cal-next').addEventListener('click', () => shiftCal(1));
+$('#cal').addEventListener('click', e => { const b = e.target.closest('button[data-cal]'); if (!b) return; S.lunar.date = b.dataset.cal; $('#lunar-date').value = S.lunar.date; renderLunar(); save(); });
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-today]');
+  if (t) { const inp = document.getElementById(t.dataset.today); inp.value = iso(TODAY); inp.dispatchEvent(new Event('input', { bubbles: true })); return; }
+  const c = e.target.closest('#diff-copy, #add-copy, #work-copy, #lunar-copy');
+  if (c) { const map = { 'diff-copy': [diffText, '#diff-out .sentence'], 'add-copy': [addText, '#add-out .sentence'], 'work-copy': [workText, '#work-out .sentence'], 'lunar-copy': [lunarText, '#lunar-result'] }[c.id]; if (map[0]) copy(map[0], $(map[1])); return; }
+  const dh = e.target.closest('[data-del-hol]');
+  if (dh) { holidays = holidays.filter(h => h !== dh.dataset.delHol); renderHolidays(); renderWork(); save(); return; }
+  const da = e.target.closest('[data-del-anni]');
+  if (da) {
+    if (!da.classList.contains('armed')) { document.querySelectorAll('.del.armed').forEach(x => { x.classList.remove('armed'); x.textContent = '刪除'; }); da.classList.add('armed'); da.textContent = '確定刪除？'; return; }
+    annis = annis.filter(a => a.id !== da.dataset.delAnni); renderAnnis(); save(); toast('已刪除紀念日'); return;
+  }
+  if (!e.target.closest('.del')) document.querySelectorAll('.del.armed').forEach(x => { x.classList.remove('armed'); x.textContent = '刪除'; });
+});
+$('#hol-add').addEventListener('click', () => {
+  const v = $('#hol-date').value; if (parseISO(v) == null) { toast('請先選擇日期'); return; }
+  if (holidays.includes(v)) { toast('這天已在清單中'); return; }
+  if (holidays.length >= 500) { toast('假日清單上限 500 筆'); return; }
+  holidays.push(v); renderHolidays(); renderWork(); save(); toast('已加入 ' + v);
+});
+$('#hol-import-btn').addEventListener('click', () => {
+  const lines = $('#hol-import').value.split(/[\n,，\s]+/).map(s => s.trim().replace(/\//g, '-')).filter(Boolean);
+  let add = 0, bad = 0;
+  lines.forEach(s => { const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s); const v = m ? m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]) : ''; if (parseISO(v) == null) { bad++; return; } if (!holidays.includes(v) && holidays.length < 500) { holidays.push(v); add++; } });
+  renderHolidays(); renderWork(); save(); toast('匯入 ' + add + ' 筆' + (bad ? '，' + bad + ' 筆格式不符已略過' : ''));
+  if (add) $('#hol-import').value = '';
+});
+$('#hol-clear').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = '再按一次確定清空'; setTimeout(() => { b.classList.remove('armed'); b.textContent = '清空全部假日'; }, 3000); return; }
+  holidays = []; b.classList.remove('armed'); b.textContent = '清空全部假日'; renderHolidays(); renderWork(); save(); toast('已清空假日');
+});
+$('#anni-add').addEventListener('click', () => {
+  const title = $('#anni-title').value.trim(), date = $('#anni-date').value, err = $('#anni-err');
+  const icon = (document.querySelector('input[name="anni-icon"]:checked') || {}).value || ICONS[0];
+  let msg = '';
+  if (!title || title.length > 30) msg = '名稱需為 1–30 字。';
+  else if (parseISO(date) == null) msg = '請選擇有效日期。';
+  else if (annis.length >= 100) msg = '紀念日上限 100 筆，請先刪除舊的。';
+  err.hidden = !msg; err.textContent = msg; if (msg) return;
+  const id = 'a' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+  annis.unshift({ id, title, date, icon }); $('#anni-title').value = '';
+  renderAnnis(); save(); toast('已加入「' + title + '」');
+});
+$('#anni-first').addEventListener('change', e => { S.anniFirst = e.target.checked; renderAnnis(); save(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { const old = TODAY; refreshToday(); if (old !== TODAY) renderAll(); } });
+
+renderIcons(); syncInputs(); showTab(tab); renderAll();
+window.__dateCalc = { toDayNumber, fromDayNumber, addMonths, ymd, workdays, solarToLunar: (y, m, d) => solarToLunar(toDayNumber(y, m, d)), termOnDay: (y, m, d) => termOnDay(toDayNumber(y, m, d)), iso, parseISO };
+})();
+</script>

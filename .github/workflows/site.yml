@@ -1,0 +1,66 @@
+# Every pull request and every push to main: build the site and run the regression tests.
+# Pushes to main then deploy the built site to GitHub Pages
+# (Settings → Pages → Source must be "GitHub Actions").
+name: Build, test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build site
+        run: python3 scripts/build_site.py _site
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+          # the test scripts load Playwright from the path used in the development container
+          sudo mkdir -p /opt/node22/lib/node_modules
+          sudo ln -sfn "$PWD/node_modules/playwright" /opt/node22/lib/node_modules/playwright
+      - name: Regression tests (every app on a phone-sized screen, unit tests, both lobbies)
+        run: node qa/smoke/run.js --hubs
+      - name: Online play tests
+        run: node qa/netplay/run.js
+      - name: Keep the test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: qa/smoke/report.md
+          if-no-files-found: ignore
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,1241 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>快艇骰子</title>
+<meta name="color-scheme" content="light dark">
+<style>
+:root{
+  --navy:#1b3358; --ink:#1b3358; --ink2:#4f6588; --ink3:#8090a8; --sail:#f3ead7; --card:#fbf6ea; --cell:#fffaf0; --red:#d2433a; --red2:#b8352d;
+  --gold:#e0a526; --deck:#a0703f; --teal:#1f9b8f; --line:#1b335824; --bg1:#d7e6f1; --bg2:#a9c6dc; --sea:#5d8fb8; --shadow:0 4px 14px #1b335826;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+}
+:root[data-theme="dark"]{
+  --ink:#e8eef8; --ink2:#a3b4cd; --ink3:#6f819c; --sail:#15253d; --card:#13233a; --cell:#1a2d48; --red:#e5594f; --red2:#c94a41;
+  --gold:#f0bb45; --deck:#6c4826; --teal:#3cc2b3; --line:#c9d8ee1f; --bg1:#0b1626; --bg2:#0b1626; --sea:#20406a; --shadow:0 4px 16px #0006;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#e8eef8; --ink2:#a3b4cd; --ink3:#6f819c; --sail:#15253d; --card:#13233a; --cell:#1a2d48; --red:#e5594f; --red2:#c94a41;
+    --gold:#f0bb45; --deck:#6c4826; --teal:#3cc2b3; --line:#c9d8ee1f; --bg1:#0b1626; --bg2:#0b1626; --sea:#20406a; --shadow:0 4px 16px #0006;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ink);
+  font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;padding:0}
+#beam{position:fixed;inset:-50%;pointer-events:none;z-index:0;opacity:0;transition:opacity .6s}
+.night #beam{opacity:1;background:conic-gradient(from 0deg at 50% 50%,transparent 0deg,#ffe9a812 8deg,#ffe9a826 14deg,#ffe9a812 20deg,transparent 30deg,transparent 360deg);animation:sweep 14s linear infinite}
+@keyframes sweep{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.night #beam{animation:none}}
+#app{position:relative;z-index:1;height:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;
+  padding:calc(var(--sat) + 8px) calc(var(--sar) + 10px) calc(var(--sab) + 8px) calc(var(--sal) + 10px);gap:8px;overflow-y:auto;overflow-x:hidden}
+/* HUD */
+.hud{display:flex;align-items:center;gap:8px;flex:none}
+.ibtn{width:44px;height:44px;border-radius:14px;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;flex:none;position:relative}
+.ibtn svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ibtn:active{transform:scale(.94)}
+.ibtn[disabled]{opacity:.4}
+.ibtn.lit{background:var(--gold)} .ibtn.lit svg{stroke:#1b3358}
+.hmid{flex:1;min-width:0;height:44px;background:var(--card);border-radius:14px;box-shadow:var(--shadow);padding:4px 10px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.hl1{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:13px;white-space:nowrap}
+.hl1 b{font-size:16px} .hl1 .mt{color:var(--ink2);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.hl2{position:relative;height:12px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2);white-space:nowrap}
+.bar{position:relative;flex:1;height:6px;border-radius:3px;background:var(--line);overflow:visible}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--sea),var(--teal));width:0;transition:width .5s}
+.bar .ship{position:absolute;top:-9px;width:18px;height:16px;left:0;transition:left .6s cubic-bezier(.3,1.4,.5,1),transform .6s}
+.bar .flag{position:absolute;right:-2px;top:-7px;width:3px;height:12px;background:var(--red);border-radius:1px}
+.bar .flag::after{content:"";position:absolute;left:3px;top:0;border-left:7px solid var(--red);border-top:3px solid transparent;border-bottom:3px solid transparent}
+.vsl{display:flex;gap:10px;align-items:baseline}
+.vsl .ai{color:var(--red)}
+/* tray */
+#trayWrap{position:relative;flex:1 1 auto;min-height:196px;max-height:340px;border-radius:20px;box-shadow:var(--shadow);overflow:hidden;touch-action:none}
+#tray{position:absolute;inset:0;width:100%;height:100%;display:block}
+#trayMsg{position:absolute;left:0;right:0;bottom:16%;text-align:center;font-size:14px;font-weight:700;color:#fff8e6;text-shadow:0 1px 3px #0008;pointer-events:none;transition:opacity .3s}
+#trayTag{position:absolute;left:14px;top:8px;font-size:11px;font-weight:700;color:#fff3d6cc;letter-spacing:.1em;pointer-events:none}
+#banner{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.6);opacity:0;font-size:38px;font-weight:900;color:#ffe08a;-webkit-text-stroke:2px #1b3358;paint-order:stroke fill;
+  text-shadow:0 4px 0 #1b3358,0 8px 18px #0009;pointer-events:none;white-space:nowrap;letter-spacing:.06em}
+#banner.show{animation:pop 1.5s ease-out forwards}
+@keyframes pop{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.12)}25%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-62%) scale(1)}}
+/* controls */
+.ctl{display:flex;gap:8px;align-items:stretch;flex:none}
+#bRoll{flex:1;height:56px;border-radius:18px;background:linear-gradient(180deg,#e15349,var(--red2));color:#fff;font-size:20px;font-weight:800;letter-spacing:.12em;
+  box-shadow:0 4px 0 #8f2620,0 8px 18px #d2433a55;display:flex;align-items:center;justify-content:center;gap:12px;position:relative;transition:transform .08s,box-shadow .08s,filter .2s}
+#bRoll:active:not([disabled]){transform:translateY(3px);box-shadow:0 1px 0 #8f2620,0 3px 8px #d2433a55}
+#bRoll[disabled]{filter:grayscale(.7) brightness(.9);opacity:.6;cursor:default}
+#bRoll .dots{display:flex;gap:5px} #bRoll .dots i{width:9px;height:9px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #ffffff55}
+#bRoll .dots i.off{background:transparent;box-shadow:inset 0 0 0 2px #ffffff88}
+.sbtn{min-width:56px;height:56px;border-radius:18px;background:var(--card);box-shadow:var(--shadow);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 8px}
+.sbtn svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.sbtn[disabled]{opacity:.4}
+.sbtn.tk{background:var(--gold);color:#1b3358} .sbtn.tk svg{stroke:#1b3358}
+/* sheet */
+#sheet{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.col{background:var(--sail);border-radius:16px;box-shadow:var(--shadow);padding:6px;position:relative;
+  background-image:repeating-linear-gradient(0deg,#0000 0 3px,#00000008 3px 4px),repeating-linear-gradient(90deg,#0000 0 3px,#00000006 3px 4px)}
+.ch{font-size:11px;font-weight:800;color:var(--ink2);letter-spacing:.12em;padding:2px 6px 4px;display:flex;justify-content:space-between}
+.row{width:100%;height:44px;border-radius:10px;display:flex;align-items:center;gap:6px;padding:0 8px;text-align:left;position:relative;transition:background .15s,box-shadow .15s}
+.row + .row{margin-top:2px}
+.row .nm{flex:1;min-width:0;line-height:1.1}
+.row .nm b{display:block;font-size:15px;font-weight:700}
+.row .nm small{display:block;font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .v{min-width:30px;text-align:right;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+.row .v.pv{color:var(--ink3);font-weight:600}
+.row .v.pv.good{color:var(--teal)}
+.row .av{min-width:30px;height:24px;border-radius:7px;background:#d2433a1c;color:var(--red);font-size:13px;font-weight:800;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.row.done .nm b{color:var(--ink2)}
+.row.done{background:#1b33580a}
+.row.open:not(.na){background:var(--cell);box-shadow:0 1px 0 var(--line)}
+.row.na{opacity:.45}
+.row.sel{background:var(--cell);box-shadow:0 0 0 2.5px var(--red),0 4px 12px #d2433a33;z-index:1}
+.row.sel .v{color:var(--red)}
+.row.sel::after{content:"再點一下確認";position:absolute;right:8px;top:-9px;font-size:11px;font-weight:700;background:var(--red);color:#fff;padding:1px 6px;border-radius:6px}
+.row.hint{box-shadow:0 0 0 2.5px var(--teal),0 0 16px #1f9b8f55}
+.row.aiflash{animation:aif 1s}
+@keyframes aif{0%,60%{box-shadow:0 0 0 3px var(--red)}100%{box-shadow:none}}
+.row.just .v{animation:jv .6s}
+@keyframes jv{0%{transform:scale(1.6)}100%{transform:scale(1)}}
+.bonus{height:44px;margin-top:2px;padding:4px 8px;border-radius:10px;background:#1b33580d;display:flex;flex-direction:column;justify-content:center;gap:4px}
+.bonus .t{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:var(--ink2)}
+.bonus .t b{color:var(--ink)}
+.bonus .bar i{background:linear-gradient(90deg,var(--gold),#f3d27a)}
+.bonus.got{background:linear-gradient(90deg,#e0a52633,#e0a52611)}
+.tot{display:flex;justify-content:space-between;align-items:center;margin-top:2px;height:28px;padding:0 8px;font-size:12px;color:var(--ink2);font-weight:700}
+.tot b{font-size:15px;color:var(--ink)}
+@media (hover:hover){ .row.open:not(.na):hover{box-shadow:0 0 0 2px var(--line)} .sbtn:hover,.ibtn:hover{filter:brightness(1.05)} }
+/* overlays */
+.ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 16px) 16px calc(var(--sab) + 16px);background:#0b162680;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);overflow-y:auto}
+.ov.solid{background:linear-gradient(180deg,var(--bg1),var(--bg2))}
+.panel{width:100%;max-width:400px;background:var(--card);border-radius:22px;box-shadow:0 18px 50px #0005;padding:18px 16px;margin:auto;position:relative;animation:pin .3s cubic-bezier(.2,1.3,.5,1)}
+@keyframes pin{from{transform:translateY(20px) scale(.96);opacity:0}}
+@media (max-height:600px){ .ov{align-items:flex-start} }
+.ttl{font-size:22px;font-weight:900;text-align:center;margin:2px 0 4px}
+.sub{font-size:13px;color:var(--ink2);text-align:center;margin-bottom:12px;line-height:1.5}
+.logo{display:block;margin:0 auto 4px;width:120px;height:84px}
+.mode{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:8px 12px;border-radius:16px;background:var(--cell);box-shadow:0 1px 0 var(--line),0 2px 8px #1b335812;text-align:left;margin-top:8px}
+.mode:active{transform:scale(.985)}
+.mode .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none;background:var(--navy);color:#fff}
+.mode .ic svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mode b{display:block;font-size:16px} .mode small{display:block;font-size:12px;color:var(--ink2);margin-top:1px}
+.mode.primary{background:linear-gradient(180deg,#e15349,var(--red2));color:#fff} .mode.primary small{color:#ffe1dc} .mode.primary .ic{background:#fff3}
+.chips{display:flex;gap:6px;margin-top:8px}
+.chip{flex:1;height:44px;border-radius:12px;background:var(--cell);box-shadow:0 1px 0 var(--line);font-size:14px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.chip small{font-size:11px;font-weight:600;color:var(--ink3)}
+.chip[aria-pressed="true"]{background:var(--navy);color:#fff} .chip[aria-pressed="true"] small{color:#c9d6ea}
+.sets{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:6px;height:44px;padding:0 10px;border-radius:12px;background:var(--cell);font-size:13px;font-weight:700;box-shadow:0 1px 0 var(--line)}
+.sw .trk{width:34px;height:20px;border-radius:10px;background:#8090a855;position:relative;flex:none;transition:background .2s}
+.sw .trk::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0004;transition:left .2s}
+.sw[aria-checked="true"] .trk{background:var(--teal)} .sw[aria-checked="true"] .trk::after{left:16px}
+.btns{display:flex;gap:8px;margin-top:14px}
+.btn{flex:1;height:48px;border-radius:14px;background:var(--cell);box-shadow:0 1px 0 var(--line),0 2px 8px #1b335812;font-weight:800;font-size:15px}
+.btn.pri{background:linear-gradient(180deg,#e15349,var(--red2));color:#fff;box-shadow:0 3px 0 #8f2620}
+.btn:active{transform:translateY(2px)}
+.big{font-size:56px;font-weight:900;text-align:center;line-height:1;margin:6px 0 2px;font-variant-numeric:tabular-nums;color:var(--red)}
+.brk{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:14px;margin:12px 4px 0;padding:10px 12px;border-radius:12px;background:var(--cell)}
+.brk span:nth-child(even){text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.tags{display:flex;width:100%;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}
+.tag{font-size:12px;font-weight:800;padding:4px 10px;border-radius:999px;background:var(--gold);color:#1b3358}
+.tag.alt{background:#1b335818;color:var(--ink2)}
+.tag.ach{background:var(--teal);color:#fff}
+.stat{display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:14px;padding:10px 12px;border-radius:12px;background:var(--cell);margin-top:8px}
+.stat span:nth-child(even){text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.achl{display:grid;gap:6px;margin-top:8px}
+.ach{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--cell);font-size:13px}
+.ach i{width:28px;height:28px;border-radius:50%;background:#8090a840;flex:none;display:grid;place-items:center;font-style:normal;font-weight:900;color:#fff}
+.ach.on i{background:var(--gold);color:#1b3358}
+.ach b{display:block;font-size:14px} .ach small{color:var(--ink2)}
+.ach:not(.on){opacity:.65}
+.share{width:100%;min-height:120px;font:13px/1.5 inherit;font-family:inherit;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--cell);color:var(--ink);resize:none;-webkit-user-select:text;user-select:text}
+#toast{position:fixed;left:50%;bottom:calc(var(--sab) + 24px);transform:translate(-50%,20px);opacity:0;background:#1b3358f0;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:700;z-index:40;pointer-events:none;transition:all .25s;max-width:88vw;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:30}
+.fly{position:fixed;z-index:31;pointer-events:none;font-weight:900;font-size:22px;color:var(--red);text-shadow:0 2px 0 #fff8,0 2px 8px #0003;animation:fly 1s ease-out forwards}
+@keyframes fly{0%{opacity:0;transform:translate(-50%,0) scale(.6)}20%{opacity:1;transform:translate(-50%,-10px) scale(1.2)}100%{opacity:0;transform:translate(-50%,-56px) scale(1)}}
+.shake{animation:shk .3s}
+@keyframes shk{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+/* landscape */
+@media (orientation: landscape) and (max-height: 520px){
+  #app{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);grid-template-rows:auto 1fr auto;column-gap:12px;row-gap:6px;overflow:hidden}
+  .hud{grid-column:1;grid-row:1}
+  #trayWrap{grid-column:1;grid-row:2;min-height:0;max-height:none}
+  .ctl{grid-column:1;grid-row:3}
+  #bRoll,.sbtn{height:50px}
+  #sheet{grid-column:2;grid-row:1/4;overflow-y:auto;align-content:start;padding-bottom:4px}
+}
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<div id="beam"></div>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="boat" viewBox="0 0 24 20"><path d="M11 1v13M11 2l8 11h-8z" fill="#f3ead7" stroke="#1b3358" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 4L4 13h6z" fill="#d2433a"/><path d="M2 15h20l-3 4H5z" fill="#1b3358"/></symbol>
+</svg>
+<div id="app">
+  <header class="hud">
+    <button class="ibtn" id="bMenu" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <div class="hmid">
+      <div class="hl1"><span id="hTurn">第 <b>1</b>/13 回合</span><span class="mt" id="hMode">單局</span><span>本表 <b id="hScore">0</b></span></div>
+      <div class="hl2" id="hLine2"></div>
+    </div>
+    <button class="ibtn" id="bHint" aria-label="提示燈"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg></button>
+    <button class="ibtn" id="bMute" aria-label="音效"><svg viewBox="0 0 24 24" id="muteIc"></svg></button>
+  </header>
+  <div id="trayWrap">
+    <canvas id="tray"></canvas>
+    <div id="trayTag">保留列</div>
+    <div id="trayMsg">按「擲骰」或在甲板上往上滑</div>
+    <div id="banner">快艇！</div>
+  </div>
+  <div class="ctl">
+    <button class="sbtn" id="bUndo" hidden aria-label="悔回一擲"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>悔擲</button>
+    <button id="bRoll"><span id="rollTxt">擲骰</span><span class="dots" id="rollDots"><i></i><i></i><i></i></span></button>
+    <button class="sbtn tk" id="bTicket" hidden aria-label="使用重擲券"><svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V4H3z"/><path d="M12 6v8"/></svg><span id="tkN">券 ×1</span></button>
+  </div>
+  <div id="sheet">
+    <div class="col" id="colU"><div class="ch"><span>上半區</span><span id="uLbl"></span></div></div>
+    <div class="col" id="colL"><div class="ch"><span>下半區</span><span id="lLbl"></span></div></div>
+  </div>
+</div>
+<canvas id="fx"></canvas>
+<div id="toast"></div>
+
+<div class="ov solid" id="ovMenu" hidden>
+  <div class="panel">
+    <svg class="logo" viewBox="0 0 120 84" aria-hidden="true">
+      <circle cx="96" cy="18" r="10" fill="#e0a526"/>
+      <path d="M58 6v52" stroke="#1b3358" stroke-width="3"/>
+      <path d="M60 8l30 44H60z" fill="#f3ead7" stroke="#1b3358" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M56 14L32 52h24z" fill="#d2433a"/>
+      <path d="M18 60h84l-12 14H30z" fill="#1b3358"/>
+      <path d="M4 78q10-6 20 0t20 0 20 0 20 0 20 0 12 0" stroke="#5d8fb8" stroke-width="3" fill="none"/>
+      <g transform="translate(70 26) rotate(12)"><rect width="18" height="18" rx="4" fill="#fffaf0" stroke="#1b3358" stroke-width="1.5"/><circle cx="5" cy="5" r="1.8" fill="#1b3358"/><circle cx="9" cy="9" r="1.8" fill="#1b3358"/><circle cx="13" cy="13" r="1.8" fill="#1b3358"/></g>
+    </svg>
+    <div class="ttl">快艇骰子</div>
+    <div class="sub">擲五顆骰、填十三格，湊出五顆同點的「快艇」！</div>
+    <button class="mode primary" id="mCont" hidden><span class="ic"><svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg></span><span><b>繼續航行</b><small id="contInfo"></small></span></button>
+    <button class="mode" data-mode="solo"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="9" cy="9" r="1" fill="#fff"/><circle cx="15" cy="15" r="1" fill="#fff"/></svg></span><span><b>單局航行</b><small id="soloInfo">13 回合，挑戰最高分</small></span></button>
+    <button class="mode" data-mode="voyage"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3v13M12 4l7 10h-7zM11 7l-5 7h5"/><path d="M3 18q3 3 6 0t6 0 6 0"/></svg></span><span><b>遠航（無盡）</b><small id="voyInfo">一張接一張，門檻逐張提高</small></span></button>
+    <button class="mode" data-mode="daily"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></span><span><b>每日航線</b><small id="dailyInfo">今天大家擲到同樣的骰子</small></span></button>
+    <button class="mode" data-mode="vs"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M5 21c1-4 4-6 7-6s6 2 7 6"/><path d="M7 5h10"/></svg></span><span><b>對戰電腦船長</b><small>輪流擲骰，比總分</small></span></button>
+    <div class="chips" id="lvChips" role="group" aria-label="電腦船長等級">
+      <button class="chip" data-lv="0" aria-pressed="false">新手<small>約 160 分</small></button>
+      <button class="chip" data-lv="1" aria-pressed="true">一般<small>約 235 分</small></button>
+      <button class="chip" data-lv="2" aria-pressed="false">高手<small>約 250 分</small></button>
+    </div>
+    <button class="mode" data-mode="practice"><span class="ic"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></span><span><b>練習模式</b><small>可悔回一擲、提示不限，不計紀錄</small></span></button>
+    <div class="sets">
+      <button class="sw" role="switch" id="swSound" aria-checked="true"><span>音效</span><span class="trk"></span></button>
+      <button class="sw" role="switch" id="swVib" aria-checked="true"><span>震動</span><span class="trk"></span></button>
+      <button class="sw" role="switch" id="swShake" aria-checked="false"><span>搖晃手機擲骰</span><span class="trk"></span></button>
+      <button class="sw" id="bTheme"><span>主題</span><span id="themeLbl" style="color:var(--ink2)">自動</span></button>
+    </div>
+    <div class="btns"><button class="btn" id="bStats">統計與成就</button><button class="btn" id="bRules">規則</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovResult" hidden>
+  <div class="panel">
+    <div class="ttl" id="rTitle">靠岸！</div>
+    <div class="sub" id="rSub"></div>
+    <div class="big" id="rScore">0</div>
+    <div class="brk" id="rBrk"></div>
+    <div class="tags" id="rTags"></div>
+    <div class="btns"><button class="btn" id="rMenu">主選單</button><button class="btn" id="rShare">分享成績</button><button class="btn pri" id="rAgain">再來一局</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovPass" hidden>
+  <div class="panel" style="text-align:center">
+    <div class="ttl" id="pTitle">第 1 張達標！</div>
+    <div class="sub" id="pSub"></div>
+    <svg viewBox="0 0 240 60" style="width:100%;height:60px" aria-hidden="true">
+      <path d="M0 48q15-8 30 0t30 0 30 0 30 0 30 0 30 0 30 0 30 0" stroke="#5d8fb8" stroke-width="3" fill="none"/>
+      <use href="#boat" width="40" height="34" y="16" id="pBoat" x="20"/>
+    </svg>
+    <div class="btns"><button class="btn pri" id="pNext">揚帆前往下一張</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovConfirm" hidden>
+  <div class="panel">
+    <div class="ttl" id="cTitle">確定填 0 分？</div>
+    <div class="sub" id="cSub"></div>
+    <div class="btns"><button class="btn" id="cNo">取消</button><button class="btn pri" id="cYes">填 0 分</button></div>
+  </div>
+</div>
+
+<div class="ov" id="ovInfo" hidden>
+  <div class="panel">
+    <div class="ttl" id="iTitle">統計</div>
+    <div id="iBody"></div>
+    <div class="btns"><button class="btn pri" id="iClose">關閉</button></div>
+  </div>
+</div>
+
+<script id="core">
+/*CORE-START*/
+var YC = (function () {
+  'use strict';
+  var NAMES = ['一點', '二點', '三點', '四點', '五點', '六點', '三條', '四條', '葫蘆', '小順', '大順', '快艇', '機會'];
+  var Y = 11, FULL = 8191;
+  // ---- deterministic dice: value depends only on (seed, sheet, player, turn, roll, slot) so refresh can't re-roll ----
+  function mix(h) { h ^= h >>> 16; h = Math.imul(h, 0x7feb352d); h ^= h >>> 15; h = Math.imul(h, 0x846ca68b); h ^= h >>> 16; return h >>> 0; }
+  function die(seed, sheet, player, turn, roll, slot) {
+    var h = mix(seed >>> 0);
+    h = mix(h ^ Math.imul(sheet + 1, 0x9e3779b1)); h = mix(h ^ Math.imul(player + 7, 0x85ebca77));
+    h = mix(h ^ Math.imul(turn + 13, 0xc2b2ae3d)); h = mix(h ^ Math.imul(roll + 31, 0x27d4eb2f)); h = mix(h ^ Math.imul(slot + 61, 0x165667b1));
+    return 1 + Math.floor(h / 4294967296 * 6);
+  }
+  function rng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6d2b79f5) >>> 0; var t = a; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  // ---- scoring ----
+  function counts(d) { var c = [0, 0, 0, 0, 0, 0, 0]; for (var i = 0; i < d.length; i++) c[d[i]]++; return c; }
+  function raw(cat, c) { // c: counts[1..6]
+    var s = 0, mx = 0, i; for (i = 1; i <= 6; i++) { s += i * c[i]; if (c[i] > mx) mx = c[i]; }
+    if (cat < 6) return (cat + 1) * c[cat + 1];
+    switch (cat) {
+      case 6: return mx >= 3 ? s : 0;
+      case 7: return mx >= 4 ? s : 0;
+      case 8: var t = 0, p = 0; for (i = 1; i <= 6; i++) { if (c[i] === 3) t = 1; if (c[i] === 2) p = 1; } return (t && p) || mx === 5 ? 25 : 0;
+      case 9: return (c[3] && c[4] && ((c[1] && c[2]) || (c[2] && c[5]) || (c[5] && c[6]))) ? 30 : 0;
+      case 10: return (c[2] && c[3] && c[4] && c[5] && (c[1] || c[6])) ? 40 : 0;
+      case 11: return mx === 5 ? 50 : 0;
+      case 12: return s;
+    }
+    return 0;
+  }
+  var JOKER = [0, 0, 0, 0, 0, 0, -1, -1, 25, 30, 40, 50, -1]; // -1 = sum of dice
+  // legal fills for a sheet {sc:[13] (null=open), yb:count}; returns [{cat,pts,bonus}]
+  function options(sc, c) {
+    var face = 0, i, out = [], s = 0;
+    for (i = 1; i <= 6; i++) { s += i * c[i]; if (c[i] === 5) face = i; }
+    if (face && sc[Y] != null) {
+      var bonus = sc[Y] === 50 ? 100 : 0;
+      if (sc[face - 1] == null) return [{ cat: face - 1, pts: 5 * face, bonus: bonus, joker: true }];
+      for (i = 6; i < 13; i++) if (sc[i] == null) out.push({ cat: i, pts: JOKER[i] < 0 ? s : JOKER[i], bonus: bonus, joker: true });
+      if (out.length) return out;
+      for (i = 0; i < 6; i++) if (sc[i] == null) out.push({ cat: i, pts: 0, bonus: bonus, joker: true });
+      return out;
+    }
+    for (i = 0; i < 13; i++) if (sc[i] == null) out.push({ cat: i, pts: raw(i, c), bonus: 0 });
+    return out;
+  }
+  function newSheet() { return { sc: [null, null, null, null, null, null, null, null, null, null, null, null, null], yb: 0 }; }
+  function upper(sh) { var u = 0; for (var i = 0; i < 6; i++) u += sh.sc[i] || 0; return u; }
+  function lower(sh) { var l = 0; for (var i = 6; i < 13; i++) l += sh.sc[i] || 0; return l; }
+  function total(sh) { var u = upper(sh); return u + (u >= 63 ? 35 : 0) + lower(sh) + 100 * sh.yb; }
+  function filled(sh) { var n = 0; for (var i = 0; i < 13; i++) if (sh.sc[i] != null) n++; return n; }
+  function apply(sh, opt) { // mutates; returns points gained incl. bonuses
+    var u0 = upper(sh); sh.sc[opt.cat] = opt.pts; if (opt.bonus) sh.yb++;
+    var u1 = upper(sh); return opt.pts + opt.bonus + (u0 < 63 && u1 >= 63 ? 35 : 0);
+  }
+  function stateOf(sh) { var m = 0; for (var i = 0; i < 13; i++) if (sh.sc[i] != null) m |= 1 << i; return { mask: m, u: Math.min(63, upper(sh)), y: sh.sc[Y] === 50 ? 1 : 0 }; }
+  // ---- dice multiset tables ----
+  var KEY = new Int16Array(46656).fill(-1), KEEPS = [], ROLLS = []; // KEEPS: all multisets size 0..5 as counts
+  function enc(c) { return c[1] + 6 * c[2] + 36 * c[3] + 216 * c[4] + 1296 * c[5] + 7776 * c[6]; }
+  (function gen(c, face, left) {
+    if (face > 6) { var cc = c.slice(); KEY[enc(cc)] = KEEPS.length; KEEPS.push(cc); return; }
+    for (var k = 0; k <= left; k++) { c[face] = k; gen(c, face + 1, left - k); } c[face] = 0;
+  })([0, 0, 0, 0, 0, 0, 0], 1, 5);
+  var KSIZE = KEEPS.map(function (c) { return c[1] + c[2] + c[3] + c[4] + c[5] + c[6]; });
+  var ROLLIDX = new Int16Array(KEEPS.length).fill(-1);
+  KEEPS.forEach(function (c, k) { if (KSIZE[k] === 5) { ROLLIDX[k] = ROLLS.length; ROLLS.push(k); } });
+  var NR = ROLLS.length; // 252
+  var FACT = [1, 1, 2, 6, 24, 120];
+  function multi(c) { var n = 0, d = 1; for (var i = 1; i <= 6; i++) { n += c[i]; d *= FACT[c[i]]; } return FACT[n] / d / Math.pow(6, n); }
+  // transitions keep -> (roll, p)
+  var TS = new Int32Array(KEEPS.length + 1), TR = [], TP = [];
+  KEEPS.forEach(function (kc, k) {
+    TS[k] = TR.length; var need = 5 - KSIZE[k];
+    KEEPS.forEach(function (oc, o) {
+      if (KSIZE[o] !== need) return; var r = [0]; for (var i = 1; i <= 6; i++) r.push(kc[i] + oc[i]);
+      TR.push(ROLLIDX[KEY[enc(r)]]); TP.push(multi(oc));
+    });
+  });
+  TS[KEEPS.length] = TR.length; TR = Int16Array.from(TR); TP = Float64Array.from(TP);
+  // sub-keeps of each roll
+  var SUB = ROLLS.map(function (k) {
+    var c = KEEPS[k], out = [];
+    (function g(i, s) { if (i > 6) { out.push(KEY[enc(s.slice())]); return; } for (var j = 0; j <= c[i]; j++) { s[i] = j; g(i + 1, s); } s[i] = 0; })(1, [0, 0, 0, 0, 0, 0, 0]);
+    return Int16Array.from(out);
+  });
+  var P0 = new Float64Array(NR); for (var t = TS[0]; t < TS[1]; t++) P0[TR[t]] += TP[t]; // first roll (keep nothing = index of empty keep)
+  var EMPTY = KEY[0];
+  var RAW = new Uint8Array(NR * 13); ROLLS.forEach(function (k, r) { for (var c = 0; c < 13; c++) RAW[r * 13 + c] = raw(c, KEEPS[k]); });
+  var RFACE = new Int8Array(NR), RSUM = new Uint8Array(NR);
+  ROLLS.forEach(function (k, r) { var c = KEEPS[k]; for (var i = 1; i <= 6; i++) { if (c[i] === 5) RFACE[r] = i; RSUM[r] += i * c[i]; } });
+  function rollOf(c) { return ROLLIDX[KEY[enc(c)]]; }
+  // ---- turn solver ----
+  // V(mask,u,y) = expected future score from the start of a turn in that state (0 when mask full).
+  // best final fill for roll r in state st: returns value incl. future and the option
+  function bestFill(st, r, V, out) {
+    var mask = st.mask, u = st.u, y = st.y, face = RFACE[r], best = -1e9, bc = -1, bp = 0, bb = 0, c, pts, b, nu, ny, v, lo, hi;
+    if (face && (mask >> Y & 1)) { // joker
+      b = y ? 100 : 0;
+      if (!(mask >> (face - 1) & 1)) { c = face - 1; pts = 5 * face; nu = Math.min(63, u + pts); v = pts + b + (u < 63 && nu >= 63 ? 35 : 0) + V(mask | 1 << c, nu, y); best = v; bc = c; bp = pts; bb = b; }
+      else {
+        var anyLow = false;
+        for (c = 6; c < 13; c++) if (!(mask >> c & 1)) {
+          anyLow = true; pts = JOKER[c] < 0 ? RSUM[r] : JOKER[c]; v = pts + b + V(mask | 1 << c, u, y); if (v > best) { best = v; bc = c; bp = pts; bb = b; }
+        }
+        if (!anyLow) for (c = 0; c < 6; c++) if (!(mask >> c & 1)) { v = b + V(mask | 1 << c, u, y); if (v > best) { best = v; bc = c; bp = 0; bb = b; } }
+      }
+    } else {
+      for (c = 0; c < 13; c++) if (!(mask >> c & 1)) {
+        pts = RAW[r * 13 + c];
+        if (c < 6) { nu = Math.min(63, u + pts); v = pts + (u < 63 && nu >= 63 ? 35 : 0) + V(mask | 1 << c, nu, y); }
+        else { ny = (c === Y && pts === 50) ? 1 : y; v = pts + V(mask | 1 << c, u, ny); }
+        if (v > best) { best = v; bc = c; bp = pts; bb = 0; }
+      }
+    }
+    if (out) { out.cat = bc; out.pts = bp; out.bonus = bb; }
+    return best;
+  }
+  // layers[0] = value of each roll with 0 rerolls left (fill now); layers[n] = with n rerolls left.
+  function solveTurn(st, V, maxRe) {
+    var L0 = new Float64Array(NR), r, k, t, layers = [L0], keepE = [];
+    for (r = 0; r < NR; r++) L0[r] = bestFill(st, r, V, null);
+    for (var n = 1; n <= maxRe; n++) {
+      var prev = layers[n - 1], E = new Float64Array(KEEPS.length), Ln = new Float64Array(NR);
+      for (k = 0; k < KEEPS.length; k++) { var s = 0; for (t = TS[k]; t < TS[k + 1]; t++) s += TP[t] * prev[TR[t]]; E[k] = s; }
+      for (r = 0; r < NR; r++) { var sb = SUB[r], m = -1e9; for (t = 0; t < sb.length; t++) if (E[sb[t]] > m) m = E[sb[t]]; Ln[r] = m; }
+      layers.push(Ln); keepE.push(E);
+    }
+    return { layers: layers, keepE: keepE };
+  }
+  function turnValue(st, V) { var L = solveTurn(st, V, 2).layers[2], s = 0; for (var r = 0; r < NR; r++) s += P0[r] * L[r]; return s; }
+  // ---- value tables (fitted from the exact optimal DP; see demo/solve.js) ----
+  var TBL = null; // {U: Float32Array(64*64), L: Float32Array(128*2), W: Float32Array(13)}
+  function setTables(t) { TBL = t; }
+  function loadTables(b64U, b64L, w) {
+    function dec(s) { var bin = typeof atob === 'function' ? atob(s) : Buffer.from(s, 'base64').toString('binary'), n = bin.length >> 1, a = new Float32Array(n); for (var i = 0; i < n; i++) a[i] = (bin.charCodeAt(2 * i) | bin.charCodeAt(2 * i + 1) << 8) / 100 - 300; return a; }
+    var packed = dec(b64U), U = new Float32Array(4096), j = 0;
+    for (var um = 0; um < 64; um++) { // only reachable (upperMask, upperTotal) pairs are stored, in order
+      var can = [true]; for (var i = 0; i < 6; i++) if (um >> i & 1) { var n = []; for (var v = 0; v < 64; v++) if (can[v]) for (var k = 0; k <= 5; k++) n[Math.min(63, v + (i + 1) * k)] = true; can = n; }
+      for (var u = 0; u < 64; u++) if (can[u]) U[um * 64 + u] = packed[j++];
+    }
+    TBL = { U: U, L: dec(b64L), W: Float32Array.from(w) };
+  }
+  function Vexpert(mask, u, y) {
+    if (mask === FULL) return 0;
+    return TBL.U[(mask & 63) * 64 + u] + TBL.L[(mask >> 6) * 2 + y];
+  }
+  function Vnormal(mask, u, y) { // simplified: fixed per-category worth, no bonus planning
+    var s = 0; for (var c = 0; c < 13; c++) if (!(mask >> c & 1)) s += TBL.W[c]; return s;
+  }
+  var LEVELS = [{ id: 0, name: '新手' }, { id: 1, name: '一般' }, { id: 2, name: '高手' }];
+  // decide: sh sheet, dice[5] (current), rerolls left (>=0). returns {type:'keep', hold:[bool x5], ev} or {type:'fill', cat, pts, bonus, ev}
+  function decide(sh, dice, rerolls, level, Vover) {
+    var c = counts(dice), r = rollOf(c);
+    if (level === 0) return decideNovice(sh, dice, c, rerolls);
+    var st = stateOf(sh), V = Vover || (level === 2 ? Vexpert : Vnormal), out = {};
+    var fillV = bestFill(st, r, V, out), base = V(st.mask, st.u, st.y);
+    if (rerolls <= 0) return { type: 'fill', cat: out.cat, pts: out.pts, bonus: out.bonus, ev: fillV - base, fin: fillV };
+    var sol = solveTurn(st, V, rerolls), E = sol.keepE[rerolls - 1], sb = SUB[r], bk = -1, bv = -1e9;
+    for (var t = 0; t < sb.length; t++) { var e = E[sb[t]]; if (e > bv + 1e-9 || (Math.abs(e - bv) <= 1e-9 && KSIZE[sb[t]] > KSIZE[bk])) { bv = e; bk = sb[t]; } }
+    if (KSIZE[bk] === 5 || fillV >= bv - 1e-9) return { type: 'fill', cat: out.cat, pts: out.pts, bonus: out.bonus, ev: fillV - base, fin: fillV };
+    return { type: 'keep', hold: holdMask(dice, KEEPS[bk]), ev: bv - base, fin: bv, keepCounts: KEEPS[bk] };
+  }
+  function holdMask(dice, kc) { var need = kc.slice(), h = []; for (var i = 0; i < 5; i++) { if (need[dice[i]] > 0) { need[dice[i]]--; h.push(true); } else h.push(false); } return h; }
+  var DUMP = [1, 2, 3, 4, 5, 6, 3.5, 2.5, 4, 5, 6, 0, 7]; // order of preference for scratching a zero (lower = scratch first)
+  function decideNovice(sh, dice, c, rerolls) {
+    var opts = options(sh.sc, c), best = null, bv = -1;
+    for (var i = 0; i < opts.length; i++) { var o = opts[i], v = o.pts + o.bonus - DUMP[o.cat] * 0.01; if (v > bv) { bv = v; best = o; } }
+    var mx = 0, f = 0; for (var k = 1; k <= 6; k++) if (c[k] >= mx) { mx = c[k]; f = k; }
+    if (rerolls <= 0 || mx === 5) return { type: 'fill', cat: best.cat, pts: best.pts, bonus: best.bonus };
+    return { type: 'keep', hold: dice.map(function (d) { return d === f; }) };
+  }
+  // play one solitaire sheet with a decision function; dice from rand()
+  function playSheet(level, rand, Vover, log) {
+    var sh = newSheet();
+    for (var turn = 0; turn < 13; turn++) {
+      var dice = [0, 0, 0, 0, 0], hold = [false, false, false, false, false];
+      for (var roll = 0; roll < 3; roll++) {
+        for (var i = 0; i < 5; i++) if (!hold[i]) dice[i] = 1 + Math.floor(rand() * 6);
+        var d = decide(sh, dice, 2 - roll, level, Vover);
+        if (d.type === 'fill' || roll === 2) { if (d.type !== 'fill') d = decide(sh, dice, 0, level, Vover); if (log) log(sh, d); apply(sh, d); break; }
+        hold = d.hold;
+      }
+    }
+    return sh;
+  }
+  // ---- turn / voyage rules (pure, shared by page and tests) ----
+  function canRoll(roll, extra, hold) { return roll < 3 + (extra ? 1 : 0) && hold.indexOf(false) >= 0; }
+  function rollTurn(g, hold) { // g: {seed,k,player,turn,roll,undo,dice}; returns new dice, held slots unchanged
+    var out = g.dice.slice(); for (var i = 0; i < 5; i++) if (!hold[i]) out[i] = die(g.seed, g.k, g.player, g.turn, g.roll + 8 * (g.undo || 0), i); return out;
+  }
+  function threshold(k) { return k <= 15 ? 150 + 15 * (k - 1) : 360 + 10 * (k - 15); }
+  function voyageAdvance(v, tot) { // v: {k,cum,tickets}; returns new state after finishing sheet k with total tot
+    var T = threshold(v.k), r = { k: v.k, cum: v.cum + tot, tickets: v.tickets, passed: tot >= T, ticket: false, T: T };
+    if (r.passed) { r.k = v.k + 1; if (v.k % 5 === 0 && v.tickets < 2) { r.tickets++; r.ticket = true; } }
+    return r;
+  }
+  // hint text: for UI, also return expected final-turn score breakdown
+  return {
+    NAMES: NAMES, Y: Y, FULL: FULL, die: die, rng: rng, mix: mix, counts: counts, raw: raw, options: options, newSheet: newSheet,
+    upper: upper, lower: lower, total: total, filled: filled, apply: apply, stateOf: stateOf, KEEPS: KEEPS, ROLLS: ROLLS, NR: NR,
+    P0: P0, rollOf: rollOf, bestFill: bestFill, solveTurn: solveTurn, turnValue: turnValue, setTables: setTables, loadTables: loadTables,
+    Vexpert: Vexpert, Vnormal: Vnormal, LEVELS: LEVELS, decide: decide, holdMask: holdMask, KSIZE: KSIZE, TS: TS, TR: TR, TP: TP, SUB: SUB,
+    tables: function () { return TBL; }, playSheet: playSheet,
+    threshold: threshold, voyageAdvance: voyageAdvance, canRoll: canRoll, rollTurn: rollTurn, P0sum: function () { var s = 0; for (var r = 0; r < NR; r++) s += P0[r]; return s; }
+  };
+})();
+if (typeof module !== 'undefined') module.exports = YC;
+YC.loadTables("6Lq9s7O0XbUDttm2yLfascWyXrTEtS23NrntrCGtY611rQyuaq7rrpWvKLD2sKSxCLISs26zzLNWtP2v8LD2sgq1R7e7ubCry6vsqxisTqyMrOasA63NrUGu8K5erzyw47C3sTGyRbOFs+CzxrQEtcuq6Kr7qhirRKt7q7Or7qtErM2sXa3vrYyuLq/grwSxw7FCsueycLPQs2i0drWWtbumv6bGptOm2qbipvKm+aYPp22nYaeUp8WnQqi2qBupq6lmqpCrJKzjrA+tJa7arl2vqq/lrwOxcrH5sR6ydq4wr2GxIbRPtze5lKqfqqyqv6rZqvaqIatWq5uqvatGrBitTK3frZSugq83sAmxs7FTsiez1rOKtGG0ILVctcip0ankqQiqRqqtqsmrDK2KrUKv9rBfsoKzj7QBtcG146Xkpeal56Xrpe+l86UCpgumGKY5ph6mjqZvpnqmB6exp3KndKgXqVapyqryqsirNq1UrVau2a7prtqvfrClsEaxhLGrsWKy4ajlqOio86j9qAqpHqk5qV2piqnEqeCpaqrlqhGsG6y5rMCtiK51r8evL7H6se6xB7Nms6izdrTFtJe1HaUdpR2lHqUepSClIaUkpSilLaU1pUGlUKVrpYell6UophOmdqaQpiinzqdhqP+o8qmOquera6wVrcyt0K3wrq6vA7BMsK6w27CEsaexArIfsm+kb6RvpG+kcKRwpHGkcqRzpHakfKSDpImkjqSepMGk9KRxpZ6lT6WRpTCmSKe7p+GnN6hzqQKrPqzGrO6sJ63zrfCulq+Mr++vELC3sDGxc7GDsY+xxbFSoFKgUqBSoFKgUqBSoFKgVKBUoFSgg6BUoF2gZaB6oHegl6DBoO+g/qCyoP+g/6D0oZiipqLdoseivaMJpqemCaeipg6nK6mQqgKqb6q1qfiqr6zjrOis6Kz5rGitpK2xrbGtsa0+raWtUbAysxG3DrqUqZepmqmgqaepsqnBqdep8qkXqnWqDKvoqjariqwarPSs6K2SrmGvia8cscOxnbIYsy6z17N3tJ60hLV2tdSo1qjaqN2o46jrqPaoB6kdqTypZKmbqRqqOqqpqjCrCKyFrBqtW66wrh2wqbCwsUmyYLI/s+yzUrRbtO61kLUCpQKlAqUCpQOlBKUFpQelC6UPpRSlIqUvpTulz6S+pU2lwKU6ppqmwaZ+p/+nhKimqcuqo6pgrCStMq0Ortiuya7/r2Kwm7DAsHexnrHAsQmy8Kfxp/Kn86f4p/ynA6gNqBuoMahOqHaoHqnwqEqpAqpGqvuq76tJrIWt/q2Dr3WwfLCrsfOxYLIzs/SzlLSktC61OqQ6pDqkOqQ6pDukO6Q7pDukPaQ9pEKkQqRNpE2kZ6RnpFyk4aTypPKkRaVFpZemUqaPp9Cnhql8qWSrfau8rIKsFq4trjqvXq/Rr+uvrbCtsFyxKrFvsW+xn7GLo4uji6OLo4uji6OLo4uji6OMo4yjjaOOo5GjlaObo6OjrqPCo+KjJaQ2pIKkyaQbpfildqbypuenyKgXqviqu6sqrDitzq2Krtmu6q4lr8qvPrCAsJewtLDQsOuw/LAVsYKfgp+Cn4Kfgp+Cn4Kfgp+Cn4Kfgp+Cn4KfhJ+En4SftZ+mn5mf05/Ln3Wfqp95nyWgVaAhoByh9aClobOhxaK7okalWKX7pR2mPqgHqIipIKrUqRuqx6uzqw2s9auSrJKsyqzKrO6s7qwSrRKtIK39pv2m/ab+pv6mAKcFpwqnEacdpy2nRaeFp5en16czqMOpsanFqXqqN6uWrDyt+60zr2qwHLErscey/rI9s9K0YbR3tFqjWqNao1qjWqNao1qjWqNao1qjWqNbo1ujXKNdo2CjZaNqo3ajyaMWo/Cj2KPDo5ikqqSJpRSmS6ZOpyqo7agnqh+rk6vSrEyt6K1lrnauFq92r76vNrBfsICwp7C6sMqw3LDksKeip6Knoqeip6Knoqeip6Knoqeip6KnoqeiqKKooqqiraKxoreiwqIno+aiB6M1o7GjqKPbpI+kb6X+pQun8afwp1uq7Krcq7esKa2ZrR6uP67priqvmK/Or9yv7K8HsBuwLLA7sEawu567nrueu567nrueu567nrueu567nrueu567nrueu567nruevJ68nryexJ7JnuKeOJ8inySfk59sn0afIqBYoCeg4aG/obqhVKSJpESkVKdap0Kn9agFqS2pLKs/qz+r0avWq7yrE6wTrBOsR6xHrEesXKxcrFysZazQodCh0KHQodCh0KHQodCh0KHQodCh0KHQodCh0KHQodCh0KHQodKh1aHbodOh86EEoh2iJ6KEouKiO6QlpK+kWqUhpiWnnKjFqbeqwqswrJ2sB61hrQGuba5MrrWuJq8kr+avv69Or1uvY69pr26vea8FngWeBZ4FngWeBZ4FngWeBZ4FngWeBZ4FngWeBZ4FngWeBZ4FngWeBZ4Fnk6eBp4Gnuyd/Z0inl+ev50hnn2eiZ6An1yfUKAvoF6hcKHFo2ujHKYZpmCnq6d8qGWoDarTqS+qzKpbq/aqoKtNq36rfquWq5aroauhq6yrrKsFnmKdYp1inWKdYp1inWKdYp1inWKdYp1inWKdYp1inWKdYp1inWKdYp1inWKdYp1inWKdYp1inWOdyp20nYad0J3inbCdLZ6nnmyfIqBdoB+gxqDKoiulqKYGpxOnOqeWpzWp+alJqi2qV6qZqoequ6rpqiWr66rwqviqA6tinS2ZLZktmS2ZLZktmS2ZLZktmS2ZLZktmS2ZLZktmS2ZLZktmS2ZLZktma6ZLZltmS2Zv5nCmS2ZoZnAmVSa0JkGmkOaB5ogmq+aUJqUmhWc+JsUnDucBZwlnGuhZKEuoUehS6EeoeSlHqa7pdKl9qXkpQWmPqbGpsqm9aajpgKZQaxkrHutQbLoto25saixqLKos6i0qLaouKi9qMOozqjcqPCoN6mWqWupqakNqnuqL6vlq7isWa1rrvquuq/psMSxfLL8sgGznbNztMW04rQftbW186fzp/On9Kf3p/6nEKgzqMCoBanuqZKrQK1Tr9qwNrIksxe0WrTutDW1L6QvpC+kL6QvpC+kL6QvpC+kMKQxpDOkNKQ4pF+kRqRjpK+kyqTgpOKkI6VQpcilY6YQp0inHKlZqQiqfaszrL+sca1BrvGugq+3r/SvsbDOsM6whrFfsXmxjrEOpw6nDqcPpxOnJKdgpw+o16lmrIyvkbHZsgi0UrSPtGSjZKNko2SjZKNko2SjZKNlo2WjZaNlo2WjZqNno2ijbKNvo3ejwaOzo8ujnKMGpDmknaQupaKlS6btpgKor6heqsSq3Kv9qx2tBa50rgKvAK/Dr+uvS7CbsJiwrrC/sN2w7rD3sLSitKK0orSitKK0orSitKK0orSitKK0orSitKK1orWitqK3orqiwKLGotai3qL+opujWqOLo7ujqqRdpaalkqa0p+uoYKrqqoaraaxvreetN65Irg+vQ6+mr8Wvca8EsCSwNLA9sEawULBbsLyevJ68nryevJ68nryevJ68nryevJ68nryevJ68nryevJ68nr2evZ69nuGetJ7yns+etp71nlGfIZ89nzmfGKC7oOegAqHkoVakJqXupEClb6exqPGo7KibqS2r16oAq1CrwasRrA2sDay0q0usWaxZrFmsYKxmrGasG6YbphumG6YbphumHKYfpiimP6Z2puymB6gjqXKrmq20r+qw0bGxsgmz17PCs7mzhKKEooSihKKEooSihKKEooSihKKEooSihKKEooSihaKFooWihqKHouehPaKWouSisqKtohujSqOpo8ijyqRCpQGmfqf6p1qpVaoAqzGskKxcrdWtD64Sr/iuqK+Sry6w36/urwSwEbAYsCOwJrAqsNCh0KHQodCh0KHQodCh0KHQodCh0aHTofKh7aEgopCiaaOipASnSak4q6esfa2YrsuuYa9Tr2ivc695r3uv9Z31nfWd9Z31nfWd9Z31nfWd9Z31nfWd9Z31nfWd9Z31nfWd9Z31nfWd9Z31nfad9p32nRieHZ4ongueRp6BnpmeXp4mn16f+Z/noOqgZKO3o+6jk6adptGnTqhGqDuqK6r1qfqq5Koxq0erU6t/q3+rjKuWq5arnqueq56r9Z32oPag9qD2oPag9qD2oPag9qD2oPag9qD2oPag9qD2oPag9qD2oPag9qD2oPeg+KD7oAGhC6FqoTCheqGUofihlaL8ouSjFqUZpnWnW6gOquuqkKvoq5qsLa1prQeuOK4+rgWuc654rl6ujq6Vrhqvna6hrqKu9qA6nTqdOp06nTqdOp06nTqdOp06nTqdOp06nTqdOp06nTqdOp06nTqdOp06nTqdOp06nTqdUJ06nUadbp2OnXmddp2XnXKdo530nVOeRp49n/+fdKCnorGiPKXSpZimZ6eAp0GpU6ncqTCqU6odqnmq7Kq9qg2r2KpXquKqB6s6nZaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyWnJaclpyonJaclpyWnL+c+5znnNKcNJ0MnUCdqJ5On0qf8Z/rofCjsqVSpnOmpaZNqBqpU6lsqYqpe6n/qemplakKquCpN6qanHaYdph2mHaYdph2mHaYdph2mHaYdph2mHaYdph2mHaYdph2mHaYdph2mHaYdph2mHaYpJh2mHaYdph2mJeYxJhFmSaZE5lemU6ZXplXmV6Z/piKmfyZLps+mx2bSJtDm36ghqB3oHegZaAqpSWlI6U6pS+lWqaBpoam1KUXpouYIqUipSKlIqUipSKlIqUipSKlIqUkpSalK6UypT+lVaV3pa2l/KVvpganxKenqEGqyaroq/6tgK84sFiwX7JfshWzLrO8s8yymKGYoZihmKGYoZihmKGYoZihmKGYoZihmKGYoZihmKGYoZihmKGYoZmhmaGZodSh1KGgoRaikqFCoSOiaaKiosGiSqPnowalvaXapuOniqk6qoerNqzArCOtAq7urW6uhK5Br/euFK8grxKvNq88rz+vQq9Dr0SvRK/joOOg46DjoOOg46DjoOOg46DjoOOg46DjoOOg46DjoOOg46DjoOOg46DjoOOg46DkoOWg6aDuoPegCKEqoVqhnaEQor+iOKNVpLel4KZLqFqpUKpjqxSsXqz3rKStMa4zro2uAq5grumue66Eroiuiq6Nro6ujq7joBmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdGZ0ZnRmdIp0VnSedJJ2UnUOdPZ29nZidfp1rngef9Z4AoEyiHqMEo56lFadFp1ynJaljqUup5alXqkSqWaqequaqraq6qsKq56rCqhmdB6AHoAegB6AHoAegB6AHoAegB6AHoAegB6AHoAegB6AHoAegB6AHoAegB6AHoAegB6AHoAegCaAMoBKg/qAzoFigm6ADocChXqJuo9ykHqa0pyWp5anBqmurF6ySrLCsS61ZraSt5q1mraKtqa2urbCtsq2OrQegW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnFucW5xbnBScfpxbnMicSpxcnJCc45x4nJKc7JylnL2dpZ39nvmeyKFuoZ6ktqRCpkumgahOqPioFalGqXGpt6mvqRmq2qnSqQOqW5yzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5uzm7Obs5vum7SbuZtCnFCc75sOnMKci50lnrGekaAUo26kVKXBpT6nKahdqIaonagpqdSoHKlHqWWpq5url6uXq5erl6uXq5erl6uXq5erl6uXq5erl6uXq5erl6uXq5erl6uXq5erl6uXq5erl6uXq5erlzGYPpixlxaYG5g6mHmY7pdFmFuYiJh9mDKYepiLmOKYqpjMmHyYR5okmlqaOJp0n3ifWZ9dn1KkG6QypBukh6VlpWmlYqUZmBmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ8ZnxmfGZ80nx6fJp85n1+fpp8koOmg9qF9oyyl96ZEqJCpWapCqzWsLqwjrCqskqw/rbis46wHrcesxazCn4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4SbhJuEm4Sbn5t+m6qbhJsQm7ibXpvKm6Cb9pu1m7ebypvNm5qcK50LnmGgMKFco9mke6Vdp5qnOKhtqHaooqjQqGmpgKnQqNmb2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmtma2ZrZmj6b2ZrZmtma55rZmvWa2ZrZmtma/ZrqmgKb85rZm3WcvZ3OnwSiz6OfpFimLqd6p9ynIKgOqBaoBKjXmvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOW85bzlvOWQZfzlseXkZdrl4OXrZefl7iX25e4l5GXyZfSl0OYHZjMl1+ZbplxmWOei55cnjSjQaMYo6WkkaS6pHCXC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oLmguaC5oXmguaC5oLmguaC5qsmRCaIZqnml6bVZycnm6ha6OJpVym8qYgp3qnYafsmUuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlkuWS5ZLlnmWS5ZLlkuWqZaKlmiWeZbBlvGWspYiluuW5ZaElr6WdpY9lteW1JZml4uXc5iFmJadVJ03oimiz6MBpJmWsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVsJWwlbCVSpZflrCVwpUJlrCVsJWsldGVSZawldqVMZYpllyWyZVplkGWUpbFl06cLKEVo92VcJFwkXCRcJFwkXCRcJFwkXCRcJFwkXCRcJFwkXCRcJFwkXCRcJFwkXCRcJFwkXCRcJH3kXCRcJEhkXCRcJFwkeGRcJHNkWCSvJFmkkWSWZJMkqmSxZLIkuCSDJP8kvOS1pIPk/CSpJIYkw6T2ZLkktWSqpLlkuGSE5MJk/aS3pI=","4pIwdZ+HMHXeijB1AYAwdSOJMHUjfjB12IEwdXt3MHU1hDB1SXkwdbN8MHVOcjB16HowdVxwMHU5dDB1RWowdVOGMHWQezB1CX8wdbh0MHUVfTB1p3IwdYB2MHWQbDB1SHkwdf9uMHWIcjB1tmgwdY1wMHWRZjB1iWowdU1hMHXPioyXnYCKijaEv4xnelKAW4LOjFB4/n8lfBODi3Iid0J90odIczh723Y+fkltY3INdYN9U2txcS5v5XRIZqdpRH9Bipl1EX4webeA0m8hdUl3IIDDbVh0m3F5d8Zoh2wpc1x802m/cG5tqHPNZNFoumuocupioWeuZvlqcF8LYXaFMHVhejB1CH4wdWFzMHUxfDB1b3EwdYx1MHVkazB19XYwdVdsMHULcDB1B2YwdTNuMHULZDB1GWgwdbteMHWZeTB1JG8wdedyMHXkaDB17XAwddVmMHX6ajB1iWEwdetsMHUQYzB1zmYwdYNdMHW6ZDB1ZFswdYdfMHVEVzB1T36CiAp0VXvEd3h+yG0nchx2On4VbM9xv2/7dDlmIGl1cB15rWatbBdqxm/jYBZkwGhib49fn2MMYwdn+lqCXJ1zMXzkaQlwe21Pc2Vks2fma4lyn2LOZjxmYGr9XYhfrGejbqZeWmMeYpdmHlpUXLhgpGWhWEVbSVysXnxT8lQ=",[1.89, 5.3, 8.56, 12.16, 15.71, 19.17, 21.59, 13.06, 22.59, 29.47, 32.8, 17.06, 22.01]);
+
+/*CORE-END*/
+</script>
+<script>
+(function () {
+'use strict';
+var $ = function (id) { return document.getElementById(id); };
+var PFX = 'yacht:';
+function sget(k, d) { try { var v = localStorage.getItem(PFX + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function sset(k, v) { try { localStorage.setItem(PFX + k, JSON.stringify(v)); } catch (e) {} }
+function sdel(k) { try { localStorage.removeItem(PFX + k); } catch (e) {} }
+function zeros(n) { var a = []; for (var i = 0; i < n; i++) a.push(0); return a; }
+var S = Object.assign({ sound: true, vib: true, shake: false, theme: 'auto', lv: 1 }, sget('settings', {}));
+var BEST = Object.assign({ single: 0, voyage: 0, voyageSheets: 0, daily: {}, vsWins: [0, 0, 0], vsGames: [0, 0, 0] }, sget('best', {}));
+var ST = Object.assign({ games: 0, sheets: 0, sum: 0, yachts: 0, bonus: 0, cat: zeros(13), ach: {} }, sget('stats', {}));
+function saveSettings() { sset('settings', S); }
+var N = YC.NAMES, Y = YC.Y;
+var DESC = ['1 的總和', '2 的總和', '3 的總和', '4 的總和', '5 的總和', '6 的總和', '≥3 同・總和', '≥4 同・總和', '3+2・25 分', '4 連號・30', '5 連號・40', '5 同・50 分', '任意・總和'];
+var PAR = YC.tables().W;
+var LVN = ['新手', '一般', '高手'];
+var ACH = [
+  { id: 'first', n: '第一艘快艇', d: '第一次擲出快艇' },
+  { id: 'bonus', n: '滿帆', d: '拿到上半區 +35 獎勵' },
+  { id: 's300', n: '三百浬', d: '單張計分表 300 分' },
+  { id: 'y3', n: '快艇艦隊', d: '一張表擲出三次快艇' },
+  { id: 'v10', n: '遠洋船長', d: '遠航連過 10 張' },
+  { id: 'pro', n: '擊敗高手', d: '對戰贏過高手船長' },
+  { id: 'daily', n: '每日出航', d: '完成一次每日航線' }
+];
+// ------------------------------------------------------------------ audio
+var AC = null, master = null, noiseBuf = null;
+function audio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = 0.55; master.connect(AC.destination);
+    noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate); var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } catch (e) { AC = null; } }
+  if (AC && AC.state === 'suspended') AC.resume().catch(function () {});
+}
+function on() { return S.sound && AC && AC.state === 'running'; }
+function tone(f, t, dur, type, vol, f2) {
+  if (!on()) return; var o = AC.createOscillator(), g = AC.createGain(), t0 = AC.currentTime + (t || 0);
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.2, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function noise(t, dur, vol, fc, q, type, attack) {
+  if (!on()) return; var s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(), t0 = AC.currentTime + (t || 0);
+  s.buffer = noiseBuf; s.loop = true; f.type = type || 'bandpass'; f.frequency.value = fc; f.Q.value = q || 1;
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + (attack || 0.004)); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t0, Math.random()); s.stop(t0 + dur + 0.05);
+}
+var lastClack = 0;
+var SFX = {
+  clack: function (k) { var n = performance.now(); if (n - lastClack < 35) return; lastClack = n; k = Math.min(1, k);
+    noise(0, 0.05, 0.25 * k + 0.03, 2600 + Math.random() * 1800, 2.5); tone(180 + Math.random() * 90, 0, 0.09, 'triangle', 0.18 * k + 0.02); },
+  shakeCup: function () { for (var i = 0; i < 5; i++) noise(i * 0.045, 0.04, 0.07, 3000 + Math.random() * 1500, 3); },
+  hold: function () { tone(880, 0, 0.06, 'triangle', 0.12); tone(1320, 0.03, 0.06, 'sine', 0.06); },
+  unhold: function () { tone(660, 0, 0.06, 'triangle', 0.1); },
+  sel: function () { tone(520, 0, 0.07, 'sine', 0.12); },
+  fill: function (p) { var b = 523 * Math.pow(2, Math.min(12, p / 5) / 12); tone(b, 0, 0.18, 'triangle', 0.16); tone(b * 1.5, 0.08, 0.25, 'sine', 0.12); if (p >= 25) tone(b * 2, 0.16, 0.3, 'sine', 0.1); },
+  zero: function () { tone(150, 0, 0.25, 'sine', 0.25, 70); noise(0, 0.15, 0.05, 400, 1, 'lowpass'); },
+  horn: function () {
+    [0, 0.75].forEach(function (t, j) { [110, 138.6, 165].forEach(function (f) {
+      if (!on()) return; var o = AC.createOscillator(), lp = AC.createBiquadFilter(), g = AC.createGain(), t0 = AC.currentTime + t;
+      o.type = 'sawtooth'; o.frequency.value = f * (j ? 0.89 : 1); lp.type = 'lowpass'; lp.frequency.value = 700;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.08); g.gain.setValueAtTime(0.09, t0 + 0.5); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+      o.connect(lp); lp.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 0.75); }); });
+    SFX.wave(0.2);
+  },
+  wave: function (t) { noise(t || 0, 1.8, 0.16, 700, 0.6, 'lowpass', 0.6); noise((t || 0) + 0.3, 1.4, 0.06, 2500, 0.8, 'bandpass', 0.5); },
+  pass: function () { [784, 988, 1175, 1568].forEach(function (f, i) { tone(f, i * 0.09, 0.5, 'sine', 0.14); tone(f * 2, i * 0.09, 0.2, 'triangle', 0.03); }); },
+  win: function () { [523, 659, 784, 1047, 784, 1047].forEach(function (f, i) { tone(f, i * 0.12, 0.3, 'triangle', 0.15); }); },
+  lose: function () { [392, 349, 311, 262].forEach(function (f, i) { tone(f, i * 0.18, 0.35, 'sine', 0.14); }); },
+  bad: function () { tone(220, 0, 0.12, 'square', 0.05); }
+};
+function vib(ms) { if (S.vib && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
+// ------------------------------------------------------------------ AI worker
+var worker = null, wq = {}, wid = 0, thinkLog = [];
+try {
+  var src = $('core').textContent + '\nonmessage=function(e){var q=e.data,t=performance.now(),d=YC.decide(q.sheet,q.dice,q.rerolls,q.level);postMessage({id:q.id,d:d,ms:performance.now()-t});};';
+  worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  worker.onmessage = function (e) { var cb = wq[e.data.id]; delete wq[e.data.id]; if (cb) cb(e.data); };
+  worker.onerror = function () { worker = null; };
+} catch (e) { worker = null; }
+function think(sheet, dice, rerolls, level, kind) {
+  return new Promise(function (res) {
+    var q = { id: ++wid, sheet: { sc: sheet.sc.slice(), yb: sheet.yb }, dice: dice.slice(), rerolls: rerolls, level: level };
+    var done = function (r) { thinkLog.push({ ms: r.ms, level: level, kind: kind || 'ai', worker: !!worker }); res(r.d); };
+    if (worker) { wq[q.id] = done; worker.postMessage(q); }
+    else { var t = performance.now(), d = YC.decide(q.sheet, q.dice, rerolls, level); done({ d: d, ms: performance.now() - t }); }
+  });
+}
+// ------------------------------------------------------------------ game state
+var G = null, phase = 'menu', sel = -1, hint = null, tok = 0;
+function newSeed() { return (Math.random() * 4294967296) >>> 0 ^ (Date.now() & 0xffffffff); }
+function todayStr() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function dateSeed(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return YC.mix(h >>> 0); }
+function newGame(mode) {
+  tok++;
+  G = { mode: mode, lv: S.lv, seed: mode === 'daily' ? dateSeed('yacht' + todayStr()) : newSeed() >>> 0, date: todayStr(), k: 1, cum: 0, tickets: 0,
+    sh: [YC.newSheet()], turn: 0, player: 0, roll: 0, extra: 0, undo: 0, dice: [0, 0, 0, 0, 0], hold: [false, false, false, false, false],
+    hintUsed: false, passed: false, prev: null, ver: 1 };
+  if (mode === 'vs') G.sh.push(YC.newSheet());
+  ST.games += mode === 'practice' ? 0 : 1; sset('stats', ST);
+  closeAll(); startTurn(); save();
+}
+function save() { if (G) sset('run', G); }
+function maxRolls() { return 3 + G.extra; }
+function human() { return G && G.player === 0; }
+function cur() { return G.sh[G.player]; }
+function startTurn() {
+  G.roll = 0; G.extra = 0; G.undo = 0; G.prev = null; G.hold = [false, false, false, false, false]; G.dice = [0, 0, 0, 0, 0];
+  sel = -1; hint = null; resetDice(); phase = human() ? 'act' : 'ai';
+  renderAll();
+  if (!human()) aiTurn();
+}
+function canRoll() { return G && phase === 'act' && human() && !busy() && YC.canRoll(G.roll, G.extra, G.hold); }
+function rollDice(byAI) {
+  if (!byAI) { if (!canRoll()) { if (G && phase === 'act' && !busy()) { SFX.bad(); bump($('bRoll')); } return false; } }
+  if (G.mode === 'practice') G.prev = { dice: G.dice.slice(), hold: G.hold.slice(), roll: G.roll };
+  G.dice = YC.rollTurn(G, G.hold);
+  G.roll++; sel = -1; hint = null;
+  save(); // the result is fixed before the animation: refreshing can't re-roll
+  launch(); SFX.shakeCup(); renderAll();
+  return true;
+}
+function toggleHold(i) {
+  if (!G || phase !== 'act' || !human() || busy() || G.roll === 0 || G.roll >= maxRolls()) return;
+  G.hold[i] = !G.hold[i]; hint = hint && hint.type === 'keep' ? hint : null;
+  if (G.hold[i]) { SFX.hold(); vib(8); } else SFX.unhold();
+  save(); renderAll();
+}
+function optMap() {
+  var m = {}; if (!G || G.roll === 0) return m;
+  YC.options(cur().sc, YC.counts(G.dice)).forEach(function (o) { m[o.cat] = o; }); return m;
+}
+function tapCell(c) {
+  if (!G || phase !== 'act' || !human() || busy()) return;
+  audio();
+  if (G.roll === 0) { toast('先擲骰再填分'); SFX.bad(); bump(rowEl[c]); return; }
+  var o = optMap()[c];
+  if (cur().sc[c] != null) { SFX.bad(); return; }
+  if (!o) { toast('百搭規則：這次不能填這格'); SFX.bad(); bump(rowEl[c]); return; }
+  if (sel !== c) { sel = c; SFX.sel(); renderSheet(); return; }
+  commit(c);
+}
+function commit(c) {
+  var o = optMap()[c];
+  if (o.pts + o.bonus === 0) {
+    $('cTitle').textContent = '「' + N[c] + '」填 0 分？';
+    $('cSub').textContent = '這格之後就不能再用了。';
+    show('ovConfirm'); confirmCb = function () { fill(c); }; return;
+  }
+  fill(c);
+}
+var confirmCb = null;
+function fill(c) {
+  var sh = cur(), o = optMap()[c]; if (!o) return;
+  var before = YC.total(sh), u0 = YC.upper(sh);
+  YC.apply(sh, o);
+  var gain = YC.total(sh) - before, el = rowEl[c];
+  sel = -1; hint = null;
+  flyText(el, gain > 0 ? '+' + gain : '0', gain > 0 ? (G.player ? '#5d8fb8' : null) : 'var(--ink3)');
+  if (gain > 0) { SFX.fill(gain); vib(10); if (gain >= 25) burst(el, gain >= 40 ? 26 : 14); } else { SFX.zero(); vib(20); }
+  if (u0 < 63 && YC.upper(sh) >= 63) setTimeout(function () { banner('滿帆 +35'); SFX.pass(); burst($('colU'), 30); }, 350);
+  justCat = c; justP = G.player;
+  if (G.player === 0 && G.mode === 'voyage' && !G.passed && YC.total(sh) >= YC.threshold(G.k)) { G.passed = true; setTimeout(function () { toast('已達本張門檻 ' + YC.threshold(G.k) + '！'); SFX.pass(); }, 500); }
+  // advance
+  if (G.mode === 'vs') {
+    if (G.player === 0) G.player = 1; else { G.player = 0; G.turn++; }
+  } else G.turn++;
+  G.roll = 0;
+  save();
+  if (G.turn >= 13) { phase = 'over'; renderAll(); setTimeout(sheetEnd, 700); return; }
+  var t1 = tok; setTimeout(function () { if (G && t1 === tok && phase !== 'over') startTurn(); }, G.mode === 'vs' ? 500 : 250);
+  phase = 'wait'; renderAll();
+}
+var justCat = -1, justP = 0;
+function useTicket() {
+  if (!G || G.mode !== 'voyage' || G.tickets <= 0 || G.extra || G.roll < 3 || phase !== 'act' || busy()) return;
+  G.tickets--; G.extra = 1; SFX.pass(); toast('使用重擲券：本回合多擲一次'); save(); renderAll();
+}
+function undoRoll() {
+  if (!G || G.mode !== 'practice' || !G.prev || busy() || phase !== 'act') return;
+  G.dice = G.prev.dice; G.hold = G.prev.hold; G.roll = G.prev.roll; G.prev = null; G.undo++; sel = -1; hint = null;
+  if (G.roll === 0) resetDice(); else placeRest(); SFX.unhold(); save(); renderAll();
+}
+function doHint() {
+  if (!G || phase !== 'act' || !human() || busy()) return;
+  audio();
+  if (G.roll === 0) { toast('先擲第一次骰子，提示燈才會亮'); return; }
+  if (G.mode !== 'practice' && !G.hintUsed) { G.hintUsed = true; save(); }
+  var t0 = tok;
+  think(cur(), G.dice, maxRolls() - G.roll, 2, 'hint').then(function (d) {
+    if (t0 !== tok || phase !== 'act') return;
+    hint = d;
+    var est = '（預估終局 ≈ ' + Math.round(YC.total(cur()) + d.fin) + ' 分）';
+    if (d.type === 'keep') {
+      var kept = G.dice.filter(function (v, i) { return d.hold[i]; }).sort();
+      toast((kept.length ? '建議保留 ' + kept.join(' ') + '，重擲其餘' : '建議全部重擲') + est);
+    } else { toast('建議填「' + N[d.cat] + '」得 ' + (d.pts + d.bonus) + ' 分' + est); sel = -1; }
+    SFX.sel(); renderAll();
+  });
+}
+// ------------------------------------------------------------------ AI turn (vs mode)
+function wait(ms) { var t = tok; return new Promise(function (res, rej) { (function w() { if (t !== tok) return; if (document.hidden || !$('ovMenu').hidden) { setTimeout(w, 200); return; } setTimeout(function () { if (t === tok) res(); }, ms); })(); }); }
+function aiTurn() {
+  var t = tok, sh = G.sh[1];
+  (async function () {
+    phase = 'ai'; renderAll();
+    await wait(650);
+    if (G.roll === 0) { rollDice(true); await wait(1050); }
+    for (;;) {
+      if (t !== tok) return;
+      var d = await think(sh, G.dice, 3 - G.roll, G.lv);
+      if (t !== tok) return;
+      if (d.type === 'fill') {
+        await wait(450); aiCell = d.cat; renderSheet(); await wait(750); if (t !== tok) return; aiCell = -1;
+        var om = optMap(), c = om[d.cat] ? d.cat : +Object.keys(om)[0]; fill(c); return;
+      }
+      for (var i = 0; i < 5; i++) if (G.hold[i] !== d.hold[i]) { G.hold[i] = d.hold[i]; G.hold[i] ? SFX.hold() : SFX.unhold(); save(); renderAll(); await wait(280); if (t !== tok) return; }
+      await wait(350); rollDice(true); await wait(1050);
+    }
+  })();
+}
+var aiCell = -1;
+// ------------------------------------------------------------------ end of sheet / results
+function recordSheet(sh) {
+  if (G.mode === 'practice') return [];
+  var tot = YC.total(sh), ys = (sh.sc[Y] === 50 ? 1 : 0) + sh.yb, got = [];
+  ST.sheets++; ST.sum += tot; ST.yachts += ys; if (YC.upper(sh) >= 63) ST.bonus++;
+  for (var c = 0; c < 13; c++) ST.cat[c] += sh.sc[c] || 0;
+  function ach(id) { if (!ST.ach[id]) { ST.ach[id] = Date.now(); got.push(id); } }
+  if (ys >= 1) ach('first'); if (YC.upper(sh) >= 63) ach('bonus'); if (tot >= 300) ach('s300'); if (ys >= 3) ach('y3');
+  if (G.mode === 'daily') ach('daily');
+  sset('stats', ST); return got;
+}
+function sheetEnd() {
+  if (!G) return;
+  var sh = G.sh[0], tot = YC.total(sh), got = recordSheet(sh), rec = false, title, sub, tags = [];
+  if (G.mode === 'voyage') {
+    var va = YC.voyageAdvance(G, tot), T = va.T;
+    G.cum = va.cum;
+    if (va.passed) {
+      var passedN = G.k, tk = va.ticket; G.k = va.k; G.tickets = va.tickets; G.passed = false;
+      if (passedN >= 10 && !ST.ach.v10) { ST.ach.v10 = Date.now(); got.push('v10'); sset('stats', ST); }
+      G.sh = [YC.newSheet()]; G.turn = 0; G.player = 0; G.roll = 0; save();
+      $('pTitle').textContent = '第 ' + passedN + ' 張達標！';
+      $('pSub').innerHTML = '本張 <b>' + tot + '</b> 分（門檻 ' + T + '）・累計 <b>' + G.cum + '</b><br>下一張門檻 <b>' + YC.threshold(G.k) + '</b>' + (tk ? '<br>獲得一張重擲券！' : '') + achText(got);
+      show('ovPass'); SFX.pass(); vib(30); burst(null, 40);
+      var b = $('pBoat'), x0 = 20, st0 = performance.now();
+      (function an(n) { var p = Math.min(1, (n - st0) / 1400); b.setAttribute('x', x0 + 160 * (1 - Math.pow(1 - p, 3))); if (p < 1 && !$('ovPass').hidden) requestAnimationFrame(an); })(st0);
+      return;
+    }
+    if (G.cum > BEST.voyage) { BEST.voyage = G.cum; rec = true; }
+    BEST.voyageSheets = Math.max(BEST.voyageSheets, G.k - 1);
+    title = '航行結束'; sub = '第 ' + G.k + ' 張只拿到 ' + tot + ' 分，未達門檻 ' + T + '。<br>共通過 <b>' + (G.k - 1) + '</b> 張';
+  } else if (G.mode === 'vs') {
+    var a = YC.total(G.sh[1]);
+    BEST.vsGames[G.lv]++;
+    if (tot > a) { BEST.vsWins[G.lv]++; title = '勝利！'; if (G.lv === 2 && !ST.ach.pro) { ST.ach.pro = Date.now(); got.push('pro'); sset('stats', ST); } }
+    else title = tot === a ? '平手' : '惜敗';
+    sub = '你 <b>' + tot + '</b> ： <b>' + a + '</b> ' + LVN[G.lv] + '船長<br>對' + LVN[G.lv] + '戰績 ' + BEST.vsWins[G.lv] + ' 勝 / ' + BEST.vsGames[G.lv] + ' 局';
+    if (tot > BEST.single) { BEST.single = tot; rec = true; }
+  } else {
+    title = tot >= 250 ? '滿載而歸！' : tot >= 200 ? '順利靠岸' : '靠岸';
+    if (G.mode === 'practice') sub = '練習模式（不計紀錄）';
+    else {
+      if (tot > BEST.single) { BEST.single = tot; rec = true; }
+      if (G.mode === 'daily') { var p = BEST.daily[G.date] || 0; if (tot > p) BEST.daily[G.date] = tot; sub = '每日航線 ' + G.date + '・今日最佳 ' + Math.max(p, tot); }
+      else sub = '單局最佳 ' + BEST.single;
+    }
+  }
+  var ks = Object.keys(BEST.daily); if (ks.length > 30) ks.sort().slice(0, ks.length - 30).forEach(function (k) { delete BEST.daily[k]; });
+  sset('best', BEST);
+  var score = G.mode === 'voyage' ? G.cum : tot;
+  lastResult = { mode: G.mode, score: score, tot: tot, sh: JSON.parse(JSON.stringify(sh)), k: G.k, lv: G.lv, title: title, ai: G.mode === 'vs' ? YC.total(G.sh[1]) : null, date: G.date, hint: G.hintUsed };
+  var mode = G.mode; G = null; sdel('run'); phase = 'menu'; tok++;
+  $('rTitle').textContent = title; $('rSub').innerHTML = sub;
+  var u = YC.upper(sh), lo = YC.lower(sh);
+  $('rBrk').innerHTML = (mode === 'voyage' ? '<span>本張得分</span><span>' + tot + '</span>' : '') +
+    '<span>上半區</span><span>' + u + '</span><span>上半區獎勵（' + Math.min(u, 63) + '/63）</span><span>' + (u >= 63 ? '+35' : '0') + '</span>' +
+    '<span>下半區</span><span>' + lo + '</span><span>額外快艇 ×' + sh.yb + '</span><span>' + (sh.yb ? '+' + sh.yb * 100 : '0') + '</span>';
+  if (rec) tags.push('<span class="tag">新紀錄！</span>');
+  if (lastResult.hint) tags.push('<span class="tag alt">使用提示</span>');
+  got.forEach(function (id) { var a = ACH.filter(function (x) { return x.id === id; })[0]; tags.push('<span class="tag ach">成就：' + a.n + '</span>'); });
+  $('rTags').innerHTML = tags.join('');
+  show('ovResult'); countUp($('rScore'), score);
+  var good = title === '勝利！' || rec || (mode !== 'vs' && mode !== 'voyage' && tot >= 200) || (mode === 'voyage' && lastResult.k > 3);
+  if (good) { SFX.win(); burst(null, 70); vib([20, 40, 20]); } else { SFX.lose(); vib(40); }
+  renderAll();
+}
+var lastResult = null;
+function achText(got) { return got.length ? '<span class="tags">' + got.map(function (id) { var a = ACH.filter(function (x) { return x.id === id; })[0]; return '<span class="tag ach">成就：' + a.n + '</span>'; }).join('') + '</span>' : ''; }
+function countUp(el, v) { var t0 = performance.now(); (function f(n) { var p = Math.min(1, (n - t0) / 900); el.textContent = Math.round(v * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(f); })(t0); }
+function shareText() {
+  var r = lastResult; if (!r) return '';
+  var m = r.mode === 'voyage' ? '遠航 ' + (r.k - 1) + ' 張・累計 ' + r.score + ' 分' : r.mode === 'vs' ? '對戰' + LVN[r.lv] + '船長 ' + r.tot + ' : ' + r.ai + '（' + r.title + '）' :
+    (r.mode === 'daily' ? '每日航線 ' + r.date + '・' : r.mode === 'practice' ? '練習・' : '單局・') + r.tot + ' 分';
+  var sh = r.sh, u = YC.upper(sh);
+  return '快艇骰子｜' + m + '\n上半區 ' + u + (u >= 63 ? '（+35）' : '') + '・下半區 ' + YC.lower(sh) + '・快艇 ×' + ((sh.sc[Y] === 50 ? 1 : 0) + sh.yb) + (r.hint ? '・使用提示' : '');
+}
+function doShare() {
+  var t = shareText();
+  if (navigator.share) { navigator.share({ text: t }).catch(function () {}); return; }
+  $('iTitle').textContent = '分享成績';
+  $('iBody').innerHTML = '<div class="sub">長按或選取下方文字即可複製</div><textarea class="share" readonly id="shareTa"></textarea>';
+  $('shareTa').value = t; show('ovInfo');
+  try { navigator.clipboard && navigator.clipboard.writeText(t).then(function () { toast('已複製到剪貼簿'); }, function () {}); } catch (e) {}
+}
+// ------------------------------------------------------------------ overlays
+function show(id) { $(id).hidden = false; }
+function hide(id) { $(id).hidden = true; }
+function closeAll() { ['ovMenu', 'ovResult', 'ovPass', 'ovConfirm', 'ovInfo'].forEach(hide); }
+function openMenu() {
+  closeAll(); audio();
+  var r = sget('run', null);
+  $('mCont').hidden = !G;
+  if (G) $('contInfo').textContent = modeName(G) + '・第 ' + Math.min(13, G.turn + 1) + ' 回合・' + YC.total(G.sh[0]) + ' 分';
+  $('soloInfo').textContent = BEST.single ? '單局最佳 ' + BEST.single + ' 分' : '13 回合，挑戰最高分';
+  $('voyInfo').textContent = BEST.voyage ? '最佳 ' + BEST.voyage + ' 分・' + BEST.voyageSheets + ' 張' : '一張接一張，門檻逐張提高';
+  var dt = BEST.daily[todayStr()]; $('dailyInfo').textContent = dt ? '今日最佳 ' + dt + ' 分・可再挑戰' : '今天大家擲到同樣的骰子';
+  syncSettings(); show('ovMenu');
+}
+function modeName(g) { return { solo: '單局', voyage: '遠航 第 ' + g.k + ' 張', daily: '每日 ' + g.date.slice(5).replace('-', '/'), vs: '對戰・' + LVN[g.lv], practice: '練習' }[g.mode]; }
+function syncSettings() {
+  $('swSound').setAttribute('aria-checked', S.sound); $('swVib').setAttribute('aria-checked', S.vib); $('swShake').setAttribute('aria-checked', S.shake);
+  $('themeLbl').textContent = { auto: '自動', light: '白天', dark: '夜航' }[S.theme];
+  [].forEach.call(document.querySelectorAll('#lvChips .chip'), function (b) { b.setAttribute('aria-pressed', +b.dataset.lv === S.lv); });
+  $('muteIc').innerHTML = S.sound ? '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>' : '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>';
+  if (!window.DeviceMotionEvent) $('swShake').hidden = true;
+}
+function applyTheme() {
+  var r = document.documentElement; if (S.theme === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', S.theme);
+  document.body.classList.toggle('night', isDark()); deckCache = null; dirty = true;
+}
+function isDark() { return S.theme === 'dark' || (S.theme === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
+function showStats() {
+  var n = ST.sheets || 0, avg = n ? (ST.sum / n).toFixed(1) : '—';
+  var h = '<div class="stat"><span>完成計分表</span><span>' + n + '</span><span>平均分數</span><span>' + avg + '</span><span>單局最佳</span><span>' + BEST.single + '</span>' +
+    '<span>遠航最佳</span><span>' + BEST.voyage + '（' + BEST.voyageSheets + ' 張）</span><span>快艇總數</span><span>' + ST.yachts + '</span><span>上半區獎勵達成率</span><span>' + (n ? Math.round(100 * ST.bonus / n) + '%' : '—') + '</span>' +
+    '<span>對戰勝場（新手/一般/高手）</span><span>' + BEST.vsWins.join(' / ') + '</span></div>';
+  if (n) { h += '<div class="stat">'; for (var c = 0; c < 13; c++) h += '<span>' + N[c] + ' 平均</span><span>' + (ST.cat[c] / n).toFixed(1) + '</span>'; h += '</div>'; }
+  h += '<div class="achl">' + ACH.map(function (a) { return '<div class="ach' + (ST.ach[a.id] ? ' on' : '') + '"><i>' + (ST.ach[a.id] ? '✓' : '?') + '</i><span><b>' + a.n + '</b><small>' + a.d + '</small></span></div>'; }).join('') + '</div>';
+  $('iTitle').textContent = '統計與成就'; $('iBody').innerHTML = h; show('ovInfo');
+}
+function showRules() {
+  $('iTitle').textContent = '規則';
+  $('iBody').innerHTML = '<div class="sub" style="text-align:left">每回合擲五顆骰，最多擲 3 次；點骰子可保留。擲完後選一格填分（點一下預覽、再點一下確認），13 格填滿結束。<br><br>' +
+    '<b>上半區</b>：計該點數總和，合計 ≥ 63 加 35 分。<br><b>三條／四條</b>：至少 3／4 顆同點，計五顆總和。<br><b>葫蘆</b> 25、<b>小順</b>（四連號）30、<b>大順</b>（五連號）40、<b>快艇</b>（五同）50、<b>機會</b>計總和。<br><br>' +
+    '<b>額外快艇</b>：快艇格已得 50 後再擲出快艇，每次 +100。並適用百搭：對應點數的上半格未填就必須填它；否則可填任一下半格並得滿分；都填滿才填上半格 0 分。<br><br>' +
+    '<b>遠航</b>：第 k 張門檻 150 + 15(k−1)，第 15 張後每張 +10。每通過 5 張得一張重擲券（最多 2 張），可在任一回合多擲一次。<br><br>操作：Space 擲骰、1–5 保留、方向鍵選格、Enter 填分。</div>';
+  show('ovInfo');
+}
+// ------------------------------------------------------------------ sheet DOM
+var rowEl = [];
+(function buildSheet() {
+  for (var c = 0; c < 13; c++) {
+    var b = document.createElement('button'); b.className = 'row'; b.dataset.cat = c;
+    b.innerHTML = '<span class="nm"><b>' + N[c] + '</b><small>' + DESC[c] + '</small></span><span class="v"></span><span class="av" hidden></span>';
+    b.addEventListener('click', (function (c) { return function () { tapCell(c); }; })(c));
+    rowEl.push(b); (c < 6 ? $('colU') : $('colL')).appendChild(b);
+    if (c === 5) { var d = document.createElement('div'); d.className = 'bonus'; d.id = 'bonusBox'; d.innerHTML = '<div class="t"><span>獎勵 <b id="bonusTxt">0/63</b></span><span id="bonusPlus">+35</span></div><div class="bar"><i id="bonusBar"></i></div>'; $('colU').appendChild(d); }
+  }
+})();
+function renderSheet() {
+  if (!G) return;
+  var me = G.sh[0], om = (phase === 'act' && human()) ? optMap() : {}, vs = G.mode === 'vs';
+  for (var c = 0; c < 13; c++) {
+    var el = rowEl[c], v = el.children[1], av = el.children[2], f = me.sc[c] != null, o = om[c];
+    var cls = 'row' + (f ? ' done' : ' open') + (!f && G.roll && human() && phase === 'act' && !o ? ' na' : '') + (sel === c ? ' sel' : '') +
+      (hint && hint.type === 'fill' && hint.cat === c ? ' hint' : '') + (aiCell === c && !human() ? ' aiflash' : '') + (justCat === c && justP === 0 ? ' just' : '');
+    if (el.className !== cls) el.className = cls;
+    if (f) { v.textContent = me.sc[c]; v.className = 'v'; }
+    else if (o) { v.textContent = o.pts; v.className = 'v pv' + (o.pts > 0 && o.pts >= PAR[c] * 1.15 ? ' good' : ''); }
+    else { v.textContent = G.roll && human() && phase === 'act' ? '—' : ''; v.className = 'v pv'; }
+    av.hidden = !vs; if (vs) { var a = G.sh[1].sc[c]; av.textContent = a == null ? '·' : a; }
+  }
+  justCat = -1;
+  var u = YC.upper(me);
+  $('bonusTxt').textContent = Math.min(u, 63) + '/63' + (vs ? '・船長 ' + Math.min(63, YC.upper(G.sh[1])) : '');
+  $('bonusBar').style.width = Math.min(100, u / 63 * 100) + '%';
+  $('bonusBox').classList.toggle('got', u >= 63); $('bonusPlus').textContent = u >= 63 ? '+35 ✓' : '+35';
+  $('uLbl').textContent = u + (u >= 63 ? '+35' : ''); $('lLbl').textContent = YC.lower(me) + (me.yb ? '+' + me.yb * 100 : '');
+}
+function renderHud() {
+  if (!G) return;
+  var me = G.sh[0], tot = YC.total(me);
+  $('hTurn').innerHTML = '第 <b>' + Math.min(13, G.turn + 1) + '</b>/13 回合';
+  $('hScore').textContent = tot; $('hMode').textContent = { solo: '單局', voyage: '遠航', daily: '每日', vs: '對戰', practice: '練習' }[G.mode];
+  var l2 = $('hLine2'), h = '';
+  if (G.mode === 'voyage') {
+    var T = YC.threshold(G.k), p = Math.min(1, tot / T);
+    h = '<span>門檻 ' + T + '</span><span class="bar"><i style="width:' + (p * 100) + '%"></i><svg class="ship" style="left:' + (p * 100) + '%;transform:translateX(-' + (p * 100) + '%)" viewBox="0 0 24 20"><use href="#boat"/></svg><span class="flag"></span></span><span>累計 ' + (G.cum + tot) + '</span>';
+  } else if (G.mode === 'vs') {
+    h = '<span class="vsl"><span>你 <b>' + tot + '</b></span><span class="ai">' + LVN[G.lv] + '船長 <b>' + YC.total(G.sh[1]) + '</b></span></span><span style="margin-left:auto">' + (human() ? '輪到你' : '船長回合…') + '</span>';
+  } else if (G.mode === 'practice') h = '<span>練習模式・可悔擲・不計紀錄</span>';
+  else if (G.mode === 'daily') h = '<span>每日航線 ' + G.date + '</span><span style="margin-left:auto">今日最佳 ' + (BEST.daily[G.date] || '—') + '</span>';
+  else h = '<span>上半區 ' + Math.min(63, YC.upper(me)) + '/63</span><span style="margin-left:auto">單局最佳 ' + (BEST.single || '—') + '</span>';
+  if (l2.innerHTML !== h) l2.innerHTML = h;
+  $('bHint').disabled = !(phase === 'act' && human() && G.roll > 0);
+  $('bHint').classList.toggle('lit', !!hint);
+}
+function renderCtl() {
+  if (!G) return;
+  var left = maxRolls() - G.roll, dots = $('rollDots').children;
+  for (var i = 0; i < 3; i++) dots[i].className = i < Math.min(3, left) ? '' : 'off';
+  $('rollTxt').textContent = !human() ? '船長回合' : G.roll === 0 ? '擲骰' : left > 0 ? (G.hold.indexOf(false) < 0 ? '全部保留' : '再擲') : '請填分';
+  $('bRoll').disabled = !(phase === 'act' && human() && G.roll < maxRolls() && G.hold.indexOf(false) >= 0);
+  $('bUndo').hidden = G.mode !== 'practice'; $('bUndo').disabled = !G.prev || !human();
+  $('bTicket').hidden = !(G.mode === 'voyage' && G.tickets > 0);
+  $('tkN').textContent = '券 ×' + G.tickets; $('bTicket').disabled = !(G.roll >= 3 && !G.extra && phase === 'act');
+  var m = $('trayMsg');
+  m.textContent = !human() ? (G.roll ? '' : '船長準備擲骰…') : G.roll === 0 ? '按「擲骰」或在甲板上往上滑' : '';
+  m.style.opacity = m.textContent ? 1 : 0;
+  $('trayTag').textContent = !human() ? LVN[G.lv] + '船長的骰子' : '保留列';
+}
+function renderAll() { renderHud(); renderSheet(); renderCtl(); dirty = true; }
+function bump(el) { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); }
+var toastT = 0;
+function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { e.classList.remove('on'); }, 2200); }
+function banner(t) { var b = $('banner'); b.textContent = t; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
+function flyText(el, t, color) {
+  var r = el.getBoundingClientRect(), d = document.createElement('div'); d.className = 'fly'; d.textContent = t;
+  d.style.left = (r.left + r.width - 28) + 'px'; d.style.top = (r.top + 4) + 'px'; if (color) d.style.color = color;
+  document.body.appendChild(d); setTimeout(function () { d.remove(); }, 1000);
+}
+// ------------------------------------------------------------------ tray canvas: dice physics + drawing
+var cv = $('tray'), cx = cv.getContext('2d'), wrap = $('trayWrap');
+var W = 0, H = 0, DPR = 1, DS = 56, AREA = null, SLOT = [], HOLDY = 0, deckCache = null, dirty = true;
+var D = []; for (var i = 0; i < 5; i++) D.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ang: 0, spin: 0, ph: 0, face: 1, t: 9, on: false, hp: 0, rolling: false, flick: 0 });
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  var r = wrap.getBoundingClientRect(); W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  DS = Math.max(36, Math.min(56, (W - 44) / 5.7, (H - 30) / 3.3));
+  var gap = Math.min(12, (W - 28 - 5 * DS) / 4);
+  HOLDY = 14 + DS / 2 + 8;
+  SLOT = []; for (var i = 0; i < 5; i++) SLOT.push({ x: W / 2 + (i - 2) * (DS + gap), y: HOLDY });
+  AREA = { x0: 16 + DS * 0.55, x1: W - 16 - DS * 0.55, y0: HOLDY + DS / 2 + 16 + DS * 0.55, y1: H - 14 - DS * 0.55 };
+  deckCache = null; dirty = true;
+  D.forEach(function (d) { d.x = Math.max(AREA.x0, Math.min(AREA.x1, d.x)); d.y = Math.max(AREA.y0, Math.min(AREA.y1, d.y)); });
+  if (G && !D.some(function (d) { return d.rolling; })) placeRest(true);
+}
+function resetDice() { D.forEach(function (d) { d.on = false; d.rolling = false; d.hp = 0; }); dirty = true; }
+function placeRest(keep) { // deterministic spread for restored or re-laid dice
+  if (!G) return;
+  var R = YC.rng(G.seed ^ (G.turn * 977 + G.roll * 31 + G.player * 7)), aw = AREA.x1 - AREA.x0, ah = AREA.y1 - AREA.y0;
+  for (var i = 0; i < 5; i++) {
+    var d = D[i]; d.face = G.dice[i] || 1; d.on = G.roll > 0; d.rolling = false; d.z = 0; d.t = 9; d.hp = G.hold[i] ? 1 : 0;
+    if (keep && d.placed) { d.x = Math.max(AREA.x0, Math.min(AREA.x1, d.x)); d.y = Math.max(AREA.y0, Math.min(AREA.y1, d.y)); continue; }
+    d.x = AREA.x0 + aw * ((i + 0.5) / 5) + (R() - 0.5) * Math.min(14, aw / 12); d.y = AREA.y0 + ah * (0.3 + 0.4 * R()); d.ang = (R() - 0.5) * 0.6; d.placed = true;
+  }
+  dirty = true;
+}
+function busy() { for (var i = 0; i < 5; i++) if (D[i].rolling) return true; return false; }
+function launch() {
+  var R = Math.random;
+  for (var i = 0; i < 5; i++) {
+    var d = D[i]; d.on = true; d.placed = true;
+    if (G.hold[i]) { d.face = G.dice[i]; continue; }
+    d.rolling = true; d.t = 0; d.hp = 0;
+    d.x = W * (0.3 + 0.4 * R()); d.y = H + DS * 0.6; d.z = 10;
+    d.vx = (R() - 0.5) * W * 2.4; d.vy = -(H * (2.4 + R() * 1.2)); d.vz = 300 + R() * 260;
+    d.spin = (R() < 0.5 ? -1 : 1) * (10 + R() * 14); d.ph = R() * 6; d.face = 1 + Math.floor(R() * 6); d.flick = 0;
+  }
+  dirty = true;
+}
+var shakeAmt = 0;
+function step(dt) {
+  var any = false, hit = 0;
+  for (var i = 0; i < 5; i++) {
+    var d = D[i];
+    var target = G && G.hold[i] && d.on ? 1 : 0;
+    if (Math.abs(d.hp - target) > 0.001) { d.hp += (target - d.hp) * Math.min(1, dt * 12); if (Math.abs(d.hp - target) < 0.01) d.hp = target; any = true; }
+    if (!d.rolling) continue;
+    any = true; d.t += dt;
+    var damp = Math.exp(-(0.8 + 7 * d.t) * dt);
+    d.vz -= 1500 * dt; d.z += d.vz * dt;
+    if (d.z < 0) { d.z = 0; if (d.vz < -80) { hit = Math.max(hit, -d.vz / 600); d.vz = -d.vz * 0.42; } else d.vz = 0; }
+    d.x += d.vx * dt; d.y += d.vy * dt; d.vx *= damp; d.vy *= damp;
+    var inside = d.y < AREA.y1 + 2;
+    if (inside || d.t > 0.15) {
+      if (d.x < AREA.x0) { d.x = AREA.x0; if (d.vx < 0) { hit = Math.max(hit, -d.vx / 900); d.vx = -d.vx * 0.6; } }
+      if (d.x > AREA.x1) { d.x = AREA.x1; if (d.vx > 0) { hit = Math.max(hit, d.vx / 900); d.vx = -d.vx * 0.6; } }
+      if (d.y < AREA.y0) { d.y = AREA.y0; if (d.vy < 0) { hit = Math.max(hit, -d.vy / 900); d.vy = -d.vy * 0.55; } }
+      if (d.y > AREA.y1 && d.t > 0.15) { d.y = AREA.y1; if (d.vy > 0) { d.vy = -d.vy * 0.55; } }
+    }
+    var sp = Math.hypot(d.vx, d.vy);
+    d.ang += d.spin * dt * Math.min(1, sp / 300 + 0.15); d.spin *= damp; d.ph += dt * Math.min(30, sp / 25);
+    d.flick -= dt; if (d.t < 0.62 && d.flick <= 0) { d.face = 1 + Math.floor(Math.random() * 6); d.flick = 0.06 + d.t * 0.08; }
+    if (d.t >= 0.62) d.face = G ? G.dice[i] : d.face;
+    if (d.t >= 0.8) { d.rolling = false; d.z = 0; d.vx = d.vy = 0; d.ph = 0; d.x = Math.max(AREA.x0, Math.min(AREA.x1, d.x)); d.y = Math.max(AREA.y0, Math.min(AREA.y1, d.y)); settleCheck(); }
+  }
+  // dice-dice separation (only free dice)
+  for (var a = 0; a < 5; a++) for (var b = a + 1; b < 5; b++) {
+    var p = D[a], q = D[b]; if (!p.on || !q.on || (G && (G.hold[a] || G.hold[b]))) continue;
+    var dx = q.x - p.x, dy = q.y - p.y, dist = Math.hypot(dx, dy), m = DS * 1.25;
+    if (dist < m && dist > 0.01) {
+      var push = (m - dist) / 2, nx = dx / dist, ny = dy / dist;
+      p.x -= nx * push; p.y -= ny * push; q.x += nx * push; q.y += ny * push;
+      if (p.rolling || q.rolling) { var rv = (q.vx - p.vx) * nx + (q.vy - p.vy) * ny; if (rv < 0) { p.vx += rv * nx * 0.8; p.vy += rv * ny * 0.8; q.vx -= rv * nx * 0.8; q.vy -= rv * ny * 0.8; hit = Math.max(hit, -rv / 900); } any = true; }
+      [p, q].forEach(function (d) { if (!d.rolling) { d.x = Math.max(AREA.x0, Math.min(AREA.x1, d.x)); d.y = Math.max(AREA.y0, Math.min(AREA.y1, d.y)); } });
+    }
+  }
+  if (hit > 0.05) SFX.clack(hit);
+  return any;
+}
+var settleTimer = 0;
+function settleCheck() {
+  if (busy()) return;
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(function () {
+    if (!G) return;
+    var c = YC.counts(G.dice), yacht = c.some(function (n) { return n === 5; });
+    if (yacht) {
+      wave = 0.0001; gulls(); SFX.horn(); vib(60); banner(cur().sc[Y] === 50 ? '額外快艇 +100' : '快艇！'); burst(wrap, 50);
+      if (cur().sc[Y] != null && human()) setTimeout(function () { toast('百搭規則：' + (cur().sc[G.dice[0] - 1] == null ? '必須填「' + N[G.dice[0] - 1] + '」' : '可填任一下半格並得滿分')); }, 900);
+    }
+    renderAll();
+  }, 60);
+}
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function buildDeck() {
+  var c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height; var g = c.getContext('2d'); g.scale(DPR, DPR);
+  var dark = isDark(), R = YC.rng(7), base = dark ? [92, 62, 34] : [160, 112, 63];
+  var ph = 26;
+  for (var y = 0, k = 0; y < H; y += ph, k++) {
+    var v = (R() - 0.5) * 18; g.fillStyle = 'rgb(' + (base[0] + v) + ',' + (base[1] + v * 0.7) + ',' + (base[2] + v * 0.5) + ')'; g.fillRect(0, y, W, ph);
+    g.strokeStyle = dark ? '#00000030' : '#ffffff14'; g.lineWidth = 1;
+    for (var l = 0; l < 4; l++) { g.beginPath(); var yy = y + 4 + R() * (ph - 8); g.moveTo(0, yy); for (var x = 0; x <= W; x += 30) g.lineTo(x, yy + Math.sin(x / 40 + l + k) * 1.5); g.stroke(); }
+    g.fillStyle = '#00000040'; g.fillRect(0, y + ph - 2, W, 2);
+    var off = (k % 2) * W * 0.45 + W * 0.25; g.fillRect(off, y, 2, ph); g.fillStyle = '#00000038'; [[-7, 6], [-7, ph - 7], [9, 6], [9, ph - 7]].forEach(function (n) { g.beginPath(); g.arc(off + n[0], y + n[1], 1.5, 0, 7); g.fill(); });
+  }
+  // hold strip recess
+  var hy = HOLDY - DS / 2 - 8, hh = DS + 16;
+  g.fillStyle = dark ? '#0b162688' : '#1b335833'; rr(g, 10, hy, W - 20, hh, 14); g.fill();
+  g.strokeStyle = '#ffffff22'; g.lineWidth = 1; g.stroke();
+  SLOT.forEach(function (s) { g.setLineDash([4, 4]); g.strokeStyle = '#fff3d655'; g.lineWidth = 1.5; rr(g, s.x - DS / 2, s.y - DS / 2, DS, DS, DS * 0.18); g.stroke(); });
+  g.setLineDash([]);
+  // rope border around the rolling area
+  var x0 = 8, y0 = hy + hh + 6, x1 = W - 8, y1 = H - 8;
+  g.lineCap = 'round';
+  g.strokeStyle = dark ? '#8a7350' : '#d8b77e'; g.lineWidth = 7; rr(g, x0, y0, x1 - x0, y1 - y0, 14); g.stroke();
+  g.strokeStyle = dark ? '#5b4a30' : '#9c7a45'; g.lineWidth = 7; g.setLineDash([2.5, 5.5]); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#00000022'; g.lineWidth = 1; rr(g, x0 + 4, y0 + 4, x1 - x0 - 8, y1 - y0 - 8, 11); g.stroke();
+  // vignette
+  var vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75); vg.addColorStop(0, '#0000'); vg.addColorStop(1, dark ? '#000a' : '#0004');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  deckCache = c;
+}
+var PIPS = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] };
+function drawDie(c, x, y, s, face, ang, z, held, glow, sq, now) {
+  var lift = z * 0.12, sc = 1 + z / 500;
+  // shadow
+  c.save(); c.translate(x + 3 + z * 0.08, y + s * 0.12 + z * 0.12); c.rotate(ang); c.fillStyle = 'rgba(0,0,0,' + (0.32 - Math.min(0.2, z / 900)) + ')';
+  rr(c, -s / 2 * sc, -s / 2 * sc, s * sc, s * sc, s * 0.2); c.fill(); c.restore();
+  c.save(); c.translate(x, y - lift); c.scale(sc * sq, sc);
+  // body thickness
+  c.save(); c.translate(0, s * 0.085); c.rotate(ang); c.fillStyle = '#c9b996'; rr(c, -s / 2, -s / 2, s, s, s * 0.2); c.fill(); c.restore();
+  c.rotate(ang);
+  if (held) { c.shadowColor = '#e0a526'; c.shadowBlur = 12; c.strokeStyle = '#e0a526'; c.lineWidth = 3.5; rr(c, -s / 2 - 4, -s / 2 - 4, s + 8, s + 8, s * 0.24); c.stroke(); c.shadowBlur = 0; }
+  if (glow) { var a = 0.5 + 0.5 * Math.sin(now / 160); c.strokeStyle = 'rgba(31,155,143,' + (0.5 + 0.5 * a) + ')'; c.lineWidth = 3; rr(c, -s / 2 - 7, -s / 2 - 7, s + 14, s + 14, s * 0.28); c.stroke(); }
+  var gr = c.createLinearGradient(-s / 2, -s / 2, s / 2, s / 2); gr.addColorStop(0, '#fffdf6'); gr.addColorStop(1, '#ecdfc3');
+  c.fillStyle = gr; rr(c, -s / 2, -s / 2, s, s, s * 0.2); c.fill();
+  c.strokeStyle = '#b9a67f'; c.lineWidth = 1; c.stroke();
+  c.fillStyle = '#ffffff99'; rr(c, -s / 2 + 3, -s / 2 + 2, s - 6, s * 0.18, s * 0.1); c.fill();
+  var p = PIPS[face] || PIPS[1], o = s * 0.26, pr = s * 0.085;
+  for (var i = 0; i < p.length; i++) {
+    c.fillStyle = face === 1 ? '#d2433a' : '#1b3358'; c.beginPath(); c.arc(p[i][0] * o, p[i][1] * o, face === 1 ? pr * 1.35 : pr, 0, 7); c.fill();
+    c.fillStyle = '#ffffff30'; c.beginPath(); c.arc(p[i][0] * o - pr * 0.3, p[i][1] * o - pr * 0.3, pr * 0.35, 0, 7); c.fill();
+  }
+  c.restore();
+}
+var wave = 0;
+function drawTray(now) {
+  if (!deckCache) buildDeck();
+  cx.setTransform(1, 0, 0, 1, 0, 0); cx.drawImage(deckCache, 0, 0); cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  var order = [0, 1, 2, 3, 4].sort(function (a, b) { return D[a].z - D[b].z; });
+  for (var k = 0; k < 5; k++) {
+    var i = order[k], d = D[i]; if (!d.on) continue;
+    var h = d.hp, x = d.x + (SLOT[i].x - d.x) * h, y = d.y + (SLOT[i].y - d.y) * h, ang = d.ang * (1 - h);
+    var sq = d.rolling ? 1 - 0.22 * Math.abs(Math.sin(d.ph)) : 1;
+    drawDie(cx, x, y, DS, d.face, ang, d.z, G && G.hold[i] && h > 0.5, hint && hint.type === 'keep' && hint.hold[i] && !G.hold[i] || (hint && hint.type === 'keep' && !hint.hold[i] && G.hold[i]), sq, now);
+  }
+  if (wave > 0) {
+    var p = wave, cxp = -W * 0.3 + p * W * 1.6;
+    cx.save(); cx.globalAlpha = Math.sin(Math.PI * Math.min(1, p)) * 0.85;
+    var g = cx.createLinearGradient(cxp - W * 0.5, 0, cxp, 0); g.addColorStop(0, '#2d6a9f00'); g.addColorStop(0.6, '#3f86c2cc'); g.addColorStop(1, '#bfe3ff');
+    cx.fillStyle = g; cx.beginPath(); cx.moveTo(cxp - W * 0.6, H); cx.lineTo(cxp - W * 0.6, 0);
+    for (var yy = 0; yy <= H; yy += 8) cx.lineTo(cxp + Math.sin(yy / 18 + now / 120) * 10 + Math.sin(yy / 7) * 4, yy);
+    cx.lineTo(cxp - W * 0.6, H); cx.fill();
+    cx.fillStyle = '#ffffff'; for (var f = 0; f < 18; f++) { var fy = (f * 37 + now / 9) % H; cx.globalAlpha *= 1; cx.beginPath(); cx.arc(cxp + Math.sin(fy / 18 + now / 120) * 10 + 4, fy, 2 + (f % 3), 0, 7); cx.fill(); }
+    cx.restore();
+  }
+}
+// ------------------------------------------------------------------ fx canvas: particles + gulls
+var fx = $('fx'), fc = fx.getContext('2d'), P = [], GULLS = [];
+function fxResize() { var d = Math.min(2, window.devicePixelRatio || 1); fx.width = innerWidth * d; fx.height = innerHeight * d; fc.setTransform(d, 0, 0, d, 0, 0); }
+function burst(el, n) {
+  var r = el ? el.getBoundingClientRect() : { left: innerWidth / 2 - 10, top: innerHeight * 0.35, width: 20, height: 20 };
+  var cols = ['#d2433a', '#e0a526', '#1f9b8f', '#5d8fb8', '#f3ead7', '#ffffff'];
+  for (var i = 0; i < n; i++) { var a = Math.random() * Math.PI * 2, s = 120 + Math.random() * 380;
+    P.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 200, life: 1, dec: 0.6 + Math.random() * 0.6, c: cols[i % cols.length], s: 3 + Math.random() * 5, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 14 }); }
+}
+function gulls() { for (var i = 0; i < 3; i++) GULLS.push({ x: -40 - i * 60, y: 50 + i * 26 + Math.random() * 20, v: 150 + Math.random() * 60, ph: Math.random() * 6, s: 0.8 + Math.random() * 0.5 }); }
+function drawFx(dt) {
+  fc.clearRect(0, 0, innerWidth, innerHeight);
+  for (var i = P.length - 1; i >= 0; i--) {
+    var p = P[i]; p.vy += 700 * dt; p.vx *= Math.exp(-1.2 * dt); p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt; p.life -= p.dec * dt;
+    if (p.life <= 0) { P.splice(i, 1); continue; }
+    fc.save(); fc.globalAlpha = Math.min(1, p.life * 2); fc.translate(p.x, p.y); fc.rotate(p.rot); fc.fillStyle = p.c; fc.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); fc.restore();
+  }
+  for (var j = GULLS.length - 1; j >= 0; j--) {
+    var g = GULLS[j]; g.x += g.v * dt; g.ph += dt * 9; if (g.x > innerWidth + 60) { GULLS.splice(j, 1); continue; }
+    var fl = Math.sin(g.ph) * 7 * g.s, w = 16 * g.s;
+    fc.strokeStyle = isDark() ? '#dfe8f5' : '#1b3358'; fc.lineWidth = 2.2; fc.lineCap = 'round'; fc.beginPath();
+    fc.moveTo(g.x - w, g.y - fl); fc.quadraticCurveTo(g.x - w / 2, g.y - 6 * g.s - fl / 2, g.x, g.y); fc.quadraticCurveTo(g.x + w / 2, g.y - 6 * g.s - fl / 2, g.x + w, g.y - fl); fc.stroke();
+  }
+  return P.length || GULLS.length;
+}
+// ------------------------------------------------------------------ main loop
+var last = 0, running = true, fxLive = false;
+function frame(now) {
+  if (!running) return;
+  var dt = Math.min(0.033, (now - (last || now)) / 1000); last = now;
+  var moving = step(dt);
+  if (wave > 0) { wave += dt / 1.5; if (wave >= 1) wave = 0; moving = true; }
+  var glow = hint && hint.type === 'keep';
+  if (moving || dirty || glow) { drawTray(now); dirty = false; }
+  if (P.length || GULLS.length || fxLive) fxLive = drawFx(dt) > 0;
+  requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { running = false; } else if (!running) { running = true; last = 0; requestAnimationFrame(frame); }
+});
+// ------------------------------------------------------------------ input
+var pd = null;
+wrap.addEventListener('pointerdown', function (e) { audio(); pd = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+wrap.addEventListener('pointerup', function (e) {
+  if (!pd) return; var r = wrap.getBoundingClientRect(), dx = e.clientX - pd.x, dy = e.clientY - pd.y; var p = pd; pd = null;
+  if (dy < -35 && Math.abs(dy) > Math.abs(dx) && performance.now() - p.t < 700) { rollDice(); return; }
+  if (Math.hypot(dx, dy) > 14) return;
+  var x = e.clientX - r.left, y = e.clientY - r.top, best = -1, bd = DS * 0.75;
+  for (var i = 0; i < 5; i++) { var d = D[i]; if (!d.on) continue; var px = d.x + (SLOT[i].x - d.x) * d.hp, py = d.y + (SLOT[i].y - d.y) * d.hp, dd = Math.hypot(px - x, py - y); if (dd < bd) { bd = dd; best = i; } }
+  if (best >= 0) toggleHold(best);
+});
+wrap.addEventListener('pointercancel', function () { pd = null; });
+$('bRoll').addEventListener('click', function () { audio(); rollDice(); });
+$('bHint').addEventListener('click', doHint);
+$('bUndo').addEventListener('click', undoRoll);
+$('bTicket').addEventListener('click', useTicket);
+$('bMute').addEventListener('click', function () { audio(); S.sound = !S.sound; saveSettings(); syncSettings(); if (S.sound) SFX.sel(); });
+$('bMenu').addEventListener('click', function () { SFX.sel(); openMenu(); });
+$('mCont').addEventListener('click', function () { audio(); closeAll(); renderAll(); if (G && !human() && phase !== 'ai') aiTurn(); });
+[].forEach.call(document.querySelectorAll('.mode[data-mode]'), function (b) { b.addEventListener('click', function () { audio(); SFX.sel(); newGame(b.dataset.mode); }); });
+[].forEach.call(document.querySelectorAll('#lvChips .chip'), function (b) { b.addEventListener('click', function () { audio(); S.lv = +b.dataset.lv; saveSettings(); syncSettings(); SFX.sel(); }); });
+$('swSound').addEventListener('click', function () { audio(); S.sound = !S.sound; saveSettings(); syncSettings(); SFX.sel(); });
+$('swVib').addEventListener('click', function () { S.vib = !S.vib; saveSettings(); syncSettings(); vib(15); });
+$('swShake').addEventListener('click', function () {
+  if (S.shake) { S.shake = false; saveSettings(); syncSettings(); return; }
+  var DM = window.DeviceMotionEvent;
+  if (DM && typeof DM.requestPermission === 'function') {
+    DM.requestPermission().then(function (r) { S.shake = r === 'granted'; if (!S.shake) toast('未取得動作感測權限'); saveSettings(); syncSettings(); }, function () { toast('此裝置無法使用搖晃擲骰'); $('swShake').hidden = true; });
+  } else { S.shake = true; saveSettings(); syncSettings(); toast('已開啟：搖一搖手機即可擲骰'); }
+});
+$('bTheme').addEventListener('click', function () { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme]; saveSettings(); syncSettings(); applyTheme(); });
+$('bStats').addEventListener('click', showStats);
+$('bRules').addEventListener('click', showRules);
+$('iClose').addEventListener('click', function () { hide('ovInfo'); });
+$('cNo').addEventListener('click', function () { hide('ovConfirm'); confirmCb = null; });
+$('cYes').addEventListener('click', function () { hide('ovConfirm'); var f = confirmCb; confirmCb = null; if (f) f(); });
+$('rAgain').addEventListener('click', function () { audio(); newGame(lastResult ? lastResult.mode : 'solo'); });
+$('rMenu').addEventListener('click', openMenu);
+$('rShare').addEventListener('click', doShare);
+$('pNext').addEventListener('click', function () { hide('ovPass'); audio(); startTurn(); save(); });
+var lastShake = 0;
+window.addEventListener('devicemotion', function (e) {
+  if (!S.shake || !canRoll()) return;
+  var a = e.acceleration, m;
+  if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z); else { a = e.accelerationIncludingGravity; if (!a || a.x == null) return; m = Math.abs(Math.hypot(a.x, a.y, a.z) - 9.81); }
+  var n = performance.now(); if (m > 15 && n - lastShake > 1200) { lastShake = n; rollDice(); }
+});
+var keySel = -1;
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { if (!$('ovInfo').hidden) hide('ovInfo'); else if (!$('ovConfirm').hidden) hide('ovConfirm'); return; }
+  if (!G || [].some.call(document.querySelectorAll('.ov'), function (o) { return !o.hidden; })) { if (e.key === 'Enter' && !$('ovConfirm').hidden) $('cYes').click(); return; }
+  audio();
+  if (e.key === ' ') { e.preventDefault(); rollDice(); return; }
+  if (/^[1-5]$/.test(e.key)) { toggleHold(+e.key - 1); return; }
+  if (/^Arrow/.test(e.key) && G.roll && phase === 'act' && human()) {
+    e.preventDefault(); var om = optMap(), c = sel >= 0 ? sel : (e.key === 'ArrowRight' ? 6 : 0);
+    if (sel >= 0) {
+      if (e.key === 'ArrowDown') c = c === 5 ? 5 : c === 12 ? 12 : c + 1; if (e.key === 'ArrowUp') c = c === 0 || c === 6 ? c : c - 1;
+      if (e.key === 'ArrowRight' && c < 6) c = c + 6; if (e.key === 'ArrowLeft' && c >= 6) c = Math.min(5, c - 6);
+    }
+    for (var g = 0; g < 13 && !om[c]; g++) c = (c + (e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? 12 : 1)) % 13;
+    if (om[c]) { sel = c; SFX.sel(); renderSheet(); }
+    return;
+  }
+  if (e.key === 'Enter' && sel >= 0) { e.preventDefault(); commit(sel); }
+});
+window.addEventListener('resize', function () { resize(); fxResize(); });
+if (window.matchMedia) try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme); } catch (e) {}
+// ------------------------------------------------------------------ boot
+applyTheme(); syncSettings(); fxResize(); resize();
+(function boot() {
+  var r = sget('run', null);
+  if (r && r.ver === 1 && r.sh && r.dice) {
+    G = r; tok++; sel = -1; hint = null;
+    phase = G.turn >= 13 ? 'over' : human() ? 'act' : 'ai';
+    if (G.turn < 13 && G.roll === 0) { startTurn(); save(); } // unrolled turn: start clean (fill()/voyage pass save the previous turn's hold/dice/extra)
+    else {
+      placeRest(); renderAll();
+      if (G.turn >= 13) setTimeout(sheetEnd, 300);
+      else if (!human()) aiTurn();
+    }
+  } else openMenu();
+})();
+requestAnimationFrame(frame);
+// test hooks
+window.__game = {
+  state: function () { return G ? { mode: G.mode, turn: G.turn, player: G.player, roll: G.roll, maxRolls: maxRolls(), dice: G.dice.slice(), hold: G.hold.slice(), sheets: G.sh.map(function (s) { return { sc: s.sc.slice(), yb: s.yb }; }), phase: phase, busy: busy(), sel: sel, k: G.k, cum: G.cum, tickets: G.tickets, extra: G.extra, seed: G.seed, lv: G.lv }
+    : { phase: phase, resultVisible: !$('ovResult').hidden }; },
+  dieXY: function (i) { var r = wrap.getBoundingClientRect(), d = D[i]; return [r.left + d.x + (SLOT[i].x - d.x) * d.hp, r.top + d.y + (SLOT[i].y - d.y) * d.hp]; },
+  thinkLog: function () { return thinkLog.slice(); },
+  resultVisible: function () { return !$('ovResult').hidden; }
+};
+})();
+
+</script>
+</body>
+</html>

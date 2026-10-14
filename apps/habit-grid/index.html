@@ -1,0 +1,557 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>習慣打卡</title>
+<style>
+:root{
+  --bg:#f2f4f1; --paper:#fbfcfa; --ink:#18201d; --muted:#56625d; --faint:#87928d; --line:#d6ddd8; --rule:#e4e9e5;
+  --accent:#234a6b; --accent-ink:#ffffff; --accent-soft:#e1e9f0;
+  --cell:#e3e8e4; --cell-pre:#eff2ef; --cell-line:#b9c3bd;
+  --l1:#c8d7e4; --l2:#8fb0cb; --l3:#4f7fa6; --l4:#234a6b;
+  --danger:#b3261e; --danger-soft:#f8e3e1; --warn-bg:#fff4d6; --warn-ink:#6b4b00;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111513; --paper:#181d1b; --ink:#e4ebe7; --muted:#a2aea8; --faint:#76827c; --line:#2b3430; --rule:#222a26;
+  --accent:#8fb8dd; --accent-ink:#0d1b28; --accent-soft:#1d2b37;
+  --cell:#252d29; --cell-pre:#1b211e; --cell-line:#3d4843;
+  --l1:#203345; --l2:#2f5577; --l3:#4d80ad; --l4:#8fb8dd;
+  --danger:#f2b8b5; --danger-soft:#3a1d1b; --warn-bg:#33290f; --warn-ink:#f1d48a;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111513; --paper:#181d1b; --ink:#e4ebe7; --muted:#a2aea8; --faint:#76827c; --line:#2b3430; --rule:#222a26;
+  --accent:#8fb8dd; --accent-ink:#0d1b28; --accent-soft:#1d2b37;
+  --cell:#252d29; --cell-pre:#1b211e; --cell-line:#3d4843;
+  --l1:#203345; --l2:#2f5577; --l3:#4d80ad; --l4:#8fb8dd;
+  --danger:#f2b8b5; --danger-soft:#3a1d1b; --warn-bg:#33290f; --warn-ink:#f1d48a;
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));overflow-x:hidden}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+.top{height:56px;display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--ink);margin-bottom:12px;padding-top:env(safe-area-inset-top);box-sizing:content-box}
+.top h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.06em}
+.top .date{color:var(--muted);font-size:14px;flex:1}
+.iconbtn{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;cursor:pointer;color:var(--muted)}
+.iconbtn svg{width:22px;height:22px}
+
+.banner{display:flex;align-items:center;gap:10px;border-radius:12px;padding:8px 8px 8px 14px;margin-bottom:10px;font-size:13.5px;background:var(--warn-bg);color:var(--warn-ink)}
+.banner span{flex:1;min-width:0}
+.banner button{height:40px;border:0;background:transparent;font-weight:700;cursor:pointer;padding:0 10px;text-decoration:underline;color:inherit;white-space:nowrap}
+.banner.cele{background:var(--accent);color:var(--accent-ink)}
+
+.layout{display:block}
+.colhead{display:flex;align-items:baseline;justify-content:space-between;margin:6px 2px 8px}
+.colhead h2{font-size:12px;letter-spacing:.16em;color:var(--muted);margin:0;font-weight:600}
+.colhead small{font-size:12px;color:var(--faint)}
+
+/* today cards */
+.list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.card{--hc:var(--accent);position:relative;min-height:72px;display:flex;align-items:center;gap:4px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:6px 8px 6px 0;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.card::before{content:"";position:absolute;left:-1px;top:12px;bottom:12px;width:4px;border-radius:0 3px 3px 0;background:var(--hc)}
+.card.sel{border-color:var(--hc);box-shadow:inset 0 0 0 1px var(--hc)}
+.card.dragging{z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:.96}
+.handle{width:36px;height:56px;flex:0 0 36px;border:0;background:transparent;cursor:grab;touch-action:none;display:grid;place-items:center;color:var(--faint);margin-left:4px}
+.handle svg{width:14px;height:20px}
+.body{flex:1;min-width:0;display:flex;align-items:center;gap:10px;cursor:pointer;min-height:56px;border:0;background:transparent;text-align:left;padding:0}
+.emo{font-size:26px;width:34px;text-align:center;flex:0 0 34px;line-height:1}
+.txt{min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.txt b{font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.txt small{font-size:12.5px;color:var(--muted)}
+.txt small .st{color:var(--ink);font-weight:600}
+.check{width:56px;height:56px;flex:0 0 56px;border-radius:50%;border:2.5px solid var(--hc);background:transparent;cursor:pointer;display:grid;place-items:center;color:var(--hc)}
+.check svg{width:26px;height:26px;opacity:.22}
+.check[aria-pressed="true"]{background:var(--hc);color:#fff}
+.check[aria-pressed="true"] svg{opacity:1}
+.check.pop{animation:pop .2s ease-out}
+@keyframes pop{50%{transform:scale(1.14)}}
+.empty{border:1.5px dashed var(--line);border-radius:14px;padding:20px;text-align:center;color:var(--muted);font-size:14px}
+
+.addbar{position:fixed;left:0;right:0;bottom:0;padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:linear-gradient(transparent,var(--bg) 30%);z-index:10}
+.addbtn{width:100%;height:52px;border-radius:14px;border:0;background:var(--ink);color:var(--bg);font-weight:700;font-size:16px;cursor:pointer;letter-spacing:.04em}
+
+/* heatmap */
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:18px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin:0 -4px 6px;padding-left:4px;padding-right:4px}
+.tab{flex:0 0 auto;height:44px;border-radius:22px;border:1px solid var(--line);background:transparent;padding:0 14px;cursor:pointer;white-space:nowrap;font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.hmhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 8px}
+.hmhead h3{margin:0;font-size:16px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smallbtn{height:44px;border-radius:10px;border:1px solid var(--line);background:transparent;padding:0 12px;cursor:pointer;font-size:13px;color:var(--muted);flex:0 0 auto}
+.hm{--cs:14px;--gap:3px;display:flex;gap:6px}
+@media (pointer:coarse){.hm{--cs:15px}}
+.wd{display:grid;grid-template-rows:16px repeat(7,var(--cs));row-gap:var(--gap);font-size:11px;color:var(--faint);line-height:var(--cs);flex:0 0 auto}
+.scroller{overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:6px;min-width:0;flex:1}
+.hgrid{display:grid;grid-template-rows:16px repeat(7,var(--cs));grid-auto-flow:column;grid-auto-columns:var(--cs);gap:var(--gap);width:max-content}
+.mlab{grid-row:1;font-size:11px;color:var(--faint);white-space:nowrap;line-height:16px;overflow:visible}
+.c{width:var(--cs);height:var(--cs);border-radius:3px;border:0;padding:0;background:var(--cell);cursor:pointer;position:relative}
+.c.pre{background:var(--cell-pre);cursor:default}
+.c.fut{background:transparent;border:1px dashed var(--cell-line);cursor:default}
+.c.done{background:var(--hc)}
+.c.today{box-shadow:0 0 0 1.5px var(--ink)}
+.c.l1{background:var(--l1)}.c.l2{background:var(--l2)}.c.l3{background:var(--l3)}.c.l4{background:var(--l4)}
+.legend{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--faint);margin-top:6px;flex-wrap:wrap}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.hint{font-size:12px;color:var(--muted);margin-top:6px;min-height:1.5em}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin-top:12px}
+.stat{background:var(--paper);padding:10px 12px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.25}
+.stat .v small{font-size:13px;font-weight:500;color:var(--muted)}
+
+/* dialogs */
+.scrim{position:fixed;inset:0;background:rgba(10,14,12,.5);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--paper);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));max-height:92%;overflow:auto;border:1px solid var(--line)}
+@media (min-width:600px){.scrim{align-items:center}.sheet{border-radius:18px}}
+@media (max-height:600px){.scrim{align-items:flex-start;overflow:auto}.sheet{max-height:none;border-radius:0 0 18px 18px}}
+.sheet h3{margin:0 0 6px;font-size:18px}
+.lab{display:block;font-size:12px;color:var(--muted);margin:14px 0 6px;letter-spacing:.08em}
+.inp{width:100%;height:46px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:0 12px;font-size:16px}
+textarea.inp{height:110px;padding:10px 12px;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.emopick{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.emopick button{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:transparent;font-size:22px;cursor:pointer;padding:0}
+.swatches{display:grid;grid-template-columns:repeat(4,44px);gap:10px 14px}
+@media (min-width:480px){.swatches{grid-template-columns:repeat(8,44px);gap:10px}}
+.sw{position:relative;width:44px;height:44px}
+.sw input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.sw span{display:block;width:44px;height:44px;border-radius:50%;border:3px solid var(--paper);box-shadow:0 0 0 1px var(--line)}
+.sw input:checked+span{box-shadow:0 0 0 3px var(--ink)}
+.sw input:focus-visible+span{outline:3px solid var(--accent);outline-offset:3px}
+.seg{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg label{position:relative;height:44px;display:grid;place-items:center;font-size:14px;cursor:pointer;border-left:1px solid var(--line)}
+.seg label:first-child{border-left:0}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg label:has(input:checked){background:var(--ink);color:var(--bg)}
+.seg label:has(input:focus-visible){outline:3px solid var(--accent);outline-offset:-3px}
+.sub{font-size:12px;color:var(--muted);margin-top:4px}
+.msg{font-size:13px;min-height:1.4em;margin-top:8px;color:var(--danger)}
+.msg.ok{color:var(--muted)}
+.actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btn{flex:1 1 120px;height:48px;border-radius:12px;border:1px solid var(--line);background:transparent;cursor:pointer;font-weight:600;padding:0 12px}
+.btn.pri{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.dan{color:var(--danger);border-color:var(--danger)}
+.btn.dan.armed{background:var(--danger);color:var(--paper)}
+.arch{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--rule);padding:6px 0}
+.arch span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+hr{border:0;border-top:1px solid var(--rule);margin:16px 0}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);border-radius:12px;padding:6px 6px 6px 14px;display:flex;align-items:center;gap:6px;z-index:40;max-width:calc(100% - 32px);font-size:14px;width:max-content}
+.toast span{min-width:0}
+.toast button{height:40px;border:0;background:transparent;color:inherit;font-weight:700;padding:0 12px;cursor:pointer;text-decoration:underline;white-space:nowrap}
+
+@media (min-width:900px),(min-width:700px) and (max-height:500px){
+  body{padding-bottom:32px}
+  .wrap{max-width:1240px;margin:0 auto}
+  .layout{display:grid;grid-template-columns:360px minmax(0,1fr);gap:24px;align-items:start}
+  .panel{margin-top:0}
+  .addbar{position:static;padding:12px 0 0;background:none}
+  .toast{bottom:24px}
+}
+@media (hover:hover){
+  .tab:hover,.smallbtn:hover,.iconbtn:hover,.btn:hover{border-color:var(--muted)}
+  .c:not(.fut):not(.pre):hover{outline:1px solid var(--ink)}
+  .card:hover .handle{color:var(--muted)}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <h1>習慣打卡</h1>
+  <span class="date num" id="today-label"></span>
+  <button class="iconbtn" id="settings-btn" aria-label="設定與備份"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</header>
+
+<div class="banner" id="nostore" hidden><span>這個瀏覽器無法儲存資料，關閉頁面後紀錄會消失。可在設定中匯出備份。</span></div>
+<div class="banner" id="sample-banner" hidden><span>這是<b>範例資料</b>，可以直接試按。</span><button id="clear-sample">清除範例</button></div>
+<div class="banner cele" id="cele" hidden role="status"><span id="cele-text"></span><button id="cele-close">好</button></div>
+
+<div class="layout">
+  <section aria-labelledby="today-h">
+    <div class="colhead"><h2 id="today-h">今天</h2><small class="num" id="today-count"></small></div>
+    <ul class="list" id="list"></ul>
+    <div class="addbar"><button class="addbtn" id="add-btn">＋ 新增習慣</button></div>
+  </section>
+
+  <section class="panel" aria-labelledby="hm-title">
+    <div class="tabs" id="tabs" role="tablist" aria-label="選擇習慣"></div>
+    <div class="hmhead"><h3 id="hm-title"></h3><button class="smallbtn" id="edit-sel">編輯</button></div>
+    <div class="hm">
+      <div class="wd" aria-hidden="true"><span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span><span>日</span></div>
+      <div class="scroller" id="scroller"><div class="hgrid" id="hgrid"></div></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="hint" id="hint" aria-live="polite"></div>
+    <div class="stats" id="stats"></div>
+  </section>
+</div>
+</div>
+
+<div class="scrim" id="edit-sheet" hidden>
+  <form class="sheet" id="edit-form" role="dialog" aria-modal="true" aria-labelledby="edit-h" novalidate>
+    <h3 id="edit-h">新增習慣</h3>
+    <label class="lab" for="habit-name">名稱（1–20 字）</label>
+    <input class="inp" id="habit-name" maxlength="20" autocomplete="off" placeholder="例如：早上伸展 10 分鐘">
+    <label class="lab" for="habit-emoji">圖示</label>
+    <div class="row"><input class="inp" id="habit-emoji" style="width:72px;text-align:center;font-size:22px" maxlength="8" autocomplete="off"><span class="sub">可直接輸入任一 emoji，或從下面選</span></div>
+    <div class="emopick" id="emo-pick"></div>
+    <span class="lab" id="color-lab">顏色</span>
+    <div class="swatches" id="swatches" role="radiogroup" aria-labelledby="color-lab"></div>
+    <span class="lab" id="target-lab">每週目標</span>
+    <div class="seg" id="target-seg" role="radiogroup" aria-labelledby="target-lab"></div>
+    <div class="sub" id="target-sub"></div>
+    <div class="msg" id="edit-msg"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="edit-cancel">取消</button>
+      <button type="submit" class="btn pri" id="edit-save">儲存</button>
+    </div>
+    <div class="actions" id="edit-extra" hidden>
+      <button type="button" class="btn" id="edit-archive">封存</button>
+      <button type="button" class="btn dan" id="edit-delete">刪除</button>
+    </div>
+  </form>
+</div>
+
+<div class="scrim" id="settings-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="set-h">
+    <h3 id="set-h">設定與備份</h3>
+    <span class="lab">外觀</span>
+    <div class="seg" style="grid-template-columns:repeat(3,1fr)" role="radiogroup" aria-label="主題">
+      <label><input type="radio" name="theme" id="theme-auto" value="auto">自動</label>
+      <label><input type="radio" name="theme" id="theme-light" value="light">淺色</label>
+      <label><input type="radio" name="theme" id="theme-dark" value="dark">深色</label>
+    </div>
+    <span class="lab">匯出備份</span>
+    <div class="actions" style="margin-top:0">
+      <button class="btn" id="dl-json" hidden>下載 JSON</button>
+      <button class="btn" id="dl-csv" hidden>下載 CSV</button>
+      <button class="btn" id="copy-json">複製 JSON</button>
+      <button class="btn" id="copy-csv">複製 CSV</button>
+    </div>
+    <textarea class="inp" id="export-out" readonly hidden aria-label="匯出內容" style="margin-top:8px"></textarea>
+    <div class="msg ok" id="export-msg"></div>
+    <span class="lab">匯入 JSON（會取代目前資料）</span>
+    <input type="file" id="import-file" accept=".json,application/json" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" tabindex="-1">
+    <div class="actions" style="margin-top:0"><button type="button" class="btn" id="import-pick">選擇 JSON 檔案</button></div>
+    <textarea class="inp" id="import-text" placeholder="或把 JSON 備份貼在這裡" style="margin-top:8px"></textarea>
+    <div class="actions" style="margin-top:8px"><button class="btn pri" id="import-btn">匯入</button></div>
+    <div class="msg" id="import-msg"></div>
+    <div id="arch-box" hidden><span class="lab">已封存的習慣</span><div id="arch-list"></div></div>
+    <hr>
+    <div class="actions" style="margin-top:0"><button class="btn dan" id="wipe-btn">清除全部資料</button><button class="btn" id="set-close">關閉</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"><span id="toast-text"></span><button id="toast-undo" hidden>復原</button></div>
+
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const KEY='habit-grid:v1:data',KSEL='habit-grid:v1:selected',KTHEME='habit-grid:v1:theme';
+const COLORS=['#2f7d4f','#2a64ad','#c4521b','#b23a64','#6b4fb8','#0e7f86','#a77a00','#586674'];
+const CNAMES=['森林綠','湖水藍','柿橘','莓紅','葡萄紫','青綠','芥黃','石板灰'];
+const EMOJIS=['✅','💧','📖','🏃','💊','🧘','🥗','😴','✍️','🎸','🦷','🚶'];
+const WD='日一二三四五六';
+
+/* ---------- storage ---------- */
+let canStore=true;
+try{localStorage.setItem('habit-grid:v1:t','1');localStorage.removeItem('habit-grid:v1:t')}catch(e){canStore=false}
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+/* ---------- dates (local, YYYY-MM-DD) ---------- */
+const todayKey=()=>new Date().toLocaleDateString('sv-SE');
+const parts=k=>k.split('-').map(Number);
+const dnum=k=>{const[y,m,d]=parts(k);return Math.round(Date.UTC(y,m-1,d)/864e5)};
+const fromNum=n=>{const d=new Date(n*864e5);return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0')};
+const addDays=(k,n)=>fromNum(dnum(k)+n);
+const dow=k=>new Date(dnum(k)*864e5).getUTCDay(); // 0=Sun
+const monday=k=>addDays(k,-((dow(k)+6)%7));
+const md=k=>{const[,m,d]=parts(k);return m+'/'+d};
+const isKey=k=>typeof k==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(k)&&fromNum(dnum(k))===k;
+
+/* ---------- stats ---------- */
+function streakDaily(set,today){let k=set.has(today)?today:addDays(today,-1);let n=0;while(set.has(k)){n++;k=addDays(k,-1)}return n}
+function weekCount(set,wk){let c=0;for(let i=0;i<7;i++)if(set.has(addDays(wk,i)))c++;return c}
+function streakWeekly(set,target,today,created){
+  let wk=monday(today);let n=0;
+  if(weekCount(set,wk)>=target)n++; // current week counts only once achieved; not achieved yet doesn't break
+  wk=addDays(wk,-7);const stop=monday(created||'1970-01-05');
+  while(dnum(wk)>=dnum(stop)&&weekCount(set,wk)>=target){n++;wk=addDays(wk,-7)}
+  return n}
+function longest(arr){let best=0,cur=0,prev=null;for(const k of [...arr].sort()){const n=dnum(k);cur=(prev!==null&&n-prev===1)?cur+1:(prev===n?cur:1);prev=n;if(cur>best)best=cur}return best}
+function monthStats(h,set,today){const[y,m]=parts(today);const first=`${y}-${String(m).padStart(2,'0')}-01`;const start=dnum(h.createdAt)>dnum(first)?h.createdAt:first;
+  let den=0,done=0;for(let n=dnum(start);n<=dnum(today);n++){den++;if(set.has(fromNum(n)))done++}return{done,den}}
+
+/* ---------- data ---------- */
+let data,sets={};
+function blank(){return{v:1,habits:[],checks:{},order:[],celebrated:{},sample:false}}
+function mkId(){const a=new Uint32Array(1);crypto.getRandomValues(a);return Date.now().toString(36)+a[0].toString(36)}
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function sampleData(){
+  const t=todayKey(),r=rng(20261007),d=blank();d.sample=true;
+  const mk=(name,emoji,ci,target,age)=>{const h={id:mkId()+name.length,name,emoji,color:COLORS[ci],target,createdAt:addDays(t,-age),archived:false};d.habits.push(h);d.order.push(h.id);d.checks[h.id]=[];return h};
+  const water=mk('喝水 2000cc','💧',1,7,130),read=mk('閱讀 20 分鐘','📖',0,7,150),run=mk('運動','🏃',2,3,95),vit=mk('吃維他命','💊',3,7,40);
+  for(let i=1;i<=150;i++){const k=addDays(t,-i);
+    if(i<=130&&(i<=12||(i!==13&&r()<.84)))d.checks[water.id].push(k);
+    if(r()<.66)d.checks[read.id].push(k);
+    if(i<=95){const w=dow(k);if((w===2||w===4||w===6)?r()<.85:r()<.12)d.checks[run.id].push(k)}
+    if(i<=40&&r()<.9)d.checks[vit.id].push(k)}
+  d.checks[read.id].push(t);
+  for(const id in d.checks)d.checks[id].sort();
+  d.celebrated[water.id]=[7];
+  return d}
+function validate(o){
+  if(!o||typeof o!=='object'||!Array.isArray(o.habits))throw new Error('缺少 habits 陣列');
+  if(o.habits.length>200)throw new Error('習慣數量異常');
+  const out=blank();const ids=new Set();
+  o.habits.forEach((h,i)=>{
+    if(!h||typeof h.id!=='string'||!h.id)throw new Error(`第 ${i+1} 個習慣缺少 id`);
+    if(ids.has(h.id))throw new Error(`習慣 id 重複：${h.id}`);
+    if(typeof h.name!=='string'||!h.name.trim()||[...h.name].length>20)throw new Error(`第 ${i+1} 個習慣名稱不正確`);
+    const target=h.target==null?7:h.target;if(!Number.isInteger(target)||target<1||target>7)throw new Error(`「${h.name}」每週目標需為 1–7`);
+    if(h.createdAt!=null&&!isKey(h.createdAt))throw new Error(`「${h.name}」建立日期格式錯誤`);
+    ids.add(h.id);
+    out.habits.push({id:h.id,name:h.name.trim(),emoji:typeof h.emoji==='string'&&h.emoji?h.emoji.slice(0,8):'✅',color:typeof h.color==='string'&&/^#[0-9a-f]{6}$/i.test(h.color)?h.color:COLORS[0],target,createdAt:h.createdAt||todayKey(),archived:!!h.archived})});
+  const ch=o.checks||{};if(typeof ch!=='object'||Array.isArray(ch))throw new Error('checks 必須是物件');
+  for(const id of ids){const a=ch[id]||[];if(!Array.isArray(a))throw new Error('打卡紀錄必須是日期陣列');
+    for(const k of a)if(!isKey(k))throw new Error(`日期格式錯誤：${String(k).slice(0,20)}`);
+    out.checks[id]=[...new Set(a)].sort()}
+  const ord=Array.isArray(o.order)?o.order.filter(id=>ids.has(id)):[];for(const h of out.habits)if(!ord.includes(h.id))ord.push(h.id);out.order=ord;
+  if(o.celebrated&&typeof o.celebrated==='object')for(const id of ids)if(Array.isArray(o.celebrated[id]))out.celebrated[id]=o.celebrated[id].filter(Number.isInteger);
+  out.sample=!!o.sample;
+  return out}
+function load(){const raw=ls.get(KEY);if(raw){try{return validate(JSON.parse(raw))}catch(e){}}return sampleData()}
+function save(){if(!ls.set(KEY,JSON.stringify(data))&&canStore){canStore=false;$('#nostore').hidden=false}}
+function rebuildSets(){sets={};for(const h of data.habits)sets[h.id]=new Set(data.checks[h.id]||[])}
+function persistChecks(id){data.checks[id]=[...sets[id]].sort();save()}
+const H=id=>data.habits.find(h=>h.id===id);
+const active=()=>data.order.map(H).filter(h=>h&&!h.archived);
+
+data=load();rebuildSets();
+let selected=ls.get(KSEL)||'all';
+let today=todayKey();
+
+/* ---------- render: header + list ---------- */
+function renderHeader(){const[,m,d]=parts(today);$('#today-label').textContent=`${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')} 週${WD[dow(today)]}`}
+function metaText(h){const s=sets[h.id];
+  if(h.target<7){const wk=weekCount(s,monday(today));const n=streakWeekly(s,h.target,today,h.createdAt);return `本週 <span class="st">${wk}/${h.target}</span> · 連續 <span class="st">${n}</span> 週達標`}
+  const n=streakDaily(s,today);return n?`連續 <span class="st">${n}</span> 天`:'還沒開始連續'}
+const CHECK_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const GRIP='<svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/></svg>';
+function cardInner(h){const done=sets[h.id].has(today);
+  return `<button class="handle" data-handle aria-label="拖曳或用上下鍵排序「${esc(h.name)}」">${GRIP}</button>
+  <button class="body" data-body aria-label="${esc(h.name)}：查看熱力圖，長按編輯"><span class="emo" aria-hidden="true">${esc(h.emoji)}</span><span class="txt"><b>${esc(h.name)}</b><small>${metaText(h)}</small></span></button>
+  <button class="check" id="check-${h.id}" data-check aria-pressed="${done}" aria-label="${done?'取消':'完成'}今天的「${esc(h.name)}」">${CHECK_SVG}</button>`}
+function renderList(){
+  const list=$('#list');const hs=active();
+  if(!hs.length){list.innerHTML='<li class="empty">還沒有習慣。按下方「＋ 新增習慣」開始第一個。</li>'}
+  else list.innerHTML=hs.map(h=>`<li class="card${selected===h.id?' sel':''}" data-id="${h.id}" id="card-${h.id}" style="--hc:${h.color}">${cardInner(h)}</li>`).join('');
+  renderCount()}
+function renderCard(id){const h=H(id),el=$('#card-'+id);if(el&&h)el.innerHTML=cardInner(h);renderCount()}
+function renderCount(){const hs=active();const n=hs.filter(h=>sets[h.id].has(today)).length;$('#today-count').textContent=hs.length?`完成 ${n} / ${hs.length}`:''}
+
+/* ---------- heatmap ---------- */
+let cellMap={};
+const wide=()=>matchMedia('(min-width:900px)').matches;
+function renderTabs(){
+  const hs=active();if(selected!=='all'&&!hs.some(h=>h.id===selected))selected='all';
+  $('#tabs').innerHTML=`<button class="tab" role="tab" id="tab-all" data-sel="all" aria-selected="${selected==='all'}">全部</button>`+hs.map(h=>`<button class="tab" role="tab" id="tab-${h.id}" data-sel="${h.id}" aria-selected="${selected===h.id}"><span aria-hidden="true">${esc(h.emoji)}</span>${esc(h.name)}</button>`).join('');
+  document.querySelectorAll('#list .card').forEach(c=>c.classList.toggle('sel',c.dataset.id===selected))}
+function allLevel(k){const hs=active().filter(h=>dnum(h.createdAt)<=dnum(k));if(!hs.length)return -1;const r=hs.filter(h=>sets[h.id].has(k)).length/hs.length;
+  return r===0?0:r<=.25?1:r<=.5?2:r<=.75?3:4}
+function cellClass(k){const t=dnum(today),n=dnum(k);let c='c';if(n>t)return c+' fut';if(n===t)c+=' today';
+  if(selected==='all'){const l=allLevel(k);return l<0?c+' pre':l?c+' l'+l:c}
+  const h=H(selected);if(n<dnum(h.createdAt))return c+' pre';return sets[h.id].has(k)?c+' done':c}
+function cellLabel(k){const n=dnum(k);const base=`${md(k)} 週${WD[dow(k)]}`;if(n>dnum(today))return base+' 未來';
+  if(selected==='all'){const hs=active().filter(h=>dnum(h.createdAt)<=n);return `${base}：完成 ${hs.filter(h=>sets[h.id].has(k)).length}/${hs.length}`}
+  const h=H(selected);if(n<dnum(h.createdAt))return base+' 建立前';return `${base}：${sets[h.id].has(k)?'已完成':'未完成'}`}
+function renderHeatmap(){
+  const W=wide()?53:22;const end=monday(today);const start=addDays(end,-(W-1)*7);
+  const g=$('#hgrid');const frag=document.createDocumentFragment();cellMap={};
+  const h=selected==='all'?null:H(selected);g.style.setProperty('--hc',h?h.color:'var(--accent)');
+  let lastMonth=-1;
+  for(let w=0;w<W;w++){const wk=addDays(start,w*7);
+    // month label goes in row 1 of the column that contains the 1st of a month (or first column)
+    let label='';for(let i=0;i<7;i++){const k=addDays(wk,i);const[,m,d]=parts(k);if(d===1||(w===0&&i===0)){if(m!==lastMonth){label=m+'月';lastMonth=m}break}}
+    const ml=document.createElement('span');ml.className='mlab';ml.textContent=label;ml.style.gridColumn=String(w+1);frag.appendChild(ml);
+    for(let i=0;i<7;i++){const k=addDays(wk,i);const b=document.createElement('button');b.type='button';b.className=cellClass(k);b.dataset.k=k;b.setAttribute('aria-label',cellLabel(k));b.style.gridColumn=String(w+1);b.style.gridRow=String(i+2);
+      if(b.classList.contains('fut')||b.classList.contains('pre'))b.disabled=true;
+      frag.appendChild(b);cellMap[k]=b}}
+  g.textContent='';g.appendChild(frag);
+  const sc=$('#scroller');sc.scrollLeft=sc.scrollWidth;
+  $('#hm-title').textContent=h?`${h.emoji} ${h.name}${h.target<7?`（每週 ${h.target} 天）`:''}`:'全部習慣';
+  $('#edit-sel').hidden=!h;
+  $('#legend').innerHTML=h?`<i style="background:var(--cell)"></i>未完成 <i style="background:${h.color}"></i>完成 <i style="border:1px dashed var(--cell-line)"></i>未來　點過去的格子可補打卡`
+    :`少 <i style="background:var(--cell)"></i><i style="background:var(--l1)"></i><i style="background:var(--l2)"></i><i style="background:var(--l3)"></i><i style="background:var(--l4)"></i> 多（當天完成比例）`;
+  $('#hint').textContent='';renderStats()}
+function updateCell(k){const b=cellMap[k];if(!b)return;b.className=cellClass(k);b.setAttribute('aria-label',cellLabel(k))}
+function renderStats(){
+  const st=$('#stats');
+  if(selected==='all'){const hs=active();const n=hs.filter(h=>sets[h.id].has(today)).length;let done=0,den=0;for(const h of hs){const m=monthStats(h,sets[h.id],today);done+=m.done;den+=m.den}
+    const best=hs.map(h=>({h,s:h.target<7?0:streakDaily(sets[h.id],today)})).sort((a,b)=>b.s-a.s)[0];
+    st.innerHTML=stat('今天完成',`${n}<small> / ${hs.length}</small>`)+stat('本月整體完成率',den?`${Math.round(done/den*100)}<small>%</small>`:'—')+stat('本月打卡次數',`${done}<small> 次</small>`)+stat('最長的連續',best&&best.s?`${best.s}<small> 天 · ${esc(best.h.name)}</small>`:'—');return}
+  const h=H(selected),s=sets[h.id];const m=monthStats(h,s,today);const pct=m.den?Math.round(m.done/m.den*100):0;
+  st.innerHTML=stat('本月完成',`${m.done}/${m.den}<small> 天（${pct}%）</small>`)+
+    (h.target<7?stat('本週',`${weekCount(s,monday(today))}<small> / ${h.target} 天</small>`)+stat('連續達標',`${streakWeekly(s,h.target,today,h.createdAt)}<small> 週</small>`):stat('目前連續',`${streakDaily(s,today)}<small> 天</small>`))+
+    stat('最長連續',`${longest(data.checks[h.id])}<small> 天</small>`)+(h.target<7?'':stat('累計打卡',`${s.size}<small> 天</small>`))}
+const stat=(k,v)=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+function renderAll(){renderHeader();renderList();renderTabs();renderHeatmap();$('#sample-banner').hidden=!data.sample}
+
+/* ---------- interactions ---------- */
+function toggle(id,k){const s=sets[id];const was=s.has(k);was?s.delete(k):s.add(k);persistChecks(id);
+  renderCard(id);if(selected===id||selected==='all'){updateCell(k);renderStats()}
+  if(!was)celebrate(H(id));return !was}
+function celebrate(h){if(h.target<7)return;const n=streakDaily(sets[h.id],today);const ms=[7,30,100].filter(x=>n>=x);const got=data.celebrated[h.id]||[];
+  const nw=ms.filter(x=>!got.includes(x)&&n===x);if(!nw.length)return;data.celebrated[h.id]=got.concat(nw);save();
+  $('#cele-text').textContent=`「${h.name}」連續 ${n} 天了，${n>=100?'太驚人了！':n>=30?'整整一個月！':'第一個里程碑！'}`;$('#cele').hidden=false}
+$('#cele-close').addEventListener('click',()=>$('#cele').hidden=true);
+
+const list=$('#list');
+list.addEventListener('click',e=>{
+  const card=e.target.closest('.card');if(!card)return;const id=card.dataset.id;
+  if(e.target.closest('[data-check]')){if(suppressClick){suppressClick=false;return}const on=toggle(id,today);const b=$('#check-'+id);b.focus();b.classList.remove('pop');void b.offsetWidth;b.classList.add('pop');if(on&&navigator.vibrate)try{navigator.vibrate(15)}catch(_){}return}
+  if(e.target.closest('[data-body]')){if(suppressClick){suppressClick=false;return}select(id)}
+});
+function select(id){selected=id;ls.set(KSEL,id);renderTabs();renderHeatmap()}
+$('#tabs').addEventListener('click',e=>{const t=e.target.closest('[data-sel]');if(t){select(t.dataset.sel);$('#tab-'+(t.dataset.sel)).focus()}});
+$('#hgrid').addEventListener('click',e=>{const b=e.target.closest('.c');if(!b||b.disabled)return;const k=b.dataset.k;
+  if(selected==='all'){$('#hint').textContent=cellLabel(k);return}
+  const id=selected;const on=toggle(id,k);const txt=`${md(k)}（週${WD[dow(k)]}）${on?'已補打卡':'已取消打卡'}`;$('#hint').textContent=txt;
+  toast(txt,()=>{toggle(id,k);$('#hint').textContent=''})});
+
+/* long press to edit */
+let lp=null,suppressClick=false;
+list.addEventListener('pointerdown',e=>{suppressClick=false;const body=e.target.closest('[data-body]');if(!body)return;const id=body.closest('.card').dataset.id;const x=e.clientX,y=e.clientY;
+  lp={id,x,y,t:setTimeout(()=>{lp=null;suppressClick=true;openEdit(id)},500)}});
+list.addEventListener('pointermove',e=>{if(lp&&Math.hypot(e.clientX-lp.x,e.clientY-lp.y)>8){clearTimeout(lp.t);lp=null}});
+['pointerup','pointercancel','pointerleave'].forEach(t=>list.addEventListener(t,()=>{if(lp){clearTimeout(lp.t);lp=null}}));
+list.addEventListener('contextmenu',e=>{if(e.target.closest('[data-body]'))e.preventDefault()});
+$('#edit-sel').addEventListener('click',()=>openEdit(selected));
+
+/* drag reorder (pointer) + keyboard */
+let drag=null;
+list.addEventListener('pointerdown',e=>{const hd=e.target.closest('[data-handle]');if(!hd)return;e.preventDefault();const card=hd.closest('.card');
+  hd.setPointerCapture(e.pointerId);drag={card,hd,startY:e.clientY,off:0};card.classList.add('dragging')});
+list.addEventListener('pointermove',e=>{if(!drag)return;const{card}=drag;const dy=e.clientY-drag.startY;card.style.transform=`translateY(${dy}px)`;
+  const r=card.getBoundingClientRect();const mid=r.top+r.height/2;
+  const prev=card.previousElementSibling,next=card.nextElementSibling;
+  if(next){const nr=next.getBoundingClientRect();if(mid>nr.top+nr.height/2){const h=nr.height+8;list.insertBefore(next,card);drag.startY+=h;card.style.transform=`translateY(${e.clientY-drag.startY}px)`}}
+  if(prev){const pr=prev.getBoundingClientRect();if(mid<pr.top+pr.height/2){const h=pr.height+8;list.insertBefore(card,prev);drag.startY-=h;card.style.transform=`translateY(${e.clientY-drag.startY}px)`}}});
+function endDrag(){if(!drag)return;drag.card.classList.remove('dragging');drag.card.style.transform='';drag=null;saveOrderFromDom()}
+list.addEventListener('pointerup',endDrag);list.addEventListener('pointercancel',endDrag);
+list.addEventListener('keydown',e=>{const hd=e.target.closest('[data-handle]');if(!hd||(e.key!=='ArrowUp'&&e.key!=='ArrowDown'))return;e.preventDefault();const card=hd.closest('.card');
+  if(e.key==='ArrowUp'&&card.previousElementSibling)list.insertBefore(card,card.previousElementSibling);
+  else if(e.key==='ArrowDown'&&card.nextElementSibling)list.insertBefore(card.nextElementSibling,card);
+  hd.focus();saveOrderFromDom()});
+function saveOrderFromDom(){const vis=[...list.querySelectorAll('.card')].map(c=>c.dataset.id);const hidden=data.order.filter(id=>!vis.includes(id));data.order=vis.concat(hidden);save();renderTabs()}
+
+/* ---------- edit dialog ---------- */
+let editing=null,lastFocus=null;
+function openSheet(id,focus){lastFocus=document.activeElement;$(id).hidden=false;setTimeout(()=>{const f=$(focus);f&&f.focus()},30)}
+function closeSheet(id){$(id).hidden=true;if(lastFocus&&document.contains(lastFocus))lastFocus.focus()}
+document.querySelectorAll('.scrim').forEach(s=>s.addEventListener('click',e=>{if(e.target===s)closeSheet('#'+s.id)}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.scrim:not([hidden])').forEach(s=>closeSheet('#'+s.id))});
+$('#swatches').innerHTML=COLORS.map((c,i)=>`<label class="sw" title="${CNAMES[i]}"><input type="radio" name="habit-color" id="color-${i}" value="${c}" aria-label="${CNAMES[i]}"><span style="background:${c}"></span></label>`).join('');
+$('#target-seg').innerHTML=[1,2,3,4,5,6,7].map(n=>`<label><input type="radio" name="habit-target" id="target-${n}" value="${n}" aria-label="每週 ${n} 天">${n===7?'每天':n}</label>`).join('');
+$('#emo-pick').innerHTML=EMOJIS.map(e=>`<button type="button" data-e="${e}" aria-label="使用 ${e}">${e}</button>`).join('');
+$('#emo-pick').addEventListener('click',e=>{const b=e.target.closest('[data-e]');if(b)$('#habit-emoji').value=b.dataset.e});
+$('#target-seg').addEventListener('change',targetSub);
+function targetSub(){const n=+(document.querySelector('input[name=habit-target]:checked')||{}).value||7;$('#target-sub').textContent=n===7?'每天打卡，連續天數以「天」計算。':`每週完成 ${n} 天就算達標，連續以「週」計算（週一開始）。`}
+function openEdit(id){
+  editing=id||null;const h=id?H(id):{name:'',emoji:'✅',color:COLORS[active().length%8],target:7};
+  if(!id&&active().length>=30){toast('最多 30 個習慣，請先封存或刪除一些');return}
+  $('#edit-h').textContent=id?'編輯習慣':'新增習慣';$('#habit-name').value=h.name;$('#habit-emoji').value=h.emoji;
+  const ci=COLORS.indexOf(h.color);($('#color-'+(ci<0?0:ci))).checked=true;$('#target-'+h.target).checked=true;targetSub();
+  $('#edit-msg').textContent='';$('#edit-msg').className='msg';$('#edit-extra').hidden=!id;disarm();
+  if(id)$('#edit-archive').textContent=h.archived?'取消封存':'封存';
+  openSheet('#edit-sheet','#habit-name')}
+$('#add-btn').addEventListener('click',()=>openEdit(null));
+$('#edit-cancel').addEventListener('click',()=>closeSheet('#edit-sheet'));
+$('#habit-name').addEventListener('input',()=>{const v=$('#habit-name').value.trim();const dup=v&&data.habits.some(h=>h.name===v&&h.id!==editing);const m=$('#edit-msg');m.className='msg ok';m.textContent=dup?'已經有同名的習慣（仍可儲存）':''});
+$('#edit-form').addEventListener('submit',e=>{e.preventDefault();
+  const name=$('#habit-name').value.trim();const m=$('#edit-msg');m.className='msg';
+  if(!name){m.textContent='請輸入名稱';$('#habit-name').focus();return}
+  if([...name].length>20){m.textContent='名稱最多 20 字';return}
+  const emoji=$('#habit-emoji').value.trim()||'✅';const color=document.querySelector('input[name=habit-color]:checked').value;const target=+document.querySelector('input[name=habit-target]:checked').value;
+  if(editing){Object.assign(H(editing),{name,emoji,color,target})}
+  else{const h={id:mkId(),name,emoji,color,target,createdAt:today,archived:false};data.habits.push(h);data.order.push(h.id);data.checks[h.id]=[];sets[h.id]=new Set();selected=h.id;ls.set(KSEL,h.id)}
+  save();closeSheet('#edit-sheet');renderAll();toast(editing?'已更新':`已新增「${name}」`)});
+$('#edit-archive').addEventListener('click',()=>{const h=H(editing);h.archived=!h.archived;save();closeSheet('#edit-sheet');renderAll();toast(h.archived?`已封存「${h.name}」，可在設定中還原`:`已還原「${h.name}」`)});
+let armT=null;
+function disarm(){clearTimeout(armT);const b=$('#edit-delete');b.classList.remove('armed');b.textContent='刪除'}
+$('#edit-delete').addEventListener('click',()=>{const b=$('#edit-delete');
+  if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='再按一次確定刪除';armT=setTimeout(disarm,4000);return}
+  disarm();const id=editing,h=H(id);const snap={h,i:data.habits.indexOf(h),oi:data.order.indexOf(id),checks:data.checks[id],cel:data.celebrated[id]};
+  data.habits.splice(snap.i,1);data.order.splice(snap.oi,1);delete data.checks[id];delete data.celebrated[id];delete sets[id];save();closeSheet('#edit-sheet');renderAll();
+  toast(`已刪除「${h.name}」`,()=>{data.habits.splice(snap.i,0,snap.h);data.order.splice(snap.oi,0,id);data.checks[id]=snap.checks;if(snap.cel)data.celebrated[id]=snap.cel;sets[id]=new Set(snap.checks);save();renderAll()})});
+
+/* ---------- settings ---------- */
+let dl=null;
+(async()=>{try{dl=await window.claude?.use?.('downloads')}catch(e){dl=null}if(dl){$('#dl-json').hidden=false;$('#dl-csv').hidden=false}})();
+$('#settings-btn').addEventListener('click',()=>{$('#export-out').hidden=true;$('#export-msg').textContent='';$('#import-msg').textContent='';$('#import-msg').className='msg';disarmWipe();disarmImport();renderArch();$('#theme-'+theme).checked=true;openSheet('#settings-sheet','#set-close')});
+$('#set-close').addEventListener('click',()=>closeSheet('#settings-sheet'));
+function exportJSON(){return JSON.stringify({app:'habit-grid',version:1,exportedAt:new Date().toISOString(),habits:data.habits,checks:data.checks,order:data.order,celebrated:data.celebrated},null,2)}
+function exportCSV(){const rows=[];const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
+  for(const id of data.order){const h=H(id);if(!h)continue;for(const k of data.checks[id]||[])rows.push([k,h.name])}
+  rows.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);return '﻿date,habit,done\r\n'+rows.map(r=>`${r[0]},${q(r[1])},1`).join('\r\n')+'\r\n'}
+const stamp=()=>todayKey().replace(/-/g,'');
+async function doDl(kind){const msg=$('#export-msg');try{await dl.save(kind==='json'?{filename:`habit-grid-${stamp()}.json`,data:exportJSON()}:{filename:`habit-grid-${stamp()}.csv`,data:exportCSV()});msg.textContent='已交給瀏覽器下載'}
+  catch(e){msg.textContent=/declin|denied|cancel/i.test(String(e&&e.message||e))?'已取消下載':'下載失敗，請改用「複製」'}}
+$('#dl-json').addEventListener('click',()=>doDl('json'));$('#dl-csv').addEventListener('click',()=>doDl('csv'));
+function doCopy(text,label){const out=$('#export-out'),msg=$('#export-msg');
+  const fallback=()=>{out.hidden=false;out.value=text;out.focus();out.select();msg.textContent='無法自動複製，已選取下方文字，請手動複製'};
+  try{if(!navigator.clipboard)throw 0;navigator.clipboard.writeText(text).then(()=>{msg.textContent=`已複製 ${label}（${text.length.toLocaleString()} 字元）`;out.hidden=true},fallback)}catch(e){fallback()}}
+$('#copy-json').addEventListener('click',()=>doCopy(exportJSON(),'JSON'));
+$('#copy-csv').addEventListener('click',()=>doCopy(exportCSV(),'CSV'));
+$('#import-pick').addEventListener('click',()=>$('#import-file').click());
+$('#import-file').addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;if(f.size>5e6){setImp('檔案太大（上限 5MB）');return}try{$('#import-text').value=await f.text();setImp(`已讀取「${f.name}」，按「匯入」套用`,true);e.target.value=''}catch(err){setImp('無法讀取檔案')}});
+function setImp(t,ok){const m=$('#import-msg');m.textContent=t;m.className='msg'+(ok?' ok':'')}
+let impArmed=null;
+function disarmImport(){impArmed=null;$('#import-btn').textContent='匯入'}
+$('#import-btn').addEventListener('click',()=>{
+  let nd;try{const txt=$('#import-text').value.trim();if(!txt)throw new Error('請先選擇檔案或貼上 JSON');let o;try{o=JSON.parse(txt)}catch(_){throw new Error('不是有效的 JSON')}nd=validate(o)}catch(e){disarmImport();setImp('匯入失敗：'+e.message+'。目前資料沒有變動。');return}
+  if(!impArmed&&data.habits.length){impArmed=nd;$('#import-btn').textContent=`確定取代目前 ${data.habits.length} 個習慣？`;setImp(`備份內有 ${nd.habits.length} 個習慣，再按一次確定`,true);return}
+  data=nd;data.sample=false;rebuildSets();save();disarmImport();renderAll();setImp(`已匯入 ${nd.habits.length} 個習慣`,true);$('#import-text').value=''});
+function renderArch(){const a=data.habits.filter(h=>h.archived);$('#arch-box').hidden=!a.length;
+  $('#arch-list').innerHTML=a.map(h=>`<div class="arch"><span>${esc(h.emoji)} ${esc(h.name)}</span><button class="btn" style="flex:0 0 auto" data-unarch="${h.id}">還原</button></div>`).join('')}
+$('#arch-list').addEventListener('click',e=>{const b=e.target.closest('[data-unarch]');if(!b)return;H(b.dataset.unarch).archived=false;save();renderArch();renderAll()});
+let wipeT=null;
+function disarmWipe(){clearTimeout(wipeT);const b=$('#wipe-btn');b.classList.remove('armed');b.textContent='清除全部資料'}
+$('#wipe-btn').addEventListener('click',()=>{const b=$('#wipe-btn');if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='再按一次確定清除';wipeT=setTimeout(disarmWipe,4000);return}
+  disarmWipe();const old=data;data=blank();rebuildSets();save();renderAll();closeSheet('#settings-sheet');toast('已清除全部資料',()=>{data=old;rebuildSets();save();renderAll()})});
+$('#clear-sample').addEventListener('click',()=>{const old=data;data=blank();rebuildSets();save();selected='all';renderAll();toast('已清除範例資料',()=>{data=old;rebuildSets();save();renderAll()})});
+
+/* theme */
+let theme=ls.get(KTHEME)||'auto';if(!['auto','light','dark'].includes(theme))theme='auto';
+function applyTheme(){if(theme==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',theme)}
+document.querySelectorAll('input[name=theme]').forEach(r=>r.addEventListener('change',()=>{theme=r.value;ls.set(KTHEME,theme);applyTheme()}));
+applyTheme();
+
+/* toast */
+let toastT=null,undoFn=null;
+function toast(t,u){$('#toast-text').textContent=t;$('#toast-undo').hidden=!u;undoFn=u||null;$('#toast').hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{$('#toast').hidden=true;undoFn=null},5000)}
+$('#toast-undo').addEventListener('click',()=>{const f=undoFn;undoFn=null;$('#toast').hidden=true;if(f)f()});
+
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+/* day rollover + responsive */
+function checkDay(){const t=todayKey();if(t!==today){today=t;renderAll()}}
+setInterval(checkDay,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkDay()});
+let wasWide=wide();addEventListener('resize',()=>{if(wide()!==wasWide){wasWide=wide();renderHeatmap()}});
+
+if(!canStore)$('#nostore').hidden=false;
+renderAll();
+window.__hg={streakDaily,streakWeekly,longest,monthStats,addDays,todayKey,get data(){return data},setToday(k){today=k;renderAll()},checkDay};
+})();
+</script>

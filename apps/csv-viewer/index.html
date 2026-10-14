@@ -1,0 +1,827 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>CSV 表格檢視</title>
+<style>
+/* Ledger book: ruled sage paper, bottle-green ink for headers and selection, tabular figures right-aligned */
+:root{
+  --bg:#e9eee9; --surface:#ffffff; --sunk:#f3f6f3; --zebra:#f6f9f6; --ink:#16201a; --muted:#536057; --faint:#7f8a83;
+  --line:#d4ddd6; --rule:#e3eae4; --line-strong:#b4c0b7; --accent:#1c5e3c; --accent-ink:#ffffff; --accent-soft:#dbece1;
+  --head:#f0f4f1; --sel:#e3f1e8; --hit:#fff1a6; --hit-ink:#2a2200;
+  --bad:#a8291f; --bad-soft:#f9e2de; --warn:#835400; --warn-soft:#fbefd2;
+  --shadow:0 14px 36px rgba(16,30,22,.2);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+  --fs:14px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111613; --surface:#18201b; --sunk:#141b17; --zebra:#1b241e; --ink:#e3ebe5; --muted:#9daca2; --faint:#738078;
+  --line:#28332c; --rule:#222c25; --line-strong:#3b4840; --accent:#7cc79a; --accent-ink:#0b1f13; --accent-soft:#1d3527;
+  --head:#1d2720; --sel:#1f3327; --hit:#4d4413; --hit-ink:#fff8d6;
+  --bad:#ff8c7e; --bad-soft:#3d1b17; --warn:#f0bf5c; --warn-soft:#3a2d10;
+  --shadow:0 14px 36px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111613; --surface:#18201b; --sunk:#141b17; --zebra:#1b241e; --ink:#e3ebe5; --muted:#9daca2; --faint:#738078;
+  --line:#28332c; --rule:#222c25; --line-strong:#3b4840; --accent:#7cc79a; --accent-ink:#0b1f13; --accent-soft:#1d3527;
+  --head:#1d2720; --sel:#1f3327; --hit:#4d4413; --hit-ink:#fff8d6;
+  --bad:#ff8c7e; --bad-soft:#3d1b17; --warn:#f0bf5c; --warn-soft:#3a2d10;
+  --shadow:0 14px 36px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding-block:0 calc(80px + env(safe-area-inset-bottom));padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right))}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1500px;margin:0 auto}
+header.top{display:flex;align-items:center;gap:8px;min-height:60px}
+.brand{flex:1;min-width:0;display:flex;align-items:center;gap:9px}
+.brand h1{margin:0;font-size:19px;font-weight:760;white-space:nowrap}
+.ico{width:26px;height:26px;flex:none;border:2px solid var(--accent);border-radius:4px;background:linear-gradient(var(--accent),var(--accent)) 0 7px/100% 2px no-repeat,linear-gradient(var(--accent),var(--accent)) 8px 0/2px 100% no-repeat}
+.btn{min-height:44px;min-width:44px;padding:0 12px;border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:default}
+@media (hover:hover){.btn:not(:disabled):hover{border-color:var(--accent)}}
+.info{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:13px;color:var(--muted);padding:2px 0 8px}
+.info .fn{font-weight:700;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.info .dim{font:600 12.5px var(--mono);color:var(--ink);background:var(--surface);border:1px solid var(--line);padding:2px 8px;border-radius:4px}
+.info label{display:inline-flex;align-items:center;gap:4px}
+.info select{min-height:36px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:0 6px;font-size:13px}
+.info .tog{display:inline-flex;align-items:center;gap:6px;min-height:44px;cursor:pointer}
+.info .tog input{width:20px;height:20px;accent-color:var(--accent)}
+.chip{font-size:11.5px;padding:2px 8px;border-radius:99px;font-weight:700}
+.chip.s{background:var(--accent-soft);color:var(--accent)}
+.chip.w{background:var(--warn-soft);color:var(--warn)}
+.fbar{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.fbar input{flex:1;min-width:0;min-height:44px;border:1px solid var(--line-strong);border-radius:6px;padding:0 10px;background:var(--surface);font-size:14px}
+.fcount{font:600 11px var(--sans);background:var(--accent);color:var(--accent-ink);border-radius:99px;padding:1px 6px}
+.main{display:grid;gap:12px}
+.tablebox{background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;min-width:0}
+.scroller{position:relative;overflow:auto;height:max(260px,calc(100svh - 420px));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;font-size:var(--fs)}
+.hd{position:sticky;top:0;z-index:3;display:flex;background:var(--head);border-bottom:1.5px solid var(--accent);height:var(--hh)}
+.body{position:relative}
+.rows{position:absolute;left:0;top:0}
+.r{display:flex;height:var(--rh);border-bottom:1px solid var(--rule)}
+.r:nth-child(even) .c,.r:nth-child(even) .fx{background:var(--zebra)}
+.c{flex:none;padding:0 10px;display:flex;align-items:center;overflow:hidden;white-space:nowrap;border-right:1px solid var(--rule);background:var(--surface);cursor:pointer;min-width:0}
+.c>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.c.num{justify-content:flex-end;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:.95em}
+.c.empty{color:var(--faint)}
+.c.sel{background:var(--sel)!important}
+.c.hit>span{background:var(--hit);color:var(--hit-ink);border-radius:2px}
+.fx{position:sticky;left:0;z-index:2;display:flex;flex:none;box-shadow:1px 0 0 var(--line-strong)}
+.rn{flex:none;width:var(--rnw);padding:0 8px 0 0;display:flex;align-items:center;justify-content:flex-end;font:11.5px var(--mono);color:var(--faint);background:var(--sunk);border-right:1px solid var(--rule)}
+.hd .c,.hd .rn{background:var(--head);cursor:pointer;font-weight:700;font-size:.93em;gap:4px;color:var(--ink)}
+.hd .c{justify-content:space-between}
+.hd .c .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd .c .meta{display:inline-flex;align-items:center;gap:3px;flex:none}
+.ty{font:700 10.5px var(--mono);color:var(--accent);border:1px solid currentColor;border-radius:3px;padding:0 3px;line-height:15px}
+.ar{font-size:12px;color:var(--accent);width:12px;text-align:center}
+.hd .c.sel{box-shadow:inset 0 -3px 0 var(--accent)}
+.hd .rn{background:var(--head)}
+.nodata{padding:40px 16px;text-align:center;color:var(--muted)}
+.stats{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;padding:8px 10px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);background:var(--sunk)}
+.stats select{min-height:40px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);padding:0 6px;font-size:13px;max-width:46vw}
+.stats b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:700}
+.stats .kv{white-space:nowrap}
+#statVals{display:flex;flex-wrap:wrap;gap:2px 14px}
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);
+  padding:8px max(16px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.dock .in{max-width:1500px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+/* sheets */
+.sheet-bg{position:fixed;inset:0;background:rgba(8,14,10,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:620px;border-radius:14px 14px 0 0;padding:14px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:var(--shadow);max-height:86%;overflow:auto;overscroll-behavior:contain}
+.sheet>header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sheet h2{margin:0;font-size:17px;flex:1}
+.sheet h3{font-size:12px;color:var(--muted);margin:14px 0 6px;font-weight:700;letter-spacing:.04em}
+.sheet p.hint{margin:0 0 6px;font-size:13px;color:var(--muted)}
+.cond{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 0;border-bottom:1px solid var(--line)}
+.cond select,.cond input{min-height:44px;border:1px solid var(--line-strong);border-radius:6px;background:var(--sunk);padding:0 8px;font-size:14px;min-width:0;width:100%}
+.cond .vals{grid-column:1/-1;display:flex;gap:6px}
+.cond .vals input{flex:1}
+.cond .del{grid-column:1/-1;justify-self:end}
+.colrow{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line);min-height:48px}
+.colrow label{flex:1;display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;min-width:0}
+.colrow label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.colrow input{width:20px;height:20px;accent-color:var(--accent);flex:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.bubble pre{font:13.5px/1.55 var(--mono);white-space:pre-wrap;word-break:break-word;background:var(--sunk);border-radius:6px;padding:10px;margin:6px 0 0;max-height:45svh;overflow:auto}
+.bubble .where{font-size:12.5px;color:var(--muted)}
+textarea#pasteIn{width:100%;height:36svh;min-height:180px;border:1px solid var(--line-strong);border-radius:6px;background:var(--sunk);padding:10px;font:13px/1.5 var(--mono);resize:vertical}
+.prog{height:4px;background:var(--rule);border-radius:2px;overflow:hidden;margin-top:6px}
+.prog i{display:block;height:100%;background:var(--accent);width:0}
+.toast{position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:8px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.drop{outline:2px dashed var(--accent);outline-offset:-4px}
+/* desktop: filter panel docked on the right */
+@media (min-width:1000px){
+  .main.withf{grid-template-columns:minmax(0,1fr) 320px;align-items:start}
+  #filterBg.docked{position:static;background:none;display:block;z-index:auto}
+  #filterBg.docked .sheet{border-radius:8px;border:1px solid var(--line);box-shadow:none;max-height:calc(100svh - 200px);position:sticky;top:8px;padding:12px}
+  #filterBg.docked [data-close]{display:none}
+  .scroller{height:calc(100svh - 280px)}
+}
+@media (max-height:500px) and (orientation:landscape){
+  body{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+  .scroller{height:max(240px,calc(100svh - 120px))}
+  .dock{position:static;background:transparent;border:0;padding:10px 0 0}
+  .toast{bottom:calc(16px + env(safe-area-inset-bottom))}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="ico" aria-hidden="true"></span><h1>CSV 表格檢視</h1></div>
+    <button class="btn pri" id="openBtn" type="button">開啟</button>
+    <input type="file" id="fileIn" accept=".csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values" hidden>
+    <button class="btn" id="pasteBtn" type="button">貼上</button>
+    <button class="btn" id="sampleBtn" type="button">範例</button>
+  </header>
+
+  <div class="info" id="info">
+    <span class="fn" id="fname">—</span>
+    <span class="dim" id="dims">0 × 0</span>
+    <span class="chip s" id="sampleChip" hidden>範例資料</span>
+    <label for="delimSel">分隔符
+      <select id="delimSel"><option value="auto">自動</option><option value=",">逗號 ,</option><option value=";">分號 ;</option><option value="\t">Tab</option><option value="|">直線 |</option></select>
+    </label>
+    <label for="encSel">編碼
+      <select id="encSel"><option value="auto">自動</option><option value="utf-8">UTF-8</option><option value="big5">Big5</option><option value="gb18030">GB18030</option></select>
+    </label>
+    <label class="tog" for="hdrChk"><input type="checkbox" id="hdrChk" checked>首列為標題</label>
+    <span class="chip w" id="warnChip" hidden></span>
+  </div>
+  <div class="prog" id="prog" hidden><i id="progBar"></i></div>
+
+  <div class="fbar">
+    <input id="q" type="search" placeholder="搜尋任一欄位" aria-label="全域搜尋" autocomplete="off">
+    <button class="btn" id="filterBtn" type="button">欄位篩選 <span class="fcount" id="fcount" hidden>0</span></button>
+  </div>
+
+  <div class="main" id="main">
+    <div class="tablebox">
+      <div class="scroller" id="sc" tabindex="0" aria-label="資料表格">
+        <div class="hd" id="hd"></div>
+        <div class="body" id="bd"><div class="rows" id="rows"></div></div>
+      </div>
+      <div class="stats" id="stats" aria-live="polite">
+        <label for="statCol">統計欄位</label>
+        <select id="statCol"></select>
+        <span id="statVals"></span>
+      </div>
+    </div>
+    <div id="filterBg" class="sheet-bg" hidden>
+      <div class="sheet" role="dialog" aria-labelledby="fTitle">
+        <header><h2 id="fTitle">欄位篩選</h2><button class="btn" type="button" data-close>完成</button></header>
+        <p class="hint">所有條件需同時成立（AND）。</p>
+        <div id="conds"></div>
+        <div class="grid2" style="margin-top:10px">
+          <button class="btn" id="addCond" type="button">新增條件</button>
+          <button class="btn" id="clearCond" type="button">清除全部</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="dock" aria-label="工具列"><div class="in">
+  <button class="btn" id="exportBtn" type="button">匯出</button>
+  <button class="btn" id="colsBtn" type="button">欄位</button>
+  <button class="btn" id="copyBtn" type="button">複製</button>
+</div></nav>
+
+<div class="sheet-bg" id="exportBg" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="eTitle">
+  <header><h2 id="eTitle">匯出目前檢視</h2><button class="btn" type="button" data-close>關閉</button></header>
+  <p class="hint" id="eHint"></p>
+  <div id="exportList"></div>
+</div></div>
+<div class="sheet-bg" id="colsBg" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+  <header><h2 id="cTitle">欄位</h2><button class="btn" type="button" data-close>完成</button></header>
+  <h3>字級</h3>
+  <div class="grid2"><button class="btn" id="fsDown" type="button">A−　縮小</button><button class="btn" id="fsUp" type="button">A＋　放大</button></div>
+  <p class="hint" style="margin-top:6px">手機上也可以在表格上用兩指縮放字級（12–20px）。</p>
+  <h3>顯示與順序</h3>
+  <div class="grid2" style="margin-bottom:6px"><button class="btn" id="showAll" type="button">全部顯示</button><button class="btn" id="resetOrder" type="button">恢復原始順序</button></div>
+  <div id="colList"></div>
+</div></div>
+<div class="sheet-bg" id="cellBg" hidden><div class="sheet bubble" role="dialog" aria-modal="true" aria-labelledby="cellTitle">
+  <header><h2 id="cellTitle">儲存格</h2><button class="btn" type="button" data-close>關閉</button></header>
+  <div class="where" id="cellWhere"></div>
+  <pre id="cellVal"></pre>
+  <div class="grid2" style="margin-top:10px"><button class="btn pri" id="cellCopy" type="button">複製內容</button><button class="btn" id="cellStat" type="button">統計此欄</button></div>
+</div></div>
+<div class="sheet-bg" id="pasteBg" hidden><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pTitle">
+  <header><h2 id="pTitle">貼上 CSV</h2><button class="btn" type="button" data-close>取消</button></header>
+  <textarea id="pasteIn" spellcheck="false" placeholder="把 CSV 或從試算表複製的內容貼在這裡"></textarea>
+  <div style="margin-top:8px;display:flex;justify-content:flex-end"><button class="btn pri" id="pasteGo" type="button">載入表格</button></div>
+</div></div>
+<div id="toastHost" aria-live="polite"></div>
+
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "csv-viewer:v1:";
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} }
+};
+let toastT;
+function toast(msg) { const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, 2000); }
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+async function copyText(text, ok) {
+  try { await navigator.clipboard.writeText(text); toast(ok || "已複製"); return true; } catch {}
+  try { const ta = document.createElement("textarea"); ta.value = text; ta.style.cssText = "position:fixed;top:0;left:0;opacity:0"; document.body.appendChild(ta); ta.select(); const r = document.execCommand("copy"); ta.remove(); if (r) { toast(ok || "已複製"); return true; } } catch {}
+  toast("無法自動複製，請改用匯出"); return false;
+}
+
+/* ================= parsing (RFC 4180 state machine; runs in a Blob Worker) ================= */
+function parseCSV(text, delim, progress) {
+  const d = delim.charCodeAt(0), n = text.length, rows = [];
+  let row = [], i = 0, nextP = 0;
+  if (!n) return rows;
+  for (;;) {
+    if (progress && i >= nextP) { progress(i / n); nextP = i + 2000000; }
+    let c = text.charCodeAt(i), field;
+    if (c === 34) {
+      let j = i + 1; field = "";
+      for (;;) {
+        const q = text.indexOf('"', j);
+        if (q < 0) { field += text.slice(j); i = n; break; }
+        field += text.slice(j, q);
+        if (text.charCodeAt(q + 1) === 34) { field += '"'; j = q + 2; } else { i = q + 1; break; }
+      }
+      let k = i; while (k < n) { const cc = text.charCodeAt(k); if (cc === d || cc === 10 || cc === 13) break; k++; }
+      if (k > i) field += text.slice(i, k); i = k;
+    } else {
+      let k = i; while (k < n) { const cc = text.charCodeAt(k); if (cc === d || cc === 10 || cc === 13) break; k++; }
+      field = text.slice(i, k); i = k;
+    }
+    row.push(field);
+    if (i >= n) { rows.push(row); break; }
+    c = text.charCodeAt(i);
+    if (c === d) { i++; if (i >= n) { row.push(""); rows.push(row); break; } continue; }
+    if (!(row.length === 1 && row[0] === "")) rows.push(row);
+    row = [];
+    i += c === 13 && text.charCodeAt(i + 1) === 10 ? 2 : 1;
+    if (i >= n) break;
+  }
+  if (rows.length && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === "") rows.pop();
+  return rows;
+}
+const WSRC = "const parseCSV = " + parseCSV.toString() + ";\nonmessage = e => { const r = parseCSV(e.data.text, e.data.delim, p => postMessage({ p })); postMessage({ rows: r }); };";
+let wURL = null; try { wURL = URL.createObjectURL(new Blob([WSRC], { type: "text/javascript" })); } catch {}
+function parseAsync(text, delim) {
+  return new Promise(resolve => {
+    if (!wURL || text.length < 300000) { resolve(parseCSV(text, delim)); return; }
+    let w; try { w = new Worker(wURL); } catch { resolve(parseCSV(text, delim)); return; }
+    $("prog").hidden = false; $("progBar").style.width = "0";
+    w.onmessage = e => { if (e.data.p != null) { $("progBar").style.width = Math.round(e.data.p * 100) + "%"; return; } w.terminate(); $("prog").hidden = true; resolve(e.data.rows); };
+    w.onerror = ev => { ev.preventDefault(); w.terminate(); $("prog").hidden = true; resolve(parseCSV(text, delim)); };
+    w.postMessage({ text, delim });
+  });
+}
+function detectDelim(text) {
+  const sample = text.slice(0, 65536), lines = []; let cur = "", inQ = false;
+  for (let i = 0; i < sample.length && lines.length < 20; i++) {
+    const c = sample[i];
+    if (c === '"') inQ = !inQ;
+    if (!inQ && (c === "\n" || c === "\r")) { if (cur) lines.push(cur); cur = ""; continue; }
+    if (!inQ) cur += c; else if (c !== '"') cur += "_";
+  }
+  if (cur && lines.length < 20) lines.push(cur);
+  let best = ",", bestScore = Infinity;
+  for (const dl of [",", ";", "\t", "|"]) {
+    const counts = lines.map(l => l.split(dl).length - 1);
+    const mean = counts.reduce((a, b) => a + b, 0) / (counts.length || 1);
+    if (mean <= 0) continue;
+    const v = counts.reduce((a, b) => a + (b - mean) ** 2, 0) / counts.length;
+    const score = v / mean - mean * 1e-3;
+    if (score < bestScore) { bestScore = score; best = dl; }
+  }
+  return best;
+}
+function decodeBytes(buf, enc) {
+  const tryDec = (e, fatal) => new TextDecoder(e, { fatal }).decode(buf);
+  if (enc !== "auto") { try { return { text: tryDec(enc, false), enc }; } catch { return { text: tryDec("utf-8", false), enc: "utf-8" }; } }
+  try { return { text: tryDec("utf-8", true), enc: "utf-8" }; } catch {}
+  try { return { text: tryDec("big5", true), enc: "big5" }; } catch {}
+  try { return { text: tryDec("gb18030", true), enc: "gb18030" }; } catch {}
+  return { text: tryDec("utf-8", false), enc: "utf-8" };
+}
+
+/* ================= model ================= */
+let src = { name: "", text: "", bytes: null, enc: "", pasted: false, sample: false };
+let rows = [];          // data rows (string[][]), header excluded
+let columns = [];       // {name, type, visible, width, idx, num: Float64Array|null}
+let order = [];         // display order of column indexes
+let view = new Int32Array(0);
+let sort = { col: -1, dir: 0 };
+let conds = [];         // {col, op, a, b}
+let selCol = -1;
+let prefs = Object.assign({ fs: 14, enc: "auto", header: true }, LS.get("prefs", {}));
+const coll = new Intl.Collator("zh-Hant", { numeric: true, sensitivity: "base" });
+
+const NUM_RE = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d+)?%?$/;
+const DATE_RE = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
+function toNum(s) { const t = s.trim(); if (!t || !NUM_RE.test(t) || !/\d/.test(t)) return NaN; return parseFloat(t.replace(/[,%]/g, "")); }
+function toDate(s) { const m = DATE_RE.exec(s.trim()); if (!m) { const t = Date.parse(s); return /^\d{4}-\d{2}-\d{2}T/.test(s.trim()) && !isNaN(t) ? t : NaN; } const d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)); return d.getMonth() === +m[2] - 1 ? d.getTime() : NaN; }
+function textWidth(s) { let w = 0; for (let i = 0; i < s.length && i < 60; i++) w += s.charCodeAt(i) > 0x2E80 ? 2 : 1; return w; }
+
+function buildModel(all) {
+  let raw = all;
+  let header;
+  if (prefs.header && raw.length) { header = raw[0]; raw = raw.slice(1); }
+  const ncol = Math.max(header ? header.length : 0, raw.length ? raw[0].length : 0);
+  let inconsistent = 0;
+  const target = header ? header.length : ncol;
+  for (let r = 0; r < raw.length; r++) {
+    const row = raw[r];
+    if (row.length !== target) { inconsistent++; if (row.length < target) { while (row.length < target) row.push(""); } else row.length = target; }
+  }
+  rows = raw;
+  const names = [], seen = {};
+  for (let c = 0; c < target; c++) {
+    let nm = header ? (header[c] || "").trim() : "";
+    if (!nm) nm = "欄 " + (c + 1);
+    if (seen[nm]) { let k = 2; while (seen[nm + "_" + k]) k++; nm = nm + "_" + k; }
+    seen[nm] = 1; names.push(nm);
+  }
+  columns = names.map((name, c) => {
+    // type inference: first 1000 non-empty values
+    let n = 0, num = 0, dt = 0, lz = false, maxW = textWidth(name) + 4;
+    for (let r = 0; r < rows.length && n < 1000; r++) {
+      const v = rows[r][c]; if (r < 300) maxW = Math.max(maxW, textWidth(v));
+      if (!v || !v.trim()) continue; n++;
+      if (!isNaN(toNum(v))) { num++; if (/^[+-]?0\d/.test(v.trim())) lz = true; } else if (!isNaN(toDate(v))) dt++;
+    }
+    const type = n && num / n >= 0.9 && !lz ? "number" : n && dt / n >= 0.9 ? "date" : "text";
+    return { name, type, visible: true, idx: c, w: Math.max(70, Math.min(300, maxW * 7.6 + 30)), key: null };
+  });
+  for (const col of columns) {
+    if (col.type === "text") continue;
+    const k = new Float64Array(rows.length), f = col.type === "number" ? toNum : toDate;
+    for (let r = 0; r < rows.length; r++) k[r] = f(rows[r][col.idx]);
+    col.key = k;
+  }
+  order = columns.map((_, i) => i);
+  sort = { col: -1, dir: 0 }; conds = []; selCol = columns.findIndex(c => c.type === "number");
+  return inconsistent;
+}
+
+/* ================= view (filter + sort) ================= */
+function recompute() {
+  const q = $("q").value.trim().toLowerCase();
+  const visCols = order.filter(i => columns[i].visible);
+  const active = conds.filter(c => c.col >= 0 && columns[c.col] && (["empty", "nempty"].includes(c.op) || c.a !== ""));
+  const out = new Int32Array(rows.length); let k = 0;
+  const preds = active.map(makePred);
+  outer: for (let r = 0; r < rows.length; r++) {
+    for (const p of preds) if (!p(r)) continue outer;
+    if (q) { const row = rows[r]; let hit = false; for (const c of visCols) { if (row[c].toLowerCase().includes(q)) { hit = true; break; } } if (!hit) continue; }
+    out[k++] = r;
+  }
+  view = out.slice(0, k);
+  if (sort.col >= 0 && sort.dir) applySort();
+  $("fcount").hidden = !active.length; $("fcount").textContent = active.length;
+  renderAll();
+}
+function makePred(c) {
+  const col = columns[c.col], i = col.idx;
+  if (c.op === "empty") return r => !rows[r][i].trim();
+  if (c.op === "nempty") return r => !!rows[r][i].trim();
+  if (col.type !== "text" && ["eq", "ne", "gt", "ge", "lt", "le", "between"].includes(c.op)) {
+    const f = col.type === "number" ? toNum : toDate, a = f(c.a), b = f(c.b), K = col.key;
+    if (isNaN(a)) return () => true;
+    switch (c.op) {
+      case "eq": return r => K[r] === a; case "ne": return r => K[r] !== a;
+      case "gt": return r => K[r] > a; case "ge": return r => K[r] >= a;
+      case "lt": return r => K[r] < a; case "le": return r => K[r] <= a;
+      case "between": { const lo = Math.min(a, isNaN(b) ? a : b), hi = Math.max(a, isNaN(b) ? a : b); return r => K[r] >= lo && K[r] <= hi; }
+    }
+  }
+  const v = c.a.toLowerCase();
+  if (c.op === "eq") return r => rows[r][i].trim().toLowerCase() === v;
+  if (c.op === "starts") return r => rows[r][i].toLowerCase().startsWith(v);
+  return r => rows[r][i].toLowerCase().includes(v);
+}
+function applySort() {
+  const col = columns[sort.col], dir = sort.dir, i = col.idx, K = col.key;
+  const arr = Array.from(view);
+  if (K) {
+    arr.sort((x, y) => { const a = K[x], b = K[y]; const ea = a !== a, eb = b !== b; if (ea || eb) return ea === eb ? x - y : ea ? 1 : -1; return a === b ? x - y : (a < b ? -dir : dir); });
+  } else {
+    arr.sort((x, y) => { const a = rows[x][i], b = rows[y][i]; const ea = !a.trim(), eb = !b.trim(); if (ea || eb) return ea === eb ? x - y : ea ? 1 : -1; const c = coll.compare(a, b); return c ? c * dir : x - y; });
+  }
+  view = Int32Array.from(arr);
+}
+
+/* ================= render (virtual rows + columns) ================= */
+const sc = $("sc"), hd = $("hd"), bd = $("bd"), rowsEl = $("rows");
+let RH = 36, HH = 44, scale = 1, colX = [], visOrder = [];
+const coarse = matchMedia("(pointer:coarse)").matches;
+function applyFs() {
+  const fs = prefs.fs; scale = fs / 14;
+  RH = Math.round(fs * (coarse ? 2.86 : 2.58)); HH = Math.max(44, Math.round(fs * 3.1));
+  document.documentElement.style.setProperty("--fs", fs + "px");
+  sc.style.setProperty("--rh", RH + "px"); sc.style.setProperty("--hh", HH + "px");
+}
+function layoutCols() {
+  visOrder = order.filter(i => columns[i].visible);
+  colX = []; let x = 0;
+  for (let k = 1; k < visOrder.length; k++) { colX.push(x); x += Math.round(columns[visOrder[k]].w * scale); }
+  return x;
+}
+function renderAll() { lastRange = ""; renderHeader(); renderBody(true); renderStats(); renderInfo(); }
+let rnw = 48;
+function renderHeader() {
+  hd.textContent = "";
+  if (!columns.length) return;
+  rnw = Math.max(40, String(rows.length).length * 8 + 18);
+  sc.style.setProperty("--rnw", rnw + "px");
+  const rest = layoutCols();
+  const firstW = visOrder.length ? Math.round(columns[visOrder[0]].w * scale) : 0;
+  hd.style.width = bd.style.width = rowsEl.style.width = rnw + firstW + rest + "px";
+}
+function headCell(ci) {
+  const col = columns[ci], c = el("div", "c" + (ci === selCol ? " sel" : "")); c.style.width = Math.round(col.w * scale) + "px";
+  c.dataset.col = ci; c.setAttribute("role", "columnheader"); c.tabIndex = 0;
+  c.setAttribute("aria-sort", sort.col === ci ? (sort.dir > 0 ? "ascending" : "descending") : "none");
+  const nm = el("span", "nm", col.name); nm.title = col.name;
+  const meta = el("span", "meta"); meta.append(el("span", "ty", col.type === "number" ? "#" : col.type === "date" ? "日" : "文"), el("span", "ar", sort.col === ci ? (sort.dir > 0 ? "▲" : "▼") : ""));
+  c.append(nm, meta); return c;
+}
+let lastRange = "";
+function renderBody(force) {
+  if (!columns.length) {
+    rowsEl.textContent = ""; bd.style.height = "auto"; hd.textContent = "";
+    rowsEl.appendChild(el("div", "nodata", src.text ? "只有標題列，沒有資料" : "沒有資料：請開啟、貼上 CSV 或載入範例"));
+    rowsEl.style.width = "100%"; rowsEl.style.position = "static"; return;
+  }
+  rowsEl.style.position = "";
+  if (!view.length) {
+    bd.style.height = "120px"; rowsEl.textContent = ""; rowsEl.style.top = "0px";
+    const nd = el("div", "nodata", rows.length ? "沒有符合篩選條件的資料" : "只有標題列，沒有資料"); nd.style.cssText = "position:sticky;left:0;width:" + Math.min(sc.clientWidth, 600) + "px";
+    rowsEl.appendChild(nd); fillHeader(0, visOrder.length); lastRange = ""; return;
+  }
+  bd.style.height = view.length * RH + "px";
+  const top = Math.max(0, sc.scrollTop - HH), h = sc.clientHeight || 500;
+  const r0 = Math.max(0, Math.floor(top / RH) - 8), r1 = Math.min(view.length, Math.ceil((top + h) / RH) + 8);
+  // visible columns (excluding the sticky first one)
+  const firstW = Math.round(columns[visOrder[0]].w * scale);
+  const xl = sc.scrollLeft - 200, xr = sc.scrollLeft + sc.clientWidth - rnw - firstW + 200;
+  let c0 = 1, c1 = visOrder.length;
+  for (let k = 1; k < visOrder.length; k++) { if (colX[k - 1] + columns[visOrder[k]].w * scale < xl) c0 = k + 1; else break; }
+  for (let k = c0; k < visOrder.length; k++) { if (colX[k - 1] > xr) { c1 = k; break; } }
+  const key = r0 + ":" + r1 + ":" + c0 + ":" + c1;
+  if (!force && key === lastRange) return;
+  lastRange = key;
+  fillHeader(c0, c1);
+  rowsEl.style.top = r0 * RH + "px";
+  const q = $("q").value.trim().toLowerCase();
+  const frag = document.createDocumentFragment();
+  const padL = c0 > 1 ? colX[c0 - 1] : 0;
+  for (let v = r0; v < r1; v++) {
+    const ri = view[v], row = rows[ri], r = el("div", "r"); r.dataset.v = v;
+    const fx = el("div", "fx"); fx.appendChild(el("div", "rn", String(ri + 1)));
+    fx.appendChild(cell(row, visOrder[0], q)); r.appendChild(fx);
+    if (padL) { const s = el("div"); s.style.cssText = "flex:none;width:" + padL + "px"; r.appendChild(s); }
+    for (let k = c0; k < c1; k++) r.appendChild(cell(row, visOrder[k], q));
+    frag.appendChild(r);
+  }
+  rowsEl.textContent = ""; rowsEl.appendChild(frag);
+}
+function fillHeader(c0, c1) {
+  hd.textContent = "";
+  if (!visOrder.length) return;
+  const fx = el("div", "fx"); const rn = el("div", "rn", "#"); rn.title = "原始列號"; fx.append(rn, headCell(visOrder[0])); hd.appendChild(fx);
+  const padL = c0 > 1 ? colX[c0 - 1] : 0;
+  if (padL) { const s = el("div"); s.style.cssText = "flex:none;width:" + padL + "px"; hd.appendChild(s); }
+  for (let k = Math.max(1, c0); k < c1; k++) hd.appendChild(headCell(visOrder[k]));
+}
+function cell(row, ci, q) {
+  const col = columns[ci], v = row[ci];
+  const c = el("div", "c" + (col.type === "number" ? " num" : "") + (ci === selCol ? " sel" : "") + (!v ? " empty" : ""));
+  c.style.width = Math.round(col.w * scale) + "px"; c.dataset.col = ci;
+  let t = v.length > 1000 ? v.slice(0, 1000) + "…" : v;
+  t = t.replace(/\r?\n|\r/g, " ↵ ");
+  const s = el("span", null, t || "—"); c.appendChild(s);
+  if (q && v.toLowerCase().includes(q)) c.classList.add("hit");
+  return c;
+}
+let raf = 0;
+sc.addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderBody(false); }); }, { passive: true });
+addEventListener("resize", () => renderBody(true));
+
+/* header: tap = sort cycle, long-press / right-click = select column */
+let lp = null;
+hd.addEventListener("pointerdown", e => { const h = e.target.closest(".c[data-col]"); if (!h) return; lp = { col: +h.dataset.col, x: e.clientX, y: e.clientY, fired: false, t: setTimeout(() => { if (lp) { lp.fired = true; selectCol(lp.col, true); } }, 500) }; });
+hd.addEventListener("pointermove", e => { if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 8) { clearTimeout(lp.t); lp = null; } });
+hd.addEventListener("pointercancel", () => { if (lp) clearTimeout(lp.t); lp = null; });
+hd.addEventListener("click", e => { const h = e.target.closest(".c[data-col]"); if (!h) return; if (lp) { clearTimeout(lp.t); const f = lp.fired; lp = null; if (f) return; } cycleSort(+h.dataset.col); });
+hd.addEventListener("contextmenu", e => { const h = e.target.closest(".c[data-col]"); if (!h) return; e.preventDefault(); if (lp) { clearTimeout(lp.t); lp.fired = true; } selectCol(+h.dataset.col, true); });
+hd.addEventListener("keydown", e => { const h = e.target.closest(".c[data-col]"); if (!h) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cycleSort(+h.dataset.col); } });
+function cycleSort(ci) {
+  if (sort.col !== ci) sort = { col: ci, dir: 1 }; else if (sort.dir === 1) sort.dir = -1; else sort = { col: -1, dir: 0 };
+  const t0 = performance.now(); recompute(); window.__lastSortMs = performance.now() - t0;
+  toast(sort.col < 0 ? "已恢復原始順序" : `依「${columns[ci].name}」${sort.dir > 0 ? "遞增" : "遞減"}排序`);
+}
+function selectCol(ci, announce) { selCol = ci; $("statCol").value = ci; renderBody(true); renderStats(); if (announce) toast("統計欄位：" + columns[ci].name); }
+
+/* cell bubble */
+let cellCur = null;
+rowsEl.addEventListener("click", e => {
+  const c = e.target.closest(".c[data-col]"); if (!c) return;
+  const r = c.closest(".r"); const ri = view[+r.dataset.v], ci = +c.dataset.col;
+  cellCur = { ri, ci };
+  $("cellWhere").textContent = `第 ${ri + 1} 列・${columns[ci].name}`;
+  $("cellVal").textContent = rows[ri][ci] === "" ? "（空白）" : rows[ri][ci];
+  openSheet("cellBg");
+});
+$("cellCopy").addEventListener("click", () => cellCur && copyText(rows[cellCur.ri][cellCur.ci], "已複製儲存格"));
+$("cellStat").addEventListener("click", () => { if (cellCur) { selectCol(cellCur.ci, true); closeSheet($("cellBg")); } });
+
+/* pinch to zoom font size */
+let pinch = null;
+sc.addEventListener("touchstart", e => { if (e.touches.length === 2) { const [a, b] = e.touches; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), fs: prefs.fs }; } }, { passive: true });
+sc.addEventListener("touchmove", e => {
+  if (!pinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const [a, b] = e.touches, d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const fs = Math.max(12, Math.min(20, Math.round(pinch.fs * d / pinch.d)));
+  if (fs !== prefs.fs) setFs(fs, true);
+}, { passive: false });
+sc.addEventListener("touchend", () => { if (pinch) { pinch = null; savePrefs(); } });
+function setFs(fs, quiet) { prefs.fs = Math.max(12, Math.min(20, fs)); applyFs(); renderAll(); if (!quiet) { savePrefs(); toast("字級 " + prefs.fs + "px"); } }
+$("fsUp").addEventListener("click", () => setFs(prefs.fs + 1));
+$("fsDown").addEventListener("click", () => setFs(prefs.fs - 1));
+
+/* ================= stats ================= */
+function renderStats() {
+  const sel = $("statCol");
+  if (sel.options.length !== columns.length || [...sel.options].some((o, i) => o.textContent !== columns[i].name)) {
+    sel.textContent = ""; columns.forEach((c, i) => { const o = el("option", null, c.name); o.value = i; sel.appendChild(o); });
+  }
+  sel.value = selCol; const box = $("statVals"); box.textContent = "";
+  if (selCol < 0 || !columns[selCol]) { box.textContent = columns.length ? "長按欄標題或在此選擇要統計的欄位" : ""; return; }
+  const col = columns[selCol]; let nonEmpty = 0;
+  const kv = (k, v) => { const s = el("span", "kv", k + " "); s.appendChild(el("b", null, v)); box.appendChild(s); };
+  if (col.type === "number") {
+    let sum = 0, comp = 0, n = 0, mn = Infinity, mx = -Infinity; const K = col.key;
+    for (let j = 0; j < view.length; j++) {
+      const r = view[j]; if (rows[r][col.idx].trim()) nonEmpty++;
+      const x = K[r]; if (x !== x) continue;
+      n++; const y = x - comp, t = sum + y; comp = (t - sum) - y; sum = t; if (x < mn) mn = x; if (x > mx) mx = x;
+    }
+    const f = v => Number.isFinite(v) ? (+v.toFixed(6)).toLocaleString("zh-TW", { maximumFractionDigits: 6 }) : "—";
+    kv("總和", f(sum)); kv("平均", n ? f(sum / n) : "—"); kv("最小", n ? f(mn) : "—"); kv("最大", n ? f(mx) : "—");
+  } else {
+    for (let j = 0; j < view.length; j++) if (rows[view[j]][col.idx].trim()) nonEmpty++;
+    if (col.type === "date") { let mn = Infinity, mx = -Infinity; for (let j = 0; j < view.length; j++) { const x = col.key[view[j]]; if (x < mn) mn = x; if (x > mx) mx = x; } const fd = t => { const d = new Date(t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; }; if (mn < Infinity) { kv("最早", fd(mn)); kv("最晚", fd(mx)); } }
+    else { const s = el("span", "kv", "文字欄（只計數）"); box.appendChild(s); }
+  }
+  kv("計數", view.length.toLocaleString()); kv("非空", nonEmpty.toLocaleString());
+}
+$("statCol").addEventListener("change", e => selectCol(+e.target.value));
+
+function renderInfo() {
+  $("dims").textContent = `${view.length !== rows.length ? view.length.toLocaleString() + " / " : ""}${rows.length.toLocaleString()} 列 × ${columns.length} 欄`;
+}
+
+/* ================= loading ================= */
+let loadSeq = 0;
+async function loadText(text, meta) {
+  const my = ++loadSeq;
+  src = Object.assign({ name: "貼上的資料", bytes: null, enc: "", sample: false }, meta, { text });
+  if (text.charCodeAt(0) === 0xFEFF) src.text = text = text.slice(1);
+  $("fname").textContent = src.name; $("sampleChip").hidden = !src.sample;
+  $("encSel").disabled = !src.bytes;
+  const delim = $("delimSel").value === "auto" ? detectDelim(text) : $("delimSel").value.replace("\\t", "\t");
+  src.delim = delim;
+  const dName = { ",": "逗號", ";": "分號", "\t": "Tab", "|": "直線" }[delim];
+  if ($("delimSel").value === "auto") $("delimSel").options[0].textContent = "自動（" + dName + "）";
+  const all = await parseAsync(text, delim);
+  if (my !== loadSeq) return;
+  window.__lastParsedRows = all.length;
+  const bad = buildModel(all);
+  const w = [];
+  if (bad) w.push(`${bad.toLocaleString()} 列欄數不一致（已補空或截斷）`);
+  if (rows.length > 500000) w.push("超過 50 萬列，操作可能變慢");
+  $("warnChip").hidden = !w.length; $("warnChip").textContent = w.join("；");
+  $("q").value = ""; sc.scrollTop = 0; sc.scrollLeft = 0;
+  recompute(); renderConds();
+  if (!src.sample) saveLast();
+}
+async function loadBytes(buf, name) {
+  const pref = $("encSel").value;
+  const r = decodeBytes(new Uint8Array(buf), pref);
+  if (pref === "auto") $("encSel").options[0].textContent = "自動（" + ({ "utf-8": "UTF-8", big5: "Big5", gb18030: "GB18030" })[r.enc] + "）";
+  await loadText(r.text, { name, bytes: buf, enc: r.enc });
+}
+$("openBtn").addEventListener("click", () => $("fileIn").click());
+$("fileIn").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (f) openFile(f); });
+async function openFile(f) {
+  if (f.size > 100 * 1048576) toast("檔案超過 100MB，可能耗盡記憶體");
+  else if (f.size > 20 * 1048576) toast("檔案較大，解析中…");
+  try { const buf = await f.arrayBuffer(); await loadBytes(buf, f.name); toast(`已開啟 ${f.name}`); } catch { toast("讀取檔案失敗"); }
+}
+["dragenter", "dragover"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); sc.classList.add("drop"); }));
+["dragleave", "drop"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); sc.classList.remove("drop"); }));
+document.addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) openFile(f); });
+$("encSel").addEventListener("change", () => { prefs.enc = $("encSel").value; savePrefs(); if (src.bytes) loadBytes(src.bytes, src.name); });
+$("delimSel").addEventListener("change", () => { if ($("delimSel").value !== "auto") $("delimSel").options[0].textContent = "自動"; loadText(src.text, src); });
+$("hdrChk").addEventListener("change", () => { prefs.header = $("hdrChk").checked; savePrefs(); loadText(src.text, src); });
+$("pasteBtn").addEventListener("click", async () => {
+  $("pasteIn").value = ""; openSheet("pasteBg"); $("pasteIn").focus();
+  try { const t = await navigator.clipboard.readText(); if (t && !$("pasteIn").value) $("pasteIn").value = t; } catch {}
+});
+$("pasteGo").addEventListener("click", () => { const t = $("pasteIn").value; if (!t.trim()) { toast("請先貼上內容"); return; } closeSheet($("pasteBg")); loadText(t, { name: "貼上的資料" }); });
+const SAMPLE = `訂單編號,下單日期,客戶,城市,品項,數量,單價,金額,狀態,備註
+A-24001,2026/09/01,王小明,台北市,燕麥拿鐵,2,140,280,已出貨,
+A-24002,2026/09/01,"陳美玲",新北市,"手沖 衣索比亞, 耶加雪菲",1,220,220,已出貨,"客人說：""不要加糖"""
+A-24003,2026/09/02,林志豪,台中市,檸檬塔,6,95,570,已取消,"重複下單
+已退款"
+A-24004,2026/09/03,黃雅婷,高雄市,禮盒組（12入）,3,"1,280","3,840",已出貨,公司採購
+A-24005,2026/09/03,張家豪,台南市,燕麥拿鐵,1,140,140,處理中,
+A-24006,2026/09/05,李佩珊,台北市,冷萃咖啡,4,160,640,已出貨,外送
+A-24007,2026/09/06,吳俊傑,桃園市,禮盒組（12入）,10,"1,280","12,800",已出貨,"發票抬頭：好日子股份有限公司"
+A-24008,2026/09/08,蔡依林,新竹市,檸檬塔,2,95,190,已出貨,
+A-24009,2026/09/09,鄭宇翔,台北市,手沖 肯亞,1,240,240,處理中,
+A-24010,2026/09/10,許雅雯,新北市,冷萃咖啡,2,160,320,已出貨,
+A-24011,2026/09/12,周杰民,基隆市,燕麥拿鐵,3,140,420,已出貨,
+A-24012,2026/09/13,葉淑芬,台中市,禮盒組（6入）,2,680,"1,360",已出貨,
+A-24013,2026/09/15,曾國華,彰化縣,檸檬塔,12,95,"1,140",已出貨,活動團購
+A-24014,2026/09/16,何欣怡,台北市,冷萃咖啡,1,160,160,已取消,
+A-24015,2026/09/18,蘇冠宇,高雄市,手沖 衣索比亞,2,220,440,已出貨,
+A-24016,2026/09/20,江佳穎,宜蘭縣,禮盒組（12入）,1,"1,280","1,280",處理中,"週末再寄"
+A-24017,2026/09/22,羅志明,台南市,燕麥拿鐵,5,140,700,已出貨,
+A-24018,2026/09/25,高美華,新竹縣,檸檬塔,4,95,380,已出貨,
+A-24019,2026/09/27,謝承恩,台北市,手沖 肯亞,2,240,480,已出貨,
+A-24020,2026/09/30,洪千惠,花蓮縣,冷萃咖啡,6,160,960,已出貨,偏遠地區運費另計
+`;
+$("sampleBtn").addEventListener("click", () => { loadText(SAMPLE, { name: "範例：咖啡店訂單.csv", sample: true }); toast("已載入範例資料"); });
+
+/* ================= filter drawer ================= */
+const OPS = { text: [["contains", "包含"], ["eq", "等於"], ["starts", "開頭是"], ["empty", "為空"], ["nempty", "不為空"]],
+  number: [["eq", "="], ["ne", "≠"], ["gt", ">"], ["ge", "≥"], ["lt", "<"], ["le", "≤"], ["between", "介於"], ["empty", "為空"], ["nempty", "不為空"]] };
+OPS.date = OPS.number;
+function renderConds() {
+  const box = $("conds"); box.textContent = "";
+  if (!columns.length) { box.appendChild(el("p", "hint", "載入資料後即可設定條件")); return; }
+  if (!conds.length) box.appendChild(el("p", "hint", "尚無條件。按「新增條件」開始篩選。"));
+  conds.forEach((c, k) => {
+    const row = el("div", "cond");
+    const cs = el("select"); cs.id = "cond-col-" + k; cs.setAttribute("aria-label", "欄位");
+    columns.forEach((col, i) => { const o = el("option", null, col.name); o.value = i; cs.appendChild(o); }); cs.value = c.col;
+    const os = el("select"); os.id = "cond-op-" + k; os.setAttribute("aria-label", "條件");
+    for (const [v, t] of OPS[columns[c.col].type]) { const o = el("option", null, t); o.value = v; os.appendChild(o); }
+    if (![...os.options].some(o => o.value === c.op)) c.op = os.options[0].value; os.value = c.op;
+    const vals = el("div", "vals");
+    const a = el("input"); a.id = "cond-a-" + k; a.value = c.a; a.placeholder = columns[c.col].type === "date" ? "2026/09/01" : "值"; a.setAttribute("aria-label", "值");
+    a.inputMode = columns[c.col].type === "number" ? "decimal" : "text";
+    const b = el("input"); b.id = "cond-b-" + k; b.value = c.b; b.placeholder = "到"; b.setAttribute("aria-label", "上限"); b.inputMode = a.inputMode;
+    vals.appendChild(a); if (c.op === "between") vals.appendChild(b);
+    vals.hidden = c.op === "empty" || c.op === "nempty";
+    const del = el("button", "btn del", "移除"); del.type = "button";
+    cs.addEventListener("change", () => { c.col = +cs.value; c.op = OPS[columns[c.col].type][0][0]; renderConds(); recompute(); });
+    os.addEventListener("change", () => { c.op = os.value; renderConds(); recompute(); });
+    let t; const upd = () => { c.a = a.value; c.b = b.value; clearTimeout(t); t = setTimeout(recompute, 200); };
+    a.addEventListener("input", upd); b.addEventListener("input", upd);
+    del.addEventListener("click", () => { conds.splice(k, 1); renderConds(); recompute(); });
+    row.append(cs, os, vals, del); box.appendChild(row);
+  });
+}
+$("addCond").addEventListener("click", () => { if (!columns.length) return; const ci = selCol >= 0 ? selCol : 0; conds.push({ col: ci, op: OPS[columns[ci].type][0][0], a: "", b: "" }); renderConds(); const k = conds.length - 1; const a = $("cond-a-" + k); a && a.focus(); });
+$("clearCond").addEventListener("click", () => { conds = []; renderConds(); recompute(); });
+const wide = matchMedia("(min-width:1000px)");
+let filterOpen = false;
+function syncFilterDock() {
+  const bg = $("filterBg");
+  if (wide.matches) { bg.classList.add("docked"); bg.hidden = !filterOpen; $("main").classList.toggle("withf", filterOpen); }
+  else { bg.classList.remove("docked"); $("main").classList.remove("withf"); bg.hidden = !filterOpen; }
+  $("filterBtn").classList.toggle("on", filterOpen);
+  if (filterOpen) renderBody(true);
+}
+wide.addEventListener && wide.addEventListener("change", syncFilterDock);
+$("filterBtn").addEventListener("click", () => { filterOpen = !filterOpen; renderConds(); syncFilterDock(); if (filterOpen && !conds.length && columns.length) $("addCond").focus(); });
+let qT; $("q").addEventListener("input", () => { clearTimeout(qT); qT = setTimeout(recompute, 200); });
+
+/* ================= sheets ================= */
+function openSheet(id) { const s = $(id); s.dataset.ret = document.activeElement && document.activeElement.id || ""; s.hidden = false; const b = s.querySelector("[data-close]"); if (b && id !== "pasteBg") b.focus(); }
+function closeSheet(s) { if (s.id === "filterBg") { filterOpen = false; syncFilterDock(); return; } s.hidden = true; const r = s.dataset.ret && $(s.dataset.ret); if (r) r.focus(); }
+document.querySelectorAll(".sheet-bg").forEach(s => s.addEventListener("click", e => { if ((e.target === s && !s.classList.contains("docked")) || e.target.closest("[data-close]")) closeSheet(s); }));
+addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".sheet-bg:not([hidden]):not(.docked)").forEach(closeSheet); });
+
+/* columns sheet */
+function renderColList() {
+  const box = $("colList"); box.textContent = "";
+  order.forEach((ci, k) => {
+    const col = columns[ci], row = el("div", "colrow");
+    const lab = el("label"); const cb = el("input"); cb.type = "checkbox"; cb.id = "colvis-" + ci; cb.checked = col.visible; lab.htmlFor = cb.id;
+    lab.append(cb, el("span", null, col.name), el("span", "ty", col.type === "number" ? "#" : col.type === "date" ? "日" : "文"));
+    cb.addEventListener("change", () => { if (!cb.checked && columns.filter(c => c.visible).length <= 1) { cb.checked = true; toast("至少要顯示一欄"); return; } col.visible = cb.checked; recompute(); });
+    const up = el("button", "btn", "↑"); up.type = "button"; up.setAttribute("aria-label", "上移 " + col.name); up.disabled = k === 0;
+    const dn = el("button", "btn", "↓"); dn.type = "button"; dn.setAttribute("aria-label", "下移 " + col.name); dn.disabled = k === order.length - 1;
+    up.addEventListener("click", () => { [order[k - 1], order[k]] = [order[k], order[k - 1]]; renderColList(); renderAll(); });
+    dn.addEventListener("click", () => { [order[k + 1], order[k]] = [order[k], order[k + 1]]; renderColList(); renderAll(); });
+    row.append(lab, up, dn); box.appendChild(row);
+  });
+}
+$("colsBtn").addEventListener("click", () => { renderColList(); openSheet("colsBg"); });
+$("showAll").addEventListener("click", () => { columns.forEach(c => c.visible = true); renderColList(); recompute(); });
+$("resetOrder").addEventListener("click", () => { order = columns.map((_, i) => i); renderColList(); renderAll(); });
+
+/* ================= export ================= */
+function exportCols() { return order.filter(i => columns[i].visible); }
+function toDelimited(delim) {
+  const cols = exportCols(), q = v => (v.includes(delim) || /["\r\n]/.test(v) || /^\s|\s$/.test(v)) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  const lines = [cols.map(i => q(columns[i].name)).join(delim)];
+  for (let j = 0; j < view.length; j++) { const row = rows[view[j]]; lines.push(cols.map(i => q(row[i])).join(delim)); }
+  return lines.join("\r\n") + "\r\n";
+}
+function toTSV() {
+  const cols = exportCols(), c = v => v.replace(/[\t\r\n]+/g, " ");
+  const lines = [cols.map(i => c(columns[i].name)).join("\t")];
+  for (let j = 0; j < view.length; j++) { const row = rows[view[j]]; lines.push(cols.map(i => c(row[i])).join("\t")); }
+  return lines.join("\n") + "\n";
+}
+function toJSON() {
+  const cols = exportCols(), out = new Array(view.length);
+  for (let j = 0; j < view.length; j++) {
+    const row = rows[view[j]], o = {};
+    for (const i of cols) { const col = columns[i]; if (col.type === "number") { const x = col.key[view[j]]; o[col.name] = x === x ? x : (row[i].trim() ? row[i] : null); } else o[col.name] = row[i]; }
+    out[j] = o;
+  }
+  return JSON.stringify(out, null, 2);
+}
+function toMarkdown() {
+  const cols = exportCols(), e = v => v.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n|\r/g, "<br>");
+  const lines = ["| " + cols.map(i => e(columns[i].name)).join(" | ") + " |", "| " + cols.map(i => columns[i].type === "number" ? "---:" : "---").join(" | ") + " |"];
+  for (let j = 0; j < view.length; j++) { const row = rows[view[j]]; lines.push("| " + cols.map(i => e(row[i])).join(" | ") + " |"); }
+  return lines.join("\n") + "\n";
+}
+const FORMATS = [["csv", "CSV", () => toDelimited(","), "csv"], ["tsv", "TSV（貼到試算表）", toTSV, "txt"], ["json", "JSON", toJSON, "json"], ["md", "Markdown 表格", toMarkdown, "md"]];
+let DL = null;
+(async () => { try { DL = await window.claude?.use?.("downloads"); } catch { DL = null; } })();
+function baseName() { return (src.name || "data").replace(/\.[^.]+$/, "").replace(/^範例：/, "").replace(/[\\/:*?"<>|\s]+/g, "_") || "data"; }
+function renderExport() {
+  $("eHint").textContent = `只匯出目前篩選、排序後的 ${view.length.toLocaleString()} 列與 ${exportCols().length} 個可見欄位。`;
+  const box = $("exportList"); box.textContent = "";
+  for (const [id, label, fn, ext] of FORMATS) {
+    box.appendChild(el("h3", null, label));
+    const g = el("div", "grid2");
+    const cp = el("button", "btn", "複製"); cp.type = "button"; cp.id = "exp-copy-" + id;
+    cp.addEventListener("click", () => copyText(fn(), "已複製 " + label));
+    g.appendChild(cp);
+    if (DL) {
+      const dl = el("button", "btn pri", "下載 ." + (id === "tsv" ? "txt" : ext)); dl.type = "button"; dl.id = "exp-dl-" + id;
+      dl.addEventListener("click", async () => {
+        try { await DL.save({ filename: baseName() + (id === "tsv" ? ".tsv.txt" : "." + ext), data: fn() }); toast("已送出下載"); }
+        catch (e) { if (!/declin|cancel|denied|abort/i.test(String(e && (e.message || e.name)))) toast("下載失敗，請改用複製"); }
+      });
+      g.appendChild(dl);
+    }
+    box.appendChild(g);
+  }
+}
+$("exportBtn").addEventListener("click", () => { if (!columns.length) { toast("沒有資料可以匯出"); return; } renderExport(); openSheet("exportBg"); });
+$("copyBtn").addEventListener("click", () => { if (!columns.length) { toast("沒有資料可以複製"); return; } copyText(toTSV(), `已複製 ${view.length.toLocaleString()} 列（Tab 分隔，可貼到試算表）`); });
+
+/* ================= persistence ================= */
+function savePrefs() { LS.set("prefs", { fs: prefs.fs, enc: prefs.enc, header: prefs.header }); }
+function idb() { return new Promise((res, rej) => { try { const r = indexedDB.open("csv-viewer", 1); r.onupgradeneeded = () => r.result.createObjectStore("files"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); }
+async function saveLast() {
+  try {
+    const size = src.bytes ? src.bytes.byteLength : src.text.length * 2;
+    if (size > 20 * 1048576) return;
+    const db = await idb(); const tx = db.transaction("files", "readwrite");
+    tx.objectStore("files").put({ name: src.name, text: src.bytes ? null : src.text, bytes: src.bytes || null, t: Date.now() }, "lastFile");
+    tx.oncomplete = () => db.close();
+  } catch {}
+}
+async function loadLast() {
+  try {
+    const db = await idb();
+    const v = await new Promise(res => { const g = db.transaction("files").objectStore("files").get("lastFile"); g.onsuccess = () => res(g.result); g.onerror = () => res(null); });
+    db.close(); return v;
+  } catch { return null; }
+}
+
+/* init */
+$("hdrChk").checked = prefs.header !== false; prefs.header = $("hdrChk").checked;
+if (["auto", "utf-8", "big5", "gb18030"].includes(prefs.enc)) $("encSel").value = prefs.enc;
+applyFs();
+(async () => {
+  const last = await loadLast();
+  if (last && last.bytes) await loadBytes(last.bytes, last.name);
+  else if (last && typeof last.text === "string" && last.text) await loadText(last.text, { name: last.name });
+  else await loadText(SAMPLE, { name: "範例：咖啡店訂單.csv", sample: true });
+  window.__cvReady = true;
+})();
+window.__cv = { parseCSV, detectDelim, decodeBytes, loadText, loadBytes, toJSON, toMarkdown, toCSV: () => toDelimited(","), get view() { return view; }, get columns() { return columns; }, get rows() { return rows; }, cycleSort, recompute, setConds: c => { conds = c; renderConds(); recompute(); }, selectCol, toNum };
+})();
+</script>
