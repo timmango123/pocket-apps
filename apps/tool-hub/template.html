@@ -104,6 +104,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
 .loading button { pointer-events: auto; min-height: 44px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .bar .fav[aria-pressed="true"] { color: var(--accent); }
 .bar .fav svg { width: 18px; height: 18px; }
+.bar .icon { padding: 0 12px; }
+.bar .icon svg { width: 18px; height: 18px; }
+/* phones: the bar's side buttons go icon-only (their aria-labels still name them) so the title keeps its room */
+@media (max-width: 430px) { .bar .ghost { font-size: 0; gap: 0; padding: 0 11px; } .bar .ghost svg { width: 18px; height: 18px; } }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 20; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 700; overflow-wrap: anywhere; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .star { position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.45); color: #ffd25e; display: grid; place-items: center; }
 .star svg { width: 15px; height: 15px; }
 
@@ -135,11 +140,13 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
   <div class="bar">
     <button class="back" id="back" aria-label="回到工具箱"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>工具箱</button>
     <h3 id="ptitle"></h3>
+    <button class="ghost icon" id="share" hidden aria-label="分享這個工具的連結"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8M5 4.8 8 2l3 2.8M3.5 8.5V13h9V8.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="ghost fav" id="fav" aria-pressed="false" aria-label="收藏這個工具"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>收藏</button>
     <button class="ghost" id="restart" aria-label="重新載入這個工具"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>重新載入</button>
   </div>
   <div class="stage" id="stage"><div class="loading" id="loading"><span id="lmsg">載入中…</span><button id="retry" hidden>再試一次</button></div></div>
 </div>
+<div class="toast" id="toast" role="status" hidden></div>
 
 <!--TOOL_DATA-->
 
@@ -268,8 +275,11 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
     return cache.get(id);
   }
 
-  let current = null, scrollY = 0, token = 0;
-  function open(g) {
+  // On the standalone site (not inside the claude.ai frame) each app gets its own link: <hub>/#<id>.
+  const linkable = (() => { try { return window.top === window && /^https?:$/.test(location.protocol); } catch (e) { return false; } })();
+  let current = null, scrollY = 0, token = 0, ownPop = false;
+  function open(g, fromUrl) {
+    if (current) close(true);
     current = g; scrollY = window.scrollY;
     recent = [g.id, ...recent.filter(id => id !== g.id)].slice(0, RECENT_MAX);
     store.set('toolhub.recent', JSON.stringify(recent));
@@ -278,6 +288,10 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
     syncFav();
     $('hub').hidden = true; $('player').hidden = false;
     document.body.classList.add('playing');
+    if (linkable) {
+      document.title = `${g.name}・口袋工具箱`;
+      if (!fromUrl && location.hash !== '#' + g.id) history.pushState({ app: g.id }, '', '#' + g.id);
+    }
     mount();
   }
   function syncFav() {
@@ -301,13 +315,19 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
     if (my !== token || current !== g) return;
     const f = document.createElement('iframe');
     f.title = g.name;
-    f.setAttribute('allow', 'autoplay; fullscreen; clipboard-read; clipboard-write; web-share');
+    f.setAttribute('allow', 'autoplay; fullscreen; clipboard-read; clipboard-write; web-share; camera; microphone; geolocation; accelerometer; gyroscope; magnetometer; screen-wake-lock');
     f.addEventListener('load', () => { $('loading').hidden = true; try { f.contentWindow.focus(); } catch (e) {} });
     f.srcdoc = html;
     stage.appendChild(f);
   }
-  function close() {
+  function close(fromUrl) {
     if (!current) return;
+    if (linkable && !fromUrl && location.hash) {
+      // opened from the shelf: step back so its history entry goes too; that popstate is ours, so it is skipped
+      if (history.state && history.state.app === current.id) { ownPop = true; history.back(); }
+      else history.replaceState(null, '', location.pathname + location.search);
+    }
+    if (linkable) document.title = '口袋工具箱';
     token++;
     $('stage').querySelector('iframe')?.remove();
     current = null;
@@ -316,7 +336,22 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
     render();
     window.scrollTo(0, scrollY);
   }
-  $('back').onclick = close;
+  $('back').onclick = () => close();
+  $('share').onclick = async () => {
+    if (!current) return;
+    const g = current, url = location.origin + location.pathname + '#' + g.id;
+    if (navigator.share) {
+      try { await navigator.share({ title: g.name, text: `${g.name}：${g.blurb}`, url }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); toast('已複製連結'); }
+    catch (e) { window.prompt('複製這個連結', url); }
+  };
+  let toastTimer = 0;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200);
+  }
   $('restart').onclick = () => current && mount();
   $('retry').onclick = () => current && mount();
   $('fav').onclick = () => {
@@ -326,5 +361,14 @@ mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: in
     syncFav();
   };
   render();
+  if (linkable) {
+    $('share').hidden = false;
+    const fromHash = () => { try { return byId.get(decodeURIComponent(location.hash.slice(1))) || null; } catch (e) { return null; } };
+    window.addEventListener('popstate', () => {
+      if (ownPop) { ownPop = false; return; }
+      const g = fromHash(); g ? g !== current && open(g, true) : close(true);
+    });
+    const g = fromHash(); if (g) open(g, true);
+  }
 })();
 </script>
