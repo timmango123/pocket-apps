@@ -1,0 +1,17 @@
+[
+ {"severity":"medium","title":"勝利卡出現時按「回爐」→ 卡片消失、所有滑動被忽略（軟鎖）",
+  "detail":"undo()（index.html:516–521）把盤面還原並清掉 overlay，但 won 仍為 true、keepGoing 仍為 false；move() 第一行 if (over || (won && !keepGoing)) return;（:445）因此永遠擋下輸入，畫面上也沒有『繼續』可按。回爐按鈕在盤面外、手機上隨手可點。探測：小窯 3×3，合成 256 → 勝利卡出現 → 點『回爐 3』→ 盤面退回 128,128、卡片消失 → 上下左右各滑一次盤面完全不動（回爐次數也被扣成 2）。只能按『新局』。",
+  "repro":"node qa/skill-tiers/kiln-2048/probe.js（probe-results.json undoOnWinCard.softlock = true）。修正：undo() 中若 won && !keepGoing，就同時還原 won = false（或把 won 存進 history），或在勝利卡顯示期間停用回爐按鈕。"},
+ {"severity":"medium","title":"合成目標的那一步若讓盤面無步可走：按『繼續』後沒有『窯滿了』結算，滑動全被吞掉",
+  "detail":"move()（:498）先判斷勝利，else if 才檢查 !canMove()；所以勝利那一步若同時填滿盤面，end('over') 永遠不會被呼叫。按『繼續』後 move() 每次都是 moved=false 直接 return，玩家只看到盤面抖動，沒有結算也沒有分數紀錄提示。3×3 小窯（目標 256）與雙火（每步兩塊）最容易遇到。探測 4/4 次重現。",
+  "repro":"probe.js winWithNoMovesLeft：小窯盤面 [[128,128,4],[8,16,32],[64,2,8]] 往左滑（生成 2 時必然無步）→ 繼續 → 四個方向都滑不動、無結算卡。修正：勝利判斷後也檢查 canMove()，或在 'go' 按鈕處理中 if (!canMove()) end('over', 0)。"},
+ {"severity":"low","title":"合成目標後 360 ms 內的滑動會被靜默丟棄",
+  "detail":"won = true 後到 showOverlay('win') 之間有 360 ms 延遲（:498），期間 move() 直接 return，且沒有任何回饋。世界級/非人在 4 局中各有 1 次在這個空窗滑動被吞（不影響結果）。",
+  "repro":"合成 2048 的那一步之後立刻再滑一次：盤面不動，0.36 秒後才出現勝利卡。可考慮把 overlay 立即顯示、只延遲動畫。"},
+ {"severity":"low","title":"技巧曲線：手殘與普通差距很小，2048 只有搜尋型玩家拿得到",
+  "detail":"經典 4×4：手殘中位 1416 分（最高 256）、普通 1824（最高 256）、熟練（1 層期望值搜尋）5084（最高 512）、世界級（2 層）2/2 局達 2048（2.5–3.1 萬分）、非人（3 層）2/2 局在 2000 步上限時已 4096（4.6 萬分）。急火 2 分鐘：手殘 654、普通 1266、熟練 1628、世界級 2510、非人 5576 平均分，速度差異在限時模式中有效拉開。經典模式手殘 vs 普通幾乎重疊，屬 2048 類型的天性，非 bug。",
+  "repro":"results.json tiers.*.summary"},
+ {"severity":"low","title":"觸控輸入健康：約 12,000 次真實觸控滑動，0 次漏判、0 次重複、0 個 console/page error",
+  "detail":"每次滑動後都以實體滑動方向模擬一步並比對 DOM 盤面（只差一個新生成的 2/4）。唯一的不一致都是上一條的 360 ms 勝利空窗。注意：index.html 是片段（無 doctype / viewport meta），測試時比照發佈外殼加上 viewport meta。",
+  "repro":"results.json tiers.*.summary.droppedSwipes / anomalies"}
+]

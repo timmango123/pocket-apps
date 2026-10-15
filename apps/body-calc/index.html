@@ -1,0 +1,432 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>BMI 熱量計算</title>
+<style>
+:root {
+  --bg: #edf2f6; --surface: #ffffff; --surface-2: #f3f6f9; --ink: #0c1a2b; --muted: #536274; --line: #d6dee6; --line-2: #b8c4d0;
+  --accent: #1846c7; --on-accent: #ffffff; --accent-soft: #dfe7fb; --focus: #1846c7;
+  --under: #3d7fd9; --normal: #1f9a62; --over: #d89112; --obese: #d0433a;
+  --pro: #c8375a; --fat: #d69a16; --carb: #0d7f8f; --warn-bg: #fff3dc; --warn-ink: #7a4b00;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0a121c; --surface: #111c29; --surface-2: #172434; --ink: #e5edf6; --muted: #93a3b6; --line: #24344a; --line-2: #33475f;
+  --accent: #7da2ff; --on-accent: #0a121c; --accent-soft: #1b2b4d; --focus: #9bb8ff;
+  --under: #6fa6f0; --normal: #4fcf91; --over: #f0b443; --obese: #f37b72;
+  --pro: #f07a96; --fat: #f0c04f; --carb: #45c2d1; --warn-bg: #3a2a08; --warn-ink: #f6d48f; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0a121c; --surface: #111c29; --surface-2: #172434; --ink: #e5edf6; --muted: #93a3b6; --line: #24344a; --line-2: #33475f;
+  --accent: #7da2ff; --on-accent: #0a121c; --accent-soft: #1b2b4d; --focus: #9bb8ff;
+  --under: #6fa6f0; --normal: #4fcf91; --over: #f0b443; --obese: #f37b72;
+  --pro: #f07a96; --fat: #f0c04f; --carb: #45c2d1; --warn-bg: #3a2a08; --warn-ink: #f6d48f; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 16px 16px calc(28px + env(safe-area-inset-bottom)); }
+header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: .02em; }
+h1 small { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+.spacer { flex: 1; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.icon-btn { min-width: 44px; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); display: inline-grid; place-items: center; cursor: pointer; }
+.icon-btn svg { width: 20px; height: 20px; }
+.grid { display: grid; gap: 16px; }
+@media (min-width: 780px) { .grid { grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); align-items: start; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; min-width: 0; }
+.card + .card { margin-top: 16px; }
+.card h2 { font-size: 13px; letter-spacing: .12em; color: var(--muted); margin: 0 0 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.card h2::before { content: ""; width: 4px; height: 14px; border-radius: 2px; background: var(--accent); }
+.seg { display: flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 3px; }
+.seg button { flex: 1; min-height: 44px; border: 0; border-radius: 9px; background: transparent; cursor: pointer; font-weight: 700; font-size: 14px; color: var(--muted); padding: 0 6px; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), inset 0 -2px 0 var(--accent); }
+.row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.row3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.field label, .lab { display: block; font-size: 12px; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+.inp { position: relative; }
+.inp input { width: 100%; min-height: 48px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink); font-size: 18px; font-weight: 700; padding: 0 40px 0 12px; font-variant-numeric: tabular-nums; }
+.inp input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.inp input[aria-invalid="true"] { border-color: var(--obese); }
+.inp .u { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
+.acts { display: grid; gap: 8px; }
+.act { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 10px; text-align: left; min-height: 56px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 6px 12px 6px 6px; cursor: pointer; }
+.act .lv { display: flex; gap: 2px; align-items: flex-end; height: 26px; justify-content: center; }
+.act .lv i { width: 5px; border-radius: 2px; background: var(--line-2); }
+.act[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.act[aria-pressed="true"] .lv i.on { background: var(--accent); }
+.act b { display: block; font-size: 15px; }
+.act span.d { display: block; font-size: 12px; color: var(--muted); line-height: 1.35; }
+.act em { font-style: normal; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+.chk { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: 8px; font-size: 14px; cursor: pointer; }
+.chk input { width: 22px; height: 22px; accent-color: var(--accent); }
+.badge-ex { font-size: 11px; font-weight: 700; color: var(--accent); border: 1px solid var(--accent); border-radius: 99px; padding: 1px 8px; margin-left: 6px; letter-spacing: 0; }
+.err { color: var(--obese); font-size: 13px; font-weight: 700; margin: 8px 0 0; }
+/* results */
+.bmi-top { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.big { font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.cls { font-size: 18px; font-weight: 800; padding: 4px 12px; border-radius: 8px; color: var(--surface); background: var(--muted); margin-bottom: 6px; }
+.band { position: relative; margin: 18px 0 6px; height: 12px; border-radius: 6px; display: flex; overflow: hidden; }
+.band span { height: 100%; }
+.marker { position: absolute; top: -7px; width: 4px; height: 26px; margin-left: -2px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); transition: left .3s; }
+.bandwrap { position: relative; }
+.ticks { position: relative; height: 16px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 4px; }
+.kpi { padding: 10px 12px; min-width: 0; }
+.kpi + .kpi { border-left: 1px solid var(--line); }
+.kpi .k { font-size: 12px; color: var(--muted); font-weight: 700; }
+.kpi .v { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.kpi .s { font-size: 11px; color: var(--muted); }
+.kpi.hl { background: var(--accent-soft); }
+.warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 10px; padding: 10px 12px; font-size: 13px; font-weight: 600; margin-top: 10px; }
+.macro { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 4px; }
+.ring { width: 150px; height: 150px; }
+.ring text { fill: var(--ink); }
+.mlist { display: grid; gap: 8px; }
+.m { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
+.m i { width: 10px; height: 10px; border-radius: 3px; align-self: center; }
+.m b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.m small { font-size: 12px; color: var(--muted); display: block; }
+.disc { font-size: 12px; color: var(--muted); margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.loggrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+.loggrid .btn { grid-column: 1 / -1; }
+@media (min-width: 1000px) { .loggrid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; } .loggrid .btn { grid-column: auto; } }
+.inp input[type="date"] { font-size: 16px; padding-right: 8px; font-weight: 600; }
+.btn { min-height: 48px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--accent); color: var(--on-accent); font-weight: 800; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line-2); min-height: 44px; }
+.chart { width: 100%; height: auto; display: block; margin-top: 12px; }
+.chart text { fill: var(--muted); font-size: 11px; }
+.empty { text-align: center; color: var(--muted); padding: 22px 8px; border: 1px dashed var(--line-2); border-radius: 10px; margin-top: 12px; font-size: 14px; }
+.logs { list-style: none; padding: 0; margin: 10px 0 0; max-height: 220px; overflow: auto; }
+.logs li { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); min-height: 44px; font-variant-numeric: tabular-nums; }
+.logs li span { flex: 1; color: var(--muted); font-size: 14px; }
+.logs li b { font-size: 15px; }
+.logs .x { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 20px; }
+@media (max-width: 400px) { .macro { grid-template-columns: 1fr; justify-items: center; } .mlist { width: 100%; } .big { font-size: 48px; } .kpi .v { font-size: 20px; } .kpi { padding: 10px 8px; } }
+.sumbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line-2); box-shadow: 0 -4px 16px rgba(0,0,0,.08); }
+.sumbar button { min-height: 44px; border: 0; background: transparent; flex: 1; display: flex; align-items: center; gap: 14px; text-align: left; cursor: pointer; padding: 0; font-variant-numeric: tabular-nums; }
+.sumbar b { font-size: 20px; }
+.sumbar small { display: block; font-size: 11px; color: var(--muted); font-weight: 700; }
+.sumbar .go { margin-left: auto; color: var(--accent); font-weight: 800; font-size: 14px; }
+@media (min-width: 780px) { .sumbar { display: none; } }
+@media (max-width: 779px) { .wrap { padding-bottom: calc(84px + env(safe-area-inset-bottom)); } }
+@media (hover: hover) { .act:hover { border-color: var(--line-2); } .icon-btn:hover, .btn.ghost:hover { border-color: var(--accent); } .logs .x:hover { color: var(--obese); } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>BMI 與熱量計算<small>BMI · 基礎代謝 · 每日熱量 · 三大營養素</small></h1>
+    <span class="spacer"></span>
+    <button class="icon-btn" type="button" id="theme" aria-label="切換深淺色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9A7 7 0 0 1 12 3z"/></svg></button>
+  </header>
+  <div class="grid">
+    <div>
+      <section class="card" aria-label="基本資料">
+        <h2>基本資料<span class="badge-ex" id="ex-badge">範例</span></h2>
+        <div class="seg" role="group" aria-label="單位"><button type="button" id="unit-metric" data-unit="metric">公制 cm／kg</button><button type="button" id="unit-imperial" data-unit="imperial">英制 ft‧in／lb</button></div>
+        <div class="row">
+          <div class="field"><span class="lab">性別</span><div class="seg" role="group" aria-label="性別"><button type="button" id="sex-m" data-sex="m">男</button><button type="button" id="sex-f" data-sex="f">女</button></div></div>
+          <div class="field"><label for="age">年齡</label><div class="inp"><input id="age" inputmode="numeric" min="15" max="100" step="1" autocomplete="off"><span class="u">歲</span></div></div>
+        </div>
+        <div class="row" id="row-metric">
+          <div class="field"><label for="height">身高</label><div class="inp"><input id="height" inputmode="decimal" min="100" max="250" step="0.1" autocomplete="off"><span class="u">cm</span></div></div>
+          <div class="field"><label for="weight">體重</label><div class="inp"><input id="weight" inputmode="decimal" min="20" max="300" step="0.1" autocomplete="off"><span class="u" id="w-unit">kg</span></div></div>
+        </div>
+        <div class="row row3" id="row-imperial" hidden>
+          <div class="field"><label for="height-ft">身高 ft</label><div class="inp"><input id="height-ft" inputmode="numeric" autocomplete="off"><span class="u">ft</span></div></div>
+          <div class="field"><label for="height-in">in</label><div class="inp"><input id="height-in" inputmode="decimal" autocomplete="off"><span class="u">in</span></div></div>
+          <div class="field"><label for="weight-lb">體重</label><div class="inp"><input id="weight-lb" inputmode="decimal" autocomplete="off"><span class="u">lb</span></div></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="bodyfat">體脂率（選填）</label><div class="inp"><input id="bodyfat" inputmode="decimal" min="3" max="70" placeholder="—" autocomplete="off"><span class="u">%</span></div></div>
+          <div class="field" style="align-self:end"><label class="chk" for="katch"><input type="checkbox" id="katch">用 Katch-McArdle</label></div>
+        </div>
+        <p class="err" id="err" role="alert" hidden></p>
+      </section>
+
+      <section class="card" aria-label="活動量">
+        <h2>活動量</h2>
+        <div class="acts" id="acts"></div>
+      </section>
+
+      <section class="card" aria-label="目標">
+        <h2>目標</h2>
+        <div class="seg" role="group" aria-label="目標"><button type="button" id="goal-lose" data-goal="lose">減脂</button><button type="button" id="goal-keep" data-goal="keep">維持</button><button type="button" id="goal-gain" data-goal="gain">增肌</button></div>
+        <div class="seg" role="group" aria-label="每週幅度" id="rate-seg" style="margin-top:8px"><button type="button" id="rate-25" data-rate="0.25">每週 0.25 kg</button><button type="button" id="rate-50" data-rate="0.5">每週 0.5 kg</button></div>
+      </section>
+    </div>
+
+    <div>
+      <section class="card" aria-label="BMI 結果" aria-live="polite">
+        <h2>BMI</h2>
+        <div class="bmi-top"><div class="big" id="bmi">—</div><div class="cls" id="bmi-cls">—</div></div>
+        <div class="bandwrap">
+          <div class="band" aria-hidden="true"><span style="flex:3.5;background:var(--under)"></span><span style="flex:5.5;background:var(--normal)"></span><span style="flex:3;background:var(--over)"></span><span style="flex:13;background:var(--obese)"></span></div>
+          <div class="marker" id="marker" style="left:30%" hidden></div>
+        </div>
+        <div class="ticks" aria-hidden="true"><span style="left:14%">18.5</span><span style="left:36%">24</span><span style="left:48%">27</span><span style="left:60%">30</span><span style="left:80%">35</span></div>
+        <p class="note" id="ideal">理想體重：—</p>
+        <p class="note" id="teen" hidden>未滿 18 歲：成人 BMI 標準不適用兒少，請參考兒少生長曲線。</p>
+      </section>
+
+      <section class="card" aria-label="熱量">
+        <h2>每日熱量</h2>
+        <div class="kpis">
+          <div class="kpi"><div class="k">BMR</div><div class="v" id="bmr">—</div><div class="s" id="bmr-f">Mifflin-St Jeor</div></div>
+          <div class="kpi"><div class="k">TDEE</div><div class="v" id="tdee">—</div><div class="s" id="tdee-f">× 活動係數</div></div>
+          <div class="kpi hl"><div class="k">目標熱量</div><div class="v" id="target">—</div><div class="s" id="target-f">kcal／日</div></div>
+        </div>
+        <div class="warn" id="warn" hidden></div>
+        <div class="macro">
+          <svg class="ring" viewBox="0 0 150 150" id="ring" role="img" aria-label="三大營養素熱量比例">
+            <circle cx="75" cy="75" r="56" fill="none" stroke="var(--line)" stroke-width="18"/>
+            <g transform="rotate(-90 75 75)">
+              <circle id="arc-pro" cx="75" cy="75" r="56" fill="none" stroke="var(--pro)" stroke-width="18" stroke-dasharray="0 400"/>
+              <circle id="arc-fat" cx="75" cy="75" r="56" fill="none" stroke="var(--fat)" stroke-width="18" stroke-dasharray="0 400"/>
+              <circle id="arc-carb" cx="75" cy="75" r="56" fill="none" stroke="var(--carb)" stroke-width="18" stroke-dasharray="0 400"/>
+            </g>
+            <text x="75" y="72" text-anchor="middle" font-size="22" font-weight="800" id="ring-kcal">—</text>
+            <text x="75" y="92" text-anchor="middle" font-size="11" opacity=".7">kcal／日</text>
+          </svg>
+          <div class="mlist">
+            <div class="m"><i style="background:var(--pro)"></i><div>蛋白質<small id="pro-s">—</small></div><b id="pro">—</b></div>
+            <div class="m"><i style="background:var(--fat)"></i><div>脂肪<small id="fat-s">—</small></div><b id="fat">—</b></div>
+            <div class="m"><i style="background:var(--carb)"></i><div>碳水化合物<small id="carb-s">—</small></div><b id="carb">—</b></div>
+          </div>
+        </div>
+        <p class="disc">僅供參考，非醫療建議。BMI 分級採衛福部國健署成人標準；熱量以每公斤體脂約 7,700 kcal 估算。</p>
+      </section>
+
+      <section class="card" aria-label="體重紀錄">
+        <h2>體重紀錄（近 30 天）</h2>
+        <div class="loggrid">
+          <div class="field"><label for="log-date">日期</label><div class="inp"><input type="date" id="log-date"></div></div>
+          <div class="field"><label for="log-kg">體重</label><div class="inp"><input id="log-kg" inputmode="decimal" autocomplete="off"><span class="u" id="log-unit">kg</span></div></div>
+          <button class="btn" type="button" id="log-add">紀錄這天體重</button>
+        </div>
+        <div id="chartbox"></div>
+        <ul class="logs" id="logs"></ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="sumbar" id="sumbar"><button type="button" id="sum-go" aria-label="跳到結果"><span><small>BMI</small><b id="sum-bmi">—</b></span><span><small>目標熱量</small><b id="sum-kcal">—</b></span><span class="go">看結果 ↓</span></button></div>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const K = 'body-calc:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(K + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(K + k, JSON.stringify(v)); } catch (e) {} }
+};
+const ACTS = [
+  { f: 1.2, n: '久坐', d: '辦公室工作，幾乎不運動' },
+  { f: 1.375, n: '輕度', d: '每週運動 1–3 天' },
+  { f: 1.55, n: '中度', d: '每週運動 3–5 天' },
+  { f: 1.725, n: '高度', d: '每週運動 6–7 天' },
+  { f: 1.9, n: '極高', d: '勞力工作或一天兩練' }
+];
+const DEF = { unit: 'metric', sex: 'm', age: '30', h: '170', w: '65', bf: '', katch: false, act: 2, goal: 'keep', rate: 0.5, example: true };
+let P = Object.assign({}, DEF, store.get('profile', {}) || {});
+if (!['metric', 'imperial'].includes(P.unit)) P.unit = 'metric';
+if (!['m', 'f'].includes(P.sex)) P.sex = 'm';
+if (!(P.act >= 0 && P.act <= 4)) P.act = 2;
+if (!['lose', 'keep', 'gain'].includes(P.goal)) P.goal = 'keep';
+if (![0.25, 0.5].includes(P.rate)) P.rate = 0.5;
+let W = store.get('weights', []);
+if (!Array.isArray(W)) W = [];
+W = W.filter(x => x && /^\d{4}-\d{2}-\d{2}$/.test(x.date) && typeof x.kg === 'number' && x.kg >= 20 && x.kg <= 300);
+
+/* theme */
+const th = store.get('theme', null); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+$('#theme').addEventListener('click', () => { const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const n = cur === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = n; store.set('theme', n); });
+
+/* ---------- 純函式 ---------- */
+const LB = 0.45359237, IN = 2.54;
+function bmi(kg, cm) { if (!(kg > 0) || !(cm > 0)) return NaN; const m = cm / 100; return kg / (m * m); }
+function bmiClass(b) {
+  if (!isFinite(b)) return null;
+  const r = Math.round(b * 10) / 10;
+  if (r < 18.5) return { k: 'under', t: '過輕' };
+  if (r < 24) return { k: 'normal', t: '正常' };
+  if (r < 27) return { k: 'over', t: '過重' };
+  if (r < 30) return { k: 'obese', t: '輕度肥胖' };
+  if (r < 35) return { k: 'obese', t: '中度肥胖' };
+  return { k: 'obese', t: '重度肥胖' };
+}
+function bmr(p) { // {sex, age, cm, kg, bf, katch}
+  if (p.katch && p.bf > 0) return { v: 370 + 21.6 * p.kg * (1 - p.bf / 100), f: 'Katch-McArdle' };
+  return { v: 10 * p.kg + 6.25 * p.cm - 5 * p.age + (p.sex === 'm' ? 5 : -161), f: 'Mifflin-St Jeor' };
+}
+const tdee = (b, actIdx) => b * ACTS[actIdx].f;
+function targetKcal(t, goal, rate, sex) {
+  const delta = Math.round(rate * 7700 / 7);
+  let v = goal === 'lose' ? t - delta : goal === 'gain' ? t + delta : t;
+  const floor = sex === 'm' ? 1500 : 1200;
+  const low = goal === 'lose' && v < floor;
+  return { v: Math.round(low ? floor : v), low, floor, delta, raw: v };
+}
+function macros(kcal, kg, goal) {
+  const gpk = goal === 'lose' ? 2.2 : goal === 'gain' ? 2.0 : 1.6;
+  let pro = gpk * kg; const fatK = kcal * 0.25;
+  if (pro * 4 > kcal * 0.75) pro = kcal * 0.75 / 4;
+  const fat = fatK / 9, carb = Math.max(0, (kcal - pro * 4 - fatK) / 4);
+  return { pro, fat, carb, gpk };
+}
+
+/* ---------- 表單 ---------- */
+const num = v => { const t = String(v == null ? '' : v).trim(); if (t === '') return NaN; const n = Number(t); return isFinite(n) ? n : NaN; };
+const r1 = n => Math.round(n * 10) / 10;
+function renderActs() {
+  $('#acts').innerHTML = ACTS.map((a, i) => '<button type="button" class="act" id="act-' + i + '" data-act="' + i + '" aria-pressed="' + (P.act === i) + '"><span class="lv" aria-hidden="true">' + [0, 1, 2, 3, 4].map(j => '<i class="' + (j <= i ? 'on' : '') + '" style="height:' + (8 + j * 4.5) + 'px"></i>').join('') + '</span><span><b>' + a.n + '</b><span class="d">' + a.d + '</span></span><em>×' + a.f + '</em></button>').join('');
+}
+function fillForm() {
+  const imp = P.unit === 'imperial';
+  $('#row-metric').hidden = imp; $('#row-imperial').hidden = !imp;
+  $('#age').value = P.age; $('#bodyfat').value = P.bf; $('#katch').checked = !!P.katch;
+  $('#height').value = P.h; $('#weight').value = P.w;
+  const cm = num(P.h), kg = num(P.w);
+  if (isFinite(cm)) { const ti = cm / IN; let ft = Math.floor(ti / 12), inch = r1(ti - ft * 12); if (inch >= 12) { ft++; inch = 0; } $('#height-ft').value = ft; $('#height-in').value = inch; } else { $('#height-ft').value = ''; $('#height-in').value = ''; }
+  $('#weight-lb').value = isFinite(kg) ? r1(kg / LB) : '';
+  $('#log-unit').textContent = imp ? 'lb' : 'kg';
+  document.querySelectorAll('[data-unit]').forEach(b => b.setAttribute('aria-pressed', b.dataset.unit === P.unit));
+  document.querySelectorAll('[data-sex]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sex === P.sex));
+  document.querySelectorAll('[data-goal]').forEach(b => b.setAttribute('aria-pressed', b.dataset.goal === P.goal));
+  document.querySelectorAll('[data-rate]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.rate === P.rate));
+  $('#rate-seg').hidden = P.goal === 'keep';
+  $('#ex-badge').hidden = !P.example;
+  renderActs();
+}
+const dash = ids => ids.forEach(id => { $(id).textContent = '—'; });
+function render() {
+  const age = num(P.age), cm = num(P.h), kg = num(P.w), bfRaw = num(P.bf);
+  const errs = [];
+  const chk = (id, v, lo, hi, name) => { const bad = isFinite(v) && (v < lo || v > hi); document.querySelectorAll(id).forEach(e => e.setAttribute('aria-invalid', bad)); if (bad) errs.push(name + '請確認數值（' + lo + '–' + hi + '）'); return isFinite(v) && !bad; };
+  const okA = chk('#age', age, 15, 100, '年齡');
+  const okH = chk('#height, #height-ft, #height-in', cm, 100, 250, '身高');
+  const okW = chk('#weight, #weight-lb', kg, 20, 300, '體重');
+  const okBf = P.bf === '' || chk('#bodyfat', bfRaw, 3, 70, '體脂率');
+  $('#err').hidden = !errs.length; $('#err').textContent = errs.join('；');
+  // BMI
+  const b = okH && okW ? bmi(kg, cm) : NaN, c = bmiClass(b);
+  if (c) {
+    $('#bmi').textContent = r1(b).toFixed(1);
+    const cl = $('#bmi-cls'); cl.textContent = c.t; cl.style.background = 'var(--' + c.k + ')';
+    const mk = $('#marker'); mk.hidden = false; mk.style.left = Math.max(0, Math.min(100, (b - 15) / 25 * 100)) + '%';
+    const lo = 18.5 * (cm / 100) ** 2, hi = 24 * (cm / 100) ** 2;
+    $('#ideal').textContent = '理想體重（BMI 18.5–24）：' + (P.unit === 'imperial' ? r1(lo / LB) + '–' + r1(hi / LB) + ' lb' : r1(lo) + '–' + r1(hi) + ' kg');
+  } else { $('#bmi').textContent = '—'; $('#bmi-cls').textContent = '—'; $('#bmi-cls').style.background = ''; $('#marker').hidden = true; $('#ideal').textContent = '理想體重：—'; }
+  $('#teen').hidden = !(okA && age < 18);
+  $('#sum-bmi').textContent = $('#bmi').textContent + (c ? ' ' + c.t : '');
+  // 熱量
+  const warn = $('#warn'); warn.hidden = true;
+  const useKatch = P.katch && okBf && P.bf !== '';
+  if (!(okA && okH && okW)) { $('#sum-kcal').textContent = '—'; dash(['#bmr', '#tdee', '#target', '#ring-kcal', '#pro', '#fat', '#carb', '#pro-s', '#fat-s', '#carb-s']); setRing(0, 0, 0); return; }
+  const B = bmr({ sex: P.sex, age, cm, kg, bf: bfRaw, katch: useKatch });
+  const T = tdee(B.v, P.act);
+  const G = targetKcal(T, P.goal, P.rate, P.sex);
+  $('#bmr').textContent = fmt(B.v); $('#bmr-f').textContent = B.f;
+  $('#tdee').textContent = fmt(T); $('#tdee-f').textContent = '× ' + ACTS[P.act].f + '（' + ACTS[P.act].n + '）';
+  $('#target').textContent = fmt(G.v); $('#sum-kcal').textContent = fmt(G.v) + ' kcal';
+  $('#target-f').textContent = P.goal === 'keep' ? '維持體重' : (P.goal === 'lose' ? '−' : '＋') + G.delta + ' kcal／日';
+  if (G.low) { warn.hidden = false; warn.textContent = '計算結果 ' + fmt(G.raw) + ' kcal 低於建議下限，已以' + (P.sex === 'm' ? '男性' : '女性') + '下限 ' + G.floor + ' kcal 顯示。過低熱量不利健康，建議改為每週 0.25 kg 或增加活動量。'; }
+  if (P.katch && !useKatch) { $('#bmr-f').textContent = 'Mifflin（需填體脂率）'; }
+  const M = macros(G.v, kg, P.goal);
+  const pk = M.pro * 4, fk = M.fat * 9, ck = M.carb * 4;
+  setRing(pk / G.v, fk / G.v, ck / G.v);
+  $('#ring-kcal').textContent = fmt(G.v);
+  const g = n => Math.round(n) + ' g';
+  $('#pro').textContent = g(M.pro); $('#fat').textContent = g(M.fat); $('#carb').textContent = g(M.carb);
+  $('#pro-s').textContent = M.gpk + ' g/kg · 每餐 ' + Math.round(M.pro / 3) + ' g · ' + Math.round(pk / G.v * 100) + '%';
+  $('#fat-s').textContent = '熱量 25% · 每餐 ' + Math.round(M.fat / 3) + ' g';
+  $('#carb-s').textContent = '其餘熱量 · 每餐 ' + Math.round(M.carb / 3) + ' g · ' + Math.round(ck / G.v * 100) + '%';
+}
+const NF = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
+const fmt = n => NF.format(Math.round(n));
+function setRing(a, b, c) {
+  const C = 2 * Math.PI * 56;
+  const seg = (id, frac, off) => { const e = $(id); e.setAttribute('stroke-dasharray', (Math.max(0, frac * C - (frac > 0 ? 2 : 0))) + ' ' + C); e.setAttribute('stroke-dashoffset', -off * C); };
+  seg('#arc-pro', a, 0); seg('#arc-fat', b, a); seg('#arc-carb', c, a + b);
+}
+
+/* ---------- 體重紀錄 ---------- */
+const pad = n => String(n).padStart(2, '0');
+const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const dayNum = s => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+function renderLog() {
+  const imp = P.unit === 'imperial', show = kg => imp ? r1(kg / LB) : r1(kg), u = imp ? ' lb' : ' kg';
+  const box = $('#chartbox');
+  const list = W.slice().sort((a, b) => b.date.localeCompare(a.date));
+  $('#logs').innerHTML = list.slice(0, 60).map(x => '<li><span>' + x.date + '</span><b>' + show(x.kg).toFixed(1) + u + '</b><button type="button" class="x" data-del="' + x.date + '" aria-label="刪除 ' + x.date + ' 紀錄">×</button></li>').join('');
+  const end = dayNum(todayISO()), start = end - 29;
+  const pts = W.filter(x => { const n = dayNum(x.date); return n >= start && n <= end; }).sort((a, b) => a.date.localeCompare(b.date));
+    if (pts.length < 2) { box.innerHTML = '<div class="empty">' + (pts.length ? '再紀錄一天即可看到趨勢' : '還沒有紀錄，輸入今天的體重開始追蹤') + '</div>'; return; }
+  const vals = pts.map(x => show(x.kg)); const lo = Math.floor(Math.min(...vals) - 1), hi = Math.ceil(Math.max(...vals) + 1);
+  const Wd = Math.max(260, Math.round(box.clientWidth || 340)), H = 170, L = 40, R = 10, T = 10, B = 22, pw = Wd - L - R, ph = H - T - B;
+  const X = n => L + (n - start) / 29 * pw, Y = v => T + (hi - v) / (hi - lo) * ph;
+  let g = '';
+  const step = Math.max(1, Math.ceil((hi - lo) / 4));
+  for (let v = lo; v <= hi; v += step) g += '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="var(--line)"/><text x="' + (L - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end">' + v + '</text>';
+  [0, 10, 20, 29].forEach(i => { const d = new Date((start + i) * 864e5); g += '<text x="' + X(start + i) + '" y="' + (H - 6) + '" text-anchor="' + (i === 0 ? 'start' : i === 29 ? 'end' : 'middle') + '">' + (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '</text>'; });
+  const path = pts.map((x, i) => (i ? 'L' : 'M') + X(dayNum(x.date)).toFixed(1) + ' ' + Y(show(x.kg)).toFixed(1)).join(' ');
+  g += '<path d="' + path + '" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+  g += pts.map(x => '<circle cx="' + X(dayNum(x.date)).toFixed(1) + '" cy="' + Y(show(x.kg)).toFixed(1) + '" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"><title>' + x.date + ' ' + show(x.kg) + u + '</title></circle>').join('');
+  const diff = r1(show(pts[pts.length - 1].kg) - show(pts[0].kg));
+  box.innerHTML = '<svg class="chart" viewBox="0 0 ' + Wd + ' ' + H + '" role="img" aria-label="近 30 天體重折線圖">' + g + '</svg><p class="note">近 30 天 ' + pts.length + ' 筆，變化 ' + (diff > 0 ? '+' : diff < 0 ? '−' : '±') + Math.abs(diff).toFixed(1) + u + '</p>';
+}
+
+/* ---------- 事件 ---------- */
+let tSave = 0;
+const save = () => { clearTimeout(tSave); tSave = setTimeout(() => store.set('profile', P), 300); };
+const edited = () => { if (P.example) { P.example = false; $('#ex-badge').hidden = true; } };
+const on = (id, fn) => $(id).addEventListener('input', e => { fn(e.target.value.trim()); edited(); render(); save(); });
+on('#age', v => { P.age = v; });
+on('#height', v => { P.h = v; syncImp(); });
+on('#weight', v => { P.w = v; syncImp(); });
+on('#bodyfat', v => { P.bf = v; });
+const impH = () => { const ft = num($('#height-ft').value), inch = num($('#height-in').value); if (!isFinite(ft) && !isFinite(inch)) return ''; return String(r1(((isFinite(ft) ? ft : 0) * 12 + (isFinite(inch) ? inch : 0)) * IN)); };
+on('#height-ft', () => { P.h = impH(); $('#height').value = P.h; });
+on('#height-in', () => { P.h = impH(); $('#height').value = P.h; });
+on('#weight-lb', v => { const lb = num(v); P.w = isFinite(lb) ? String(Math.round(lb * LB * 100) / 100) : ''; $('#weight').value = P.w; });
+function syncImp() { const cm = num(P.h), kg = num(P.w); if (isFinite(cm)) { const ti = cm / IN; let ft = Math.floor(ti / 12), i = r1(ti - ft * 12); if (i >= 12) { ft++; i = 0; } $('#height-ft').value = ft; $('#height-in').value = i; } $('#weight-lb').value = isFinite(kg) ? r1(kg / LB) : ''; }
+$('#katch').addEventListener('change', e => { P.katch = e.target.checked; edited(); render(); save(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.unit) { P.unit = d.unit; fillForm(); render(); renderLog(); save(); return; }
+  if (d.sex) P.sex = d.sex; else if (d.goal) P.goal = d.goal; else if (d.rate) P.rate = +d.rate; else if (d.act != null) P.act = +d.act;
+  else if (d.del) { W = W.filter(x => x.date !== d.del); store.set('weights', W); renderLog(); return; }
+  else return;
+  edited(); fillForm(); render(); save();
+});
+$('#log-date').value = todayISO(); $('#log-date').max = todayISO();
+$('#log-add').addEventListener('click', () => {
+  const date = $('#log-date').value, v = num($('#log-kg').value);
+  const kg = P.unit === 'imperial' ? v * LB : v;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { $('#log-date').focus(); return; }
+  if (!(kg >= 20 && kg <= 300)) { $('#log-kg').setAttribute('aria-invalid', 'true'); $('#log-kg').focus(); return; }
+  $('#log-kg').removeAttribute('aria-invalid');
+  W = W.filter(x => x.date !== date); W.push({ date, kg: Math.round(kg * 100) / 100 });
+  W.sort((a, b) => a.date.localeCompare(b.date)); if (W.length > 3660) W = W.slice(-3660);
+  store.set('weights', W); $('#log-kg').value = ''; renderLog();
+});
+$('#log-kg').addEventListener('keydown', e => { if (e.key === 'Enter') $('#log-add').click(); });
+if (!$('#log-kg').value && isFinite(num(P.w))) $('#log-kg').placeholder = P.unit === 'imperial' ? String(r1(num(P.w) / LB)) : String(r1(num(P.w)));
+
+fillForm(); render(); renderLog();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { $('#log-date').max = todayISO(); renderLog(); } });
+$('#sum-go').addEventListener('click', () => { const r = document.querySelector('[aria-label="BMI 結果"]'); r.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }); });
+try { const seen = new Set(); const io = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); $('#sumbar').hidden = seen.size > 0; }, { threshold: 0 }); document.querySelectorAll('[aria-label="BMI 結果"], [aria-label="熱量"], [aria-label="體重紀錄"]').forEach(el => io.observe(el)); } catch (e) {}
+let rzT = 0; addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(renderLog, 120); });
+window.__body = { bmi, bmiClass, bmr, tdee, targetKcal, macros };
+})();
+</script>

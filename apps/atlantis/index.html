@@ -1,0 +1,1057 @@
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<title>波塞迪亞</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Walkable sunset Atlantis: full-screen WebGL view, bronze/orichalcum HUD over it */
+:root {
+  color-scheme: dark;
+  --dusk: #1d1626;
+  --panel: rgba(16, 30, 38, .74);
+  --panel-strong: rgba(14, 24, 31, .9);
+  --line: rgba(233, 186, 112, .38);
+  --gold: #eabd73;
+  --ori: #e0874a;
+  --teal: #6fd0c4;
+  --ink: #f7eedf;
+  --muted: #cdbba0;
+  --serif: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --sans: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--dusk); }
+body {
+  color: var(--ink); font: 15px/1.6 var(--sans);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+#view { position: fixed; inset: 0; touch-action: none; overflow: hidden;
+  background: linear-gradient(#2c3460 0%, #9a5e6e 48%, #f2a576 62%, #17384a 63%, #0c2833 100%); }
+#view canvas { display: block; width: 100%; height: 100%; outline: none; }
+
+/* HUD */
+#hud { position: fixed; top: 0; left: 0; right: 0; pointer-events: none;
+  padding: calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.brand { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 7px 12px 8px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.brand b { display: block; font: 700 1.05rem/1.2 var(--serif); letter-spacing: .14em; color: var(--gold); }
+.brand span { font-size: .78rem; color: var(--muted); letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.tools { display: flex; gap: 8px; pointer-events: auto; }
+.icon { width: 44px; height: 44px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--gold); font: 700 1.1rem var(--serif);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.icon:active { transform: scale(.95); }
+.icon svg { width: 22px; height: 22px; }
+#guide { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: .78rem; color: var(--ink); letter-spacing: .04em; }
+#guide em { font-style: normal; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#gArrow { width: 14px; height: 14px; flex: none; display: block; background: var(--gold);
+  clip-path: polygon(50% 0, 100% 100%, 50% 74%, 0 100%); filter: drop-shadow(0 0 3px rgba(224,135,74,.8)); }
+#map { width: 96px; height: 96px; border-radius: 50%; border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+
+#caption { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 148px);
+  width: min(calc(100vw - 32px), 420px); transform: translate(-50%, -8px); opacity: 0;
+  transition: opacity .45s, transform .45s; pointer-events: none;
+  background: var(--panel-strong); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px 13px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+#caption.on { opacity: 1; transform: translate(-50%, 0); }
+#caption h2 { margin: 0 0 4px; font: 700 1.08rem/1.3 var(--serif); color: var(--gold); letter-spacing: .1em;
+  display: flex; align-items: center; gap: 8px; }
+#caption h2::before { content: ""; width: 9px; height: 9px; transform: rotate(45deg); background: var(--ori); flex: none; }
+#caption p { margin: 0; font-size: .9rem; color: var(--ink); line-height: 1.65; }
+#caption small { display: block; margin-top: 6px; color: var(--teal); font-size: .78rem; letter-spacing: .05em; }
+@media (min-width: 700px) { #caption { top: auto; bottom: calc(env(safe-area-inset-bottom) + 28px); } }
+
+/* touch joystick */
+#joy { position: fixed; left: 0; top: 0; width: 124px; height: 124px; margin: -62px 0 0 -62px; border-radius: 50%;
+  border: 2px solid rgba(234,189,115,.55); background: radial-gradient(rgba(16,30,38,.25), rgba(16,30,38,.55));
+  pointer-events: none; opacity: 0; transition: opacity .15s; }
+#joy.on { opacity: 1; }
+#knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe2a8, var(--ori)); box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+.ghost { position: fixed; bottom: calc(env(safe-area-inset-bottom) + 26px); pointer-events: none;
+  color: rgba(247,238,223,.8); font-size: .8rem; letter-spacing: .1em; text-shadow: 0 1px 4px rgba(0,0,0,.6);
+  transition: opacity .6s; display: grid; justify-items: center; gap: 6px; }
+.ghost i { display: block; width: 84px; height: 84px; border-radius: 50%; border: 2px dashed rgba(234,189,115,.5); }
+#joyGhost { left: calc(env(safe-area-inset-left) + 22px); }
+#lookGhost { right: calc(env(safe-area-inset-right) + 22px); }
+#lookGhost i { border-style: solid; border-color: transparent; position: relative; }
+#lookGhost i::before { content: "⟷"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 2rem; color: rgba(234,189,115,.7); }
+.ghost.fade { opacity: 0; }
+@media (pointer: fine) { .ghost { display: none; } }
+
+/* intro */
+#intro { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  padding-top: calc(env(safe-area-inset-top) + 16px); padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+  background: linear-gradient(180deg, rgba(20,16,30,.35), rgba(10,22,30,.75)); overflow-y: auto; }
+.card { width: min(100%, 440px); background: var(--panel-strong); border: 1px solid var(--line); border-radius: 18px;
+  padding: 24px 22px 20px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.45); position: relative; }
+.card::before { content: ""; position: absolute; inset: 6px; border: 1px solid rgba(233,186,112,.15); border-radius: 13px; pointer-events: none; }
+.eyebrow { margin: 0; color: var(--ori); font-size: .78rem; letter-spacing: .32em; }
+h1 { margin: 6px 0 4px; font: 900 2.5rem/1.15 var(--serif); letter-spacing: .3em; padding-left: .3em; color: var(--gold);
+  text-shadow: 0 2px 18px rgba(224,135,74,.45); }
+.rule { width: 120px; height: 10px; margin: 6px auto 12px; display: block; }
+.lede { margin: 0 0 14px; color: var(--ink); font-size: .95rem; }
+.how { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 6px; text-align: left; font-size: .86rem; color: var(--muted); }
+.how li { background: rgba(255,255,255,.04); border-radius: 10px; padding: 8px 12px; }
+.how b { color: var(--gold); font-weight: 700; margin-right: 6px; }
+.go { width: 100%; height: 54px; border-radius: 14px; font: 700 1.1rem var(--serif); letter-spacing: .3em; color: #2a1a10;
+  background: linear-gradient(180deg, #f6d08e, #e09454); box-shadow: 0 6px 20px rgba(224,135,74,.35); }
+.go:disabled { opacity: .55; cursor: progress; }
+.go:not(:disabled):active { transform: scale(.98); }
+#status { margin: 10px 0 0; min-height: 1.4em; font-size: .82rem; color: var(--muted); }
+#status.err { color: #ffb39a; }
+#retry { margin-top: 8px; height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--line); color: var(--gold); }
+@media (max-height: 560px) { h1 { font-size: 1.8rem; } .card { padding: 16px; } .lede { display: none; } }
+</style>
+
+<div id="view" aria-label="波塞迪亞三維城市，拖曳可轉動視角"></div>
+
+<div id="hud" hidden>
+  <div class="brand"><b>波塞迪亞</b><span id="found">已探索 0 / 6</span><span id="guide" hidden><i id="gArrow" aria-hidden="true"></i><em id="gName"></em></span></div>
+  <div class="side">
+    <div class="tools">
+      <button id="soundBtn" class="icon" aria-label="切換聲音" aria-pressed="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path id="waves" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path id="mutex" d="M17 9l5 6M22 9l-5 6" hidden/></svg>
+      </button>
+      <button id="helpBtn" class="icon" aria-label="操作說明">?</button>
+    </div>
+    <canvas id="map" width="192" height="192" aria-hidden="true"></canvas>
+  </div>
+</div>
+
+<div id="caption" role="status" aria-live="polite"><h2 id="capT"></h2><p id="capP"></p><small id="capS"></small></div>
+<div id="joy" aria-hidden="true"><div id="knob"></div></div>
+<div id="joyGhost" class="ghost" hidden aria-hidden="true"><i></i>移動</div>
+<div id="lookGhost" class="ghost" hidden aria-hidden="true"><i></i>拖曳轉向</div>
+
+<div id="intro">
+  <div class="card" role="dialog" aria-labelledby="introTitle">
+    <p class="eyebrow">亞特蘭提斯最後的島嶼</p>
+    <h1 id="introTitle">波塞迪亞</h1>
+    <svg class="rule" viewBox="0 0 120 10" aria-hidden="true"><path d="M0 5h48M72 5h48" stroke="#eabd73" stroke-width="1"/><path d="M60 0l5 5-5 5-5-5z" fill="#e0874a"/></svg>
+    <p class="lede">夕陽下，海神之城的三重運河閃著光。走過石橋與環形城牆，靠近發光的菱形標記，聽聽這座城市的故事。</p>
+    <ul class="how">
+      <li><b>手機</b>左半邊拖曳＝搖桿移動，推到底可奔跑；右半邊拖曳＝轉動視角</li>
+      <li><b>電腦</b>WASD／方向鍵移動，Shift 奔跑，滑鼠拖曳轉動視角</li>
+    </ul>
+    <button id="start" class="go" disabled>載入中…</button>
+    <p id="status" role="status"></p>
+    <button id="retry" hidden>重新載入</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var THREE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
+  var startBtn = $('start'), statusEl = $('status'), retryBtn = $('retry');
+  var reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var loading = false;
+
+  function setStatus(msg, err) { statusEl.textContent = msg; statusEl.classList.toggle('err', !!err); }
+  function fail(msg) {
+    loading = false;
+    setStatus(msg, true);
+    startBtn.disabled = true; startBtn.textContent = '無法進入';
+    retryBtn.hidden = false;
+  }
+  function loadThree() {
+    if (loading) return;
+    retryBtn.hidden = true; startBtn.textContent = '載入中…'; startBtn.disabled = true;
+    setStatus('正在載入 3D 引擎…');
+    if (window.THREE) { boot(); return; }
+    loading = true;
+    var done = false;
+    var s = document.createElement('script');
+    s.src = THREE_URL; s.async = true;
+    var to = setTimeout(function () {
+      if (done) return; done = true; s.remove(); fail('載入逾時。請確認網路連線後按「重新載入」。');
+    }, 20000);
+    s.onload = function () {
+      if (done) return; done = true; clearTimeout(to);
+      if (window.THREE) boot(); else fail('3D 引擎載入不完整，請重新載入。');
+    };
+    s.onerror = function () {
+      if (done) return; done = true; clearTimeout(to); s.remove();
+      fail('無法載入 3D 引擎（three.js）。請確認網路連線後按「重新載入」。');
+    };
+    document.head.appendChild(s);
+  }
+  retryBtn.addEventListener('click', loadThree);
+
+  function boot() {
+    loading = false;
+    setStatus('正在建造城市…');
+    // let the status paint before the synchronous build
+    requestAnimationFrame(function () {
+      setTimeout(function () {
+        var ok = false;
+        try { ok = buildApp(); } catch (e) { ok = false; }
+        if (!ok) { fail('你的瀏覽器或裝置似乎不支援 WebGL，無法顯示 3D 城市。'); return; }
+        setStatus('');
+        startBtn.disabled = false; startBtn.textContent = '踏上島嶼';
+      }, 30);
+    });
+  }
+
+  function hasWebGL() {
+    try { var c = document.createElement('canvas'); return !!(c.getContext('webgl') || c.getContext('experimental-webgl')); }
+    catch (e) { return false; }
+  }
+
+  function store(k, v) { try { localStorage.setItem('poseidia.' + k, JSON.stringify(v)); } catch (e) {} }
+  function load(k, d) { try { var v = localStorage.getItem('poseidia.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+
+  /* ================================================================ */
+  function buildApp() {
+    if (!hasWebGL()) return false;
+    var T = window.THREE;
+    var view = $('view');
+    var DPR_CAP = 1.5;
+    var dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    var renderer;
+    try {
+      renderer = new T.WebGLRenderer({ antialias: dpr < 1.3, powerPreference: 'high-performance' });
+    } catch (e) { return false; }
+    if (!renderer.getContext()) return false;
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    view.appendChild(renderer.domElement);
+
+    var rnd = (function (a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })(91011);
+    function rr(a, b) { return a + (b - a) * rnd(); }
+    function pick(arr) { return arr[(rnd() * arr.length) | 0]; }
+
+    /* ---------- world constants ---------- */
+    var L = 0.8;                                   // land height
+    var LAND = [[0, 30], [40, 66], [76, 104], [116, 140]];
+    var WATER = [[30, 40], [66, 76], [104, 116]];
+    var ROADS = [0, 53, 90, 128];                  // ring road radii (0 = none)
+    var BRIDGE = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
+    var BW = 3.2;                                  // bridge half width
+    var ARCH = 1.0;
+    var EDGE_M = 1.3;                              // walkable margin from quay edge
+    var PR = 0.35;                                 // player radius
+    var SUN = new T.Vector3(-0.74, 0.17, -0.65).normalize();
+    var FOG = new T.Color(0xf2a679);
+
+    var scene = new T.Scene();
+    scene.fog = new T.Fog(FOG, 55, 640);
+    renderer.setClearColor(FOG);
+    var camera = new T.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.2, 1100);
+    camera.rotation.order = 'YXZ';
+
+    scene.add(new T.HemisphereLight(0xffd6b0, 0x3a4766, 0.72));
+    var sunLight = new T.DirectionalLight(0xffb27a, 0.95);
+    sunLight.position.copy(SUN).multiplyScalar(100);
+    scene.add(sunLight);
+
+    /* ---------- sky ---------- */
+    var skyMat = new T.ShaderMaterial({
+      side: T.BackSide, depthWrite: false, fog: false,
+      uniforms: { uSun: { value: SUN }, uHor: { value: FOG }, uTime: { value: 0 } },
+      vertexShader: 'varying vec3 vD; void main(){ vD = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p; }',
+      fragmentShader: [
+        'uniform vec3 uSun; uniform vec3 uHor; uniform float uTime; varying vec3 vD;',
+        'float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }',
+        'float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h(i),h(i+vec2(1.0,0.0)),f.x), mix(h(i+vec2(0.0,1.0)),h(i+vec2(1.0,1.0)),f.x), f.y); }',
+        'void main(){',
+        '  vec3 d = normalize(vD); float y = d.y;',
+        '  vec3 zen = vec3(0.16,0.2,0.4); vec3 mid = vec3(0.74,0.46,0.52);',
+        '  vec3 col = mix(uHor, mid, smoothstep(0.02, 0.28, y));',
+        '  col = mix(col, zen, smoothstep(0.22, 0.85, y));',
+        '  col = mix(col, uHor * 0.92, smoothstep(0.0, -0.2, y));',
+        '  float s = max(dot(d, uSun), 0.0);',
+        '  col += vec3(1.0,0.62,0.32) * (pow(s, 6.0) * 0.32 + pow(s, 48.0) * 0.45);',
+        '  vec2 uv = d.xz / (max(y, 0.0) + 0.12) * 1.5 + vec2(uTime * 0.008, 0.0);',
+        '  float c = n(uv) * 0.6 + n(uv * 2.4 + 3.1) * 0.4;',
+        '  c = smoothstep(0.56, 0.86, c) * smoothstep(0.01, 0.07, y) * (1.0 - smoothstep(0.3, 0.6, y));',
+        '  vec3 cc = mix(vec3(0.52,0.33,0.45), vec3(1.0,0.74,0.52), pow(s, 2.5));',
+        '  col = mix(col, cc, c * 0.75);',
+        '  col += vec3(1.0,0.92,0.75) * smoothstep(0.9988, 0.9994, s) * 1.2;',
+        '  gl_FragColor = vec4(col, 1.0);',
+        '}'].join('\n')
+    });
+    var sky = new T.Mesh(new T.SphereGeometry(900, 24, 14), skyMat);
+    sky.renderOrder = -1; sky.frustumCulled = false;
+    scene.add(sky);
+
+    /* ---------- water ---------- */
+    var waterGeo = new T.PlaneGeometry(1700, 1700, 110, 110);
+    waterGeo.rotateX(-Math.PI / 2);
+    var waterMat = new T.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 }, uSun: { value: SUN }, uFog: { value: FOG },
+        uDeep: { value: new T.Color(0x0d3a48) }, uRefl: { value: new T.Color(0xd99a86) },
+        uNear: { value: 55 }, uFar: { value: 640 }
+      },
+      vertexShader: [
+        'uniform float uTime; varying vec3 vW;',
+        'void main(){',
+        '  vec4 w = modelMatrix * vec4(position, 1.0);',
+        '  w.y += sin(w.x*0.05 + uTime*0.6)*0.14 + sin(w.z*0.07 - uTime*0.8)*0.11 + sin((w.x+w.z)*0.09 + uTime*1.1)*0.06;',
+        '  vW = w.xyz;',
+        '  gl_Position = projectionMatrix * viewMatrix * w;',
+        '}'].join('\n'),
+      fragmentShader: [
+        'uniform float uTime; uniform vec3 uSun; uniform vec3 uFog; uniform vec3 uDeep; uniform vec3 uRefl; uniform float uNear; uniform float uFar;',
+        'varying vec3 vW;',
+        'void main(){',
+        '  vec2 p = vW.xz; float t = uTime;',
+        '  vec2 g = vec2(0.05,0.0)*cos(p.x*0.05+t*0.6)*0.14 + vec2(0.0,0.07)*cos(p.y*0.07-t*0.8)*0.11;',
+        '  g += vec2(0.09)*cos((p.x+p.y)*0.09+t*1.1)*0.06;',
+        '  g += vec2(0.9,0.4)*cos(dot(p,vec2(0.9,0.4))+t*2.1)*0.05;',
+        '  g += vec2(-0.5,1.1)*cos(dot(p,vec2(-0.5,1.1))+t*2.7)*0.045;',
+        '  g += vec2(1.7,-1.3)*cos(dot(p,vec2(1.7,-1.3))+t*3.3)*0.025;',
+        '  g += vec2(2.9,2.3)*cos(dot(p,vec2(2.9,2.3))-t*3.9)*0.012;',
+        '  vec3 nrm = normalize(vec3(-g.x, 1.0, -g.y));',
+        '  vec3 toC = cameraPosition - vW; float dist = length(toC); vec3 v = toC / dist;',
+        '  float fr = pow(1.0 - max(dot(nrm, v), 0.0), 3.0);',
+        '  vec3 col = mix(uDeep, uRefl, clamp(fr * 0.9 + 0.06, 0.0, 1.0));',
+        '  vec3 r = reflect(-v, nrm); float sd = max(dot(r, uSun), 0.0);',
+        '  col += vec3(1.0,0.75,0.45) * (pow(sd, 260.0) * 2.2 + pow(sd, 18.0) * 0.22);',
+        '  float f = smoothstep(uNear, uFar, dist);',
+        '  gl_FragColor = vec4(mix(col, uFog, f), 1.0);',
+        '}'].join('\n')
+    });
+    var water = new T.Mesh(waterGeo, waterMat);
+    water.frustumCulled = false;
+    scene.add(water);
+
+    /* ---------- static merged geometry (one draw call) ---------- */
+    var SP = [], SN = [], SC = [];
+    var tmpC = new T.Color();
+    var UP = new T.Vector3(0, 1, 0);
+    var _m = new T.Matrix4(), _q = new T.Quaternion(), _p = new T.Vector3(), _s = new T.Vector3();
+    function mat(x, y, z, ry, sx, sy, sz) {
+      _q.setFromAxisAngle(UP, ry || 0); _p.set(x, y, z);
+      _s.set(sx == null ? 1 : sx, sy == null ? 1 : sy, sz == null ? 1 : sz);
+      return _m.compose(_p, _q, _s);
+    }
+    function add(geo, color, m, flip) {
+      var g = geo.index ? geo.toNonIndexed() : geo.clone();
+      if (m) g.applyMatrix4(m);
+      var p = g.attributes.position.array, nn = g.attributes.normal.array;
+      tmpC.set(color);
+      var ord = flip ? [0, 2, 1] : [0, 1, 2], sg = flip ? -1 : 1;
+      for (var i = 0; i < p.length; i += 9) {
+        for (var k = 0; k < 3; k++) {
+          var o = i + ord[k] * 3;
+          SP.push(p[o], p[o + 1], p[o + 2]);
+          SN.push(nn[o] * sg, nn[o + 1] * sg, nn[o + 2] * sg);
+          SC.push(tmpC.r, tmpC.g, tmpC.b);
+        }
+      }
+      g.dispose();
+    }
+    var unitBox = new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    function box(w, h, d, x, y, z, ry, color) { add(unitBox, color, mat(x, y, z, ry, w, h, d)); }
+    function cyl(rt, rb, h, seg, x, y, z, color) { var g = new T.CylinderGeometry(rt, rb, h, seg).translate(0, h / 2, 0); add(g, color, mat(x, y, z)); g.dispose(); }
+
+    // ground tops
+    var landCol = [0xdccdb2, 0xcaa576, 0xc39e72, 0x9aa063];
+    LAND.forEach(function (b, i) {
+      var g = i === 0 ? new T.CircleGeometry(b[1], 96) : new T.RingGeometry(b[0], b[1], 128, 1);
+      g.rotateX(-Math.PI / 2); g.translate(0, L, 0); add(g, landCol[i]); g.dispose();
+    });
+    // quay walls with metal-clad parapets (orichalcum inner, tin middle, brass outer)
+    var EDGES = [[30, 0xc4703c, false], [40, 0xa9a69c, true], [66, 0xa9a69c, false], [76, 0xb38a48, true], [104, 0xb38a48, false], [116, 0x8d6a3e, true], [140, 0x8d6a3e, false]];
+    function nearBridge(theta, R, extra) {
+      for (var i = 0; i < BRIDGE.length; i++) {
+        var d = Math.abs(Math.atan2(Math.sin(theta - BRIDGE[i]), Math.cos(theta - BRIDGE[i])));
+        if (d < Math.PI / 2 && Math.sin(d) * R < extra) return true;
+      }
+      return false;
+    }
+    EDGES.forEach(function (e) {
+      var R = e[0], col = e[1], inner = e[2];
+      var wall = new T.CylinderGeometry(R, R, L + 3, 128, 1, true);
+      wall.translate(0, (L - 3) / 2, 0);
+      add(wall, 0x7d6a58, null, inner); wall.dispose();
+      var N = Math.round(Math.PI * 2 * R / 3.6), segL = Math.PI * 2 * R / N * 1.04;
+      var rr2 = inner ? R + 0.35 : R - 0.35;
+      for (var i = 0; i < N; i++) {
+        var th = (i + 0.5) / N * Math.PI * 2;
+        if (nearBridge(th, R, BW + 0.5)) continue;
+        if (R === 140 && nearBridge(th, R, 3.2) && Math.abs(th) < 0.2) continue;
+        box(segL, 1.05, 0.6, Math.sin(th) * rr2, L, Math.cos(th) * rr2, th, col);
+      }
+    });
+    // ring roads
+    ROADS.forEach(function (r) {
+      if (!r) return;
+      var g = new T.RingGeometry(r - 2.5, r + 2.5, 128, 1); g.rotateX(-Math.PI / 2); g.translate(0, L + 0.05, 0);
+      add(g, 0xa98361); g.dispose();
+    });
+    // radial avenues
+    BRIDGE.forEach(function (a) {
+      LAND.forEach(function (b, i) {
+        var r0 = i === 0 ? 17 : b[0], r1 = b[1];
+        box(BW * 2 - 0.4, 0.05, r1 - r0, Math.sin(a) * (r0 + r1) / 2, L, Math.cos(a) * (r0 + r1) / 2, a, 0xb08b66);
+      });
+    });
+    // arched bridges
+    function archGeo(w, h, len, w0, w1, base) {
+      var g = new T.BoxGeometry(w, h, len, 1, 1, 20);
+      var p = g.attributes.position;
+      for (var i = 0; i < p.count; i++) {
+        var along = w0 - 1.5 + (p.getZ(i) + len / 2);
+        var t = Math.min(1, Math.max(0, (along - w0) / (w1 - w0)));
+        p.setY(i, p.getY(i) + base + ARCH * Math.sin(Math.PI * t));
+      }
+      g.computeVertexNormals();
+      return g;
+    }
+    WATER.forEach(function (w) {
+      var len = w[1] - w[0] + 3, mid = (w[0] + w[1]) / 2;
+      var deck = archGeo(BW * 2, 0.9, len, w[0], w[1], L - 0.43);
+      var rail = archGeo(0.35, 0.75, len, w[0], w[1], L + 0.38);
+      var under = archGeo(BW * 2 - 0.6, 1.6, w[1] - w[0] + 3, w[0], w[1], L - 1.6);
+      BRIDGE.forEach(function (a) {
+        var cx = Math.sin(a) * mid, cz = Math.cos(a) * mid;
+        add(deck, 0xd8c3a0, mat(cx, 0, cz, a));
+        add(under, 0x9a7e62, mat(cx, 0, cz, a));
+        var ox = Math.cos(a) * (BW - 0.2), oz = -Math.sin(a) * (BW - 0.2);
+        add(rail, 0xc9b08a, mat(cx + ox, 0, cz + oz, a));
+        add(rail, 0xc9b08a, mat(cx - ox, 0, cz - oz, a));
+      });
+      deck.dispose(); rail.dispose(); under.dispose();
+    });
+
+    /* ---------- colliders ---------- */
+    var CELL = 8, grid = new Map();
+    function gk(ix, iz) { return (ix + 64) * 256 + (iz + 64); }
+    function addCol(c, rad) {
+      var x0 = Math.floor((c.x - rad) / CELL), x1 = Math.floor((c.x + rad) / CELL);
+      var z0 = Math.floor((c.z - rad) / CELL), z1 = Math.floor((c.z + rad) / CELL);
+      for (var ix = x0; ix <= x1; ix++) for (var iz = z0; iz <= z1; iz++) {
+        var k = gk(ix, iz), a = grid.get(k); if (!a) { a = []; grid.set(k, a); } a.push(c);
+      }
+    }
+    function colBox(x, z, ry, hw, hd) { addCol({ t: 0, x: x, z: z, c: Math.cos(ry), s: Math.sin(ry), hw: hw + PR, hd: hd + PR }, Math.hypot(hw, hd) + PR + 0.2); }
+    function colCirc(x, z, r) { addCol({ t: 1, x: x, z: z, r2: (r + PR) * (r + PR) }, r + PR + 0.2); }
+    function hit(x, z) {
+      var a = grid.get(gk(Math.floor(x / CELL), Math.floor(z / CELL)));
+      if (!a) return false;
+      for (var i = 0; i < a.length; i++) {
+        var c = a[i], dx = x - c.x, dz = z - c.z;
+        if (c.t === 1) { if (dx * dx + dz * dz < c.r2) return true; }
+        else {
+          var lx = dx * c.c - dz * c.s, lz = dx * c.s + dz * c.c;
+          if (Math.abs(lx) < c.hw && Math.abs(lz) < c.hd) return true;
+        }
+      }
+      return false;
+    }
+
+    /* ---------- temple of Poseidon ---------- */
+    var TSTEPS = [[11, 17], [10, 16], [9, 15]];
+    TSTEPS.forEach(function (s, i) { box(s[0] * 2, 0.5, s[1] * 2, 0, L + i * 0.5, 0, 0, i === 2 ? 0xeee6d6 : 0xe2d6c0); });
+    var TOP = L + 1.5;
+    var columns = [];   // [x,y,z,radius,height]
+    for (var i = 0; i < 6; i++) { var cx = -8 + i * 3.2; columns.push([cx, TOP, -14, 0.6, 7.5], [cx, TOP, 14, 0.6, 7.5]); }
+    for (i = 1; i < 7; i++) { var cz = -14 + i * 4; columns.push([-8, TOP, cz, 0.6, 7.5], [8, TOP, cz, 0.6, 7.5]); }
+    columns.forEach(function (c) { colCirc(c[0], c[2], c[3]); });
+    box(17.8, 1.3, 30.2, 0, TOP + 7.5, 0, 0, 0xeadfca);
+    box(17.0, 0.3, 29.4, 0, TOP + 7.4, 0, 0, 0xc4703c);
+    var tri = new T.Shape(); tri.moveTo(-9.3, 0); tri.lineTo(9.3, 0); tri.lineTo(0, 3.3); tri.lineTo(-9.3, 0);
+    var roof = new T.ExtrudeGeometry(tri, { depth: 30.8, bevelEnabled: false });
+    roof.translate(0, TOP + 8.8, -15.4); add(roof, 0xdba548); roof.dispose();
+    // inner cella back wall + statue of Poseidon
+    box(14, 6, 0.8, 0, TOP, -12, 0, 0xd9c9ae);
+    colBox(0, -12, 0, 7, 0.4);
+    box(3.4, 1.6, 3.4, 0, TOP, -6, 0, 0xcdbb9c);
+    cyl(0.8, 1.05, 3.6, 8, 0, TOP + 1.6, -6, 0xe2b24f);
+    cyl(1.05, 0.8, 1.0, 8, 0, TOP + 5.2, -6, 0xe2b24f);
+    var head = new T.SphereGeometry(0.62, 10, 8); add(head, 0xe2b24f, mat(0, TOP + 6.85, -6)); head.dispose();
+    cyl(0.12, 0.12, 8.2, 6, 1.5, TOP + 1.6, -6, 0xf0c665);
+    box(1.9, 0.18, 0.18, 1.5, TOP + 9.4, -6, 0, 0xf0c665);
+    [-0.85, 0, 0.85].forEach(function (o) { box(0.16, o === 0 ? 1.5 : 1.1, 0.16, 1.5 + o, TOP + 9.5, -6, 0, 0xf0c665); });
+    colCirc(0, -6, 2.4);
+    // twin springs (one warm, one cool)
+    [[-20, 4, 0x7fc7c9], [-20, -7, 0x9ad6b4]].forEach(function (f) {
+      cyl(2.7, 2.9, 0.8, 14, f[0], L, f[1], 0xd5c6aa);
+      cyl(2.35, 2.35, 0.06, 14, f[0], L + 0.74, f[1], f[2]);
+      cyl(0.35, 0.45, 2.2, 8, f[0], L, f[1], 0xd5c6aa);
+      cyl(1.0, 0.3, 0.45, 10, f[0], L + 2.2, f[1], 0xd5c6aa);
+      colCirc(f[0], f[1], 2.9);
+    });
+
+    /* ---------- lighthouse pier ---------- */
+    box(5.2, 1.0, 40, 0, L - 1.0, 158, 0, 0xb59a78);
+    box(10.4, 1.0, 10.4, 0, L - 1.0, 180, 0, 0xb59a78);
+    cyl(5.6, 5.6, 4.0, 4, 0, -3.2, 180, 0x7d6a58);
+    for (var zz = 140; zz < 175; zz += 3.2) { box(0.4, 0.9, 2.6, 2.4, L, zz, 0, 0x8d6a3e); box(0.4, 0.9, 2.6, -2.4, L, zz, 0, 0x8d6a3e); }
+    cyl(3.4, 3.6, 1.2, 12, 0, L, 182, 0xd5c6aa);
+    cyl(1.4, 2.1, 13, 10, 0, L + 1.2, 182, 0xefe4d1);
+    cyl(2.2, 2.2, 0.4, 12, 0, L + 14.2, 182, 0xb38a48);
+    var lroof = new T.ConeGeometry(1.6, 2.2, 10).translate(0, 1.1, 0); add(lroof, 0xdba548, mat(0, L + 16.6, 182)); lroof.dispose();
+    colCirc(0, 182, 3.6);
+    var lamp = new T.Mesh(new T.CylinderGeometry(1.0, 1.0, 2.0, 10), new T.MeshBasicMaterial({ color: 0xffdc8a, fog: false }));
+    lamp.position.set(0, L + 15.6, 182); scene.add(lamp);
+
+    /* ---------- far islands & mountains ---------- */
+    [[-430, -360, 120, 60], [-150, -560, 160, 85], [260, -520, 140, 70], [520, -180, 110, 45], [480, 300, 90, 34], [-560, 140, 100, 40]].forEach(function (m) {
+      var g = new T.ConeGeometry(m[2], m[3], 7); g.translate(0, m[3] / 2 - 4, 0);
+      add(g, 0x6c5a6a, mat(m[0], 0, m[1], rnd() * 3)); g.dispose();
+    });
+
+    /* ---------- instanced dressing ---------- */
+    var lam = function (vc) { return new T.MeshLambertMaterial({ color: 0xffffff, vertexColors: !!vc }); };
+    function inst(geo, max, vc) {
+      var m = new T.InstancedMesh(geo, lam(vc), max);
+      m.instanceColor = new T.InstancedBufferAttribute(new Float32Array(max * 3), 3);
+      m.count = 0; m.frustumCulled = false; scene.add(m); return m;
+    }
+    var houses = inst(new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), 2400);
+    var pyr = new T.ConeGeometry(1, 1, 4); pyr.rotateY(Math.PI / 4); pyr.translate(0, 0.5, 0);
+    var roofs = inst(pyr, 2000);
+    var colsM = inst(new T.CylinderGeometry(1, 1, 1, 8).translate(0, 0.5, 0), 400);
+    var cypress = inst(new T.ConeGeometry(1, 1, 6).translate(0, 0.5, 0), 1200);
+    var olives = inst(new T.IcosahedronGeometry(1, 0), 500);
+    var trunks = inst(new T.CylinderGeometry(1, 1, 1, 5).translate(0, 0.5, 0), 500);
+    var dummy = new T.Object3D(), col = new T.Color();
+    function put(m, x, y, z, ry, sx, sy, sz, color) {
+      dummy.position.set(x, y, z); dummy.rotation.set(0, ry, 0); dummy.scale.set(sx, sy, sz); dummy.updateMatrix();
+      m.setMatrixAt(m.count, dummy.matrix); m.setColorAt(m.count, col.set(color)); m.count++;
+    }
+    columns.forEach(function (c) { put(colsM, c[0], c[1], c[2], 0, c[3], c[4], c[3], 0xf3ece0); });
+
+    var WALLS = [[0xefe7da, 0xe6dcc8, 0xd9c7a8, 0xf4efe6, 0xcbb9a0], [0xe8dcc6, 0xd9b991, 0xc98e6b, 0xefe6d6, 0xb9a58a, 0xdcc49e], [0xd9c3a0, 0xc8a47e, 0xb88a66, 0xe0d2bb, 0xa98d70]];
+    var ROOFC = [0xa5532f, 0x8f4630, 0xb5643a, 0x9b5a3c];
+    var reserved = [];
+    function isReserved(x, z, r) { for (var i = 0; i < reserved.length; i++) { var q = reserved[i]; if (Math.hypot(x - q[0], z - q[1]) < q[2] + r) return true; } return false; }
+    function polar(r, th) { return [Math.sin(th) * r, Math.cos(th) * r]; }
+
+    function cypressAt(x, z, s) { var h = rr(4.2, 7.2) * s; put(cypress, x, L, z, 0, 0.85 * s, h, 0.85 * s, pick([0x2f4a2c, 0x35532f, 0x2a4429, 0x3b5a34])); colCirc(x, z, 0.5); }
+    function oliveAt(x, z) {
+      var s = rr(1.3, 2.0);
+      put(trunks, x, L, z, 0, 0.18, s * 1.1, 0.18, 0x5a4330);
+      put(olives, x, L + s * 1.3, z, rnd() * 3, s, s * 0.8, s, pick([0x6f7f4a, 0x7c8a55, 0x66764a]));
+      colCirc(x, z, 0.4);
+    }
+
+    // mini temples on the palace ring
+    for (var k = 0; k < 4; k++) {
+      var th = Math.PI / 4 + k * Math.PI / 2, pr = 60, pp = polar(pr, th);
+      reserved.push([pp[0], pp[1], 7.5]);
+      box(11.8, 0.5, 7.8, pp[0], L, pp[1], th, 0xe6dcca);
+      var cel = polar(pr + 1.2, th);
+      put(houses, cel[0], L + 0.5, cel[1], th, 7.2, 4.6, 3.6, 0xf0e8da);
+      for (var j = 0; j < 6; j++) {
+        var off = -5 + j * 2, cx2 = pp[0] + Math.cos(th) * off - Math.sin(th) * 2.9, cz2 = pp[1] - Math.sin(th) * off - Math.cos(th) * 2.9;
+        put(colsM, cx2, L + 0.5, cz2, 0, 0.32, 4.6, 0.32, 0xf3ece0);
+      }
+      box(11.2, 0.6, 7.2, pp[0], L + 5.1, pp[1], th, 0xeadfca);
+      put(roofs, pp[0], L + 5.7, pp[1], th, 11.2 / 2 / 0.707, 1.6, 7.2 / 2 / 0.707, 0xdba548);
+      colBox(pp[0], pp[1], th, 5.9, 3.9);
+    }
+    // market on the middle ring
+    var MK = Math.PI / 4;
+    reserved.push(polar(90, MK).concat([15]));
+    var awn = [0xc0392b, 0x2e6f8e, 0xe2a33a, 0x7a3b6b, 0x3f8a5a, 0xd2643a];
+    for (var s2 = 0; s2 < 8; s2++) {
+      var ths = MK + (s2 - 3.5) * 0.036;
+      [85.2, 94.8].forEach(function (rad, side) {
+        var q = polar(rad, ths), face = ths + (side ? Math.PI : 0);
+        put(houses, q[0], L, q[1], face, 2.4, 1.1, 1.6, 0x8a6a4a);
+        put(roofs, q[0], L + 2.1, q[1], face, 2.6 / 2 / 0.707, 0.55, 2.4 / 2 / 0.707, pick(awn));
+        put(colsM, q[0] + Math.cos(face) * 1.1, L, q[1] - Math.sin(face) * 1.1, 0, 0.08, 2.1, 0.08, 0x5a4330);
+        put(colsM, q[0] - Math.cos(face) * 1.1, L, q[1] + Math.sin(face) * 1.1, 0, 0.08, 2.1, 0.08, 0x5a4330);
+        colBox(q[0], q[1], face, 1.3, 1.0);
+      });
+    }
+    reserved.push([-20, -1.5, 9]);
+
+    // houses on the three outer rings
+    function row(rowR, inward, band, bi) {
+      var th = rnd() * 0.05;
+      while (th < Math.PI * 2) {
+        var w = rr(3, 6), d = rr(3, 4.2), gap = rr(0.6, 2.2);
+        var c = rowR + (inward ? -d / 2 : d / 2);
+        var mid = th + (w / 2) / c;
+        var pq = polar(c, mid);
+        th += (w + gap) / c;
+        if (th > Math.PI * 2 - 0.02) break;
+        if (nearBridge(mid, c, BW + 2.8 + w / 2)) continue;
+        if (isReserved(pq[0], pq[1], Math.max(w, d) / 2)) continue;
+        if (rnd() < 0.1) { cypressAt(pq[0], pq[1], rr(0.8, 1.1)); if (rnd() < 0.5) oliveAt(pq[0] + rr(-1.5, 1.5), pq[1] + rr(-1.5, 1.5)); continue; }
+        var hRange = bi === 1 ? [4, 7.2] : bi === 2 ? [3, 5.6] : [2.6, 4.4];
+        var h = rr(hRange[0], hRange[1]);
+        put(houses, pq[0], L, pq[1], mid, w, h, d, pick(WALLS[bi - 1]));
+        colBox(pq[0], pq[1], mid, w / 2, d / 2);
+        var topY = L + h, rw = w, rd = d;
+        if (rnd() < 0.32) {
+          rw = w * rr(0.5, 0.7); rd = d * rr(0.55, 0.75); var h2 = h * rr(0.35, 0.6);
+          put(houses, pq[0], topY, pq[1], mid, rw, h2, rd, pick(WALLS[bi - 1])); topY += h2;
+        }
+        if (rnd() < 0.68) {
+          var gold = bi === 1 && rnd() < 0.18;
+          put(roofs, pq[0], topY, pq[1], mid, rw / 2 / 0.707 * 1.04, Math.min(rw, rd) * rr(0.32, 0.5), rd / 2 / 0.707 * 1.04, gold ? 0xdba548 : pick(ROOFC));
+        }
+      }
+    }
+    for (var b = 1; b < 4; b++) {
+      var r0 = LAND[b][0], r1 = LAND[b][1], rd = ROADS[b];
+      row(r0 + 1.0, false, b, b);
+      row(rd - 3.2, true, b, b);
+      row(rd + 3.2, false, b, b);
+      row(r1 - 1.0, true, b, b);
+    }
+    // avenue cypresses
+    BRIDGE.forEach(function (a) {
+      for (var bb = 1; bb < 4; bb++) {
+        for (var r = LAND[bb][0] + 3; r < LAND[bb][1] - 2.5; r += 6) {
+          if (Math.abs(r - ROADS[bb]) < 4.5) continue;
+          [-1, 1].forEach(function (sd) {
+            var x = Math.sin(a) * r + Math.cos(a) * 4.6 * sd, z = Math.cos(a) * r - Math.sin(a) * 4.6 * sd;
+            if (!isReserved(x, z, 1)) cypressAt(x, z, rr(0.85, 1.05));
+          });
+        }
+      }
+    });
+    // sacred grove on the central island
+    for (var g2 = 0; g2 < 36; g2++) {
+      var thg = g2 / 36 * Math.PI * 2;
+      if (nearBridge(thg, 26.5, 5)) continue;
+      var pg = polar(26.5, thg);
+      if (isReserved(pg[0], pg[1], 1)) continue;
+      cypressAt(pg[0], pg[1], 1.05);
+    }
+    for (var o2 = 0; o2 < 26; o2++) {
+      var tho = rnd() * Math.PI * 2, ro = rr(19, 24), po = polar(ro, tho);
+      if (Math.abs(po[0]) < 12.5 && Math.abs(po[1]) < 18.5) continue;
+      if (nearBridge(tho, ro, 5) || isReserved(po[0], po[1], 1.5)) continue;
+      oliveAt(po[0], po[1]);
+    }
+    [houses, roofs, colsM, cypress, olives, trunks].forEach(function (m) {
+      m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    });
+
+    /* ---------- boats ---------- */
+    var bp = [], bn = [], bc = [];
+    (function () {
+      var save = [SP, SN, SC]; SP = bp; SN = bn; SC = bc;
+      box(1.8, 0.9, 5.2, 0, -0.35, 0, 0, 0x6b4a33);
+      var bow = new T.ConeGeometry(0.9, 1.6, 4); bow.rotateY(Math.PI / 4); bow.rotateX(Math.PI / 2); bow.scale(1, 0.62, 1); bow.translate(0, 0.1, 3.4);
+      add(bow, 0x6b4a33); bow.dispose();
+      box(1.5, 0.1, 4.6, 0, 0.55, 0, 0, 0x8d6a4a);
+      cyl(0.08, 0.1, 5.4, 5, 0, 0.6, 0.3, 0x4a3424);
+      box(3.2, 3.0, 0.08, 0, 2.6, 0.3, 0, 0xefe2c4);
+      box(3.2, 0.5, 0.1, 0, 4.0, 0.3, 0, 0xb5463a);
+      SP = save[0]; SN = save[1]; SC = save[2];
+    })();
+    var boatGeo = new T.BufferGeometry();
+    boatGeo.setAttribute('position', new T.Float32BufferAttribute(bp, 3));
+    boatGeo.setAttribute('normal', new T.Float32BufferAttribute(bn, 3));
+    boatGeo.setAttribute('color', new T.Float32BufferAttribute(bc, 3));
+    var BOATS = [];
+    [0.5, 1.2, 2.3, 3.6, 4.2, 5.4].forEach(function (t) { BOATS.push([Math.sin(t) * 110, Math.cos(t) * 110, t + Math.PI / 2]); });
+    [0.8, 2.6, 3.9, 5.9].forEach(function (t) { BOATS.push([Math.sin(t) * 71, Math.cos(t) * 71, t - Math.PI / 2]); });
+    BOATS.push([12, 150, 0.1], [-11, 156, -0.2], [-17, 168, 0.4], [16, 171, -0.3], [9, 196, 0.2], [-30, 190, 1.1]);
+    var boats = new T.InstancedMesh(boatGeo, lam(true), BOATS.length);
+    boats.frustumCulled = false; scene.add(boats);
+
+    /* ---------- bake static mesh ---------- */
+    var sg = new T.BufferGeometry();
+    sg.setAttribute('position', new T.Float32BufferAttribute(SP, 3));
+    sg.setAttribute('normal', new T.Float32BufferAttribute(SN, 3));
+    sg.setAttribute('color', new T.Float32BufferAttribute(SC, 3));
+    sg.computeBoundingSphere();
+    var staticMesh = new T.Mesh(sg, lam(true));
+    scene.add(staticMesh);
+    SP = SN = SC = null;
+
+    /* ---------- walkable surface ---------- */
+    function templeH(x, z) {
+      var h = 0, ax = Math.abs(x), az = Math.abs(z);
+      for (var i = 0; i < 3; i++) if (ax < TSTEPS[i][0] && az < TSTEPS[i][1]) h += 0.5;
+      return h;
+    }
+    function groundAt(x, z) {
+      if (Math.abs(x) < 2.1 && z > 138 && z < 176) return L;
+      if (Math.abs(x) < 4.6 && z > 174.6 && z < 185.4) return L;
+      var r = Math.hypot(x, z);
+      for (var i = 0; i < LAND.length; i++) {
+        var lo = i === 0 ? -1 : LAND[i][0] + EDGE_M;
+        if (r > lo && r < LAND[i][1] - EDGE_M) return i === 0 ? L + templeH(x, z) : L;
+      }
+      for (i = 0; i < WATER.length; i++) {
+        var w = WATER[i];
+        if (r < w[0] - EDGE_M - 0.2 || r > w[1] + EDGE_M + 0.2) continue;
+        for (var j = 0; j < BRIDGE.length; j++) {
+          var sa = Math.sin(BRIDGE[j]), ca = Math.cos(BRIDGE[j]);
+          var along = x * sa + z * ca, side = x * ca - z * sa;
+          if (along > 0 && Math.abs(side) < BW - 0.65) {
+            var t = Math.min(1, Math.max(0, (along - w[0]) / (w[1] - w[0])));
+            return L + ARCH * Math.sin(Math.PI * t);
+          }
+        }
+      }
+      return -1;
+    }
+    function blocked(x, z) { return groundAt(x, z) < 0 || hit(x, z); }
+
+    /* ---------- points of interest ---------- */
+    var POIS = [
+      { id: 'temple', x: 0, z: 22, r: 11, t: '波塞頓神殿', p: '柏拉圖記載，神殿外牆覆以白銀，尖頂鑲著黃金；殿內的海神像立於六匹飛馬拉的戰車上，頭頂幾乎觸及屋脊。' },
+      { id: 'springs', x: -20, z: -1.5, r: 9, t: '冷熱雙泉', p: '海神為島嶼賜下兩道泉水，一道溫熱、一道清涼，被引入浴場、樹林與果園。' },
+      { id: 'bridge', x: 0, z: 35, r: 7, t: '內環石橋', p: '跨越最內圈運河的拱橋，連結衛城與王宮之環。橋下可容一艘三列槳戰船通過。' },
+      { id: 'walls', x: 71, z: 0, r: 8, t: '金屬城牆', p: '陸環與水環交替環繞王城。外環城牆覆以黃銅，中環覆以錫，衛城則覆以閃著紅光的山銅。' },
+      { id: 'market', x: Math.sin(MK) * 90, z: Math.cos(MK) * 90, r: 11, t: '環形市集', p: '商船從各地帶來香料、銅錠與葡萄酒，攤販沿著環道兩側叫賣，彩色的布篷在夕陽裡發亮。' },
+      { id: 'harbor', x: 0, z: 172, r: 10, t: '落日外港', p: '港口擠滿船隻與商人，喧鬧聲日夜不歇。向西望去，太陽正沉入大洋——傳說中，這座島也將在一日一夜之間沉沒。' }
+    ];
+    var found = load('found', []);
+    if (!Array.isArray(found)) found = [];
+    var markers = new T.InstancedMesh(new T.OctahedronGeometry(0.75, 0), new T.MeshBasicMaterial({ color: 0xffffff }), POIS.length);
+    markers.frustumCulled = false; scene.add(markers);
+    var GOLD = new T.Color(0xffc861), TEAL = new T.Color(0x7fe0d2);
+    function paintMarkers() {
+      POIS.forEach(function (p, i) { markers.setColorAt(i, found.indexOf(p.id) >= 0 ? TEAL : GOLD); });
+      markers.instanceColor.needsUpdate = true;
+    }
+    POIS.forEach(function (p) { p.y = Math.max(groundAt(p.x, p.z), L) + 5.2; });
+    paintMarkers();
+
+    /* ---------- player & input ---------- */
+    var START = { x: 0, z: 131, yaw: 0, pitch: 0.04 };
+    var player = { x: START.x, z: START.z, y: L + 1.7, yaw: START.yaw, pitch: START.pitch, bob: 0 };
+    var keys = {};
+    var joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    var look = { id: -1, lx: 0, ly: 0 };
+    var started = false, paused = true;
+    var joyEl = $('joy'), knob = $('knob');
+    var lookGhost = $('lookGhost'), joyGhost = $('joyGhost');
+
+    var el = renderer.domElement;
+    el.setAttribute('tabindex', '0');
+    view.addEventListener('pointerdown', function (e) {
+      if (!started || paused) return;
+      if (e.pointerType !== 'mouse' && e.clientX < window.innerWidth * 0.45 && joy.id < 0) {
+        joy.id = e.pointerId; joy.ox = e.clientX; joy.oy = e.clientY; joy.x = joy.y = 0;
+        joyEl.style.transform = 'translate(' + e.clientX + 'px,' + e.clientY + 'px)';
+        knob.style.transform = '';
+        joyEl.classList.add('on'); joyGhost.classList.add('fade');
+      } else if (look.id < 0) {
+        look.id = e.pointerId; look.lx = e.clientX; look.ly = e.clientY;
+      } else return;
+      try { view.setPointerCapture(e.pointerId); } catch (er) {}
+      e.preventDefault();
+    });
+    view.addEventListener('pointermove', function (e) {
+      if (e.pointerId === joy.id) {
+        var dx = e.clientX - joy.ox, dy = e.clientY - joy.oy, m = Math.hypot(dx, dy), max = 56;
+        if (m > max) { dx = dx / m * max; dy = dy / m * max; }
+        joy.x = dx / max; joy.y = dy / max;
+        knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      } else if (e.pointerId === look.id) {
+        var s = e.pointerType === 'mouse' ? 0.0042 : 0.0058;
+        player.yaw -= (e.clientX - look.lx) * s;
+        player.pitch = Math.max(-1.15, Math.min(1.15, player.pitch - (e.clientY - look.ly) * s));
+        look.lx = e.clientX; look.ly = e.clientY;
+        if (e.pointerType !== 'mouse') lookGhost.classList.add('fade');
+      }
+    });
+    function endPtr(e) {
+      if (e.pointerId === joy.id) { joy.id = -1; joy.x = joy.y = 0; joyEl.classList.remove('on'); }
+      if (e.pointerId === look.id) look.id = -1;
+    }
+    view.addEventListener('pointerup', endPtr);
+    view.addEventListener('pointercancel', endPtr);
+    view.addEventListener('lostpointercapture', endPtr);
+    view.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    var KEYMAP = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', KeyD: 'r', ArrowLeft: 'tl', ArrowRight: 'tr', KeyQ: 'tl', KeyE: 'tr', ShiftLeft: 'run', ShiftRight: 'run' };
+    window.addEventListener('keydown', function (e) {
+      var k = KEYMAP[e.code];
+      if (!k || !started || paused) return;
+      keys[k] = true;
+      if (e.code.indexOf('Arrow') === 0) e.preventDefault();
+    });
+    window.addEventListener('keyup', function (e) { var k = KEYMAP[e.code]; if (k) keys[k] = false; });
+    window.addEventListener('blur', function () { keys = {}; });
+
+    var fwd = 0, str = 0, slideSide = 1;
+    // 撞牆時沿牆滑動：先試原方向，再試把移動向牆的切線方向轉 20°–80°（長度乘 cos），斜著碰到房子或樹也不會原地卡死
+    var SLIDE = [0.35, 0.7, 1.05, 1.4];
+    function moveSlide(dx, dz) {
+      var px = player.x, pz = player.z;
+      if (!blocked(px + dx, pz + dz)) { player.x = px + dx; player.z = pz + dz; return; }
+      for (var i = 0; i < SLIDE.length; i++) {
+        var c = Math.cos(SLIDE[i]);
+        for (var k = 0; k < 2; k++) {
+          var sd = k ? -slideSide : slideSide, sn = Math.sin(SLIDE[i]) * sd;
+          var mx = (dx * c - dz * sn) * c, mz = (dx * sn + dz * c) * c;
+          if (!blocked(px + mx, pz + mz)) { player.x = px + mx; player.z = pz + mz; slideSide = sd; return; }
+        }
+      }
+    }
+    function updatePlayer(dt) {
+      var f = (keys.f ? 1 : 0) - (keys.b ? 1 : 0) - joy.y;
+      var st = (keys.r ? 1 : 0) - (keys.l ? 1 : 0) + joy.x;
+      var turn = (keys.tr ? 1 : 0) - (keys.tl ? 1 : 0);
+      player.yaw -= turn * 1.9 * dt;
+      var mag = Math.hypot(f, st);
+      if (mag > 1) { f /= mag; st /= mag; mag = 1; }
+      var run = keys.run || Math.hypot(joy.x, joy.y) > 0.92;
+      var spd = run ? 11 : 5.6;
+      var k = Math.min(1, dt * 9);
+      fwd += (f * spd - fwd) * k; str += (st * spd - str) * k;
+      var sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+      var vx = -sy * fwd + cy * str, vz = -cy * fwd - sy * str;
+      var dx = vx * dt, dz = vz * dt;
+      if (dx || dz) moveSlide(dx, dz);
+      var speed = Math.hypot(vx, vz);
+      if (!reduceMotion && speed > 0.5) player.bob += dt * speed * 1.5;
+      var g = groundAt(player.x, player.z); if (g < 0) g = L;
+      var bobY = reduceMotion ? 0 : Math.sin(player.bob) * 0.05 * Math.min(1, speed / 5);
+      player.y += (g + 1.7 + bobY - player.y) * Math.min(1, dt * 10);
+      camera.position.set(player.x, player.y, player.z);
+      camera.rotation.set(player.pitch, player.yaw, 0);
+    }
+    var orbitT = 0.6;
+    function updateOrbit(dt) {
+      orbitT += dt * (reduceMotion ? 0.012 : 0.035);
+      camera.position.set(Math.sin(orbitT) * 168, 46, Math.cos(orbitT) * 168);
+      camera.lookAt(0, 6, 0);
+    }
+
+    /* ---------- minimap ---------- */
+    var mapC = $('map'), mctx = mapC.getContext('2d');
+    var MS = mapC.width, MC = MS / 2, MSC = (MS / 2 - 3) / 192;
+    var mapBase = document.createElement('canvas'); mapBase.width = mapBase.height = MS;
+    (function () {
+      var c = mapBase.getContext('2d');
+      c.fillStyle = '#123c48'; c.beginPath(); c.arc(MC, MC, MS / 2, 0, Math.PI * 2); c.fill();
+      var fills = ['#e6d6b8', '#cfac7d', '#c7a275', '#a4a86a'];
+      LAND.forEach(function (b, i) {
+        c.fillStyle = fills[i]; c.beginPath(); c.arc(MC, MC, b[1] * MSC, 0, Math.PI * 2);
+        if (b[0]) c.arc(MC, MC, b[0] * MSC, 0, Math.PI * 2, true);
+        c.fill();
+      });
+      c.strokeStyle = '#8b6748'; c.lineWidth = 2.5;
+      BRIDGE.forEach(function (a) { c.beginPath(); c.moveTo(MC + Math.sin(a) * 14 * MSC, MC + Math.cos(a) * 14 * MSC); c.lineTo(MC + Math.sin(a) * 140 * MSC, MC + Math.cos(a) * 140 * MSC); c.stroke(); });
+      c.fillStyle = '#c9ad84'; c.fillRect(MC - 2, MC + 138 * MSC, 4, 46 * MSC);
+      c.fillStyle = '#f0cf86'; c.fillRect(MC - 11 * MSC, MC - 17 * MSC, 22 * MSC, 34 * MSC);
+    })();
+    function drawMap() {
+      mctx.clearRect(0, 0, MS, MS);
+      mctx.drawImage(mapBase, 0, 0);
+      POIS.forEach(function (p) {
+        mctx.fillStyle = found.indexOf(p.id) >= 0 ? '#7fe0d2' : '#ffc861';
+        mctx.strokeStyle = '#2a1a10'; mctx.lineWidth = 2;
+        mctx.beginPath(); mctx.arc(MC + p.x * MSC, MC + p.z * MSC, 6, 0, Math.PI * 2); mctx.fill(); mctx.stroke();
+      });
+      var px = MC + player.x * MSC, pz = MC + player.z * MSC, a = Math.atan2(-Math.cos(player.yaw), -Math.sin(player.yaw));
+      mctx.save(); mctx.translate(px, pz); mctx.rotate(a);
+      mctx.fillStyle = '#ff6b4a'; mctx.strokeStyle = '#fff'; mctx.lineWidth = 2.5;
+      mctx.beginPath(); mctx.moveTo(13, 0); mctx.lineTo(-8, 8); mctx.lineTo(-4, 0); mctx.lineTo(-8, -8); mctx.closePath(); mctx.fill(); mctx.stroke();
+      mctx.restore();
+    }
+
+    /* ---------- direction hint: arrow + name of the nearest landmark not yet visited ---------- */
+    var guideEl = $('guide'), gArrow = $('gArrow'), gName = $('gName'), gLast = '';
+    function drawGuide() {
+      var best = null, bd = 1e9;
+      for (var i = 0; i < POIS.length; i++) {
+        var p = POIS[i]; if (found.indexOf(p.id) >= 0) continue;
+        var d = Math.hypot(p.x - player.x, p.z - player.z); if (d < bd) { bd = d; best = p; }
+      }
+      if (!best) { if (!guideEl.hidden) guideEl.hidden = true; return; }
+      var tx = best.x - player.x, tz = best.z - player.z, sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
+      var rel = Math.atan2(tx * cy - tz * sy, -tx * sy - tz * cy); // 0 = straight ahead, + = to the right
+      gArrow.style.transform = 'rotate(' + rel.toFixed(2) + 'rad)';
+      var txt = best.t + ' · ' + Math.max(0, Math.round(bd - best.r)) + ' 步';
+      if (txt !== gLast) { gName.textContent = txt; gLast = txt; }
+      if (guideEl.hidden) guideEl.hidden = false;
+    }
+
+    /* ---------- captions ---------- */
+    var cap = $('caption'), capT = $('capT'), capP = $('capP'), capS = $('capS'), foundEl = $('found');
+    var active = null;
+    function updateFound() { foundEl.textContent = '已探索 ' + found.length + ' / ' + POIS.length; }
+    updateFound();
+    function checkPOI() {
+      var best = null, bd = 1e9;
+      for (var i = 0; i < POIS.length; i++) {
+        var p = POIS[i], d = Math.hypot(player.x - p.x, player.z - p.z);
+        if (d < bd) { bd = d; best = p; }
+      }
+      if (active && Math.hypot(player.x - active.x, player.z - active.z) > active.r + 3) { active = null; cap.classList.remove('on'); }
+      if (!active && best && bd < best.r) {
+        active = best;
+        capT.textContent = best.t; capP.textContent = best.p;
+        var isNew = found.indexOf(best.id) < 0;
+        if (isNew) {
+          found.push(best.id); store('found', found); paintMarkers(); updateFound(); chime();
+        }
+        capS.textContent = isNew ? (found.length === POIS.length ? '你已走遍波塞迪亞的六處勝景' : '新發現 · 已探索 ' + found.length + ' / ' + POIS.length) : '';
+        cap.classList.add('on');
+      }
+    }
+
+    /* ---------- audio ---------- */
+    var actx = null, master = null, muted = !!load('muted', false);
+    var soundBtn = $('soundBtn');
+    function paintSound() {
+      soundBtn.setAttribute('aria-pressed', String(!muted));
+      $('waves').toggleAttribute('hidden', muted); $('mutex').toggleAttribute('hidden', !muted);
+    }
+    paintSound();
+    function initAudio() {
+      if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      try {
+        actx = new AC();
+        master = actx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(actx.destination);
+        var len = actx.sampleRate * 4, buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0), last = 0;
+        for (var i = 0; i < len; i++) { var wn = Math.random() * 2 - 1; last = (last + 0.02 * wn) / 1.02; d[i] = last * 3.2; }
+        var fadeN = 2000; for (i = 0; i < fadeN; i++) { var t = i / fadeN; d[len - fadeN + i] = d[len - fadeN + i] * (1 - t) + d[i] * t; }
+        var src = actx.createBufferSource(); src.buffer = buf; src.loop = true;
+        var lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+        var g = actx.createGain(); g.gain.value = 0.28;
+        var lfo = actx.createOscillator(); lfo.frequency.value = 0.085;
+        var lg = actx.createGain(); lg.gain.value = 0.17; lfo.connect(lg); lg.connect(g.gain);
+        src.connect(lp); lp.connect(g); g.connect(master); src.start(); lfo.start();
+      } catch (e) { actx = null; }
+    }
+    function chime() {
+      if (!actx || muted) return;
+      var t0 = actx.currentTime + 0.02;
+      [587.33, 739.99, 880, 1174.66].forEach(function (f, i) {
+        var o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t0 + i * 0.11);
+        g.gain.exponentialRampToValueAtTime(0.09, t0 + i * 0.11 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.11 + 1.6);
+        o.connect(g); g.connect(master); o.start(t0 + i * 0.11); o.stop(t0 + i * 0.11 + 1.7);
+      });
+    }
+    soundBtn.addEventListener('click', function () {
+      muted = !muted; store('muted', muted); paintSound();
+      initAudio();
+      if (master) master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.05);
+    });
+
+    /* ---------- intro / help ---------- */
+    var intro = $('intro'), hud = $('hud');
+    var coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    startBtn.addEventListener('click', function () {
+      initAudio();
+      intro.hidden = true; hud.hidden = false;
+      if (!started) {
+        started = true;
+        if (coarse) { joyGhost.hidden = false; lookGhost.hidden = false; }
+      }
+      paused = false;
+      el.focus({ preventScroll: true });
+    });
+    $('helpBtn').addEventListener('click', function () {
+      paused = true; keys = {}; joy.id = -1; joy.x = joy.y = 0; joyEl.classList.remove('on');
+      startBtn.textContent = '繼續漫步';
+      intro.hidden = false; startBtn.focus();
+    });
+    window.addEventListener('keydown', function (e) {
+      if (e.code === 'Escape' && started && !paused) $('helpBtn').click();
+    });
+
+    /* ---------- resize ---------- */
+    function resize() {
+      var w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.fov = camera.aspect < 1 ? 74 : 62;
+      camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', function () { setTimeout(resize, 200); });
+    resize();
+
+    /* ---------- loop ---------- */
+    var raf = 0, lastT = 0, time = 0, frameN = 0, slow = 0, degraded = false;
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      var rawDt = lastT ? (now - lastT) / 1000 : 0.016; lastT = now;
+      var dt = Math.min(0.05, rawDt);
+      time += dt; frameN++;
+      if (started && !paused) updatePlayer(dt);
+      else if (!started) updateOrbit(dt);
+      waterMat.uniforms.uTime.value = time;
+      skyMat.uniforms.uTime.value = time;
+      sky.position.copy(camera.position);
+      for (var i = 0; i < BOATS.length; i++) {
+        var bt = BOATS[i];
+        dummy.position.set(bt[0], Math.sin(time * 1.1 + i) * 0.12, bt[1]);
+        dummy.rotation.set(Math.sin(time * 0.9 + i * 1.7) * 0.03, bt[2], Math.sin(time * 1.3 + i) * 0.05);
+        dummy.scale.set(1, 1, 1); dummy.updateMatrix(); boats.setMatrixAt(i, dummy.matrix);
+      }
+      boats.instanceMatrix.needsUpdate = true;
+      for (i = 0; i < POIS.length; i++) {
+        var p = POIS[i];
+        dummy.position.set(p.x, p.y + (reduceMotion ? 0 : Math.sin(time * 1.6 + i) * 0.35), p.z);
+        dummy.rotation.set(0, time * 0.9 + i, 0); dummy.updateMatrix(); markers.setMatrixAt(i, dummy.matrix);
+      }
+      markers.instanceMatrix.needsUpdate = true;
+      renderer.render(scene, camera);
+      if (started && frameN % 4 === 0) { drawMap(); drawGuide(); }
+      if (started && !paused && frameN % 6 === 0) checkPOI();
+      // adaptive resolution: drop to 1x if the device struggles
+      if (!degraded && started && rawDt < 0.25) {
+        slow = rawDt > 0.026 ? slow + rawDt : Math.max(0, slow - rawDt * 0.5);
+        if (slow > 2.5 && renderer.getPixelRatio() > 1) { degraded = true; renderer.setPixelRatio(1); resize(); }
+      }
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) {
+        cancelAnimationFrame(raf); raf = 0; keys = {};
+        if (actx && actx.state === 'running') actx.suspend();
+      } else {
+        lastT = 0;
+        if (!raf) raf = requestAnimationFrame(frame);
+        if (actx && started && actx.state === 'suspended') actx.resume();
+      }
+    });
+    camera.position.set(0, 46, 168);
+    raf = requestAnimationFrame(frame);
+
+    // test hook (read-only state)
+    window.__poseidia = { player: player, groundAt: groundAt, blocked: blocked, found: function () { return found.slice(); }, info: function () { return renderer.info.render; } };
+    return true;
+  }
+
+  loadThree();
+})();
+</script>

@@ -1,0 +1,618 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>倒數日看板</title>
+<style>
+:root {
+  --bg: #f1f2f4; --surface: #ffffff; --surface-2: #f6f7f9; --ink: #16181d; --muted: #5e636e; --line: #dfe1e6; --line-2: #c7cad2;
+  --accent: #16181d; --on-accent: #ffffff; --danger: #c62f2f; --focus: #2f6bff; --scrim: rgba(10, 12, 16, .45);
+  --num: "DIN Condensed", "Bahnschrift", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1013; --surface: #1a1c21; --surface-2: #22252b; --ink: #eceef2; --muted: #a0a5b0; --line: #2c2f37; --line-2: #3d414b;
+  --accent: #eceef2; --on-accent: #111216; --danger: #ff7b72; --focus: #84a9ff; --scrim: rgba(0, 0, 0, .6); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f1013; --surface: #1a1c21; --surface-2: #22252b; --ink: #eceef2; --muted: #a0a5b0; --line: #2c2f37; --line-2: #3d414b;
+  --accent: #eceef2; --on-accent: #111216; --danger: #ff7b72; --focus: #84a9ff; --scrim: rgba(0, 0, 0, .6); color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+body.lock { overflow: hidden; }
+.wrap { max-width: 1160px; margin: 0 auto; padding: 16px 16px calc(32px + env(safe-area-inset-bottom)); }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: .02em; }
+.today-line { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.spacer { flex: 1; }
+.btn { min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface); cursor: pointer; font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+.icon-btn { min-width: 44px; min-height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface); cursor: pointer; display: inline-grid; place-items: center; }
+.icon-btn svg { width: 20px; height: 20px; }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.seg button { min-height: 42px; padding: 0 12px; border: 0; background: transparent; cursor: pointer; font-weight: 700; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.toolbar { display: flex; gap: 8px; align-items: center; margin: 12px 0 14px; flex-wrap: wrap; }
+.exbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); background: var(--surface); border: 1px dashed var(--line-2); border-radius: 12px; padding: 4px 4px 4px 12px; margin-bottom: 12px; }
+.exbar b { color: var(--ink); }
+/* cards */
+.tile { position: relative; border-radius: 18px; padding: 14px; min-height: 150px; display: flex; flex-direction: column; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: pan-y; overflow: hidden; border: 0; text-align: left; width: 100%; color: var(--fg); background: var(--tbg); -webkit-touch-callout: none; }
+.tile.light { --fg: #121317; --fg2: rgba(18, 19, 23, .72); }
+.tile.dark { --fg: #ffffff; --fg2: rgba(255, 255, 255, .8); }
+.tile .em { font-size: 26px; line-height: 1; }
+.tile .ttl { font-weight: 800; font-size: 15px; line-height: 1.3; margin-top: 8px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.tile .lbl { font-size: 12px; font-weight: 700; color: var(--fg2); margin-top: auto; padding-top: 8px; }
+.tile .days { font-family: var(--num); font-weight: 800; font-size: 46px; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.tile .days small { font-family: system-ui, sans-serif; font-size: 13px; font-weight: 700; margin-left: 3px; letter-spacing: 0; }
+.tile .days.word { font-family: system-ui, sans-serif; font-size: 26px; font-weight: 900; }
+.tile .dt { font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.tile .rep { position: absolute; right: 12px; top: 12px; font-size: 11px; font-weight: 800; color: var(--fg2); border: 1.5px solid currentColor; border-radius: 99px; padding: 0 7px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; list-style: none; margin: 0; padding: 0; }
+@media (min-width: 700px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; } }
+.grid li { position: relative; min-width: 0; }
+.hero { min-height: 200px; padding: 20px; margin-bottom: 12px; }
+.hero .em { font-size: 34px; }
+.hero .ttl { font-size: 20px; -webkit-line-clamp: 1; }
+.hero .days { font-size: 72px; }
+.hero .days small { font-size: 18px; }
+.hero .days.word { font-size: 44px; }
+.hero .pin { position: absolute; right: 16px; top: 16px; font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--fg2); }
+.tile.dragging { z-index: 20; box-shadow: 0 16px 40px rgba(0, 0, 0, .35); transform-origin: center; }
+.tile.drop-target { outline: 3px dashed var(--ink); outline-offset: 3px; }
+.swipe-bg { position: absolute; inset: 0; border-radius: 18px; background: var(--danger); color: #fff; display: flex; align-items: center; justify-content: flex-end; padding-right: 16px; font-weight: 800; font-size: 14px; }
+.today-fx::after { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(circle, #ffd84a 2px, transparent 3px), radial-gradient(circle, #ff5f7e 2px, transparent 3px), radial-gradient(circle, #45c4ff 2px, transparent 3px), radial-gradient(circle, #7ee08a 2px, transparent 3px); background-size: 37px 41px, 53px 47px, 43px 59px, 61px 37px; animation: confetti 3s linear infinite; opacity: .9; }
+@keyframes confetti { from { background-position: 0 -60px, 10px -50px, 20px -70px, 30px -40px; } to { background-position: 0 140px, 30px 180px, -10px 160px, 40px 200px; } }
+@media (prefers-reduced-motion: reduce) { .today-fx::after { animation: none; opacity: .5; } * { transition: none !important; } }
+.section-h { display: flex; align-items: center; gap: 8px; margin: 22px 0 10px; }
+.section-h h2 { font-size: 14px; margin: 0; letter-spacing: .06em; color: var(--muted); }
+.past .tile { opacity: .85; }
+.empty { border: 1.5px dashed var(--line-2); border-radius: 18px; padding: 28px 16px; text-align: center; color: var(--muted); }
+.footer { margin-top: 26px; border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.footer .lab { font-size: 12px; color: var(--muted); font-weight: 700; width: 100%; }
+.hint { font-size: 12px; color: var(--muted); }
+/* sheet */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--surface); border-radius: 20px 20px 0 0; max-height: 92%; overflow: auto; overscroll-behavior: contain; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; box-shadow: 0 -10px 40px rgba(0, 0, 0, .2); }
+.sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line-2); margin: 4px auto 10px; }
+.sheet h2 { margin: 0 0 12px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.f { margin-bottom: 14px; }
+.f > label, .f > .lab { display: block; font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 5px; }
+.f input[type="text"], .f input[type="date"], .f input[type="time"], .f textarea { width: 100%; min-height: 48px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--surface-2); padding: 0 12px; font-size: 17px; }
+.f textarea { padding: 10px 12px; min-height: 72px; resize: vertical; }
+.f input:focus, .f textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 25%, transparent); }
+.f2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.timewrap { display: flex; gap: 6px; min-width: 0; }
+.timewrap input { flex: 1; min-width: 0; }
+.f2 > .f { min-width: 0; }
+.timewrap .icon-btn { flex: none; }
+.emojis { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+.emojis button { min-height: 44px; border: 2px solid transparent; border-radius: 10px; background: var(--surface-2); font-size: 22px; cursor: pointer; padding: 0; }
+.emojis button[aria-pressed="true"] { border-color: var(--ink); background: var(--surface); }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.swatches button { min-height: 44px; border-radius: 12px; border: 2px solid var(--line); cursor: pointer; position: relative; }
+.swatches button[aria-pressed="true"]::after { content: ""; position: absolute; inset: 3px; border-radius: 8px; border: 3px solid var(--sw-fg, #fff); }
+.chk { display: flex; gap: 10px; align-items: center; min-height: 44px; font-weight: 700; cursor: pointer; }
+.chk input { width: 22px; height: 22px; accent-color: var(--ink); }
+.err { color: var(--danger); font-size: 13px; font-weight: 700; margin: 4px 0 0; }
+.sheet-actions { display: flex; gap: 8px; position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom)); background: var(--surface); padding: 10px 0 0; margin-top: 4px; }
+.sheet-actions .primary { flex: 1; }
+.preview-tile { max-width: 180px; margin-bottom: 14px; pointer-events: none; }
+/* detail */
+.detail { position: fixed; inset: 0; z-index: 30; height: 100%; overflow: auto; background: var(--tbg); color: var(--fg); display: flex; flex-direction: column; padding: calc(12px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); }
+.detail.light { --fg: #121317; --fg2: rgba(18, 19, 23, .72); --chip: rgba(255, 255, 255, .55); }
+.detail.dark { --fg: #ffffff; --fg2: rgba(255, 255, 255, .82); --chip: rgba(0, 0, 0, .22); }
+.detail .bar { display: flex; gap: 8px; }
+.detail .bar button { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 12px; border: 0; background: var(--chip); color: var(--fg); font-weight: 800; cursor: pointer; }
+.detail .body { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 16px 0; gap: 6px; max-width: 720px; width: 100%; margin: 0 auto; }
+.detail .em { font-size: 54px; line-height: 1; }
+.detail .ttl { font-size: 24px; font-weight: 900; overflow-wrap: anywhere; }
+.detail .lbl { font-size: 14px; font-weight: 800; color: var(--fg2); margin-top: 8px; }
+.clock { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.clock div { background: var(--chip); border-radius: 14px; padding: 8px 4px 6px; min-width: 70px; }
+.clock b { display: block; font-size: 46px; line-height: 1; font-weight: 800; }
+.clock span { font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; color: var(--fg2); }
+.clock div.d { min-width: 96px; }
+.stats { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+.stats span { background: var(--chip); border-radius: 99px; padding: 6px 12px; font-size: 13px; font-weight: 700; }
+.detail .dt { font-size: 14px; color: var(--fg2); font-variant-numeric: tabular-nums; }
+.detail .note { font-size: 14px; color: var(--fg2); max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail .share { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+.detail .share button { min-height: 48px; padding: 0 18px; border-radius: 14px; border: 0; background: var(--fg); color: var(--tbg-solid); font-weight: 900; cursor: pointer; }
+.shot { max-width: min(280px, 70%); border-radius: 12px; margin-top: 10px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+.detail.celebrate::before { content: ""; position: fixed; inset: 0; pointer-events: none; background-image: radial-gradient(circle, #ffd84a 3px, transparent 4px), radial-gradient(circle, #ff5f7e 3px, transparent 4px), radial-gradient(circle, #45c4ff 3px, transparent 4px), radial-gradient(circle, #7ee08a 3px, transparent 4px); background-size: 57px 61px, 73px 67px, 63px 89px, 91px 57px; animation: confetti2 4s linear infinite; }
+@keyframes confetti2 { from { background-position: 0 -100px, 20px -80px, 40px -120px, 60px -60px; } to { background-position: 0 400px, 60px 500px, -20px 450px, 80px 560px; } }
+@media (prefers-reduced-motion: reduce) { .detail.celebrate::before { animation: none; opacity: .4; } }
+@media (max-height: 500px) { .detail .em { font-size: 34px; } .clock b { font-size: 34px; } .detail .body { justify-content: flex-start; } }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 6px 6px 16px; border-radius: 12px; font-size: 14px; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); min-height: 44px; }
+.toast button { min-height: 40px; border: 0; background: transparent; color: var(--bg); font-weight: 900; text-decoration: underline; cursor: pointer; padding: 0 10px; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 370px) { .tile .days { font-size: 40px; } .hero .days { font-size: 64px; } .clock div { min-width: 62px; } .clock b { font-size: 38px; } }
+@media (hover: hover) { .tile:hover { filter: brightness(1.04); } .btn:hover, .icon-btn:hover { border-color: var(--ink); } .detail .bar button:hover { filter: brightness(1.1); } }
+</style>
+
+<div class="wrap" id="app">
+  <header>
+    <div><h1>倒數日看板</h1><div class="today-line" id="today-line"></div></div>
+    <span class="spacer"></span>
+    <button class="icon-btn" type="button" id="theme" aria-label="切換深淺色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9A7 7 0 0 1 12 3z"/></svg></button>
+    <button class="btn primary" type="button" id="add">＋ 新增</button>
+  </header>
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="排序"><button type="button" id="sort-soon" data-sort="soon">最近優先</button><button type="button" id="sort-custom" data-sort="custom">自訂順序</button></div>
+    <span class="hint" id="sort-hint"></span>
+  </div>
+  <div class="exbar" id="exbar" hidden><span>目前是<b>範例</b>資料，點卡片可編輯</span><span class="spacer"></span><button class="btn" type="button" id="clear-ex">清除範例</button></div>
+  <div id="pinned"></div>
+  <ul class="grid" id="list"></ul>
+  <div id="past-wrap" hidden>
+    <div class="section-h"><h2 id="past-h">已過去</h2><span class="spacer"></span><button class="btn" type="button" id="past-toggle" aria-expanded="true">收合</button></div>
+    <ul class="grid past" id="past"></ul>
+  </div>
+  <div class="footer">
+    <span class="lab">設定與備份</span>
+    <div class="seg" role="group" aria-label="已過計法"><button type="button" id="count-diff" data-count="diff">已過 N 天</button><button type="button" id="count-nth" data-count="nth">第 N+1 天</button></div>
+    <button class="btn" type="button" id="export">匯出 JSON</button>
+    <label class="btn" for="import-file" id="import-label">匯入 JSON</label><input type="file" id="import-file" accept="application/json,.json" class="vh">
+    <p class="hint" style="width:100%;margin:4px 0 0">手機：左滑卡片可刪除；「自訂順序」時長按卡片可拖曳排序。資料只存在這台裝置的瀏覽器。</p>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h" hidden>
+  <div class="grab" aria-hidden="true"></div>
+  <h2 id="sheet-h">新增日子</h2>
+  <div id="preview" class="preview-tile"></div>
+  <div class="f"><label for="f-title">名稱（1～30 字）</label><input type="text" id="f-title" maxlength="30" autocomplete="off" placeholder="例如：去日本旅行"></div>
+  <div class="f2">
+    <div class="f"><label for="f-date">日期</label><input type="date" id="f-date" min="1900-01-01" max="2100-12-31"></div>
+    <div class="f"><label for="f-time">時間（選填）</label><div class="timewrap"><input type="time" id="f-time"><button class="icon-btn" type="button" id="f-time-clear" aria-label="清除時間">×</button></div></div>
+  </div>
+  <div class="f"><span class="lab">重複</span><div class="seg" role="group" aria-label="重複"><button type="button" id="rep-none" data-rep="none">不重複</button><button type="button" id="rep-yearly" data-rep="yearly">每年</button><button type="button" id="rep-monthly" data-rep="monthly">每月</button></div></div>
+  <div class="f"><span class="lab">圖示</span><div class="emojis" id="emojis" role="group" aria-label="圖示"></div></div>
+  <div class="f"><span class="lab">背景</span><div class="swatches" id="swatches" role="group" aria-label="背景色"></div></div>
+  <div class="f"><label class="chk" for="f-pinned"><input type="checkbox" id="f-pinned">置頂成大卡（同時只有一個）</label></div>
+  <div class="f"><label for="f-note">備註（選填）</label><textarea id="f-note" maxlength="200"></textarea></div>
+  <p class="err" id="f-err" role="alert" hidden></p>
+  <div class="sheet-actions">
+    <button class="btn danger" type="button" id="f-delete" hidden>刪除</button>
+    <button class="btn" type="button" id="f-cancel">取消</button>
+    <button class="btn primary" type="button" id="f-save">儲存</button>
+  </div>
+</section>
+
+<section class="detail" id="detail" role="dialog" aria-modal="true" aria-label="倒數詳情" hidden></section>
+<div class="toast" id="toast" role="status" hidden><span id="toast-t"></span><button type="button" id="toast-undo" hidden>復原</button></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const K = 'countdown-board:v1:';
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(K + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(K + k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+};
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- 日期純函式（本地日序號） ---------- */
+function toDayNumber(y, m, d) { y -= m <= 2 ? 1 : 0; const era = Math.floor(y / 400), yoe = y - era * 400, mp = (m + 9) % 12; const doy = Math.floor((153 * mp + 2) / 5) + d - 1; const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy; return era * 146097 + doe - 719468; }
+function fromDayNumber(z) { z += 719468; const era = Math.floor(z / 146097), doe = z - era * 146097; const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365); const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100)); const mp = Math.floor((5 * doy + 2) / 153), d = doy - Math.floor((153 * mp + 2) / 5) + 1, m = mp < 10 ? mp + 3 : mp - 9; return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d }; }
+const isLeap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+const dim = (y, m) => [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+const weekday = n => ((n + 4) % 7 + 7) % 7;
+const pad = n => String(n).padStart(2, '0');
+const iso = n => { const g = fromDayNumber(n); return g.y + '-' + pad(g.m) + '-' + pad(g.d); };
+function parseISO(s) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); if (!m) return null; const y = +m[1], mo = +m[2], d = +m[3]; if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > dim(y, mo)) return null; return toDayNumber(y, mo, d); }
+let TODAY = 0;
+const refreshToday = () => { const d = new Date(); TODAY = toDayNumber(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
+refreshToday();
+/* 下一次（或本次）發生的日序號 */
+function occurrence(it, today) {
+  const base = parseISO(it.date); if (base == null) return null;
+  if (it.repeat === 'none' || base >= today) return base;
+  const B = fromDayNumber(base), T = fromDayNumber(today);
+  if (it.repeat === 'yearly') {
+    const at = y => toDayNumber(y, B.m, Math.min(B.d, dim(y, B.m)));
+    let n = at(T.y); if (n < today) n = at(T.y + 1); return n;
+  }
+  const at = (y, m) => toDayNumber(y, m, Math.min(B.d, dim(y, m)));
+  let n = at(T.y, T.m); if (n < today) { const ny = T.m === 12 ? T.y + 1 : T.y, nm = T.m === 12 ? 1 : T.m + 1; n = at(ny, nm); } return n;
+}
+function dayInfo(it, today, countMode) {
+  const n = occurrence(it, today); if (n == null) return null;
+  const diff = n - today;
+  if (diff === 0) return { n, diff, word: '就是今天', label: '今天', num: null };
+  if (diff > 0) return { n, diff, label: '還有', num: diff, unit: '天' };
+  return { n, diff, label: countMode === 'nth' ? '第' : '已過', num: countMode === 'nth' ? -diff + 1 : -diff, unit: '天', past: true };
+}
+const dateText = n => { const g = fromDayNumber(n); return g.y + '/' + g.m + '/' + g.d + '（' + WD[weekday(n)] + '）'; };
+
+/* ---------- 色彩 ---------- */
+const COLORS = ['#f9d64a', '#ffb38a', '#ff6b6b', '#e84a7f', '#4a6cf7', '#1f3a93', '#1aa6a0', '#3ea76a', '#c5e86c', '#8d6e63', '#2b2d33', '#e6e9ef'];
+const GRADS = [['#ffb36b', '#ff5e8a'], ['#3aa0ff', '#1b3fa8'], ['#b4f0c9', '#1fa58d'], ['#2c3e50', '#c0726b']];
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+const lin = c => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+const lum = h => { const [r, g, b] = hexRgb(h).map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const contrast = (a, b) => { const x = Math.max(a, b), y = Math.min(a, b); return (x + 0.05) / (y + 0.05); };
+function bgInfo(bg) {
+  let stops;
+  if (/^g:[0-3]$/.test(bg)) stops = GRADS[+bg[2]]; else if (/^c:#[0-9a-f]{6}$/i.test(bg)) stops = [bg.slice(2)]; else stops = [COLORS[0]];
+  const ls = stops.map(lum), L = ls.reduce((x, y) => x + y, 0) / ls.length;
+  // 相對亮度 > 0.5 用黑字；否則取最差情況對比較高的一方（漸層兩端都要顧到）
+  const cWhite = Math.min(...ls.map(l => 1.05 / (l + 0.05))), cBlack = Math.min(...ls.map(l => (l + 0.05) / 0.05));
+  const dark = !(L > 0.5 || cBlack > cWhite);
+  const css = stops.length > 1 ? 'linear-gradient(135deg,' + stops[0] + ',' + stops[1] + ')' : stops[0];
+  return { css, stops, fg: dark ? 'dark' : 'light', solid: stops[0] };
+}
+const EMOJIS = ['🎂', '🎉', '🎄', '🎆', '✈️', '🏖️', '🏔️', '🚄', '💍', '💒', '❤️', '👶', '🎓', '📚', '📝', '💼', '💰', '🏠', '🚗', '🐶', '🐱', '🌸', '🌙', '☀️', '⚽', '🏃', '🎮', '🎬', '🎵', '🎤', '🍜', '🍰', '🍺', '☕', '🧧', '🎁', '🏥', '💊', '🚭', '💪', '📅', '⏰', '⭐', '🔥', '🌈', '🍀', '🎯', '🏆'];
+
+/* ---------- 狀態 ---------- */
+let settings = Object.assign({ sort: 'soon', count: 'diff', pastOpen: true }, store.get('settings', {}) || {});
+const uid = () => { const a = new Uint32Array(2); crypto.getRandomValues(a); return a[0].toString(36) + a[1].toString(36); };
+function validItem(x) {
+  return x && typeof x === 'object' && typeof x.title === 'string' && x.title.trim().length >= 1 && x.title.length <= 30 && parseISO(x.date) != null &&
+    ['none', 'yearly', 'monthly'].includes(x.repeat) && (x.time == null || /^\d{2}:\d{2}$/.test(x.time));
+}
+function exampleItems() {
+  const g = fromDayNumber(TODAY), y = g.y;
+  const xmas = toDayNumber(y, 12, 25) >= TODAY ? y : y + 1;
+  const mk = (title, date, o) => Object.assign({ id: uid(), title, date, time: null, repeat: 'none', emoji: '📅', bg: 'c:' + COLORS[0], pinned: false, note: '', createdAt: Date.now(), example: true }, o);
+  const list = [
+    mk('去北海道旅行', iso(TODAY + 46), { emoji: '✈️', bg: 'g:1', pinned: true, time: '08:30', note: '桃園機場第二航廈集合' }),
+    mk('聖誕節', xmas + '-12-25', { emoji: '🎄', bg: 'c:#3ea76a', repeat: 'yearly' }),
+    mk('發薪日', y + '-01-05', { emoji: '💰', bg: 'c:#f9d64a', repeat: 'monthly' }),
+    mk('媽媽生日', '1965-' + pad(fromDayNumber(TODAY + 5).m) + '-' + pad(fromDayNumber(TODAY + 5).d), { emoji: '🎂', bg: 'g:0', repeat: 'yearly' }),
+    mk('跨年', (y + 1) + '-01-01', { emoji: '🎆', bg: 'c:#1f3a93', time: '00:00' }),
+    mk('戒菸', iso(TODAY - 120), { emoji: '🚭', bg: 'c:#e6e9ef' }),
+    mk('期中考', iso(TODAY - 9), { emoji: '📝', bg: 'c:#ff6b6b' })
+  ];
+  list.forEach((x, i) => { x.order = i; });
+  return list;
+}
+let items = store.get('items', null);
+if (!Array.isArray(items)) items = exampleItems();
+items = items.filter(validItem).slice(0, 100);
+items.forEach((x, i) => { if (typeof x.order !== 'number') x.order = i; if (!x.id) x.id = uid(); if (!x.emoji) x.emoji = '📅'; if (!x.bg) x.bg = 'c:' + COLORS[0]; });
+const save = () => { store.set('items', items); };
+const saveSettings = () => store.set('settings', settings);
+
+/* theme */
+const th = store.get('theme', null); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th;
+$('#theme').addEventListener('click', () => { const c = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const n = c === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = n; store.set('theme', n); });
+
+/* ---------- 渲染 ---------- */
+function tileHTML(it, hero) {
+  const info = dayInfo(it, TODAY, settings.count), b = bgInfo(it.bg);
+  const rep = it.repeat === 'yearly' ? '每年' : it.repeat === 'monthly' ? '每月' : '';
+  let days;
+  if (!info) days = '<div class="days word">—</div>';
+  else if (info.num == null) days = '<div class="days word">' + info.word + '</div>';
+  else days = '<div class="days">' + info.num.toLocaleString('zh-TW') + '<small>' + info.unit + '</small></div>';
+  const lbl = info ? (info.num == null ? '' : info.label === '第' ? '第' : info.label) : '';
+  return '<button type="button" class="tile ' + b.fg + (hero ? ' hero' : '') + (info && info.diff === 0 ? ' today-fx' : '') + '" data-id="' + it.id + '" style="--tbg:' + b.css + '" aria-label="' + esc(it.title) + '，' + (info ? (info.num == null ? info.word : info.label + ' ' + info.num + ' 天') : '') + '">' +
+    (hero ? '<span class="pin">置頂</span>' : rep ? '<span class="rep">' + rep + '</span>' : '') +
+    '<span class="em" aria-hidden="true">' + it.emoji + '</span><span class="ttl">' + esc(it.title) + '</span>' +
+    '<span class="lbl">' + lbl + '</span>' + days +
+    '<span class="dt">' + (info ? dateText(info.n) + (it.time ? ' ' + it.time : '') : '') + '</span></button>';
+}
+function render() {
+  const t = TODAY;
+  $('#today-line').textContent = '今天 ' + dateText(t);
+  document.querySelectorAll('[data-sort]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sort === settings.sort));
+  document.querySelectorAll('[data-count]').forEach(b => b.setAttribute('aria-pressed', b.dataset.count === settings.count));
+  $('#sort-hint').textContent = settings.sort === 'custom' ? '長按卡片拖曳排序' : '';
+  $('#exbar').hidden = !items.some(x => x.example);
+  const pinned = items.find(x => x.pinned);
+  $('#pinned').innerHTML = pinned ? tileHTML(pinned, true) : '';
+  const rest = items.filter(x => x !== pinned).map(x => ({ x, i: dayInfo(x, t, settings.count) }));
+  const past = rest.filter(r => r.x.repeat === 'none' && r.i && r.i.diff < 0);
+  let up = rest.filter(r => !past.includes(r));
+  if (settings.sort === 'soon') up.sort((a, b) => (a.i ? a.i.diff : 1e9) - (b.i ? b.i.diff : 1e9) || a.x.order - b.x.order);
+  else up.sort((a, b) => a.x.order - b.x.order);
+  past.sort((a, b) => settings.sort === 'custom' ? a.x.order - b.x.order : b.i.diff - a.i.diff);
+  const list = $('#list');
+  list.innerHTML = up.length ? up.map(r => '<li>' + tileHTML(r.x) + '</li>').join('') : (pinned || past.length ? '' : '<li style="grid-column:1/-1"><div class="empty" id="empty">還沒有任何日子。按「＋ 新增」記下第一個重要的日子。</div></li>');
+  $('#past-wrap').hidden = !past.length;
+  $('#past-h').textContent = '已過去（' + past.length + '）';
+  $('#past').hidden = !settings.pastOpen;
+  $('#past-toggle').textContent = settings.pastOpen ? '收合' : '展開';
+  $('#past-toggle').setAttribute('aria-expanded', settings.pastOpen);
+  $('#past').innerHTML = past.map(r => '<li>' + tileHTML(r.x) + '</li>').join('');
+  $('#add').disabled = items.length >= 100;
+  if (detailId) renderDetail();
+}
+
+/* ---------- 午夜重算 ---------- */
+let midT = 0;
+function scheduleMidnight() {
+  clearTimeout(midT);
+  const now = new Date(), next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 50);
+  midT = setTimeout(() => { refreshToday(); render(); scheduleMidnight(); }, next - now);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshToday(); render(); scheduleMidnight(); } });
+
+/* ---------- 抽屜（新增／編輯） ---------- */
+let editId = null, draft = null, lastFocus = null;
+function openSheet(id) {
+  lastFocus = document.activeElement;
+  editId = id || null;
+  const it = id ? items.find(x => x.id === id) : null;
+  draft = it ? Object.assign({}, it) : { title: '', date: iso(TODAY + 1), time: null, repeat: 'none', emoji: '🎉', bg: 'c:' + COLORS[4], pinned: false, note: '' };
+  $('#sheet-h').textContent = it ? '編輯日子' : '新增日子';
+  $('#f-title').value = draft.title; $('#f-date').value = draft.date; $('#f-time').value = draft.time || '';
+  $('#f-pinned').checked = !!draft.pinned; $('#f-note').value = draft.note || '';
+  $('#f-delete').hidden = !it; $('#f-err').hidden = true;
+  $('#emojis').innerHTML = EMOJIS.map((e, i) => '<button type="button" id="emoji-' + i + '" data-emoji="' + e + '" aria-label="圖示 ' + e + '" aria-pressed="false">' + e + '</button>').join('');
+  $('#swatches').innerHTML = COLORS.map((c, i) => { const b = bgInfo('c:' + c); return '<button type="button" id="bg-c' + i + '" data-bg="c:' + c + '" style="background:' + c + ';--sw-fg:' + (b.fg === 'light' ? '#121317' : '#fff') + '" aria-label="顏色 ' + c + '" aria-pressed="false"></button>'; }).join('') +
+    GRADS.map((g, i) => { const b = bgInfo('g:' + i); return '<button type="button" id="bg-g' + i + '" data-bg="g:' + i + '" style="background:' + b.css + ';--sw-fg:' + (b.fg === 'light' ? '#121317' : '#fff') + '" aria-label="漸層 ' + (i + 1) + '" aria-pressed="false"></button>'; }).join('');
+  syncSheet();
+  $('#scrim').hidden = false; $('#sheet').hidden = false; document.body.classList.add('lock');
+  $('#sheet').scrollTop = 0;
+  setTimeout(() => $('#f-title').focus({ preventScroll: true }), 30);
+}
+function syncSheet() {
+  document.querySelectorAll('[data-rep]').forEach(b => b.setAttribute('aria-pressed', b.dataset.rep === draft.repeat));
+  document.querySelectorAll('#emojis button').forEach(b => b.setAttribute('aria-pressed', b.dataset.emoji === draft.emoji));
+  document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.bg === draft.bg));
+  const pv = Object.assign({ id: 'preview' }, draft, { title: draft.title || '（名稱）', date: parseISO(draft.date) != null ? draft.date : iso(TODAY) });
+  $('#preview').innerHTML = tileHTML(pv);
+}
+function closeSheet() { $('#scrim').hidden = true; $('#sheet').hidden = true; if ($('#detail').hidden) document.body.classList.remove('lock'); editId = null; if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true }); }
+$('#add').addEventListener('click', () => openSheet(null));
+$('#f-title').addEventListener('input', e => { draft.title = e.target.value; syncSheet(); });
+$('#f-date').addEventListener('input', e => { draft.date = e.target.value; syncSheet(); });
+$('#f-time').addEventListener('input', e => { draft.time = e.target.value || null; syncSheet(); });
+$('#f-time-clear').addEventListener('click', () => { draft.time = null; $('#f-time').value = ''; syncSheet(); });
+$('#f-note').addEventListener('input', e => { draft.note = e.target.value; });
+$('#f-pinned').addEventListener('change', e => { draft.pinned = e.target.checked; });
+$('#sheet').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.rep) { draft.repeat = b.dataset.rep; syncSheet(); }
+  else if (b.dataset.emoji) { draft.emoji = b.dataset.emoji; syncSheet(); }
+  else if (b.dataset.bg) { draft.bg = b.dataset.bg; syncSheet(); }
+});
+$('#f-cancel').addEventListener('click', closeSheet);
+$('#scrim').addEventListener('click', closeSheet);
+$('#f-save').addEventListener('click', () => {
+  const err = $('#f-err'), title = draft.title.trim();
+  const fail = (m, el) => { err.hidden = false; err.textContent = m; if (el) el.focus(); };
+  if (!title || title.length > 30) return fail('名稱需 1～30 字', $('#f-title'));
+  if (parseISO(draft.date) == null) return fail('日期需在 1900-01-01～2100-12-31 之間', $('#f-date'));
+  if (draft.time && !/^\d{2}:\d{2}$/.test(draft.time)) return fail('時間格式不正確', $('#f-time'));
+  if (!editId && items.length >= 100) return fail('最多 100 個項目');
+  const rec = { title, date: draft.date, time: draft.time || null, repeat: draft.repeat, emoji: draft.emoji, bg: draft.bg, pinned: !!draft.pinned, note: (draft.note || '').slice(0, 200) };
+  if (rec.pinned) items.forEach(x => { x.pinned = false; });
+  if (editId) { const it = items.find(x => x.id === editId); Object.assign(it, rec); delete it.example; }
+  else items.push(Object.assign({ id: uid(), createdAt: Date.now(), order: items.length ? Math.min(...items.map(x => x.order)) - 1 : 0 }, rec));
+  const wasEdit = !!editId;
+  save(); closeSheet(); render();
+  toast(wasEdit ? '已更新' : '已新增「' + title + '」');
+});
+$('#f-delete').addEventListener('click', () => { const id = editId; closeSheet(); closeDetail(); removeItem(id); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (!$('#sheet').hidden) closeSheet(); else if (!$('#detail').hidden) closeDetail(); }
+  if (e.key === 'Tab' && !$('#sheet').hidden) { // 焦點留在抽屜內
+    const f = [...$('#sheet').querySelectorAll('button:not([hidden]), input, textarea')].filter(x => x.offsetParent);
+    if (!f.length) return; const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+
+/* ---------- 刪除與復原 ---------- */
+let undoBuf = null, toastT = 0;
+function toast(msg, undo) {
+  const t = $('#toast'); $('#toast-t').textContent = msg; $('#toast-undo').hidden = !undo; t.hidden = false;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; undoBuf = null; }, undo ? 5000 : 2200);
+}
+function removeItem(id) {
+  const idx = items.findIndex(x => x.id === id); if (idx < 0) return;
+  undoBuf = { item: items[idx], idx }; items.splice(idx, 1); save(); render();
+  toast('已刪除「' + undoBuf.item.title + '」', true);
+}
+$('#toast-undo').addEventListener('click', () => { if (!undoBuf) return; items.splice(undoBuf.idx, 0, undoBuf.item); undoBuf = null; save(); render(); $('#toast').hidden = true; });
+$('#clear-ex').addEventListener('click', () => { items = items.filter(x => !x.example); undoBuf = null; save(); render(); toast('已清除範例'); });
+
+/* ---------- 卡片手勢：點擊、左滑刪除、長按拖曳 ---------- */
+let g = null;
+function onDown(e) {
+  const tile = e.target.closest('.tile[data-id]'); if (!tile || tile.closest('#preview') || e.button > 0) return;
+  delete tile.dataset.suppress;
+  g = { tile, id: tile.dataset.id, x: e.clientX, y: e.clientY, pid: e.pointerId, mode: null, dx: 0, dy: 0, moved: false };
+  if (settings.sort === 'custom' && !tile.classList.contains('hero')) {
+    g.lp = setTimeout(() => { if (g && !g.mode) startDrag(); }, 380);
+  }
+}
+function startDrag() {
+  g.mode = 'drag'; g.tile.classList.add('dragging');
+  try { g.tile.setPointerCapture(g.pid); } catch (e) {}
+  if (navigator.vibrate) try { navigator.vibrate(10); } catch (e) {}
+}
+function onMove(e) {
+  if (!g || e.pointerId !== g.pid) return;
+  g.dx = e.clientX - g.x; g.dy = e.clientY - g.y;
+  if (!g.mode) {
+    if (Math.abs(g.dx) > 8 || Math.abs(g.dy) > 8) {
+      clearTimeout(g.lp);
+      if (Math.abs(g.dx) > Math.abs(g.dy) * 1.3 && g.dx < 0 && !g.tile.classList.contains('hero') && e.pointerType !== 'mouse') {
+        g.mode = 'swipe'; try { g.tile.setPointerCapture(g.pid); } catch (er) {}
+        const bg = document.createElement('div'); bg.className = 'swipe-bg'; bg.textContent = '刪除'; g.tile.parentElement.insertBefore(bg, g.tile); g.bg = bg; g.tile.style.position = 'relative';
+      } else { g.mode = 'scroll'; }
+    }
+  }
+  if (g.mode === 'swipe') { g.tile.style.transform = 'translateX(' + Math.min(0, g.dx) + 'px)'; if (g.bg) g.bg.style.opacity = Math.min(1, -g.dx / 100); }
+  if (g.mode === 'drag') {
+    e.preventDefault();
+    g.tile.style.transform = 'translate(' + g.dx + 'px,' + g.dy + 'px) scale(1.04)';
+    document.querySelectorAll('.drop-target').forEach(x => x.classList.remove('drop-target'));
+    g.tile.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY); g.tile.style.pointerEvents = '';
+    const t2 = under && under.closest('.grid .tile[data-id]');
+    g.target = t2 && t2 !== g.tile ? t2 : null; if (g.target) g.target.classList.add('drop-target');
+  }
+}
+function onUp(e) {
+  if (!g || e.pointerId !== g.pid) return;
+  clearTimeout(g.lp);
+  const G = g; g = null;
+  if (G.mode === 'swipe') {
+    if (G.dx < -100) { G.tile.style.transition = 'transform .15s'; G.tile.style.transform = 'translateX(-110%)'; setTimeout(() => removeItem(G.id), reduced() ? 0 : 150); }
+    else { G.tile.style.transform = ''; if (G.bg) G.bg.remove(); }
+    G.tile.dataset.suppress = '1'; return;
+  }
+  if (G.mode === 'drag') {
+    G.tile.classList.remove('dragging'); G.tile.style.transform = ''; G.tile.dataset.suppress = '1';
+    document.querySelectorAll('.drop-target').forEach(x => x.classList.remove('drop-target'));
+    if (G.target) reorder(G.id, G.target.dataset.id);
+    return;
+  }
+}
+function onCancel() { if (!g) return; clearTimeout(g.lp); g.tile.style.transform = ''; g.tile.classList.remove('dragging'); if (g.bg) g.bg.remove(); g = null; }
+function reorder(fromId, toId) {
+  const sorted = items.slice().sort((a, b) => a.order - b.order);
+  const fi = sorted.findIndex(x => x.id === fromId), ti = sorted.findIndex(x => x.id === toId);
+  const [m] = sorted.splice(fi, 1); sorted.splice(ti, 0, m);
+  sorted.forEach((x, i) => { x.order = i; }); save(); render();
+}
+const app = $('#app');
+app.addEventListener('pointerdown', onDown);
+addEventListener('pointermove', onMove, { passive: false });
+addEventListener('pointerup', onUp); addEventListener('pointercancel', onCancel);
+app.addEventListener('touchmove', e => { if (g && (g.mode === 'drag' || g.mode === 'swipe')) e.preventDefault(); }, { passive: false });
+app.addEventListener('contextmenu', e => { if (e.target.closest('.tile')) e.preventDefault(); });
+app.addEventListener('click', e => {
+  const tile = e.target.closest('.tile[data-id]');
+  if (tile) { if (tile.dataset.suppress) { delete tile.dataset.suppress; return; } openDetail(tile.dataset.id); return; }
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.sort) { settings.sort = b.dataset.sort; saveSettings(); render(); }
+  else if (b.dataset.count) { settings.count = b.dataset.count; saveSettings(); render(); }
+  else if (b.id === 'past-toggle') { settings.pastOpen = !settings.pastOpen; saveSettings(); render(); }
+});
+/* 鍵盤排序：自訂順序時以 Alt+方向鍵移動 */
+app.addEventListener('keydown', e => {
+  const tile = e.target.closest && e.target.closest('.grid .tile[data-id]');
+  if (!tile || settings.sort !== 'custom' || !e.altKey || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+  e.preventDefault();
+  const sorted = items.slice().sort((a, b) => a.order - b.order), i = sorted.findIndex(x => x.id === tile.dataset.id), j = i + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1);
+  if (j < 0 || j >= sorted.length) return; reorder(sorted[i].id, sorted[j].id);
+  const again = document.querySelector('.tile[data-id="' + tile.dataset.id + '"]'); if (again) again.focus();
+});
+
+/* ---------- 詳情 ---------- */
+let detailId = null, tickT = 0, shotURL = null;
+function targetMs(it, occ) { const g = fromDayNumber(occ); const [hh, mm] = it.time ? it.time.split(':').map(Number) : [0, 0]; return new Date(g.y, g.m - 1, g.d, hh, mm, 0, 0).getTime(); }
+function openDetail(id) { lastFocus = document.activeElement; detailId = id; shotURL = null; $('#detail').hidden = false; document.body.classList.add('lock'); renderDetail(); const c = $('#d-close'); if (c) c.focus({ preventScroll: true }); }
+function closeDetail() { clearTimeout(tickT); detailId = null; $('#detail').hidden = true; $('#detail').innerHTML = ''; if ($('#sheet').hidden) document.body.classList.remove('lock'); if (lastFocus && lastFocus.focus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true }); }
+function renderDetail() {
+  const it = items.find(x => x.id === detailId); if (!it) { closeDetail(); return; }
+  const d = $('#detail'), b = bgInfo(it.bg), info = dayInfo(it, TODAY, settings.count);
+  d.className = 'detail ' + b.fg; d.style.setProperty('--tbg', b.css); d.style.setProperty('--tbg-solid', b.solid);
+  const occ = info ? info.n : parseISO(it.date);
+  const rep = it.repeat === 'yearly' ? '每年重複' : it.repeat === 'monthly' ? '每月重複' : '';
+  d.innerHTML = '<div class="bar"><button type="button" id="d-close" aria-label="關閉">← 返回</button><span class="spacer"></span><button type="button" id="d-edit">編輯</button></div>' +
+    '<div class="body"><div class="em" aria-hidden="true">' + it.emoji + '</div><div class="ttl">' + esc(it.title) + '</div>' +
+    '<div class="dt">' + dateText(occ) + (it.time ? ' ' + it.time : '') + (rep ? ' · ' + rep : '') + '</div>' +
+    '<div class="lbl" id="d-lbl"></div><div class="clock" id="d-clock" aria-live="off"></div><div class="stats" id="d-stats"></div>' +
+    (it.note ? '<p class="note">' + esc(it.note) + '</p>' : '') +
+    '<div class="share"><button type="button" id="d-share">分享圖片</button></div><div id="d-shot"></div></div>';
+  tick();
+}
+function tick() {
+  clearTimeout(tickT);
+  const it = items.find(x => x.id === detailId); if (!it) return;
+  refreshToday();
+  const info = dayInfo(it, TODAY, settings.count); if (!info) return;
+  const now = Date.now(), tgt = targetMs(it, info.n);
+  let ms = tgt - now; const future = ms > 0;
+  const abs = Math.abs(ms);
+  const D = Math.floor(abs / 864e5), H = Math.floor(abs % 864e5 / 36e5), M = Math.floor(abs % 36e5 / 6e4), S = Math.floor(abs % 6e4 / 1e3);
+  const isToday = info.diff === 0;
+  const done = isToday && (!it.time || !future);
+  $('#detail').classList.toggle('celebrate', isToday);
+  $('#d-lbl').textContent = done ? (it.time ? '時間到了！' : '就是今天！') : future ? '倒數' : (settings.count === 'nth' ? '已經過了（今天是第 ' + (info.num) + ' 天）' : '已經過了');
+  const cell = (v, u, c) => '<div' + (c ? ' class="' + c + '"' : '') + '><b>' + v + '</b><span>' + u + '</span></div>';
+  $('#d-clock').innerHTML = done && !it.time ? cell('0', '天', 'd') : cell(D.toLocaleString('zh-TW'), '天', 'd') + cell(pad(H), '時') + cell(pad(M), '分') + cell(pad(S), '秒');
+  const days = Math.abs(info.diff);
+  $('#d-stats').innerHTML = '<span>共 ' + Math.floor(days / 7) + ' 週又 ' + (days % 7) + ' 天</span><span>約 ' + Math.floor(abs / 36e5).toLocaleString('zh-TW') + ' 小時</span>' + (info.diff ? '<span>' + (info.diff > 0 ? '還有 ' : '已過 ') + days.toLocaleString('zh-TW') + ' 天</span>' : '');
+  if (!document.hidden) tickT = setTimeout(tick, 1000 - (Date.now() % 1000) + 5);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && detailId) tick(); });
+$('#detail').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'd-close') closeDetail();
+  else if (b.id === 'd-edit') openSheet(detailId);
+  else if (b.id === 'd-share') shareImage();
+  else if (b.id === 'd-save') saveShot();
+});
+
+/* ---------- 分享圖片 1080×1350 ---------- */
+let dl = null;
+(async () => { try { dl = await window.claude?.use?.('downloads') || null; } catch (e) { dl = null; } $('#export').hidden = false; $('#export').textContent = dl ? '匯出 JSON' : '複製 JSON'; })();
+function drawShare(it) {
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350;
+  const x = c.getContext('2d'), b = bgInfo(it.bg), info = dayInfo(it, TODAY, settings.count);
+  if (b.stops.length > 1) { const gr = x.createLinearGradient(0, 0, 1080, 1350); gr.addColorStop(0, b.stops[0]); gr.addColorStop(1, b.stops[1]); x.fillStyle = gr; } else x.fillStyle = b.stops[0];
+  x.fillRect(0, 0, 1080, 1350);
+  const fg = b.fg === 'light' ? '#121317' : '#ffffff', fg2 = b.fg === 'light' ? 'rgba(18,19,23,.7)' : 'rgba(255,255,255,.8)';
+  const sans = '"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+  x.font = '180px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.fillText(it.emoji, 540, 330);
+  x.fillStyle = fg; x.font = '900 76px ' + sans;
+  let t = it.title; while (x.measureText(t).width > 940 && t.length > 1) t = t.slice(0, -1); if (t !== it.title) t = t.slice(0, -1) + '…';
+  x.fillText(t, 540, 500);
+  x.fillStyle = fg2; x.font = '700 52px ' + sans; x.fillText(info.num == null ? '' : info.label, 540, 640);
+  x.fillStyle = fg;
+  if (info.num == null) { x.font = '900 170px ' + sans; x.fillText(info.word, 540, 860); }
+  else { const n = info.num.toLocaleString('zh-TW'); let size = 320; x.font = '800 ' + size + 'px ' + getComputedStyle(document.documentElement).getPropertyValue('--num'); while (x.measureText(n).width > 760 && size > 120) { size -= 10; x.font = '800 ' + size + 'px ' + getComputedStyle(document.documentElement).getPropertyValue('--num'); } const w = x.measureText(n).width; x.fillText(n, 540 - 40, 900); x.font = '800 72px ' + sans; x.textAlign = 'left'; x.fillText('天', 540 - 40 + w / 2 + 16, 900); x.textAlign = 'center'; }
+  x.fillStyle = fg2; x.font = '600 48px ' + sans; x.fillText(dateText(info.n) + (it.time ? ' ' + it.time : ''), 540, 1040);
+  x.font = '600 34px ' + sans; x.fillText('倒數日看板', 540, 1270);
+  return c;
+}
+async function shareImage() {
+  const it = items.find(x => x.id === detailId); if (!it) return;
+  const c = drawShare(it);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  const name = 'countdown-' + it.title.replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 30) + '.png';
+  if (dl) {
+    try { await dl.save({ filename: name, data: blob }); toast('已儲存圖片'); return; }
+    catch (e) { if (/declin/i.test(String(e && (e.code || e.message || e)))) return; }
+  }
+  try { const f = new File([blob], name, { type: 'image/png' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: it.title }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  shotURL = c.toDataURL('image/png');
+  $('#d-shot').innerHTML = '<img class="shot" id="d-img" alt="' + esc(it.title) + ' 分享圖片" src="' + shotURL + '"><p class="dt" style="margin-top:6px">長按或右鍵圖片即可儲存</p>';
+}
+
+/* ---------- 匯出／匯入 ---------- */
+$('#export').addEventListener('click', async () => {
+  const data = JSON.stringify({ app: 'countdown-board', version: 1, items: items.map(({ id, title, date, time, repeat, emoji, bg, pinned, note, order, createdAt }) => ({ id, title, date, time, repeat, emoji, bg, pinned, note, order, createdAt })) }, null, 2);
+  if (dl) { try { await dl.save({ filename: 'countdown-board-' + iso(TODAY) + '.json', data }); toast('已匯出 ' + items.length + ' 筆'); } catch (e) { if (!/declin/i.test(String(e && (e.code || e.message || e)))) toast('匯出失敗'); } return; }
+  try { await navigator.clipboard.writeText(data); toast('已複製 ' + items.length + ' 筆 JSON'); } catch (e) { toast('無法存取剪貼簿'); }
+});
+$('#import-file').addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text()), arr = Array.isArray(j) ? j : j.items; if (!Array.isArray(arr)) throw 0;
+    let add = 0, bad = 0; const base = items.length ? Math.max(...items.map(x => x.order)) + 1 : 0;
+    for (const r of arr) {
+      if (!validItem(r)) { bad++; continue; }
+      if (items.length >= 100) { bad++; continue; }
+      if (items.some(x => x.title === r.title && x.date === r.date)) continue;
+      items.push({ id: uid(), title: r.title.trim().slice(0, 30), date: r.date, time: r.time || null, repeat: r.repeat, emoji: typeof r.emoji === 'string' && r.emoji.length <= 8 ? r.emoji : '📅', bg: /^(c:#[0-9a-f]{6}|g:[0-3])$/i.test(r.bg) ? r.bg : 'c:' + COLORS[0], pinned: false, note: String(r.note || '').slice(0, 200), order: base + add, createdAt: Date.now() });
+      add++;
+    }
+    save(); render(); toast('匯入 ' + add + ' 筆' + (bad ? '，略過 ' + bad + ' 筆' : ''));
+  } catch (er) { toast('檔案格式不正確'); }
+});
+
+render(); scheduleMidnight();
+window.__cd = { occurrence: (it, t) => { const n = occurrence(it, parseISO(t)); return n == null ? null : iso(n); }, dayInfo: (it, t, m) => dayInfo(it, parseISO(t), m || 'diff'), bgInfo, lum };
+})();
+</script>

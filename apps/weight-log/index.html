@@ -1,0 +1,606 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>體重紀錄</title>
+<style>
+:root{
+  --bg:#f2f3f0; --paper:#fbfbf9; --ink:#1b1e1c; --muted:#555b57; --faint:#878d89; --line:#d4d7d2; --rule:#e5e7e3;
+  --accent:#0f6b5c; --accent-ink:#ffffff; --accent-soft:#dcebe7; --pt:#8d948f; --goal:#b7791f;
+  --good:#1e7a46; --bad:#b8382e; --danger:#b3261e; --warn-bg:#fbf0cf; --warn-ink:#5a4300; --shadow:0 12px 40px rgba(20,24,22,.18);
+  --mono:ui-monospace,"SF Mono","Menlo","Consolas",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121413; --paper:#1a1d1b; --ink:#e4e7e4; --muted:#a5aca7; --faint:#78807b; --line:#303532; --rule:#252926;
+  --accent:#5fc2ad; --accent-ink:#082019; --accent-soft:#1c2e2a; --pt:#7f8883; --goal:#e0a84e;
+  --good:#7fd19c; --bad:#f19a90; --danger:#f2b8b5; --warn-bg:#382d10; --warn-ink:#f2d98f; --shadow:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121413; --paper:#1a1d1b; --ink:#e4e7e4; --muted:#a5aca7; --faint:#78807b; --line:#303532; --rule:#252926;
+  --accent:#5fc2ad; --accent-ink:#082019; --accent-soft:#1c2e2a; --pt:#7f8883; --goal:#e0a84e;
+  --good:#7fd19c; --bad:#f19a90; --danger:#f2b8b5; --warn-bg:#382d10; --warn-ink:#f2d98f; --shadow:0 12px 40px rgba(0,0,0,.5);
+  color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));overflow-x:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1040px;margin:0 auto}
+
+.top{display:flex;align-items:center;gap:8px;padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:8px;border-bottom:1px solid var(--line)}
+.top h1{margin:0;flex:1;font-size:16px;font-weight:800;letter-spacing:.18em}
+.ib{width:44px;height:44px;border-radius:8px;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;cursor:pointer}
+.ib svg{width:20px;height:20px}
+@media (hover:hover){.ib:hover{border-color:var(--muted)}}
+
+.banner{display:flex;align-items:center;gap:8px;border-radius:8px;padding:6px 6px 6px 14px;margin:10px 0 0;font-size:13.5px;background:var(--warn-bg);color:var(--warn-ink)}
+.banner span{flex:1;min-width:0}
+.banner button{min-height:40px;border:0;background:none;font-weight:700;cursor:pointer;padding:0 10px;text-decoration:underline;color:inherit;white-space:nowrap}
+
+.summary{display:grid;grid-template-columns:auto 1fr;gap:4px 18px;align-items:end;padding:14px 0 12px}
+.cur .lab,.kv .lab{font-size:11.5px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.cur .val{font-size:36px;font-weight:700;line-height:1.05;letter-spacing:-.02em}
+.cur .val small{font-size:15px;color:var(--muted);font-weight:600;margin-left:3px}
+.delta{font-size:15px;font-weight:800;margin-top:2px}
+.delta.good{color:var(--good)} .delta.bad{color:var(--bad)} .delta.flat{color:var(--muted)}
+.kvs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;align-self:center}
+.kv .v{font-size:15px;font-weight:700}
+.trend{grid-column:1/-1;font-size:13.5px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;margin-top:6px}
+.trend b{color:var(--ink)}
+
+.entry{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px}
+.erow{display:grid;grid-template-columns:48px minmax(0,1fr) 48px;gap:6px;align-items:center}
+.erow input{text-align:center;font-family:var(--mono);font-size:24px !important;font-weight:700;height:56px}
+.step{height:48px;border-radius:8px;border:1px solid var(--line);background:var(--bg);font-weight:800;font-family:var(--mono);cursor:pointer;font-size:14px}
+.erow2{display:flex;gap:8px;margin-top:8px}
+.erow2 input{flex:1;min-width:0}
+input[type=number],input[type=date],input[type=text],select{min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px 10px;font-size:15px;width:100%}
+.btn{min-height:44px;border-radius:8px;border:1px solid var(--line);background:var(--paper);padding:0 16px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.dan{color:var(--danger);border-color:var(--danger)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.why{font-size:13px;color:var(--danger);margin:6px 0 0;min-height:0}
+.why.ok{color:var(--muted)}
+
+.chartcard{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 10px 6px;margin-top:12px}
+.ranges{display:flex;gap:4px;margin-bottom:6px}
+.ranges button{flex:1;min-height:40px;border:1px solid var(--line);background:var(--bg);border-radius:6px;font-weight:700;cursor:pointer;font-size:13.5px;position:relative}
+.ranges button::after{content:"";position:absolute;inset:-2px 0}
+.ranges button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.cv{position:relative;height:260px}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.ckey{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:4px 2px}
+.ckey i{display:inline-block;width:16px;vertical-align:3px;margin-right:4px}
+.ckey .k1{height:8px;width:8px;border-radius:50%;background:var(--pt);vertical-align:0}
+.ckey .k2{border-top:2.5px solid var(--accent)}
+.ckey .k3{border-top:2px dashed var(--goal)}
+
+.listcard{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin-top:12px}
+.listcard h2{font-size:11.5px;letter-spacing:.16em;color:var(--muted);margin:8px 0 2px;font-weight:700}
+.list{list-style:none;margin:0;padding:0}
+.list li{position:relative;overflow:hidden;border-bottom:1px solid var(--rule)}
+.list li:last-child{border-bottom:0}
+.list .row{display:grid;grid-template-columns:minmax(0,1fr) auto 64px 44px;gap:8px;align-items:center;min-height:50px;background:var(--paper);position:relative;z-index:1;touch-action:pan-y;transition:transform .2s;cursor:pointer}
+.list .row.dragging{transition:none}
+.list .d{color:var(--muted);font-size:14px}
+.list .w{font-weight:700;font-size:16px}
+.list .df{font-size:13px;text-align:right}
+.list .del{width:44px;height:44px;border:0;background:none;color:var(--faint);cursor:pointer;border-radius:50%}
+.list .bgdel{position:absolute;inset:0;background:var(--danger);color:var(--paper);display:flex;align-items:center;justify-content:flex-end;padding-right:16px;font-weight:700}
+.more{width:100%;margin:6px 0}
+.empty{color:var(--faint);padding:14px 0;text-align:center;font-size:14px}
+
+dialog{border:0;padding:0;background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(12,14,13,.5)}
+dialog.sheet{width:100%;max-width:520px;margin:auto auto 0;border-radius:14px 14px 0 0;max-height:90%;overflow:auto;padding:16px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+dialog.center{width:calc(100% - 32px);max-width:400px;border-radius:12px;padding:18px}
+.dh{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dh h3{margin:0;flex:1;font-size:18px}
+.lbl{display:block;font-size:12px;font-weight:700;letter-spacing:.12em;color:var(--muted);margin:14px 0 6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{min-height:44px;border-radius:8px;border:1px solid var(--line);background:var(--bg);padding:0 14px;cursor:pointer;font-weight:700}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.switch{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+.switch input{width:22px;height:22px;flex:none}
+.hint{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.err{color:var(--danger);font-size:13px;margin:6px 0 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px;font:12px/1.4 var(--mono)}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:6px 6px 6px 16px;border-radius:10px;font-size:14px;z-index:60;display:flex;align-items:center;gap:6px;max-width:calc(100% - 32px)}
+.toast button{min-height:40px;border:0;background:none;color:var(--accent-soft);font-weight:800;cursor:pointer;padding:0 12px}
+.toast.solo{padding:10px 16px}
+
+@media (min-width:900px){
+  .cv{height:420px}
+  .lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+  .lower .listcard{margin-top:12px}
+  .lower .entry{margin-top:12px}
+  .summary{grid-template-columns:auto auto 1fr;column-gap:36px}
+  .kvs{grid-template-columns:repeat(2,auto);column-gap:32px}
+  .trend{grid-column:auto;border-top:0;border-left:1px dashed var(--line);padding:0 0 0 16px;margin:0;max-width:300px;align-self:center}
+}
+@media (max-height:500px) and (orientation:landscape){
+  .cv{height:220px}
+  .lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>體重紀錄</h1>
+    <button class="ib" id="openSet" aria-label="設定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+  </header>
+  <div id="banners"></div>
+
+  <section class="summary" aria-label="摘要">
+    <div class="cur">
+      <div class="lab">最新體重</div>
+      <div class="val mono" id="curVal">—</div>
+      <div class="delta mono" id="delta"></div>
+    </div>
+    <div class="kvs">
+      <div class="kv"><div class="lab">目標</div><div class="v mono" id="goalVal">—</div></div>
+      <div class="kv"><div class="lab">剩餘</div><div class="v mono" id="remainVal">—</div></div>
+      <div class="kv"><div class="lab">BMI</div><div class="v mono" id="bmiVal">—</div></div>
+      <div class="kv"><div class="lab">趨勢速度</div><div class="v mono" id="rateVal">—</div></div>
+    </div>
+    <div class="trend" id="trendTxt"></div>
+  </section>
+
+  <section class="chartcard" aria-label="體重圖表">
+    <div class="ranges" role="group" aria-label="時間範圍">
+      <button type="button" id="r30" data-r="30">30 天</button><button type="button" id="r90" data-r="90">90 天</button><button type="button" id="r365" data-r="365">1 年</button><button type="button" id="rall" data-r="all">全部</button>
+    </div>
+    <div class="cv"><canvas id="chart" role="img" aria-label="體重折線圖"></canvas></div>
+    <div class="ckey"><span><i class="k1"></i>每日紀錄</span><span><i class="k2"></i><span id="maName">7 日移動平均</span></span><span><i class="k3"></i>目標</span><span>拖曳看數值・雙指縮放</span></div>
+  </section>
+
+  <div class="lower">
+    <section class="entry" aria-label="新增紀錄">
+      <div class="erow">
+        <button class="step" id="minus" type="button" aria-label="減 0.1">−0.1</button>
+        <input type="text" id="wIn" inputmode="decimal" autocomplete="off" aria-label="體重">
+        <button class="step" id="plus" type="button" aria-label="加 0.1">+0.1</button>
+      </div>
+      <div class="erow2">
+        <input type="date" id="dIn" aria-label="日期">
+        <button class="btn pri" id="recBtn" type="button">記錄</button>
+      </div>
+      <p class="why" id="why" role="status"></p>
+    </section>
+
+    <section class="listcard" aria-labelledby="listH">
+      <h2 id="listH">紀錄</h2>
+      <ul class="list" id="list"></ul>
+      <button class="btn more" id="moreBtn" type="button" hidden>顯示更多</button>
+    </section>
+  </div>
+</div>
+
+<dialog class="sheet" id="setDlg" aria-labelledby="setT">
+  <div class="dh"><h3 id="setT">設定</h3><button class="ib" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <span class="lbl">單位</span>
+  <div class="seg" id="unitSeg"><button type="button" id="unit-kg" data-u="kg">公斤 kg</button><button type="button" id="unit-lb" data-u="lb">磅 lb</button></div>
+  <div class="grid2">
+    <div><label class="lbl" for="hIn">身高（cm）</label><input type="number" id="hIn" inputmode="decimal" min="100" max="250" placeholder="例如 170"></div>
+    <div><label class="lbl" for="gIn">目標體重（<span class="uTxt">kg</span>）</label><input type="number" id="gIn" inputmode="decimal" step="0.1"></div>
+  </div>
+  <span class="lbl">移動平均</span>
+  <div class="seg" id="maSeg"><button type="button" id="ma-sma" data-m="sma">7 日簡單平均</button><button type="button" id="ma-ema" data-m="ema">指數平均 α=0.1</button></div>
+  <label class="switch" for="gainIn" style="margin-top:8px"><input type="checkbox" id="gainIn"> 增肌模式（體重上升顯示為綠色）</label>
+  <span class="lbl">外觀</span>
+  <div class="seg" id="themeSeg"><button type="button" id="theme-auto" data-t="auto">跟隨系統</button><button type="button" id="theme-light" data-t="light">淺色</button><button type="button" id="theme-dark" data-t="dark">深色</button></div>
+  <span class="lbl">CSV 匯出／匯入</span>
+  <div class="row">
+    <button class="btn" id="dlCsv" hidden>下載 CSV</button>
+    <button class="btn" id="cpCsv">複製 CSV</button>
+    <button class="btn" id="impBtn">匯入 CSV</button>
+    <input type="file" id="impFile" accept=".csv,.txt,text/csv,text/plain" hidden>
+  </div>
+  <p class="hint">匯入支援「日期,體重」兩欄格式，分隔符號可為逗號、分號或 Tab；同一天的資料會被覆寫。</p>
+  <textarea id="expText" hidden readonly aria-label="CSV 內容"></textarea>
+  <p class="err" id="setErr" role="alert"></p>
+  <div class="row" style="margin-top:12px"><button class="btn pri" id="setSave">儲存</button><button class="btn" data-close>取消</button></div>
+</dialog>
+
+<dialog class="center" id="cfmDlg" aria-labelledby="cfmT">
+  <div class="dh"><h3 id="cfmT">確定嗎？</h3></div>
+  <p id="cfmMsg" class="hint" style="font-size:14px"></p>
+  <div class="row" style="margin-top:12px"><button class="btn pri" id="cfmYes">確定記錄</button><button class="btn" data-close>取消</button></div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+const KEY = 'weight-log:v1:data', TKEY = 'weight-log:v1:theme', LB = 2.20462;
+const $ = s => document.querySelector(s);
+const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); if (attrs) for (const k in attrs) { if (k === 'class') n.className = attrs[k]; else if (k === 'text') n.textContent = attrs[k]; else if (k.startsWith('on')) n.addEventListener(k.slice(2), attrs[k]); else if (attrs[k] != null && attrs[k] !== false) n.setAttribute(k, attrs[k]); } for (const c of kids) if (c != null) n.append(c); return n; };
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const todayStr = () => new Date().toLocaleDateString('sv-SE');
+const dn = s => { const [y, m, d] = s.split('-').map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const fromDn = n => new Date(n * 864e5).toISOString().slice(0, 10);
+const validDate = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && fromDn(dn(s)) === s;
+
+/* ---------- data ---------- */
+const DEF = () => ({ unit: 'kg', heightCm: 172, goal10: 720, maMode: 'sma', gainMode: false });
+function sample() {
+  const t = dn(todayStr()), entries = [];
+  let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 85; i >= 0; i--) {
+    if (rnd() < .18 && i > 0) continue;
+    const base = 78.9 - (85 - i) * 0.055 + Math.sin(i / 6) * .25 + (rnd() - .5) * .7;
+    entries.push({ date: fromDn(t - i), w10: Math.round(base * 10) });
+  }
+  return { sample: true, entries, settings: DEF() };
+}
+function valid(d) {
+  if (!d || !Array.isArray(d.entries) || !d.settings) return false;
+  return d.entries.every(e => e && validDate(e.date) && Number.isInteger(e.w10) && e.w10 >= 200 && e.w10 <= 3000);
+}
+let data = lsGet(KEY, null);
+if (!valid(data)) data = sample();
+data.settings = Object.assign(DEF(), data.settings);
+data.entries.sort((a, b) => a.date < b.date ? -1 : 1);
+const save = () => lsSet(KEY, data);
+let theme = lsGet(TKEY, 'auto');
+const applyTheme = () => theme === 'auto' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', theme);
+applyTheme();
+const S = () => data.settings;
+
+/* ---------- units ---------- */
+const kgToDisp = kg => S().unit === 'lb' ? kg * LB : kg;
+const fmtW = (kg, unit = true) => kgToDisp(kg).toFixed(1) + (unit ? ' ' + S().unit : '');
+function parseInput(str, unit = S().unit) { // -> {w10, err}
+  const s = String(str).trim().replace(',', '.');
+  if (!s) return { err: '請輸入體重。' };
+  if (!/^\d+(\.\d+)?$/.test(s)) return { err: '請輸入數字。' };
+  const v = Number(s);
+  if (unit === 'kg') { if (v < 20 || v > 300) return { err: '體重需介於 20.0～300.0 kg。' }; return { w10: Math.round(v * 10) }; }
+  if (v < 44 || v > 660) return { err: '體重需介於 44～660 lb。' };
+  return { w10: Math.round(v / LB * 10) };
+}
+
+/* ---------- analytics ---------- */
+function insertEntry(list, e) { // binary search, overwrite same day
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid].date < e.date) lo = mid + 1; else hi = mid; }
+  if (list[lo] && list[lo].date === e.date) { const old = list[lo]; list[lo] = e; return { index: lo, replaced: old }; }
+  list.splice(lo, 0, e); return { index: lo, replaced: null };
+}
+function movingAvg(list, mode) { // returns array of kg|null aligned with list
+  if (mode === 'ema') {
+    let ema = null, prev = null;
+    return list.map(e => { const w = e.w10 / 10; const n = dn(e.date); if (ema == null || (prev != null && n - prev > 14)) ema = w; else ema = ema + 0.1 * (w - ema); prev = n; return ema; });
+  }
+  const out = []; let j = 0, sum = 0;
+  for (let i = 0; i < list.length; i++) {
+    const n = dn(list[i].date); sum += list[i].w10;
+    while (dn(list[j].date) < n - 6) { sum -= list[j].w10; j++; }
+    const cnt = i - j + 1; out.push(cnt >= 3 ? sum / cnt / 10 : null);
+  }
+  return out;
+}
+function regression(list, ma) { // last 14 days of MA -> kg/week
+  if (!list.length) return null;
+  const last = dn(list[list.length - 1].date), pts = [];
+  for (let i = list.length - 1; i >= 0; i--) { const n = dn(list[i].date); if (n < last - 13) break; if (ma[i] != null) pts.push([n, ma[i]]); }
+  if (pts.length < 3) return null;
+  const k = pts.length, mx = pts.reduce((a, p) => a + p[0], 0) / k, my = pts.reduce((a, p) => a + p[1], 0) / k;
+  let num = 0, den = 0; for (const [x, y] of pts) { num += (x - mx) * (y - my); den += (x - mx) ** 2; }
+  if (!den) return null;
+  const slope = num / den; return { perWeek: slope * 7, perDay: slope, at: last, y: my + slope * (last - mx) };
+}
+function predict(reg, goalKg, curKg) {
+  if (!reg || goalKg == null) return { ok: false, msg: '資料不足，無法預估' };
+  const need = goalKg - curKg;
+  if (Math.abs(need) < 0.05) return { ok: true, reached: true, msg: '已達到目標' };
+  if (Math.abs(reg.perWeek) < 0.05 || Math.sign(reg.perWeek) !== Math.sign(need)) return { ok: false, msg: '趨勢持平，無法預估' };
+  const days = Math.ceil(need / reg.perDay);
+  return { ok: true, date: fromDn(reg.at + days), days };
+}
+function bmiOf(kg, cm) { if (!cm) return null; const m = cm / 100; return kg / (m * m); }
+function bmiClass(b) { return b < 18.5 ? '過輕' : b < 24 ? '正常' : b < 27 ? '過重' : '肥胖'; }
+function niceStep(range) { for (const s of [0.5, 1, 2, 5, 10, 20, 50]) { const n = Math.floor(range / s) + 1; if (n <= 6) return s; } return 100; }
+
+/* ---------- summary ---------- */
+let MA = [];
+function renderSummary() {
+  const L = data.entries;
+  MA = movingAvg(L, S().maMode);
+  $('#maName').textContent = S().maMode === 'ema' ? '指數移動平均' : '7 日移動平均';
+  const goal = S().goal10 ? S().goal10 / 10 : null;
+  $('#goalVal').textContent = goal ? fmtW(goal) : '未設定';
+  if (!L.length) { $('#curVal').textContent = '—'; $('#delta').textContent = '尚無紀錄'; $('#delta').className = 'delta flat'; $('#remainVal').textContent = '—'; $('#bmiVal').textContent = '—'; $('#rateVal').textContent = '—'; $('#trendTxt').textContent = '記下第一筆體重，之後就能看見趨勢。'; return; }
+  const last = L[L.length - 1], kg = last.w10 / 10;
+  $('#curVal').textContent = ''; $('#curVal').append(kgToDisp(kg).toFixed(1), el('small', { text: S().unit }));
+  // delta: latest MA vs MA ~7 days earlier
+  const lastMa = MA[MA.length - 1]; let prevMa = null; const target = dn(last.date) - 7;
+  for (let i = L.length - 1; i >= 0; i--) if (dn(L[i].date) <= target) { prevMa = MA[i]; break; }
+  const dEl = $('#delta');
+  if (lastMa != null && prevMa != null) {
+    const d = lastMa - prevMa, dd = kgToDisp(Math.abs(d));
+    const good = S().gainMode ? d > 0 : d < 0;
+    dEl.className = 'delta ' + (Math.abs(d) < 0.05 ? 'flat' : good ? 'good' : 'bad');
+    dEl.textContent = (Math.abs(d) < 0.05 ? '＝0.0' : (d < 0 ? '▼' : '▲') + dd.toFixed(1)) + ` ${S().unit}　較 7 天前平均`;
+  } else { dEl.className = 'delta flat'; dEl.textContent = '平均資料不足'; }
+  const ref = lastMa != null ? lastMa : kg;
+  $('#remainVal').textContent = goal ? (Math.abs(ref - goal) < 0.05 ? '已達標' : fmtW(Math.abs(ref - goal))) : '—';
+  const b = bmiOf(kg, S().heightCm);
+  $('#bmiVal').textContent = b ? `${b.toFixed(1)} ${bmiClass(b)}` : '設定身高';
+  const reg = regression(L, MA);
+  $('#rateVal').textContent = reg ? `${reg.perWeek < 0 ? '−' : '+'}${kgToDisp(Math.abs(reg.perWeek)).toFixed(2)}/週` : '—';
+  const p = predict(reg, goal, reg ? reg.y : ref);
+  const tt = $('#trendTxt'); tt.textContent = '';
+  if (!goal) tt.append('在設定中填入目標體重，就能預估達標日。');
+  else if (p.reached) tt.append('目前平均已達到目標，繼續保持。');
+  else if (p.ok) tt.append('以最近 14 天的速度，約 ', el('b', { class: 'mono', id: 'eta', text: p.date }), ' 達到目標。');
+  else tt.append(el('span', { id: 'eta', text: p.msg }));
+}
+
+/* ---------- chart ---------- */
+const cv = $('#chart'), ctx = cv.getContext('2d');
+let range = lsGet('weight-log:v1:range', '90'), customDays = null, cursorIdx = null;
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function viewWindow() {
+  const L = data.entries; const end = L.length ? Math.max(dn(L[L.length - 1].date), dn(todayStr())) : dn(todayStr());
+  let days = customDays || (range === 'all' ? (L.length ? end - dn(L[0].date) + 1 : 30) : Number(range));
+  days = Math.max(7, days);
+  return { start: end - days + 1, end };
+}
+let layout = null;
+function draw() {
+  const t0 = performance.now();
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(r.width)), H = Math.max(1, Math.round(r.height));
+  if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const L = data.entries, { start, end } = viewWindow();
+  const ink = css('--ink'), faint = css('--faint'), rule = css('--rule'), acc = css('--accent'), pt = css('--pt'), goalC = css('--goal'), paper = css('--paper');
+  const font = '11px system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif';
+  const idx = []; for (let i = 0; i < L.length; i++) { const n = dn(L[i].date); if (n >= start && n <= end) idx.push(i); }
+  const padL = 40, padR = 10, padT = 10, padB = 22;
+  if (!idx.length) { ctx.fillStyle = faint; ctx.font = '14px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText('這段期間沒有紀錄', W / 2, H / 2); layout = null; return 0; }
+  const conv = kg => kgToDisp(kg);
+  let mn = Infinity, mx = -Infinity;
+  for (const i of idx) { const v = conv(L[i].w10 / 10); mn = Math.min(mn, v); mx = Math.max(mx, v); }
+  const pad1 = S().unit === 'lb' ? 2 : 1; mn -= pad1; mx += pad1;
+  const goal = S().goal10 ? conv(S().goal10 / 10) : null;
+  const goalIn = goal != null && goal >= mn - 3 * pad1 && goal <= mx + 3 * pad1;
+  if (goalIn) { mn = Math.min(mn, goal - pad1 * .5); mx = Math.max(mx, goal + pad1 * .5); }
+  const step = niceStep(mx - mn);
+  const X = n => padL + (end === start ? 0.5 : (n - start) / (end - start)) * (W - padL - padR);
+  const Y = v => padT + (mx - v) / (mx - mn) * (H - padT - padB);
+  // grid
+  ctx.font = font; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1;
+  for (let v = Math.ceil(mn / step) * step; v <= mx + 1e-9; v += step) { const y = Math.round(Y(v)) + .5; ctx.strokeStyle = rule; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke(); ctx.fillStyle = faint; ctx.fillText(step < 1 ? v.toFixed(1) : String(Math.round(v)), padL - 6, y); }
+  // x labels
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  const span = end - start, nl = Math.max(2, Math.min(5, Math.floor((W - padL) / 70)));
+  for (let k = 0; k <= nl; k++) { const n = Math.round(start + span * k / nl); const s = fromDn(n); const lab = span > 400 ? s.slice(0, 7) : `${+s.slice(5, 7)}/${+s.slice(8)}`; ctx.fillStyle = faint; ctx.textAlign = k === 0 ? 'left' : k === nl ? 'right' : 'center'; ctx.fillText(lab, X(n), H - 5); }
+  // goal
+  if (goal != null) {
+    ctx.strokeStyle = goalC; ctx.setLineDash([6, 5]); ctx.lineWidth = 1.5;
+    if (goalIn) { const y = Y(goal); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = goalC; ctx.textAlign = 'right'; ctx.fillText('目標 ' + goal.toFixed(1), W - padR - 2, y - 5); }
+    else { ctx.setLineDash([]); ctx.fillStyle = goalC; ctx.textAlign = 'right'; ctx.fillText(`目標 ${goal.toFixed(1)} ${goal < mn ? '↓' : '↑'}`, W - padR - 2, goal < mn ? H - padB - 6 : padT + 12); }
+    ctx.setLineDash([]);
+  }
+  // points
+  const dense = idx.length > 200;
+  ctx.fillStyle = pt;
+  for (const i of idx) { const x = X(dn(L[i].date)), y = Y(conv(L[i].w10 / 10)); ctx.beginPath(); ctx.arc(x, y, dense ? 1.6 : 3, 0, Math.PI * 2); ctx.fill(); }
+  // MA line, broken at gaps > 14 days
+  if (idx.length > 1) {
+    ctx.strokeStyle = acc; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.beginPath(); let pen = false, prevN = null;
+    for (const i of idx) { const v = MA[i]; const n = dn(L[i].date); if (v == null || (prevN != null && n - prevN > 14)) pen = false; if (v != null) { const x = X(n), y = Y(conv(v)); pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y); pen = true; } prevN = n; }
+    ctx.stroke();
+  }
+  layout = { idx, X, Y, conv, W, H, padT, padB };
+  // cursor
+  if (cursorIdx != null && idx.includes(cursorIdx)) {
+    const e = L[cursorIdx], x = X(dn(e.date)), y = Y(conv(e.w10 / 10));
+    ctx.strokeStyle = ink; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.round(x) + .5, padT); ctx.lineTo(Math.round(x) + .5, H - padB); ctx.stroke();
+    ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fill();
+    const lines = [e.date, `${conv(e.w10 / 10).toFixed(1)} ${S().unit}`, MA[cursorIdx] != null ? `平均 ${conv(MA[cursorIdx]).toFixed(1)}` : '平均 —'];
+    ctx.font = '600 12px system-ui,-apple-system,sans-serif'; const bw = Math.max(...lines.map(s => ctx.measureText(s).width)) + 16, bh = 58;
+    let bx = x + 10; if (bx + bw > W - 4) bx = x - 10 - bw; const by = padT + 2;
+    ctx.fillStyle = ink; ctx.globalAlpha = .92; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 6) : ctx.rect(bx, by, bw, bh); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = paper; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; lines.forEach((s, k) => ctx.fillText(s, bx + 8, by + 6 + k * 16));
+  }
+  return performance.now() - t0;
+}
+function setRange(r) { range = r; customDays = null; lsSet('weight-log:v1:range', r); document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === r))); draw(); }
+document.querySelectorAll('.ranges button').forEach(b => b.onclick = () => setRange(b.dataset.r));
+(() => { // drag cursor + pinch zoom
+  const ptrs = new Map(); let pinch0 = null;
+  const nearest = cx => { if (!layout) return null; const r = cv.getBoundingClientRect(); const x = cx - r.left; let best = null, bd = Infinity; for (const i of layout.idx) { const d = Math.abs(layout.X(dn(data.entries[i].date)) - x); if (d < bd) { bd = d; best = i; } } return best; };
+  cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, e.clientX); if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const { start, end } = viewWindow(); pinch0 = { d: Math.abs(a - b) || 1, days: end - start + 1 }; cursorIdx = null; draw(); } else { cursorIdx = nearest(e.clientX); draw(); } });
+  cv.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId, e.clientX);
+    if (ptrs.size === 2 && pinch0) { const [a, b] = [...ptrs.values()]; const ratio = pinch0.d / Math.max(1, Math.abs(a - b)); const L = data.entries; const maxD = L.length ? dn(todayStr()) - dn(L[0].date) + 1 : 30; customDays = Math.round(Math.max(7, Math.min(Math.max(maxD, 30), pinch0.days * ratio))); document.querySelectorAll('.ranges button').forEach(x => x.setAttribute('aria-pressed', 'false')); draw(); }
+    else if (ptrs.size === 1) { const i = nearest(e.clientX); if (i !== cursorIdx) { cursorIdx = i; draw(); } }
+  });
+  const up = e => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = null; if (!ptrs.size && e.pointerType !== 'mouse') { setTimeout(() => { if (!ptrs.size) { cursorIdx = null; draw(); } }, 1600); } };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { cursorIdx = null; draw(); } });
+  cv.tabIndex = 0;
+  cv.addEventListener('keydown', e => { const L = data.entries; if (!L.length) return; if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); cursorIdx = cursorIdx == null ? L.length - 1 : Math.max(0, Math.min(L.length - 1, cursorIdx + (e.key === 'ArrowLeft' ? -1 : 1))); draw(); } });
+})();
+new ResizeObserver(() => draw()).observe(cv);
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
+
+/* ---------- entry ---------- */
+function validateEntry() {
+  const p = parseInput($('#wIn').value), d = $('#dIn').value;
+  let err = p.err || null;
+  if (!err && !validDate(d)) err = '請選擇日期。';
+  if (!err && d > todayStr()) err = '不能記錄未來的日期。';
+  $('#recBtn').disabled = !!err;
+  const w = $('#why'); w.className = 'why' + (err ? '' : ' ok');
+  w.textContent = err || (data.entries.some(e => e.date === d) ? `${d} 已有紀錄，記錄後會覆寫。` : '');
+  return err ? null : { date: d, w10: p.w10 };
+}
+function prefill() {
+  const L = data.entries; const last = L[L.length - 1];
+  $('#wIn').value = last ? kgToDisp(last.w10 / 10).toFixed(1) : (S().unit === 'lb' ? '154.0' : '70.0');
+  $('#dIn').value = todayStr(); $('#dIn').max = todayStr();
+  validateEntry();
+}
+$('#wIn').addEventListener('input', validateEntry);
+$('#dIn').addEventListener('input', validateEntry);
+$('#wIn').addEventListener('keydown', e => { if (e.key === 'Enter' && !$('#recBtn').disabled) $('#recBtn').click(); });
+function nudge(d) { const v = Number(String($('#wIn').value).replace(',', '.')); if (!Number.isFinite(v)) return; $('#wIn').value = Math.max(0, Math.round((v + d) * 10) / 10).toFixed(1); validateEntry(); }
+$('#minus').onclick = () => nudge(-0.1);
+$('#plus').onclick = () => nudge(0.1);
+function neighborBefore(date) { let p = null; for (const e of data.entries) { if (e.date < date) p = e; else break; } return p || data.entries.find(e => e.date !== date) || null; }
+$('#recBtn').onclick = () => {
+  const e = validateEntry(); if (!e) return;
+  const prev = neighborBefore(e.date);
+  if (prev && !data.sample && Math.abs(prev.w10 - e.w10) > 50) {
+    $('#cfmMsg').textContent = `這筆 ${fmtW(e.w10 / 10)} 與 ${prev.date} 的 ${fmtW(prev.w10 / 10)} 相差超過 ${S().unit === 'lb' ? '11 lb' : '5 kg'}，是否輸入錯誤？`;
+    $('#cfmYes').onclick = () => { $('#cfmDlg').close(); commit(e); };
+    $('#cfmDlg').showModal(); return;
+  }
+  commit(e);
+};
+function commit(e) {
+  if (data.sample) data = { entries: [], settings: data.settings };
+  const { replaced } = insertEntry(data.entries, e); save(); renderAll();
+  toast(replaced ? `已更新 ${e.date}：${fmtW(e.w10 / 10)}` : `已記錄 ${fmtW(e.w10 / 10)}`, () => {
+    const i = data.entries.findIndex(x => x.date === e.date); if (i >= 0) { if (replaced) data.entries[i] = replaced; else data.entries.splice(i, 1); save(); renderAll(); }
+  });
+}
+
+/* ---------- list ---------- */
+let shown = 30;
+function renderList() {
+  const L = data.entries, ul = $('#list'); ul.textContent = '';
+  $('#listH').textContent = `紀錄（${L.length} 筆）`;
+  if (!L.length) { ul.append(el('li', { class: 'empty', text: '還沒有紀錄。' })); $('#moreBtn').hidden = true; return; }
+  const from = Math.max(0, L.length - shown);
+  for (let i = L.length - 1; i >= from; i--) {
+    const e = L[i], p = L[i - 1];
+    const diff = p ? (e.w10 - p.w10) / 10 : null;
+    const good = diff != null && (S().gainMode ? diff > 0 : diff < 0);
+    const df = el('span', { class: 'df mono', text: diff == null ? '' : Math.abs(diff) < 0.05 ? '±0.0' : (diff > 0 ? '+' : '−') + kgToDisp(Math.abs(diff)).toFixed(1) });
+    if (diff != null && Math.abs(diff) >= 0.05) df.style.color = good ? 'var(--good)' : 'var(--bad)';
+    const row = el('div', { class: 'row', role: 'button', tabindex: 0, 'aria-label': `${e.date} ${fmtW(e.w10 / 10)}，點一下編輯` },
+      el('span', { class: 'd mono', text: e.date }), el('span', { class: 'w mono', text: fmtW(e.w10 / 10) }), df,
+      el('button', { class: 'del', type: 'button', 'aria-label': `刪除 ${e.date}`, text: '✕', onclick: ev => { ev.stopPropagation(); remove(e); } }));
+    const edit = () => { $('#wIn').value = kgToDisp(e.w10 / 10).toFixed(1); $('#dIn').value = e.date; validateEntry(); $('#wIn').focus(); $('#wIn').select(); };
+    row.addEventListener('click', ev => { if (row.dataset.swiped) { delete row.dataset.swiped; return; } edit(); });
+    row.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target === row) edit(); });
+    swipe(row, () => remove(e));
+    ul.append(el('li', null, el('div', { class: 'bgdel', 'aria-hidden': 'true', text: '刪除' }), row));
+  }
+  $('#moreBtn').hidden = from === 0;
+}
+$('#moreBtn').onclick = () => { shown += 60; renderList(); };
+function remove(e) {
+  const i = data.entries.indexOf(e); if (i < 0) return; data.entries.splice(i, 1); save(); renderAll();
+  toast(`已刪除 ${e.date}`, () => { insertEntry(data.entries, e); save(); renderAll(); });
+}
+function swipe(row, onDel) {
+  let sx = 0, sy = 0, dx = 0, on = false, lock = null;
+  row.addEventListener('pointerdown', e => { delete row.dataset.swiped; if (e.target.closest('button')) return; sx = e.clientX; sy = e.clientY; dx = 0; on = true; lock = null; });
+  row.addEventListener('pointermove', e => { if (!on) return; const mx = e.clientX - sx, my = e.clientY - sy; if (lock == null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) { lock = Math.abs(mx) > Math.abs(my) ? 'x' : 'y'; if (lock === 'x') { row.setPointerCapture(e.pointerId); row.classList.add('dragging'); } } if (lock === 'x') { dx = Math.min(0, mx); row.style.transform = `translateX(${dx}px)`; } });
+  const end = () => { if (!on) return; on = false; row.classList.remove('dragging'); if (lock === 'x') row.dataset.swiped = '1'; if (lock === 'x' && dx < -90) { row.style.transform = 'translateX(-110%)'; setTimeout(onDel, 160); } else row.style.transform = ''; };
+  row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+}
+
+/* ---------- misc ---------- */
+let tTimer = 0;
+function toast(msg, undo) {
+  document.querySelectorAll('.toast').forEach(t => t.remove()); clearTimeout(tTimer);
+  const t = el('div', { class: 'toast' + (undo ? '' : ' solo'), role: 'status' }, el('span', { text: msg }));
+  if (undo) t.append(el('button', { type: 'button', id: 'undoBtn', text: '復原', onclick: () => { undo(); t.remove(); } }));
+  document.body.append(t); tTimer = setTimeout(() => t.remove(), 5000);
+}
+function renderBanners() {
+  const b = $('#banners'); b.textContent = '';
+  if (data.sample) b.append(el('div', { class: 'banner', id: 'sampleBanner' }, el('span', { text: '目前是範例資料（約 2 個月）。記下第一筆時會自動清除。' }),
+    el('button', { type: 'button', text: '清除範例', onclick: () => { data = { entries: [], settings: data.settings }; save(); renderAll(); } })));
+}
+function renderAll() { renderBanners(); renderSummary(); draw(); renderList(); validateEntry(); }
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); }));
+
+/* ---------- settings ---------- */
+let dl = null;
+(async () => { try { dl = await window.claude?.use?.('downloads'); } catch (e) { dl = null; } if (dl) $('#dlCsv').hidden = false; })();
+let dUnit = 'kg', dMa = 'sma';
+function segs() {
+  document.querySelectorAll('#unitSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.u === dUnit)));
+  document.querySelectorAll('#maSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === dMa)));
+  document.querySelectorAll('#themeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === theme)));
+  document.querySelectorAll('.uTxt').forEach(x => x.textContent = dUnit);
+}
+$('#openSet').onclick = () => {
+  const s = S(); dUnit = s.unit; dMa = s.maMode;
+  $('#hIn').value = s.heightCm || ''; $('#gIn').value = s.goal10 ? (dUnit === 'lb' ? (s.goal10 / 10 * LB).toFixed(1) : (s.goal10 / 10).toFixed(1)) : '';
+  $('#gainIn').checked = !!s.gainMode; $('#setErr').textContent = ''; $('#expText').hidden = true; segs(); $('#setDlg').showModal();
+};
+document.querySelectorAll('#unitSeg button').forEach(b => b.onclick = () => {
+  if (b.dataset.u === dUnit) return; const g = Number($('#gIn').value);
+  if (g) $('#gIn').value = (b.dataset.u === 'lb' ? g * LB : g / LB).toFixed(1);
+  dUnit = b.dataset.u; segs();
+});
+document.querySelectorAll('#maSeg button').forEach(b => b.onclick = () => { dMa = b.dataset.m; segs(); });
+document.querySelectorAll('#themeSeg button').forEach(b => b.onclick = () => { theme = b.dataset.t; lsSet(TKEY, theme); applyTheme(); segs(); draw(); });
+$('#setSave').onclick = () => {
+  const err = m => { $('#setErr').textContent = m; };
+  const h = $('#hIn').value ? Number($('#hIn').value) : null;
+  if (h != null && !(h >= 100 && h <= 250)) return err('身高需介於 100～250 cm。');
+  let goal10 = null;
+  if ($('#gIn').value) { const p = parseInput($('#gIn').value, dUnit); if (p.err) return err('目標' + p.err); goal10 = p.w10; }
+  data.settings = { unit: dUnit, heightCm: h, goal10, maMode: dMa, gainMode: $('#gainIn').checked };
+  save(); $('#setDlg').close(); prefill(); renderAll();
+};
+const csvStr = () => 'date,weight_kg\n' + data.entries.map(e => `${e.date},${(e.w10 / 10).toFixed(1)}`).join('\n') + '\n';
+$('#dlCsv').onclick = async () => { try { await dl.save({ filename: `weight-log-${todayStr()}.csv`, data: csvStr() }); } catch (e) { if (!/declin/i.test(String(e && (e.message || e)))) $('#setErr').textContent = '下載失敗，請改用複製。'; } };
+$('#cpCsv').onclick = () => {
+  const s = csvStr(); const fb = () => { const t = $('#expText'); t.hidden = false; t.value = s; t.focus(); t.select(); $('#setErr').textContent = '無法自動複製，已選取下方文字，請手動複製。'; };
+  try { navigator.clipboard.writeText(s).then(() => toast('已複製 CSV'), fb); } catch (e) { fb(); }
+};
+function parseCsv(text) {
+  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return { rows: [], bad: 0 };
+  const cand = ['\t', ';', ','], probe = lines.slice(0, 5).join('\n');
+  const delim = cand.find(c => probe.split('\n').every(l => l.includes(c))) || ',';
+  const rows = []; let bad = 0;
+  for (const line of lines) {
+    const cols = line.split(delim).map(c => c.trim().replace(/^"|"$/g, ''));
+    if (cols.length < 2) { bad++; continue; }
+    const dm = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(cols[0]);
+    if (!dm) { if (line !== lines[0]) bad++; continue; } // first non-date line = header
+    const date = `${dm[1]}-${dm[2].padStart(2, '0')}-${dm[3].padStart(2, '0')}`;
+    const w = Number(cols[1].replace(',', '.'));
+    if (!validDate(date) || !(w >= 20 && w <= 300)) { bad++; continue; }
+    rows.push({ date, w10: Math.round(w * 10) });
+  }
+  return { rows, bad, delim };
+}
+$('#impBtn').onclick = () => $('#impFile').click();
+$('#impFile').onchange = async () => {
+  const f = $('#impFile').files[0]; $('#impFile').value = ''; if (!f) return;
+  try {
+    const { rows, bad } = parseCsv(await f.text());
+    if (!rows.length) { $('#setErr').textContent = '找不到可匯入的資料，現有資料未變更。'; return; }
+    if (data.sample) data = { entries: [], settings: data.settings };
+    for (const r of rows) insertEntry(data.entries, r);
+    save(); $('#setDlg').close(); prefill(); renderAll(); toast(`已匯入 ${rows.length} 筆` + (bad ? `，略過 ${bad} 行` : ''));
+  } catch (e) { $('#setErr').textContent = '讀取檔案失敗，現有資料未變更。'; }
+};
+
+window.__wt = { insertEntry, movingAvg, regression, predict, bmiOf, bmiClass, parseInput, parseCsv, niceStep, draw, get data() { return data; }, set data(v) { data = v; renderAll(); } };
+document.querySelectorAll('.ranges button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.r === range)));
+prefill(); renderAll();
+})();
+</script>

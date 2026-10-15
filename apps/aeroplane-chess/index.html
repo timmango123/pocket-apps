@@ -1,0 +1,1284 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>飛行棋</title>
+<style>
+:root{--bg:#efe3c8;--bg2:#f8efdc;--ink:#3b2e22;--ink2:#7a6650;--card:#fffaf0;--card2:#f1e5cc;--line:#e2d2b2;--acc:#d9532f;--sh:0 3px 12px #6b4a2a26;
+ --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1428;--bg2:#15254a;--ink:#e9eefb;--ink2:#9fb0d3;--card:#18264a;--card2:#22335d;--line:#2c3f6c;--acc:#ff8a5c;--sh:0 3px 14px #0008}}
+:root[data-theme="dark"]{--bg:#0b1428;--bg2:#15254a;--ink:#e9eefb;--ink2:#9fb0d3;--card:#18264a;--card2:#22335d;--line:#2c3f6c;--acc:#ff8a5c;--sh:0 3px 14px #0008}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);background:var(--bg);font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-user-select:none;user-select:none}
+body{background:radial-gradient(120% 80% at 50% 40%,var(--bg2),var(--bg))}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:1}
+#app{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:center;gap:8px;pointer-events:none;
+ padding:calc(var(--sat) + 6px) calc(var(--sar) + 8px) calc(var(--sab) + 8px) calc(var(--sal) + 8px)}
+#app>*{pointer-events:auto}
+#boardBox{flex:1;min-height:0;pointer-events:none!important}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pc{height:50px;border-radius:14px;background:var(--card);box-shadow:var(--sh);display:flex;align-items:center;gap:7px;padding:0 9px;border:2px solid transparent;min-width:0;transition:border-color .25s,box-shadow .25s,opacity .25s}
+.pc.on{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 30%,transparent),var(--sh)}
+.pc.off{opacity:.38}
+.pc svg{width:28px;height:28px;flex:none;fill:var(--c);stroke:#fff;stroke-width:5;filter:drop-shadow(0 2px 2px #0003)}
+.pc .tx{flex:1;min-width:0;line-height:1.15}
+.pc .nm{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc .sub{font-size:11px;font-weight:600;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc.think .sub::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c);margin-left:4px;animation:blink .7s infinite}
+.pc .rk{font-size:12px;font-weight:900;color:var(--c)}
+@keyframes blink{50%{opacity:.15}}
+.pips{display:grid;grid-template-columns:repeat(2,9px);gap:3px;flex:none}
+.pips i{width:9px;height:9px;border-radius:50%;border:2px solid var(--c);opacity:.55}
+.pips i.f{background:var(--c);opacity:1}
+#dz{height:96px;display:grid;grid-template-columns:minmax(0,1fr) 96px minmax(0,1fr);align-items:center;gap:6px;touch-action:none}
+#status{font-size:13px;font-weight:700;color:var(--ink2);line-height:1.35;padding-left:4px;overflow:hidden;max-height:54px}
+#status b{color:var(--ink)}
+#rollTip{font-size:12px;font-weight:700;color:var(--ink2);text-align:right;padding-right:4px;line-height:1.35}
+#rollTip b{display:block;font-size:15px;color:var(--ink)}
+#diceBtn{width:96px;height:96px;display:grid;place-items:center;perspective:380px;border-radius:22px;position:relative}
+#diceBtn:focus{outline:none}#diceBtn:focus-visible{outline:3px solid var(--acc)}
+#diceBtn::before{content:"";position:absolute;inset:10px;border-radius:24px;background:radial-gradient(circle,var(--dc,#e04848) 0,transparent 70%);opacity:0;transition:opacity .3s}
+#diceBtn.ready::before{opacity:.45;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.12);opacity:.2}}
+.tilt{transform:rotateX(-14deg) rotateY(18deg);transform-style:preserve-3d}
+#cube{width:56px;height:56px;position:relative;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.2,.75,.3,1.05)}
+.face{position:absolute;inset:0;border-radius:12px;background:radial-gradient(circle at 30% 25%,#fff,#ece6dc);border:1px solid #d6cdbd;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:8px;box-shadow:inset 0 -3px 6px #0001}
+.face i{width:10px;height:10px;border-radius:50%;background:#2a2a2a;place-self:center;visibility:hidden;box-shadow:inset 0 1px 2px #000a}
+.face.r i{background:#d8322e}
+.face i.v{visibility:visible}
+.f1{transform:translateZ(28px)}.f6{transform:rotateY(180deg) translateZ(28px)}.f2{transform:rotateY(90deg) translateZ(28px)}
+.f5{transform:rotateY(-90deg) translateZ(28px)}.f3{transform:rotateX(90deg) translateZ(28px)}.f4{transform:rotateX(-90deg) translateZ(28px)}
+.f1 i:nth-child(5){width:15px;height:15px}
+#bar{display:flex;justify-content:center;gap:7px}
+.tb{flex:1;max-width:92px;height:54px;border-radius:15px;background:var(--card);box-shadow:var(--sh);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;font-weight:700}
+.tb svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.tb b{font-size:16px;line-height:22px}
+.tb:active{transform:scale(.94)}
+.tb:disabled{opacity:.4}
+#toast{position:fixed;left:50%;top:0;z-index:6;transform:translate(-50%,-10px);background:var(--card);color:var(--ink);box-shadow:var(--sh);border-radius:14px;padding:9px 14px;font-size:14px;font-weight:700;max-width:min(92vw,420px);text-align:center;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;line-height:1.4}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#chooser{position:fixed;z-index:7;display:flex;gap:6px;background:var(--card);padding:6px;border-radius:14px;box-shadow:0 6px 22px #0004}
+#chooser button{min-width:68px;height:44px;border-radius:11px;background:var(--card2);font-weight:800;font-size:14px;padding:0 10px}
+#chooser button.st{background:var(--acc);color:#fff}
+.ov{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:#1b120a66;padding:calc(var(--sat) + 12px) 12px calc(var(--sab) + 12px);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.panel{background:var(--card);border-radius:22px;box-shadow:0 10px 40px #0005;width:min(440px,100%);max-height:100%;overflow:auto;padding:18px 16px 16px;position:relative;overscroll-behavior:contain}
+@media (max-height:600px){.ov{align-items:flex-start;overflow:auto}.panel{max-height:none}}
+.panel h2{margin:0 0 4px;font-size:22px;text-align:center}
+.panel h3{margin:14px 0 6px;font-size:14px;color:var(--ink2)}
+.panel p,.panel li{font-size:14px;line-height:1.55;margin:4px 0}
+.panel ul{padding-left:20px;margin:4px 0}
+.big{display:block;width:100%;height:50px;border-radius:15px;background:var(--acc);color:#fff;font-size:17px;font-weight:800;margin-top:10px;box-shadow:0 3px 0 color-mix(in srgb,var(--acc) 60%,#000)}
+.big:active{transform:translateY(2px);box-shadow:none}
+.big.alt{background:var(--card2);color:var(--ink);box-shadow:0 3px 0 var(--line)}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns .big{font-size:15px}
+.seg{display:flex;background:var(--card2);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;height:40px;border-radius:9px;font-weight:700;font-size:14px;color:var(--ink2)}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #0002}
+.seat{display:grid;grid-template-columns:36px 1fr;gap:4px 8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.seat svg{width:30px;height:30px;fill:var(--c);stroke:#fff;stroke-width:5;grid-row:span 2}
+.seat .seg button{height:38px;font-size:13px}
+.seat .cfg{display:flex;gap:6px;align-items:center}
+.seat.nocpu .cfg{display:none}
+.step{display:flex;align-items:center;background:var(--card2);border-radius:11px;flex:1.3;min-width:0}
+.step button{width:40px;height:40px;font-size:20px;font-weight:800;flex:none}
+.step span{flex:1;text-align:center;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pe{flex:1;height:40px;border-radius:11px;background:var(--card2);font-size:13px;font-weight:700;white-space:nowrap}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:46px;font-size:14px;font-weight:600;text-align:left}
+.sw .trk{width:46px;height:28px;border-radius:14px;background:#c9bda5;position:relative;transition:background .2s;flex:none}
+.sw .trk::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 4px #0003;transition:transform .2s}
+.sw[aria-checked="true"] .trk{background:#3fa65a}
+.sw[aria-checked="true"] .trk::after{transform:translateX(18px)}
+.sw small{display:block;font-size:11px;color:var(--ink2);font-weight:500}
+.x{position:absolute;right:6px;top:6px;width:44px;height:44px;border-radius:50%;font-size:22px;color:var(--ink2)}
+.logo{display:flex;justify-content:center;gap:4px;margin:2px 0 6px}
+.logo svg{width:34px;height:34px;stroke:#fff;stroke-width:5;filter:drop-shadow(0 2px 2px #0003)}
+.tag{text-align:center;font-size:13px;color:var(--ink2);margin:0 0 6px}
+.daily{font-size:12px;color:var(--ink2);text-align:center;margin-top:6px;min-height:16px}
+.rank{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:var(--card2);margin:6px 0;font-weight:700}
+.rank svg{width:26px;height:26px;fill:var(--c);stroke:#fff;stroke-width:5}
+.rank .m{font-size:20px;width:30px;text-align:center}
+.rank .s{margin-left:auto;font-size:12px;color:var(--ink2);font-weight:600}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}
+.kv div{background:var(--card2);border-radius:12px;padding:8px 4px;text-align:center;font-size:11px;color:var(--ink2);font-weight:600}
+.kv b{display:block;font-size:20px;color:var(--ink)}
+.ach{display:flex;gap:8px;align-items:center;padding:6px 0;font-size:13px;border-top:1px solid var(--line)}
+.ach i{font-style:normal;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--card2);flex:none;font-size:15px}
+.ach.got i{background:#f2b632}
+.ach.no{opacity:.5}
+#tut{position:fixed;left:0;right:0;bottom:0;z-index:9;padding:12px 12px calc(var(--sab) + 12px)}
+#tut .panel{margin:0 auto;padding:14px 16px}
+#tut h3{margin:0 0 4px;color:var(--ink);font-size:16px}
+#tut .dots{display:flex;gap:5px;justify-content:center;margin-top:6px}
+#tut .dots i{width:7px;height:7px;border-radius:50%;background:var(--line)}
+#tut .dots i.on{background:var(--acc)}
+body.land #app{display:grid;grid-template-columns:var(--bs,300px) minmax(0,1fr);grid-template-rows:auto auto 1fr auto;column-gap:14px}
+body.land #boardBox{grid-row:1/-1;grid-column:1}
+body.land #app>.row,body.land #dz,body.land #bar{grid-column:2}
+body.land #dz{align-self:center}
+@media (hover:hover){.tb:hover,.big:hover{filter:brightness(1.05)}}
+</style>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="app">
+  <div class="row" id="rowTop"></div>
+  <div id="boardBox"></div>
+  <div class="row" id="rowBot"></div>
+  <div id="dz">
+    <div id="status"></div>
+    <button id="diceBtn" aria-label="擲骰"><div class="tilt"><div id="cube"></div></div></button>
+    <div id="rollTip"></div>
+  </div>
+  <div id="bar">
+    <button class="tb" id="bMenu" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+    <button class="tb" id="bUndo" aria-label="悔棋"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>悔棋</button>
+    <button class="tb" id="bHint" aria-label="提示"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/></svg>提示</button>
+    <button class="tb" id="bSpeed" aria-label="電腦速度"><b id="spd">1×</b>快轉</button>
+    <button class="tb" id="bSnd" aria-label="音效"><svg viewBox="0 0 24 24" id="sndIco"></svg>音效</button>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="chooser" hidden><button id="chOne">單架</button><button id="chAll" class="st">整疊</button></div>
+
+<div class="ov" id="menu" hidden><div class="panel">
+  <div class="logo" id="logo"></div>
+  <h2>飛行棋</h2>
+  <p class="tag">擲骰起飛、同色跳格、虛線飛越、撞機回場</p>
+  <button class="big" id="mResume" hidden>繼續上一局</button>
+  <h3>模式</h3>
+  <div class="seg" id="mMode"><button data-v="4">標準 4 架</button><button data-v="2">快速 2 架</button></div>
+  <h3>座位（每台電腦可各設等級與個性）</h3>
+  <div id="seats"></div>
+  <h3>家規</h3>
+  <div id="rules"></div>
+  <button class="big" id="mStart">開始飛行</button>
+  <button class="big alt" id="mDaily">每日航班</button>
+  <div class="daily" id="dailyInfo"></div>
+  <div class="btns"><button class="big alt" id="mHelp">規則說明</button><button class="big alt" id="mTut">教學導覽</button></div>
+  <div class="btns"><button class="big alt" id="mStats">戰績與成就</button><button class="big alt" id="mClose">回到棋盤</button></div>
+</div></div>
+
+<div class="ov" id="help" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><h2>規則說明</h2><div id="helpBody"></div></div></div>
+<div class="ov" id="stats" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><h2>戰績與成就</h2><div id="statsBody"></div></div></div>
+<div class="ov" id="result" hidden><div class="panel"><h2 id="rTitle">第一名！</h2><p class="tag" id="rSub"></p><div id="rList"></div><div class="kv" id="rKv"></div>
+  <div class="btns"><button class="big alt" id="rMenu">回選單</button><button class="big" id="rAgain">再來一局</button></div></div></div>
+<div id="tut" hidden><div class="panel"><h3 id="tutT"></h3><p id="tutP" style="font-size:14px;line-height:1.55;margin:0"></p><div class="dots" id="tutD"></div>
+  <div class="btns"><button class="big alt" id="tutSkip">略過</button><button class="big" id="tutNext">下一步</button></div></div></div>
+
+<script id="core">
+/*CORE-START*/
+var AP = (function () {
+  'use strict';
+  // ---- geometry: 15x15 grid, cross-shaped track. Player c (0 red/bottom, 1 yellow/left, 2 blue/top, 3 green/right), clockwise. ----
+  var LAST = 51, GOAL = 58, FLY = 32, FLYLEN = 12, JUMP = 4, CROSS_H = 5;
+  var TOPARM = [[5, 6], [4, 6], [3, 6], [2, 6], [1, 6], [0, 6], [0, 7], [0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8]];
+  var TOPRUN = [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7], [6, 7]];
+  var TOPHANG = [[2.15, 10.85], [2.15, 12.75], [4.05, 10.85], [4.05, 12.75]];
+  var TOPLAUNCH = [0.55, 9.45];
+  function rot(pt, k) { var r = pt[0], c = pt[1]; for (var i = 0; i < k; i++) { var t = r; r = c; c = 14 - t; } return [r, c]; }
+  var CELL = [], RUN = [], HANG = [], LAUNCH = [];
+  for (var c0 = 0; c0 < 4; c0++) {
+    var k0 = (c0 + 2) % 4;
+    for (var i0 = 0; i0 < 13; i0++) CELL.push(rot(TOPARM[i0], k0));
+    RUN.push(TOPRUN.map(function (p) { return rot(p, k0); }));
+    HANG.push(TOPHANG.map(function (p) { return rot(p, k0); }));
+    LAUNCH.push(rot(TOPLAUNCH, k0));
+  }
+  function absOf(c, p) { return (13 * c + 7 + p) % 52; }             // p in 1..51 -> track square 0..51
+  function relOf(c, a) { return ((a - 13 * c - 7) % 52 + 52) % 52; } // inverse (0 = square this colour never uses)
+  function colorOf(a) { for (var c = 0; c < 4; c++) if (relOf(c, a) % 4 === 0) return c; return 0; }
+  function isJumpSq(p) { return p >= 4 && p % 4 === 0 && p + JUMP <= LAST; }
+  // grid position of a plane (row, col) in board units; idx = plane index (hangar slot)
+  function gridOf(c, p, idx) {
+    if (p < 0) return HANG[c][idx % 4];
+    if (p === 0) return LAUNCH[c];
+    if (p <= LAST) return CELL[absOf(c, p)];
+    if (p < GOAL) return RUN[c][p - LAST - 1];
+    return [7, 7];
+  }
+
+  // ---- dice: deterministic per (seed, roll index) so undo never changes the dice ----
+  function die(seed, k) {
+    var x = (seed ^ Math.imul(k + 1, 0x9E3779B1)) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); x = (x ^ (x >>> 16)) >>> 0;
+    return 1 + (x % 6);
+  }
+  function rng(seed) { var s = seed >>> 0 || 1; return function () { s = (s + 0x6D2B79F5) >>> 0; var t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  function newGame(o) {
+    o = o || {};
+    var np = o.np || 4, act = (o.active || [1, 1, 1, 1]).map(function (x) { return x ? 1 : 0; }), R = o.rules || {};
+    var st = { np: np, act: act, rules: { five: !!R.five, wall: !!R.wall, triple: R.triple !== false, first: !!R.first },
+      seed: (o.seed == null ? 12345 : o.seed) >>> 0, k: 0, pos: [], turn: 0, sixes: 0, last: [], done: [], over: null,
+      d: 0, phase: 'roll', turnNo: 1, caps: [0, 0, 0, 0], hit: [0, 0, 0, 0], sixRuns: [0, 0, 0, 0] };
+    for (var c = 0; c < 4; c++) { st.pos.push([]); if (act[c]) for (var i = 0; i < np; i++) st.pos[c].push(-1); }
+    while (!act[st.turn]) st.turn++;
+    return st;
+  }
+  function clone(st) {
+    return { np: st.np, act: st.act.slice(), rules: st.rules, seed: st.seed, k: st.k, pos: st.pos.map(function (a) { return a.slice(); }),
+      turn: st.turn, sixes: st.sixes, last: st.last.slice(), done: st.done.slice(), over: st.over, d: st.d, phase: st.phase,
+      turnNo: st.turnNo, caps: st.caps.slice(), hit: st.hit.slice(), sixRuns: st.sixRuns.slice() };
+  }
+  function canTake(st, d) { return d === 6 || (st.rules.five && d === 5); }
+  // an opponent wall (house rule): 2+ planes of one opponent on track square a
+  function wallAt(st, c, a) {
+    if (!st.rules.wall) return false;
+    for (var o = 0; o < 4; o++) {
+      if (o === c || !st.act[o]) continue;
+      var n = 0, P = st.pos[o];
+      for (var i = 0; i < P.length; i++) if (P[i] >= 1 && P[i] <= LAST && absOf(o, P[i]) === a) n++;
+      if (n >= 2) return true;
+    }
+    return false;
+  }
+  // plan a move of a plane (or stack) at progress p by d. null = illegal.
+  function plan(st, c, p, d) {
+    if (p === GOAL) return null;
+    if (p < 0) return canTake(st, d) ? { to: 0, path: [0], takeoff: 1, jump: 0, fly: 0, bounce: 0 } : null;
+    var path = [], t = p + d, q;
+    if (t > GOAL) { for (q = p + 1; q <= GOAL; q++) path.push(q); t = 2 * GOAL - t; for (q = GOAL - 1; q >= t; q--) path.push(q); }
+    else for (q = p + 1; q <= t; q++) path.push(q);
+    for (var i = 0; i < path.length; i++) if (path[i] >= 1 && path[i] <= LAST && wallAt(st, c, absOf(c, path[i]))) return null;
+    var r = { to: t, path: path, takeoff: 0, jump: 0, fly: 0, bounce: p + d > GOAL ? 1 : 0 };
+    if (t === FLY) {
+      if (!wallAt(st, c, absOf(c, FLY + FLYLEN))) { r.fly = 1; r.to = FLY + FLYLEN; }
+    } else if (isJumpSq(t) && !wallAt(st, c, absOf(c, t + JUMP))) {
+      r.jump = 1; r.to = t + JUMP;
+      if (r.to === FLY && !wallAt(st, c, absOf(c, FLY + FLYLEN))) { r.fly = 1; r.to = FLY + FLYLEN; }
+    }
+    return r;
+  }
+  // all legal moves for player c with die d. A stack on the outer track can move as one (stack:1) or a single plane can leave it.
+  function legal(st, c, d) {
+    var P = st.pos[c], res = [], seen = {};
+    for (var i = 0; i < P.length; i++) {
+      var p = P[i];
+      if (p === GOAL || seen[p]) continue;
+      seen[p] = 1;
+      var r = plan(st, c, p, d);
+      if (!r) continue;
+      var grp = [];
+      for (var j = 0; j < P.length; j++) if (P[j] === p) grp.push(j);
+      r.c = c; r.from = p; r.pl = [i]; r.stack = 0;
+      res.push(r);
+      if (p >= 1 && p <= LAST && grp.length >= 2) {
+        var r2 = {}; for (var key in r) r2[key] = r[key];
+        r2.pl = grp; r2.stack = 1; res.push(r2);
+      }
+    }
+    return res;
+  }
+  function capture(st, c, p, ev, kind) {
+    if (p < 1 || p > LAST) return;
+    var a = absOf(c, p), v = [];
+    for (var o = 0; o < 4; o++) {
+      if (o === c || !st.act[o]) continue;
+      var P = st.pos[o];
+      for (var i = 0; i < P.length; i++) if (P[i] >= 1 && P[i] <= LAST && absOf(o, P[i]) === a) { v.push([o, i, P[i]]); P[i] = -1; }
+    }
+    if (v.length) { ev.push({ t: 'cap', c: c, at: p, kind: kind, v: v }); st.caps[c] += v.length; for (var k = 0; k < v.length; k++) st.hit[v[k][0]]++; }
+  }
+  // execute a move on the positions only (no turn logic). Returns the event list the renderer plays back.
+  function exec(st, mv) {
+    var c = mv.c, P = st.pos[c], ev = [], pl = mv.pl, i;
+    function setP(q) { for (var k = 0; k < pl.length; k++) P[pl[k]] = q; }
+    if (mv.takeoff) { setP(0); ev.push({ t: 'takeoff', c: c, pl: pl.slice() }); return ev; }
+    var land = mv.path[mv.path.length - 1];
+    ev.push({ t: 'walk', c: c, pl: pl.slice(), from: mv.from, path: mv.path.slice(), bounce: mv.bounce });
+    setP(land); capture(st, c, land, ev, 'land');
+    var cur = land;
+    if (mv.jump) { cur = land + JUMP; ev.push({ t: 'jump', c: c, pl: pl.slice(), from: land, to: cur }); setP(cur); capture(st, c, cur, ev, 'jump'); }
+    if (mv.fly) {
+      var o = (c + 3) % 4, v = [];
+      if (st.act[o]) { var Q = st.pos[o]; for (i = 0; i < Q.length; i++) if (Q[i] === LAST + CROSS_H) { v.push([o, i, Q[i]]); Q[i] = -1; } }
+      ev.push({ t: 'fly', c: c, pl: pl.slice(), from: cur, to: FLY + FLYLEN, v: v });
+      if (v.length) { st.caps[c] += v.length; st.hit[o] += v.length; }
+      cur = FLY + FLYLEN; setP(cur); capture(st, c, cur, ev, 'fly');
+    }
+    if (cur === GOAL) ev.push({ t: 'goal', c: c, pl: pl.slice() });
+    return ev;
+  }
+  function progress(st, c) { var s = 0, P = st.pos[c]; for (var i = 0; i < P.length; i++) s += P[i] + 1; return s; }
+  function finished(st, c) { var P = st.pos[c]; if (!P.length) return false; for (var i = 0; i < P.length; i++) if (P[i] !== GOAL) return false; return true; }
+  function nextSeat(st, c) {
+    for (var n = 1; n <= 4; n++) { var o = (c + n) % 4; if (st.act[o] && st.done.indexOf(o) < 0) return o; }
+    return c;
+  }
+  function checkOver(st) {
+    var rem = [];
+    for (var c = 0; c < 4; c++) if (st.act[c] && st.done.indexOf(c) < 0) rem.push(c);
+    if (rem.length <= 1 || (st.rules.first && st.done.length >= 1)) {
+      rem.sort(function (a, b) { return progress(st, b) - progress(st, a); });
+      st.over = { ranking: st.done.concat(rem), finished: st.done.length };
+      st.phase = 'over';
+      return true;
+    }
+    return false;
+  }
+  function endTurn(st) { st.sixes = 0; st.last = []; st.turn = nextSeat(st, st.turn); st.phase = 'roll'; st.turnNo++; }
+  // roll the die for the player to move. Returns {d, moves} or {d, pass} or {d, pen, ev}.
+  function roll(st) {
+    if (st.phase !== 'roll') return null;
+    var c = st.turn, d = die(st.seed, st.k); st.k++; st.d = d;
+    if (d === 6) {
+      st.sixes++;
+      if (st.sixes >= 3) {
+        st.sixRuns[c]++;
+        if (st.rules.triple) {
+          var ev = [], v = [];
+          for (var i = 0; i < st.last.length; i++) { var q = st.pos[c][st.last[i]]; if (q >= 0 && q <= LAST) { v.push([c, st.last[i], q]); st.pos[c][st.last[i]] = -1; } }
+          ev.push({ t: 'pen', c: c, v: v });
+          endTurn(st);
+          return { d: d, pen: 1, ev: ev, moves: [] };
+        }
+      }
+    }
+    var mv = legal(st, c, d);
+    if (!mv.length) {
+      if (d === 6) st.phase = 'roll'; else endTurn(st);
+      return { d: d, pass: 1, moves: [] };
+    }
+    st.phase = 'move';
+    return { d: d, moves: mv };
+  }
+  // play move (object from legal(), or its index) for the player to move. Returns events.
+  function play(st, mv) {
+    if (typeof mv === 'number') mv = legal(st, st.turn, st.d)[mv];
+    var c = st.turn, ev = exec(st, mv);
+    st.last = mv.pl.slice();
+    var fin = false;
+    if (finished(st, c) && st.done.indexOf(c) < 0) { st.done.push(c); fin = true; ev.push({ t: 'finish', c: c, rank: st.done.length }); }
+    if (checkOver(st)) return ev;
+    if (st.d === 6 && !fin) st.phase = 'roll'; else endTurn(st);
+    return ev;
+  }
+
+  // ---- computer players ----
+  var LEVELS = [
+    { name: '實習生', desc: '隨機選可動飛機', err: 1 },
+    { name: '副駕駛', desc: '貪心：先撞機、再起飛', err: 0.2 },
+    { name: '機長', desc: '一層評估全部項目', err: 0.08 },
+    { name: '資深機長', desc: 'expectimax 深度 2', err: 0.02 },
+    { name: '王牌飛行員', desc: 'expectimax 深度 2＋對手為資深機長', err: 0 }
+  ];
+  var PERS = [
+    { name: '效率塔台', short: '均衡', att: 0.5, safe: 1.0, launch: 9 },
+    { name: '莽撞機長', short: '攻擊', att: 0.85, safe: 0.55, launch: 11 },
+    { name: '謹慎領航', short: '安全', att: 0.3, safe: 1.5, launch: 7 }
+  ];
+  function val(p, W) { return p < 0 ? 0 : p === 0 ? W.launch : p <= LAST ? 10 + p : p < GOAL ? 16 + p : 84; }
+  function popc(x) { var n = 0; while (x) { n += x & 1; x >>= 1; } return n; }
+  // probability that each track square (index 0..51) — and c's runway square crossed by a flight (index 52) — is hit next turn
+  function threat(st, c) {
+    var m = new Float64Array(53), mask = new Uint8Array(53);
+    for (var o = 0; o < 4; o++) {
+      if (o === c || !st.act[o] || st.done.indexOf(o) >= 0) continue;
+      mask.fill(0);
+      var P = st.pos[o], cross = (o + 3) % 4 === c, any = 0;
+      for (var i = 0; i < P.length; i++) {
+        var p = P[i];
+        if (p < 0 || p > LAST) continue;
+        for (var d = 1; d <= 6; d++) {
+          var q = p + d; if (q > LAST) break;
+          var b = 1 << d; any = 1;
+          mask[absOf(o, q)] |= b;
+          if (q === FLY) { mask[absOf(o, FLY + FLYLEN)] |= b; if (cross) mask[52] |= b; }
+          else if (isJumpSq(q)) { var j = q + JUMP; mask[absOf(o, j)] |= b; if (j === FLY) { mask[absOf(o, FLY + FLYLEN)] |= b; if (cross) mask[52] |= b; } }
+        }
+      }
+      if (!any) continue;
+      for (var a = 0; a < 53; a++) if (mask[a]) { var pr = popc(mask[a]) / 6; m[a] = 1 - (1 - m[a]) * (1 - pr); }
+    }
+    return m;
+  }
+  function score(st, c, W, thr) {
+    var s = 0, P = st.pos[c];
+    for (var i = 0; i < P.length; i++) {
+      var p = P[i], v = val(p, W);
+      s += v;
+      if (thr) {
+        if (p >= 1 && p <= LAST) s -= thr[absOf(c, p)] * v * W.safe;
+        else if (p === LAST + CROSS_H) s -= thr[52] * v * W.safe;
+      }
+    }
+    return s;
+  }
+  function util(st, c, W) {
+    var me = score(st, c, W, threat(st, c)), op = 0;
+    for (var o = 0; o < 4; o++) if (o !== c && st.act[o]) op += score(st, o, W, null);
+    return me - W.att * op;
+  }
+  function after(st, mv) { var s = clone(st); var ev = exec(s, mv); return { s: s, ev: ev }; }
+  function nextMover(st, c, d) { return d === 6 ? c : nextSeat(st, c); }
+  function best1(st, c, mv, W) {
+    var bi = 0, bv = -1e9;
+    for (var i = 0; i < mv.length; i++) { var v = util(after(st, mv[i]).s, c, W) + i * 1e-6; if (v > bv) { bv = v; bi = i; } }
+    return bi;
+  }
+  // value for c of each root move: average over the next mover's die of the position after their reply (chosen by the opponent model)
+  function expect2(st, c, d, mv, W, model) {
+    var vals = [];
+    for (var i = 0; i < mv.length; i++) {
+      var s1 = after(st, mv[i]).s;
+      if (finished(s1, c)) { vals.push(1e6); continue; }
+      var n = nextMover(s1, c, d), tot = 0;
+      for (var e = 1; e <= 6; e++) {
+        var om = legal(s1, n, e);
+        if (!om.length) { tot += util(s1, c, W); continue; }
+        var j;
+        if (n === c) j = best1(s1, c, om, W);
+        else if (model === 4) { var v4 = expect2(s1, n, e, om, PERS[0], 3); j = argmax(v4); }
+        else j = best1(s1, n, om, PERS[0]);
+        tot += util(after(s1, om[j]).s, c, W);
+      }
+      vals.push(tot / 6);
+    }
+    return vals;
+  }
+  function argmax(a) { var bi = 0; for (var i = 1; i < a.length; i++) if (a[i] > a[bi]) bi = i; return bi; }
+  function greedy(st, c, mv) {
+    var bi = 0, bv = -1e9;
+    for (var i = 0; i < mv.length; i++) {
+      var r = after(st, mv[i]), v = 0;
+      r.ev.forEach(function (e) { if (e.t === 'cap') v += 1000 * e.v.length; if (e.t === 'fly' && e.v.length) v += 1000; });
+      if (mv[i].takeoff) v += 500;
+      if (mv[i].to === GOAL) v += 300;
+      v += (mv[i].to - Math.max(mv[i].from, 0)) * mv[i].pl.length + (mv[i].stack ? -1 : 0);
+      if (v > bv) { bv = v; bi = i; }
+    }
+    return bi;
+  }
+  // choose a move for the player to move. opts: {level, pers, seed}. Returns {i, reason}
+  function think(st, level, pers, seed) {
+    var c = st.turn, d = st.d, mv = legal(st, c, d), W = PERS[pers || 0], R = rng(seed || 1), i;
+    if (mv.length <= 1) return { i: 0, n: mv.length };
+    var L = LEVELS[level - 1] || LEVELS[2];
+    if (level === 1 || R() < L.err) i = Math.floor(R() * mv.length);
+    else if (level === 2) i = greedy(st, c, mv);
+    else if (level === 3) i = best1(st, c, mv, W);
+    else i = argmax(expect2(st, c, d, mv, W, level === 5 ? 4 : 3));
+    return { i: i, n: mv.length };
+  }
+  var NAMES = ['紅', '黃', '藍', '綠'];
+  // a short explanation of why a move is good (for the hint button)
+  function explain(st, mv) {
+    var c = mv.c, r = after(st, mv), ev = r.ev, parts = [], W = PERS[0];
+    ev.forEach(function (e) {
+      if (e.t === 'cap') parts.push('撞回' + NAMES[e.v[0][0]] + '色 ' + e.v.length + ' 架飛機');
+      if (e.t === 'fly' && e.v.length) parts.push('飛越時撞回' + NAMES[e.v[0][0]] + '色跑道上的飛機');
+    });
+    if (mv.to === GOAL) parts.push('直接抵達終點');
+    if (mv.takeoff) parts.push('起飛新飛機，之後有更多選擇');
+    if (mv.fly) parts.push('停上捷徑格，飛越 12 格');
+    else if (mv.jump) parts.push('同色格跳格 +4');
+    if (mv.from <= LAST && mv.to > LAST && mv.to < GOAL) parts.push('進入終點跑道，不會再被撞');
+    var before = threat(st, c), aft = threat(r.s, c);
+    var rb = mv.from >= 1 && mv.from <= LAST ? before[absOf(c, mv.from)] : 0, ra = mv.to >= 1 && mv.to <= LAST ? aft[absOf(c, mv.to)] : 0;
+    if (rb >= 0.3 && ra < rb - 0.15) parts.push('避開後方 ' + Math.round(rb * 100) + '% 的撞機風險');
+    if (mv.stack) parts.push('整疊一起前進');
+    if (!parts.length) parts.push(mv.to > LAST ? '穩穩往終點推進' : '推進最有利的飛機');
+    var risk = '';
+    if (mv.to >= 1 && mv.to <= LAST && ra >= 0.3) risk = '（落點有 ' + Math.round(ra * 100) + '% 被撞風險）';
+    return parts.join('，') + risk;
+  }
+  return { LAST: LAST, GOAL: GOAL, FLY: FLY, FLYLEN: FLYLEN, JUMP: JUMP, CROSS_H: CROSS_H, CELL: CELL, RUN: RUN, HANG: HANG, LAUNCH: LAUNCH,
+    absOf: absOf, relOf: relOf, colorOf: colorOf, isJumpSq: isJumpSq, gridOf: gridOf, die: die, rng: rng, newGame: newGame, clone: clone,
+    plan: plan, legal: legal, exec: exec, roll: roll, play: play, progress: progress, finished: finished, nextSeat: nextSeat, wallAt: wallAt,
+    LEVELS: LEVELS, PERS: PERS, threat: threat, util: util, think: think, explain: explain, NAMES: NAMES };
+})();
+/*CORE-END*/
+</script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const COL = ['#e04848', '#f2b632', '#3a7bd5', '#3fa65a'], CNAME = ['紅', '黃', '藍', '綠'];
+const PLANE = 'M0-48C6-48 8-40 8-30L8-12 46 4 46 14 8 8 7 30 20 40 20 47 0 43-20 47-20 40-7 30-8 8-46 14-46 4-8-12-8-30C-8-40-6-48 0-48Z';
+const planeSvg = c => `<svg viewBox="-50 -50 100 100" style="--c:${COL[c]}"><path d="${PLANE}"/></svg>`;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+// ---------- storage ----------
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem('aeroplane.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('aeroplane.' + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem('aeroplane.' + k); } catch (e) {} }
+};
+const DEF = { np: 4, seats: [{ t: 'h' }, { t: 'c', lv: 3, pe: 1 }, { t: 'c', lv: 3, pe: 2 }, { t: 'c', lv: 3, pe: 0 }],
+  rules: { five: false, wall: false, triple: true, first: false }, auto: true, speed: 2, snd: true, tut: false };
+const S = Object.assign({}, DEF, LS.get('settings', {}));
+S.rules = Object.assign({}, DEF.rules, S.rules || {});
+if (!Array.isArray(S.seats) || S.seats.length !== 4) S.seats = DEF.seats;
+const saveS = () => LS.set('settings', S);
+const ST = Object.assign({ games: 0, wins: 0, colorWins: [0, 0, 0, 0], colorGames: [0, 0, 0, 0], turns: 0, caps: 0, hits: 0, ach: {}, daily: {} }, LS.get('stats', {}));
+const saveST = () => LS.set('stats', ST);
+
+// ---------- audio ----------
+let AC = null;
+function ac() { if (!S.snd) return null; if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } } if (AC.state === 'suspended') AC.resume().catch(() => {}); return AC; }
+function tone(f, d, type, vol, f2, delay) {
+  const a = ac(); if (!a) return; const t = a.currentTime + (delay || 0);
+  const o = a.createOscillator(), g = a.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || .15, t + .01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + d + .02);
+}
+let noiseBuf = null;
+function noise(d, vol, f1, f2, q, delay, type) {
+  const a = ac(); if (!a) return; const t = a.currentTime + (delay || 0);
+  if (!noiseBuf) { noiseBuf = a.createBuffer(1, a.sampleRate, a.sampleRate); const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1; }
+  const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(); s.buffer = noiseBuf;
+  f.type = type || 'bandpass'; f.Q.value = q || 1; f.frequency.setValueAtTime(f1, t); if (f2) f.frequency.exponentialRampToValueAtTime(f2, t + d);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start(t, Math.random() * .5); s.stop(t + d + .02);
+}
+const SFX = {
+  dice() { for (let i = 0; i < 7; i++) noise(.05, .35, 2500 + Math.random() * 2000, 0, 4, i * .075 + Math.random() * .03); },
+  land() { noise(.07, .4, 1800, 0, 3); tone(180, .08, 'triangle', .12); },
+  tick() { tone(700 + Math.random() * 120, .05, 'square', .04); },
+  whoosh() { noise(.32, .35, 400, 3000, 2); },
+  prop() { const a = ac(); if (!a) return; const t = a.currentTime, o = a.createOscillator(), l = a.createOscillator(), lg = a.createGain(), g = a.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(70, t); o.frequency.linearRampToValueAtTime(110, t + .4); o.frequency.linearRampToValueAtTime(80, t + .8);
+    l.frequency.value = 28; lg.gain.value = .06; l.connect(lg); lg.connect(g.gain); g.gain.setValueAtTime(.07, t); g.gain.linearRampToValueAtTime(.0001, t + .85);
+    const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; o.connect(f); f.connect(g); g.connect(a.destination); o.start(t); l.start(t); o.stop(t + .9); l.stop(t + .9); noise(.8, .12, 600, 1500, 1); },
+  boom() { noise(.55, .7, 900, 60, .7, 0, 'lowpass'); tone(110, .45, 'sine', .3, 30); },
+  takeoff() { tone(300, .3, 'triangle', .1, 700); noise(.3, .12, 800, 2400, 2); },
+  horn() { [523, 659, 784].forEach((f, i) => tone(f, .35, 'triangle', .12, 0, i * .09)); tone(1046, .5, 'triangle', .1, 0, .3); },
+  win() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, .28, 'triangle', .13, 0, i * .12)); },
+  lose() { [392, 349, 311, 262].forEach((f, i) => tone(f, .3, 'triangle', .1, 0, i * .15)); },
+  bad() { tone(220, .25, 'square', .07, 110); },
+  click() { tone(520, .04, 'triangle', .07); }
+};
+const buzz = p => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} };
+
+// ---------- canvas & layout ----------
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, B = { x: 0, y: 0, s: 300, u: 20 }, dark = false, boardCache = null, dotPat = null;
+const mqDark = matchMedia('(prefers-color-scheme: dark)');
+function layout() {
+  W = innerWidth; H = innerHeight; DPR = Math.min(2, devicePixelRatio || 1);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  const land = W > H * 1.15;
+  document.body.classList.toggle('land', land);
+  if (land) { const cs = getComputedStyle($('app')); const bs = Math.min(H - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom), W * .58); document.body.style.setProperty('--bs', Math.floor(bs) + 'px'); }
+  const bb = $('boardBox'); bb.style.flex = ''; bb.style.height = '';
+  let r = bb.getBoundingClientRect();
+  const s = Math.floor(Math.min(r.width, r.height));
+  if (!land) { bb.style.flex = 'none'; bb.style.height = s + 'px'; r = bb.getBoundingClientRect(); }
+  B = { x: Math.round(r.left + (r.width - s) / 2), y: Math.round(r.top + (r.height - s) / 2), s, u: s / 15 };
+  dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : mqDark.matches;
+  boardCache = null;
+}
+const gx = (r, c) => [B.x + (c + .5) * B.u, B.y + (r + .5) * B.u];
+function rr(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function mix(hex, t, to) { const a = parseInt(hex.slice(1), 16), b = parseInt((to || '#ffffff').slice(1), 16); const m = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t); return 'rgb(' + m(16) + ',' + m(8) + ',' + m(0) + ')'; }
+const PP = new Path2D(PLANE);
+function drawPlane(g, x, y, ang, size, col, opts) {
+  opts = opts || {};
+  g.save(); g.translate(x, y);
+  const lift = opts.lift || 0;
+  if (opts.shadow !== false) { g.save(); g.translate(size * (.08 + lift * .5), size * (.12 + lift * .7)); g.rotate(ang); g.scale(size / 100, size / 100); g.fillStyle = 'rgba(0,0,0,' + (.28 - lift * .12) + ')'; g.fill(PP); g.restore(); }
+  g.rotate(ang); const sc = size * (1 + lift * .35) / 100; g.scale(sc, sc);
+  g.fillStyle = col; g.fill(PP);
+  g.lineWidth = 5; g.strokeStyle = opts.stroke || '#fff'; g.lineJoin = 'round'; g.stroke(PP);
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(-46, 4, 38, 3); g.fillRect(8, 4, 38, 3);
+  g.fillStyle = '#1d2b44'; g.beginPath(); g.ellipse(0, -30, 4, 8, 0, 0, 7); g.fill();
+  g.restore();
+}
+function halftone(g) {
+  if (!dotPat) { const p = document.createElement('canvas'); p.width = p.height = 6; const q = p.getContext('2d'); q.fillStyle = '#000'; q.beginPath(); q.arc(3, 3, 1.1, 0, 7); q.fill(); dotPat = p; }
+  return g.createPattern(dotPat, 'repeat');
+}
+function buildBoard() {
+  const s = Math.round(B.s * DPR), u = s / 15, c2 = document.createElement('canvas'); c2.width = c2.height = s;
+  const g = c2.getContext('2d'), pat = halftone(g);
+  const P = dark ? { bd: '#13213f', bd2: '#1a2c52', edge: '#0a1430', cell: '#22365f', text: '#fff' } : { bd: '#f4ead5', bd2: '#eadcbe', edge: '#d8c39b', cell: '#fffaf0', text: '#fff' };
+  const colr = c => dark ? mix(COL[c], .18, '#000000') : COL[c];
+  const at = (r, c) => [(c + .5) * u, (r + .5) * u];
+  rr(g, 0, 0, s, s, u * .55); g.fillStyle = P.bd; g.fill();
+  g.save(); g.clip(); g.globalAlpha = .05; g.fillStyle = pat; g.fillRect(0, 0, s, s); g.restore();
+  g.lineWidth = u * .08; g.strokeStyle = P.edge; rr(g, u * .04, u * .04, s - u * .08, s - u * .08, u * .52); g.stroke();
+  // hangars
+  for (let c = 0; c < 4; c++) {
+    const h = AP.HANG[c], mr = (h[0][0] + h[3][0]) / 2, mc = (h[0][1] + h[3][1]) / 2;
+    const r0 = mr < 7 ? 0 : 9, c0 = mc < 7 ? 0 : 9;
+    rr(g, (c0 + .25) * u, (r0 + .25) * u, 5.5 * u, 5.5 * u, u * .7);
+    g.fillStyle = dark ? mix(COL[c], .78, '#13213f') : mix(COL[c], .8); g.fill();
+    g.lineWidth = u * .1; g.strokeStyle = colr(c); g.stroke();
+    g.save(); g.clip(); g.globalAlpha = .08; g.fillStyle = pat; g.fillRect(0, 0, s, s); g.restore();
+    for (const hp of h) { const [x, y] = at(hp[0], hp[1]); g.beginPath(); g.arc(x, y, u * .72, 0, 7); g.fillStyle = dark ? '#0f1b36' : '#fffdf6'; g.fill(); g.lineWidth = u * .07; g.strokeStyle = colr(c); g.setLineDash([u * .16, u * .12]); g.stroke(); g.setLineDash([]); }
+    const L = AP.LAUNCH[c], [lx, ly] = at(L[0], L[1]), st = AP.CELL[AP.absOf(c, 1)], [sx, sy] = at(st[0], st[1]);
+    g.beginPath(); g.arc(lx, ly, u * .5, 0, 7); g.fillStyle = colr(c); g.fill(); g.lineWidth = u * .07; g.strokeStyle = '#fff'; g.stroke();
+    const a = Math.atan2(sy - ly, sx - lx); g.save(); g.translate(lx, ly); g.rotate(a); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(u * .28, 0); g.lineTo(-u * .14, -u * .2); g.lineTo(-u * .14, u * .2); g.fill(); g.restore();
+  }
+  // track
+  const cellR = u * .2, cs = u * .9;
+  const cellAt = (r, c, fill) => { const [x, y] = at(r, c); rr(g, x - cs / 2, y - cs / 2, cs, cs, cellR); g.fillStyle = fill; g.fill(); g.save(); g.clip(); g.globalAlpha = .08; g.fillStyle = pat; g.fillRect(x - cs, y - cs, cs * 2, cs * 2); g.globalAlpha = .22; g.fillStyle = '#fff'; g.fillRect(x - cs / 2, y - cs / 2, cs, cs * .18); g.restore(); };
+  const arrow = (x, y, ang, sz, col) => { g.save(); g.translate(x, y); g.rotate(ang); g.fillStyle = col; g.beginPath(); g.moveTo(sz, 0); g.lineTo(-sz * .6, -sz * .75); g.lineTo(-sz * .25, 0); g.lineTo(-sz * .6, sz * .75); g.closePath(); g.fill(); g.restore(); };
+  for (let a = 0; a < 52; a++) { const [r, c] = AP.CELL[a]; cellAt(r, c, colr(AP.colorOf(a))); }
+  // runways + center
+  const ctr = at(7, 7);
+  for (let c = 0; c < 4; c++) {
+    const R = AP.RUN[c], tipC = AP.CELL[AP.absOf(c, 51)];
+    // centre triangle
+    const e = at(R[4][0], R[4][1]), dx = (ctr[0] - e[0]) / 2, dy = (ctr[1] - e[1]) / 2;
+    g.beginPath(); g.moveTo(ctr[0], ctr[1]); g.lineTo(ctr[0] - 1.5 * dx - 1.5 * dy, ctr[1] - 1.5 * dy + 1.5 * dx); g.lineTo(ctr[0] - 1.5 * dx + 1.5 * dy, ctr[1] - 1.5 * dy - 1.5 * dx); g.closePath();
+    g.fillStyle = colr(c); g.fill(); g.lineWidth = u * .06; g.strokeStyle = P.bd; g.stroke();
+    for (let h = 0; h < 5; h++) { cellAt(R[h][0], R[h][1], dark ? mix(COL[c], .35, '#13213f') : mix(COL[c], .3)); const [x, y] = at(R[h][0], R[h][1]); arrow(x, y, Math.atan2(dy, dx), u * .2, 'rgba(255,255,255,.75)'); }
+    const [x6, y6] = at(R[5][0], R[5][1]); g.beginPath(); g.arc(x6, y6, u * .36, 0, 7); g.fillStyle = 'rgba(255,255,255,.3)'; g.fill();
+    const [tx, ty] = at(tipC[0], tipC[1]); arrow(tx, ty, Math.atan2(dy, dx), u * .26, COL[c]); g.lineWidth = u * .05; g.strokeStyle = '#fff';
+    // start square marker
+    const sc = AP.CELL[AP.absOf(c, 1)], [sx, sy] = at(sc[0], sc[1]); g.beginPath(); g.arc(sx, sy, u * .3, 0, 7); g.lineWidth = u * .08; g.strokeStyle = colr(c); g.fillStyle = '#fff'; g.fill(); g.stroke();
+    // shortcut: dashed flight line
+    const f1 = AP.CELL[AP.absOf(c, AP.FLY)], f2 = AP.CELL[AP.absOf(c, AP.FLY + AP.FLYLEN)], [ax, ay] = at(f1[0], f1[1]), [bx, by] = at(f2[0], f2[1]);
+    const mx = (ax + bx) / 2, my = (ay + by) / 2, nx = -(by - ay), ny = bx - ax, bend = .32;
+    const sg = -(Math.sign((mx - ctr[0]) * nx + (my - ctr[1]) * ny) || 1), qx = mx + nx * bend * sg, qy = my + ny * bend * sg;
+    FLYCTRL[c] = [(qx / u) - .5, (qy / u) - .5];
+    g.lineWidth = u * .13; g.strokeStyle = dark ? '#fff' : '#fff'; g.setLineDash([]); g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(qx, qy, bx, by); g.stroke();
+    g.lineWidth = u * .08; g.strokeStyle = COL[c]; g.setLineDash([u * .2, u * .14]); g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(qx, qy, bx, by); g.stroke(); g.setLineDash([]);
+    arrow(bx + (qx - bx) * .28, by + (qy - by) * .28, Math.atan2(by - qy, bx - qx), u * .2, COL[c]);
+    g.save(); g.translate(ax, ay); g.rotate(Math.atan2(qy - ay, qx - ax) + Math.PI / 2); g.scale(u * .0055, u * .0055); g.fillStyle = '#fff'; g.fill(PP); g.restore();
+  }
+  g.beginPath(); g.arc(ctr[0], ctr[1], u * .55, 0, 7); g.fillStyle = P.bd; g.fill(); g.lineWidth = u * .08; g.strokeStyle = dark ? '#f2b632' : '#c99a3a'; g.stroke();
+  g.fillStyle = dark ? '#f2b632' : '#c99a3a'; g.beginPath();
+  for (let i = 0; i < 10; i++) { const rr2 = i % 2 ? u * .16 : u * .36, an = -Math.PI / 2 + i * Math.PI / 5; g.lineTo(ctr[0] + Math.cos(an) * rr2, ctr[1] + Math.sin(an) * rr2); } g.fill();
+  boardCache = c2;
+}
+const FLYCTRL = [[7, 7], [7, 7], [7, 7], [7, 7]];
+
+// ---------- display model ----------
+let G = null, SP = null;          // G = rules state, SP = shown positions (lag behind G while animating)
+let OV = {};                       // per-plane overrides during animation: key c*4+i -> {r, c, ang, lift, spin, alpha}
+const parts = [];
+function gridPos(c, p, i) {
+  if (p === AP.GOAL) { const R = AP.RUN[c], dr = R[5][0] - R[4][0], dc = R[5][1] - R[4][1], off = [-.39, -.13, .13, .39][i % 4] * (G.np === 2 ? 1.4 : 1); return [7 - dr * .5 + dc * off, 7 - dc * .5 - dr * off]; }
+  return AP.gridOf(c, p, i);
+}
+function headingOf(c, p, i) {
+  let a, b;
+  if (p < 0) { a = AP.HANG[c][i % 4]; b = AP.LAUNCH[c]; }
+  else if (p === AP.GOAL) { a = AP.RUN[c][4]; b = AP.RUN[c][5]; }
+  else if (p === AP.LAST + 6) { a = AP.RUN[c][4]; b = AP.RUN[c][5]; }
+  else { a = AP.gridOf(c, p, i); b = AP.gridOf(c, p + 1, i); }
+  return Math.atan2(b[1] - a[1], -(b[0] - a[0]));
+}
+const ang2 = (a, b) => Math.atan2(b[1] - a[1], -(b[0] - a[0]));
+
+// ---------- animation queue ----------
+const Q = []; let cur = null, side = [], onIdle = null;
+function anySpeed() { return G && isHuman(G.turn) ? 1 : speedNow(); }
+function speedNow() { return shiftDown ? 4 : S.speed; }
+function push(task) { Q.push(task); }
+function runQueue(done) { onIdle = done; }
+function tickAnim(now) {
+  for (let k = side.length - 1; k >= 0; k--) { const t = side[k]; const f = clamp((now - t.t0) / t.dur, 0, 1); t.run(f); if (f >= 1) { t.end && t.end(); side.splice(k, 1); } }
+  let guard = 0;
+  while (guard++ < 50) {
+    if (!cur) { cur = Q.shift(); if (!cur) break; cur.t0 = now; cur.dur = cur.dur / cur.spd; cur.start && cur.start(); }
+    const f = cur.dur > 0 ? clamp((now - cur.t0) / cur.dur, 0, 1) : 1;
+    cur.run && cur.run(f);
+    if (f < 1) break;
+    cur.end && cur.end(); const over = cur.t0 + cur.dur; cur = null; now = Math.max(now, over);
+  }
+  if (!cur && !Q.length && !side.length && onIdle) { const f = onIdle; onIdle = null; f(); }
+}
+function skipAnim() {
+  const fast = performance.now() + 1e9;
+  if (cur) { cur.run && cur.run(1); cur.end && cur.end(); cur = null; }
+  while (Q.length) { const t = Q.shift(); t.skip = true; t.start && t.start(); t.run && t.run(1); t.end && t.end(); }
+  side.forEach(t => { t.run(1); t.end && t.end(); }); side = [];
+  parts.length = 0;
+  tickAnim(fast);
+}
+const busy = () => !!(cur || Q.length || side.length);
+function key(c, i) { return c * 4 + i; }
+function hopTask(c, pl, fromG, toG, dur, lift, spd, opts) {
+  opts = opts || {};
+  const a = ang2(fromG, toG);
+  return { dur, spd, start() { opts.onStart && opts.onStart(); }, run(f) {
+    const e = opts.lin ? f : ease(f);
+    let r = fromG[0] + (toG[0] - fromG[0]) * e, cc = fromG[1] + (toG[1] - fromG[1]) * e;
+    if (opts.ctrl) { const q = opts.ctrl, m = 1 - e; r = m * m * fromG[0] + 2 * m * e * q[0] + e * e * toG[0]; cc = m * m * fromG[1] + 2 * m * e * q[1] + e * e * toG[1]; }
+    const L = Math.sin(Math.PI * f) * lift;
+    pl.forEach(i => { OV[key(c, i)] = { r, c: cc, ang: opts.ctrl ? OVang(opts, e, fromG, toG) : a, lift: L }; });
+    opts.onRun && opts.onRun(f, r, cc);
+  }, end() { opts.onEnd && opts.onEnd(); } };
+}
+function OVang(o, e, A, Bq) { const q = o.ctrl, m = 1 - e; const dr = 2 * m * (q[0] - A[0]) + 2 * e * (Bq[0] - q[0]), dc = 2 * m * (q[1] - A[1]) + 2 * e * (Bq[1] - q[1]); return Math.atan2(dc, -dr); }
+function commit(c, pl, p) { pl.forEach(i => { SP[c][i] = p; delete OV[key(c, i)]; }); }
+function sendHome(list, delay, fromG) {
+  // list of [o, i, p]: spin back to hangar (side animation so the mover keeps going)
+  list.forEach(([o, i, p], n) => {
+    const A = fromG || gridPos(o, p, i), Bh = AP.HANG[o][i % 4];
+    side.push({ t0: performance.now() + (delay || 0) + n * 60, dur: 750, run(f) {
+      if (f <= 0) return; const e = ease(f);
+      OV[key(o, i)] = { r: A[0] + (Bh[0] - A[0]) * e, c: A[1] + (Bh[1] - A[1]) * e, ang: f * Math.PI * 4, lift: Math.sin(Math.PI * f) * 1.2 };
+    }, end() { SP[o][i] = -1; delete OV[key(o, i)]; } });
+  });
+}
+function boom(gp, col) {
+  const [x, y] = gx(gp[0], gp[1]);
+  for (let k = 0; k < 26; k++) { const a = Math.random() * 7, v = (1 + Math.random() * 3) * B.u * .06; parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, dec: .025 + Math.random() * .02, size: B.u * (.08 + Math.random() * .12), col: Math.random() < .5 ? '#ffb347' : col, g: .02 }); }
+  for (let k = 0; k < 8; k++) { const a = Math.random() * 7; parts.push({ x, y, vx: Math.cos(a) * B.u * .03, vy: Math.sin(a) * B.u * .03, life: 1, dec: .018, size: B.u * .3, col: 'smoke', grow: 1.02 }); }
+  flash = 1; shake = 1;
+}
+function cloud(gp) { const [x, y] = gx(gp[0], gp[1]); parts.push({ x: x + (Math.random() - .5) * B.u * .3, y: y + (Math.random() - .5) * B.u * .3, vx: 0, vy: 0, life: 1, dec: .025, size: B.u * (.18 + Math.random() * .12), col: 'cloud', grow: 1.025 }); }
+function sparkle(gp, col, n) { const [x, y] = gx(gp[0], gp[1]); for (let k = 0; k < (n || 20); k++) { const a = Math.random() * 7, v = Math.random() * B.u * .1; parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - B.u * .03, life: 1, dec: .02, size: B.u * .1, col: k % 3 ? col : '#fff4b0', g: .004, star: 1 }); } }
+let flash = 0, shake = 0;
+// translate rule events into animation tasks
+function playEvents(ev, spd) {
+  ev.forEach(e => {
+    const c = e.c;
+    if (e.t === 'takeoff') {
+      const i = e.pl[0], A = AP.HANG[c][i % 4], L = AP.LAUNCH[c];
+      push(hopTask(c, e.pl, A, L, 420, .9, spd, { onStart() { SFX.takeoff(); }, onEnd() { commit(c, e.pl, 0); } }));
+    } else if (e.t === 'walk') {
+      let prev = gridPos(c, e.from, e.pl[0]);
+      e.path.forEach((p, n) => {
+        const nx = gridPos(c, p, e.pl[0]), last = n === e.path.length - 1;
+        push(hopTask(c, e.pl, prev, nx, 125, .35, spd, { onStart() { SFX.tick(); }, onEnd() { commit(c, e.pl, p); if (last) SFX.land(); } }));
+        prev = nx;
+      });
+    } else if (e.t === 'cap') {
+      push({ dur: 220, spd, start() { const gp = gridPos(c, e.at, 0); boom(gp, COL[e.v[0][0]]); SFX.boom(); buzz([40, 30, 40]); sendHome(e.v, 80); toast(`${pname(c)}撞回${CNAME[e.v[0][0]]}色 ${e.v.length} 架飛機！`); } });
+    } else if (e.t === 'jump') {
+      const A = gridPos(c, e.from, 0), Bq = gridPos(c, e.to, 0);
+      push(hopTask(c, e.pl, A, Bq, 360, 1.1, spd, { onStart() { SFX.whoosh(); }, onRun(f, r, cc) { if (Math.random() < .5) cloud([r, cc]); }, onEnd() { commit(c, e.pl, e.to); SFX.land(); } }));
+    } else if (e.t === 'fly') {
+      const A = gridPos(c, e.from, 0), Bq = gridPos(c, e.to, 0), crossG = AP.RUN[(c + 3) % 4][AP.CROSS_H - 1];
+      let hit = false;
+      push(hopTask(c, e.pl, A, Bq, 900, 1.6, spd, { ctrl: FLYCTRL[c], onStart() { SFX.prop(); }, onRun(f, r, cc) { cloud([r, cc]); if (!hit && f > .5 && e.v.length) { hit = true; boom(crossG, COL[(c + 3) % 4]); SFX.boom(); buzz([40, 30, 40]); sendHome(e.v, 0, crossG); toast(`飛越時撞回${CNAME[(c + 3) % 4]}色跑道上的飛機！`); } }, onEnd() { commit(c, e.pl, e.to); SFX.land(); } }));
+    } else if (e.t === 'goal') {
+      push({ dur: 260, spd, start() { SFX.horn(); sparkle([7, 7], COL[c], 30); buzz(30); } });
+    } else if (e.t === 'finish') {
+      push({ dur: 500, spd, start() { toast(`${pname(c)}全部抵達，第 ${e.rank} 名！`); sparkle([7, 7], COL[c], 50); } });
+    } else if (e.t === 'pen') {
+      push({ dur: 300, spd, start() { SFX.bad(); buzz([60, 40, 60]); toast('連續三次 6！最後移動的飛機返回機場'); if (e.v.length) sendHome(e.v, 0); } });
+    }
+  });
+}
+
+// ---------- rendering ----------
+let movable = [], hintMv = null, preview = null, tutHL = null, lastT = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (document.hidden) return;
+  tickAnim(now);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  if (!G) return;
+  if (!boardCache) buildBoard();
+  let sx = 0, sy = 0;
+  if (shake > 0) { sx = (Math.random() - .5) * shake * 6; sy = (Math.random() - .5) * shake * 6; shake = Math.max(0, shake - .06); }
+  ctx.save(); ctx.translate(sx, sy);
+  ctx.drawImage(boardCache, B.x, B.y, B.s, B.s);
+  const u = B.u, t = now / 1000;
+  if (dark) { // night runway lights
+    for (let a = 0; a < 52; a++) { const [r, c] = AP.CELL[a], [x, y] = gx(r, c), al = .25 + .75 * Math.max(0, Math.sin(t * 3 - a * .45)); ctx.fillStyle = 'rgba(255,240,170,' + al.toFixed(2) + ')'; ctx.beginPath(); ctx.arc(x + u * .33, y - u * .33, u * .06, 0, 7); ctx.fill(); }
+  }
+  if (tutHL) drawTut(t);
+  // highlight movable planes / preview / hint
+  if (movable.length && !busy()) {
+    const seen = {};
+    movable.forEach(m => { const k = m.from; if (seen[k]) return; seen[k] = 1; const gp = gridPos(m.c, m.from, m.pl[0]), [x, y] = gx(gp[0], gp[1]); ctx.beginPath(); ctx.arc(x, y, u * (.55 + .07 * Math.sin(t * 6)), 0, 7); ctx.strokeStyle = COL[m.c]; ctx.lineWidth = u * .09; ctx.globalAlpha = .9; ctx.stroke(); ctx.globalAlpha = .18; ctx.fillStyle = COL[m.c]; ctx.fill(); ctx.globalAlpha = 1; });
+  }
+  if (hintMv && !busy()) {
+    const gp = gridPos(hintMv.c, hintMv.from, hintMv.pl[0]), [x, y] = gx(gp[0], gp[1]); ctx.save(); ctx.setLineDash([u * .14, u * .1]); ctx.lineDashOffset = -t * 20; ctx.strokeStyle = '#f2b632'; ctx.lineWidth = u * .11; ctx.beginPath(); ctx.arc(x, y, u * .75, 0, 7); ctx.stroke(); ctx.restore();
+    drawDest(hintMv, t, '#f2b632');
+  }
+  if (preview && !busy()) drawDest(preview, t, COL[preview.c], true);
+  // planes
+  const groups = {};
+  for (let c = 0; c < 4; c++) {
+    if (!G.act[c]) continue;
+    SP[c].forEach((p, i) => {
+      const o = OV[key(c, i)];
+      let r, cc, ang, lift = 0, k;
+      if (o) { r = o.r; cc = o.c; ang = o.ang; lift = o.lift; k = 'o' + c + ':' + r.toFixed(3) + ':' + cc.toFixed(3); }
+      else { [r, cc] = gridPos(c, p, i); ang = headingOf(c, p, i); k = (p < 0 || p === AP.GOAL) ? 'u' + c + i : 's' + c + ':' + p; }
+      (groups[k] = groups[k] || { c, r, cc, ang, lift, n: 0, p, i, moving: !!o }).n++;
+    });
+  }
+  const list = Object.values(groups).sort((a, b) => (a.lift - b.lift) || (a.moving - b.moving));
+  const mvSet = {}; if (!busy()) movable.forEach(m => { mvSet[m.c + ':' + m.from] = 1; });
+  list.forEach(gp => {
+    let [x, y] = gx(gp.r, gp.cc);
+    const small = gp.p === AP.GOAL && !gp.moving;
+    let size = u * (small ? .62 : (gp.p < 0 && !gp.moving ? 1.05 : .95));
+    if (mvSet[gp.c + ':' + gp.p] && !gp.moving) y -= u * .1 * (1 + Math.sin(t * 6));
+    drawPlane(ctx, x, y, gp.ang, size, COL[gp.c], { lift: gp.lift });
+    if (gp.n > 1) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x + u * .32, y - u * .32, u * .24, 0, 7); ctx.fill(); ctx.lineWidth = u * .05; ctx.strokeStyle = COL[gp.c]; ctx.stroke(); ctx.fillStyle = '#222'; ctx.font = '800 ' + Math.max(11, u * .32) + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(gp.n, x + u * .32, y - u * .3); }
+  });
+  // particles
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k]; p.x += p.vx; p.y += p.vy; p.vy += (p.g || 0) * u * .1; p.vx *= .97; p.vy *= .97; p.life -= p.dec; if (p.grow) p.size *= p.grow;
+    if (p.life <= 0) { parts.splice(k, 1); continue; }
+    ctx.globalAlpha = Math.min(1, p.life * 1.4);
+    if (p.col === 'cloud') { ctx.fillStyle = dark ? 'rgba(200,215,255,.55)' : 'rgba(255,255,255,.9)'; }
+    else if (p.col === 'smoke') ctx.fillStyle = dark ? 'rgba(140,150,180,.5)' : 'rgba(90,80,70,.35)';
+    else ctx.fillStyle = p.col;
+    ctx.beginPath(); if (p.star) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.life * 6); ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size); ctx.restore(); } else { ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  if (flash > 0) { ctx.fillStyle = 'rgba(255,200,120,' + (flash * .25).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - .08); }
+}
+function drawDest(m, t, col, labels) {
+  const u = B.u, path = m.takeoff ? [] : m.path.slice();
+  path.forEach((p, n) => { const gp = gridPos(m.c, p, m.pl[0]), [x, y] = gx(gp[0], gp[1]); ctx.fillStyle = col; ctx.globalAlpha = .55; ctx.beginPath(); ctx.arc(x, y, u * .12, 0, 7); ctx.fill(); });
+  ctx.globalAlpha = 1;
+  const gp = gridPos(m.c, m.to, m.pl[0]), [x, y] = gx(gp[0], gp[1]);
+  ctx.strokeStyle = col; ctx.lineWidth = u * .12; ctx.beginPath(); ctx.arc(x, y, u * (.45 + .05 * Math.sin(t * 8)), 0, 7); ctx.stroke();
+  if (labels) {
+    const r = AP.exec(AP.clone(G), m), tags = [];
+    if (m.takeoff) tags.push('起飛'); if (m.jump) tags.push('跳格'); if (m.fly) tags.push('飛行'); if (m.bounce) tags.push('倒退');
+    if (r.some(e => e.t === 'cap' || (e.t === 'fly' && e.v.length))) tags.push('撞機！'); if (m.to === AP.GOAL) tags.push('抵達');
+    if (tags.length) { const txt = tags.join('·'); ctx.font = '800 ' + Math.max(12, u * .42) + 'px system-ui,sans-serif'; const w = ctx.measureText(txt).width + u * .5; let bx = clamp(x - w / 2, B.x + 2, B.x + B.s - w - 2), by = y - u * 1.35; if (by < B.y) by = y + u * .6; rr(ctx, bx, by, w, u * .72, u * .2); ctx.fillStyle = col; ctx.fill(); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + w / 2, by + u * .37); }
+  }
+}
+
+// ---------- UI helpers ----------
+let toastT = 0;
+function toast(msg, ms) { const el = $('toast'); el.textContent = msg; el.style.top = Math.max(8, B.y + 8) + 'px'; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms || 1800); }
+const isHuman = c => S.seatsG ? S.seatsG[c].t === 'h' : false;
+const humans = () => S.seatsG.filter(s => s.t === 'h').length;
+function pname(c) { const s = S.seatsG[c]; if (s.t === 'h') return humans() === 1 ? '你' : CNAME[c] + '色玩家'; return CNAME[c] + '色' + AP.PERS[s.pe || 0].name; }
+function cardName(c) { const s = S.seatsG[c]; if (s.t === 'x') return '空位'; if (s.t === 'h') return humans() === 1 ? '你' : '玩家 ' + CNAME[c]; return AP.PERS[s.pe || 0].name; }
+function cardSub(c) { const s = S.seatsG[c]; if (s.t === 'x') return '—'; if (s.t === 'h') return CNAME[c] + '色 · 玩家'; return CNAME[c] + '色 · Lv' + s.lv + ' ' + AP.LEVELS[s.lv - 1].name; }
+function buildCards() {
+  const mk = c => `<div class="pc" id="pc${c}" style="--c:${COL[c]}">${planeSvg(c)}<div class="tx"><div class="nm"></div><div class="sub"></div></div><div class="pips"></div></div>`;
+  $('rowTop').innerHTML = mk(1) + mk(2); $('rowBot').innerHTML = mk(0) + mk(3);
+}
+function updCards(thinking) {
+  for (let c = 0; c < 4; c++) {
+    const el = $('pc' + c), on = G.act[c];
+    el.classList.toggle('off', !on);
+    el.classList.toggle('on', on && !G.over && G.turn === c);
+    el.classList.toggle('think', on && thinking === c);
+    el.querySelector('.nm').textContent = cardName(c);
+    const rk = G.done.indexOf(c);
+    el.querySelector('.sub').innerHTML = rk >= 0 ? `<span class="rk">第 ${rk + 1} 名</span> · 全部抵達` : cardSub(c);
+    const P = on ? SP[c] : [];
+    el.querySelector('.pips').innerHTML = on ? P.map(p => `<i class="${p === AP.GOAL ? 'f' : ''}"></i>`).join('') : '';
+  }
+  $('diceBtn').style.setProperty('--dc', COL[G.turn]);
+}
+function status(html) { $('status').innerHTML = html; }
+function rollTip(html) { $('rollTip').innerHTML = html; }
+function sndIcon() { $('sndIco').innerHTML = S.snd ? '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>' : '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>'; }
+function spdLabel() { $('spd').textContent = speedNow() + '×'; }
+
+// ---------- dice ----------
+const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+const FACE = { 1: [0, 0], 6: [0, 180], 2: [0, -90], 5: [0, 90], 3: [-90, 0], 4: [90, 0] };
+let cubeX = -20, cubeY = 25;
+function buildDice() {
+  $('cube').innerHTML = [1, 2, 3, 4, 5, 6].map(n => `<div class="face f${n}${n === 1 || n === 4 ? ' r' : ''}">${Array.from({ length: 9 }, (_, k) => `<i class="${PIPS[n].includes(k) ? 'v' : ''}"></i>`).join('')}</div>`).join('');
+  setCube(cubeX, cubeY, 0);
+}
+function setCube(x, y, ms) { const c = $('cube'); c.style.transitionDuration = ms + 'ms'; c.style.transform = `rotateX(${x}deg) rotateY(${y}deg)`; }
+function spinDice(d, ms, strong) {
+  const [fx, fy] = FACE[d], turns = strong ? 3 : 2;
+  cubeX = (Math.ceil(cubeX / 360) + turns) * 360 + fx; cubeY = (Math.ceil(cubeY / 360) + turns - (Math.random() < .5 ? 1 : 0)) * 360 + fy;
+  setCube(cubeX, cubeY, ms);
+}
+
+// ---------- game flow ----------
+let ui = 'idle', flowId = 0, undoStack = [], legalNow = [], gameInfo = null;
+function newMatch(daily) {
+  const seats = daily ? [{ t: 'h' }, { t: 'c', lv: 3, pe: 1 }, { t: 'c', lv: 3, pe: 2 }, { t: 'c', lv: 3, pe: 0 }] : S.seats.map(s => Object.assign({}, s));
+  const today = new Date(), dkey = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  let seed = (Math.random() * 4294967295) >>> 0;
+  if (daily) { seed = 0; for (const ch of 'aeroplane' + dkey) seed = (Math.imul(seed, 31) + ch.charCodeAt(0)) >>> 0; }
+  const rules = daily ? { five: false, wall: false, triple: true, first: false } : S.rules;
+  G = AP.newGame({ np: daily ? 4 : S.np, active: seats.map(s => s.t !== 'x'), rules, seed });
+  S.seatsG = seats; gameInfo = { daily: daily ? dkey : null, seats, undo: 0 };
+  startShown(); undoStack = []; legalNow = [];
+  buildCards(); hideAll(); toast(daily ? `每日航班 ${dkey}：大家擲出同樣的骰序` : '各就各位，起飛！', 1600);
+  saveGame(); flow();
+}
+function startShown() { SP = G.pos.map(a => a.slice()); OV = {}; parts.length = 0; Q.length = 0; cur = null; side = []; onIdle = null; movable = []; hintMv = null; preview = null; }
+function saveGame() { if (!G || G.over) { LS.del('game'); return; } LS.set('game', { st: G, seats: S.seatsG, info: gameInfo }); }
+function flow() {
+  const my = ++flowId;
+  movable = []; hintMv = null; preview = null; hideChooser();
+  updCards(); $('bUndo').disabled = !canUndo(); $('bHint').disabled = !isHuman(G.turn) || !!G.over;
+  if (G.over) return finish();
+  const c = G.turn;
+  if (G.phase === 'roll') {
+    if (isHuman(c)) {
+      const top = undoStack[undoStack.length - 1];
+      if (!top || top.k !== G.k) undoStack.push(AP.clone(G));
+      if (undoStack.length > 60) undoStack.shift();
+      $('bUndo').disabled = !canUndo();
+      ui = 'await-roll'; $('diceBtn').classList.add('ready');
+      status(`<b>${pname(c) === '你' ? '輪到你' : '輪到' + pname(c)}</b><br>${G.sixes ? '擲出 6，再擲一次！' : '點骰子或向上甩'}`);
+      rollTip(`<b>擲骰</b>空白鍵`);
+    } else {
+      ui = 'cpu'; $('diceBtn').classList.remove('ready');
+      status(`<b>${pname(c)}</b><br>${G.sixes ? '再擲一次…' : '擲骰中…'}`); rollTip(speedNow() > 1 ? `<b>${speedNow()}× 快轉</b>點棋盤跳過動畫` : '按住 Shift 快轉');
+      setTimeout(() => { if (my === flowId) doRoll(false); }, 520 / speedNow());
+    }
+  } else if (G.phase === 'move') startChoose(my);
+}
+function doRoll(strong) {
+  if (!(ui === 'await-roll' || ui === 'cpu') || busy()) return;
+  const human = ui === 'await-roll', my = flowId;
+  passer = G.turn; ui = 'rolling'; $('diceBtn').classList.remove('ready');
+  const r = AP.roll(G), ms = human ? 650 : Math.max(160, 600 / speedNow());
+  SFX.dice(); buzz(12); spinDice(r.d, ms, strong);
+  setTimeout(() => { if (my !== flowId) return; onRolled(r, human); }, ms + 40);
+}
+function onRolled(r, human) {
+  const c = G.turn === undefined ? 0 : G.turn, my = flowId;
+  if (r.d === 6) { sparkleDice(); }
+  if (r.pen) {
+    status(`<b>擲出 6（第三次）</b><br>本回合作廢！`);
+    playEvents(r.ev, human ? 1 : speedNow());
+    runQueue(() => { if (my !== flowId) return; SP = G.pos.map(a => a.slice()); saveGame(); setTimeout(() => my === flowId && flow(), 500 / speedNow()); });
+    return;
+  }
+  if (r.pass) {
+    const who = pname(prevTurnOf(r));
+    status(`<b>擲出 ${r.d}</b><br>${r.d === 6 ? '沒有可動飛機，再擲一次' : '沒有可動飛機，跳過'}`);
+    if (r.d !== 6 && human) toast(who === '你' ? `擲出 ${r.d}，沒有飛機可以移動` : `${who}沒有可動飛機`, 1200);
+    saveGame();
+    setTimeout(() => { if (my === flowId) flow(); }, (human ? 900 : 600 / speedNow()));
+    return;
+  }
+  startChoose(my);
+}
+let passer = 0;
+function prevTurnOf() { return passer; }
+function sparkleDice() { const r = $('diceBtn').getBoundingClientRect(); for (let k = 0; k < 14; k++) { const a = Math.random() * 7, v = 2 + Math.random() * 3; parts.push({ x: r.left + r.width / 2, y: r.top + r.height / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1, dec: .03, size: 4, col: k % 2 ? '#f2b632' : '#fff', star: 1 }); } }
+function startChoose(my) {
+  const c = G.turn;
+  legalNow = AP.legal(G, c, G.d);
+  if (isHuman(c)) {
+    ui = 'choose';
+    movable = legalNow;
+    status(`<b>擲出 ${G.d}${G.d === 6 ? '！' : ''}</b><br>${legalNow.length === 1 && S.auto ? '自動移動…' : '點一架發亮的飛機（長按預覽）'}`);
+    rollTip(`<b>${G.d}</b>${G.d === 6 ? '6 可再擲' : '選飛機'}`);
+    $('bHint').disabled = false;
+    if (legalNow.length === 1 && S.auto) setTimeout(() => { if (my === flowId && ui === 'choose') doMove(legalNow[0]); }, 420);
+  } else {
+    ui = 'ai'; updCards(c);
+    status(`<b>${pname(c)}</b><br>擲出 ${G.d}，思考中…`);
+    const seat = S.seatsG[c], t0 = performance.now();
+    askAI(G, seat.lv, seat.pe, r => {
+      if (my !== flowId) return;
+      const wait = Math.max(0, 380 / speedNow() - (performance.now() - t0));
+      lastThink = r.ms;
+      setTimeout(() => { if (my !== flowId) return; updCards(); doMove(legalNow[r.i] || legalNow[0]); }, wait);
+    });
+  }
+}
+let lastThink = 0;
+function doMove(mv) {
+  if (!mv || !(ui === 'choose' || ui === 'ai')) return;
+  const human = ui === 'choose', my = flowId, c = G.turn;
+  ui = 'anim'; movable = []; hintMv = null; preview = null; hideChooser();
+  const ev = AP.play(G, mv);
+  if (human && ev.some(e => e.t === 'cap' || (e.t === 'fly' && e.v.length))) gameInfo.myCaps = (gameInfo.myCaps || 0) + 1;
+  playEvents(ev, human ? 1 : speedNow());
+  runQueue(() => {
+    if (my !== flowId) return;
+    SP = G.pos.map(a => a.slice()); OV = {};
+    saveGame();
+    setTimeout(() => { if (my === flowId) flow(); }, human ? 120 : 120 / speedNow());
+  });
+}
+// ---------- AI worker ----------
+let worker = null, wfail = false, reqId = 0; const pend = {};
+function getWorker() {
+  if (worker || wfail) return worker;
+  try {
+    const src = $('core').textContent + '\nself.onmessage=function(e){var q=e.data,t=Date.now(),r;try{r=AP.think(q.st,q.lv,q.pe,q.seed);}catch(err){r={i:0};}r.ms=Date.now()-t;r.id=q.id;self.postMessage(r);};';
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    worker.onmessage = e => { const f = pend[e.data.id]; if (f) { delete pend[e.data.id]; f(e.data); } };
+    worker.onerror = () => { wfail = true; try { worker.terminate(); } catch (e) {} worker = null; Object.keys(pend).forEach(id => { const f = pend[id]; delete pend[id]; f(null); }); };
+  } catch (e) { wfail = true; worker = null; }
+  return worker;
+}
+function askAI(st, lv, pe, cb) {
+  const id = ++reqId, msg = { id, st: AP.clone(st), lv, pe, seed: (Math.random() * 1e9) | 0 };
+  const sync = () => { const t = performance.now(), r = AP.think(msg.st, lv, pe, msg.seed); r.ms = Math.round(performance.now() - t); return r; };
+  let fired = false;
+  const fin = r => { if (fired) return; fired = true; clearTimeout(to); cb(r || sync()); };
+  const to = setTimeout(() => { delete pend[id]; fin(null); }, 4000);
+  const w = getWorker();
+  if (w) { pend[id] = fin; w.postMessage(msg); } else setTimeout(() => fin(sync()), 20);
+}
+
+// ---------- undo / hint ----------
+function canUndo() { return !!G && !G.over && (ui === 'await-roll' || ui === 'choose') && undoStack.length > (ui === 'await-roll' ? 1 : 0); }
+function undo() {
+  if (!canUndo() || busy()) return;
+  if (ui === 'await-roll') undoStack.pop();
+  const t = undoStack.pop(); if (!t) return;
+  G = AP.clone(t); startShown(); gameInfo.undo++;
+  SFX.click(); toast('已悔棋：回到擲骰前（骰子結果不變）', 1500);
+  flow();
+}
+function hint() {
+  if (!G || G.over || !isHuman(G.turn)) return;
+  if (ui === 'await-roll') { toast('先擲骰，再看提示', 1300); return; }
+  if (ui !== 'choose') return;
+  const r = AP.think(G, 4, 0, 7), mv = legalNow[r.i];
+  hintMv = mv; toast('提示：' + AP.explain(G, mv), 3200);
+}
+
+// ---------- input on the board ----------
+let press = null;
+function planeAt(x, y) {
+  let best = null, bd = B.u * .75;
+  const seen = {};
+  movable.forEach(m => {
+    if (seen[m.from]) return; seen[m.from] = 1;
+    const gp = gridPos(m.c, m.from, m.pl[0]), [px, py] = gx(gp[0], gp[1]), d = Math.hypot(px - x, py - y);
+    if (d < bd) { bd = d; best = m.from; }
+  });
+  return best;
+}
+cv.addEventListener('pointerdown', e => {
+  ac();
+  if (busy()) { if (!G || !isHuman(G.turn) || ui !== 'anim' || true) skipAnim(); return; }
+  if (ui !== 'choose') return;
+  const from = planeAt(e.clientX, e.clientY);
+  hideChooser();
+  if (from == null) return;
+  const opts = legalNow.filter(m => m.from === from);
+  press = { from, opts, x: e.clientX, y: e.clientY, long: false, tm: setTimeout(() => { press.long = true; preview = opts.find(o => !o.stack) || opts[0]; buzz(10); }, 420) };
+});
+cv.addEventListener('pointermove', e => { if (press && !press.long && Math.hypot(e.clientX - press.x, e.clientY - press.y) > B.u * .8) { clearTimeout(press.tm); press = null; } });
+const endPress = e => {
+  if (!press) return; clearTimeout(press.tm); const p = press; press = null;
+  if (p.long) { preview = null; return; }
+  if (ui !== 'choose') return;
+  if (p.opts.length === 1) doMove(p.opts[0]);
+  else showChooser(p.opts);
+};
+cv.addEventListener('pointerup', endPress);
+cv.addEventListener('pointercancel', () => { if (press) { clearTimeout(press.tm); press = null; preview = null; } });
+function showChooser(opts) {
+  const one = opts.find(o => !o.stack), all = opts.find(o => o.stack);
+  const gp = gridPos(one.c, one.from, one.pl[0]), [x, y] = gx(gp[0], gp[1]), el = $('chooser');
+  $('chAll').textContent = '整疊 ×' + all.pl.length;
+  el.hidden = false; const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = clamp(x - w / 2, 6, W - w - 6) + 'px'; el.style.top = clamp(y - h - B.u * .9, 6, H - h - 6) + 'px';
+  $('chOne').onclick = () => doMove(one); $('chAll').onclick = () => doMove(all);
+  preview = all;
+}
+function hideChooser() { $('chooser').hidden = true; }
+
+// dice zone: tap or swipe up to roll
+let dzp = null;
+$('dz').addEventListener('pointerdown', e => { ac(); dzp = { y: e.clientY, x: e.clientX, t: performance.now() }; });
+$('dz').addEventListener('pointerup', e => {
+  if (!dzp) return; const dt = performance.now() - dzp.t, dy = e.clientY - dzp.y, v = -dy / Math.max(1, dt); const p = dzp; dzp = null;
+  if (ui !== 'await-roll') { if (busy()) skipAnim(); return; }
+  if (v > .5 && dy < -20) doRoll(true);
+  else if (Math.hypot(e.clientX - p.x, dy) < 24) doRoll(false);
+});
+let shiftDown = false;
+addEventListener('keydown', e => {
+  if (e.key === 'Shift') { shiftDown = true; spdLabel(); return; }
+  if (!$('menu').hidden || !$('result').hidden) return;
+  if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); if (ui === 'await-roll') doRoll(false); else if (busy()) skipAnim(); }
+  if (/^[1-4]$/.test(e.key) && ui === 'choose') { const i = +e.key - 1, m = legalNow.filter(x => x.pl.includes(i)); const mv = m.find(x => !x.stack && x.pl[0] === i) || m.find(x => !x.stack) || m[0]; if (mv) doMove(mv); else SFX.bad(); }
+});
+addEventListener('keyup', e => { if (e.key === 'Shift') { shiftDown = false; spdLabel(); } });
+
+// ---------- finish ----------
+function finish() {
+  ui = 'over'; $('diceBtn').classList.remove('ready');
+  const R = G.over.ranking, hs = R.filter(c => isHuman(c)), first = R[0];
+  status('<b>對局結束</b>'); rollTip('');
+  LS.del('game');
+  // stats
+  ST.games++; ST.turns += G.turnNo; R.forEach(c => { ST.colorGames[c]++; }); ST.colorWins[first]++;
+  const me = hs.length === 1 ? hs[0] : null;
+  if (hs.length && isHuman(first)) ST.wins++;
+  const got = [];
+  const ach = (k, name) => { if (!ST.ach[k]) { ST.ach[k] = Date.now(); got.push(name); } };
+  if (me != null) {
+    ST.caps += G.caps[me]; ST.hits += G.hit[me];
+    if (first === me) ach('win', '首航勝利');
+    if (G.caps[me] >= 5) ach('ace', '撞機王：一局撞機 5 次');
+    if (G.hit[me] === 0 && G.done.indexOf(me) >= 0) ach('clean', '全身而退：全程未被撞');
+    if (!G.rules.triple && G.sixRuns[me] > 0) ach('lucky', '幸運三連 6');
+    if (first === me && gameInfo.undo === 0 && S.seatsG.some(s => s.t === 'c' && s.lv >= 4)) ach('pro', '擊敗資深機長（不悔棋）');
+    if (gameInfo.daily) { const prev = ST.daily[gameInfo.daily]; const rank = R.indexOf(me) + 1; if (!prev || rank < prev.rank || (rank === prev.rank && G.turnNo < prev.turns)) ST.daily[gameInfo.daily] = { rank, turns: G.turnNo }; ach('daily', '每日航班報到'); }
+  }
+  saveST();
+  const win = me != null ? first === me : hs.length > 0;
+  setTimeout(() => {
+    if (me != null) { if (first === me) { SFX.win(); confetti(); buzz([30, 40, 30, 40, 80]); } else SFX.lose(); } else { SFX.win(); confetti(); }
+    const medal = ['🥇', '🥈', '🥉', '4'];
+    $('rTitle').textContent = me != null ? (first === me ? '第一名！機長好身手' : `第 ${R.indexOf(me) + 1} 名`) : `${CNAME[first]}色獲勝！`;
+    $('rSub').textContent = (gameInfo.daily ? '每日航班 ' + gameInfo.daily + ' · ' : '') + (G.over.finished < R.length - 1 ? '第一名產生即結束' : '全部名次已定');
+    $('rList').innerHTML = R.map((c, k) => `<div class="rank" style="--c:${COL[c]}"><span class="m">${medal[k] || k + 1}</span>${planeSvg(c)}<span>${cardName(c)}</span><span class="s">${G.done.indexOf(c) >= 0 ? '全部抵達' : '已抵達 ' + G.pos[c].filter(p => p === AP.GOAL).length + ' 架'} · 撞機 ${G.caps[c]}</span></div>`).join('');
+    $('rKv').innerHTML = `<div><b>${G.turnNo}</b>回合</div><div><b>${me != null ? G.caps[me] : G.caps.reduce((a, b) => a + b, 0)}</b>${me != null ? '你的撞機' : '總撞機'}</div><div><b>${me != null ? G.hit[me] : G.k}</b>${me != null ? '被撞回' : '擲骰次數'}</div>` + (got.length ? `<div style="grid-column:1/-1"><b style="font-size:14px">🏅 ${got.join('、')}</b>解鎖成就</div>` : '');
+    show('result');
+    if (win) updCards();
+  }, 700);
+}
+function confetti() { for (let k = 0; k < 90; k++) parts.push({ x: W / 2 + (Math.random() - .5) * W * .6, y: H * .3, vx: (Math.random() - .5) * 9, vy: -Math.random() * 8 - 2, life: 1.6, dec: .008, size: 5 + Math.random() * 4, col: COL[k % 4], g: .1, star: 1 }); }
+
+// ---------- overlays ----------
+const OVL = ['menu', 'help', 'stats', 'result'];
+function show(id) { $(id).hidden = false; }
+function hideAll() { OVL.forEach(id => $(id).hidden = true); }
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { b.closest('.ov').hidden = true; SFX.click(); });
+const LVTXT = lv => 'Lv' + lv + ' ' + AP.LEVELS[lv - 1].name;
+function renderMenu() {
+  $('logo').innerHTML = [0, 1, 2, 3].map(c => `<span style="fill:${COL[c]}">${planeSvg(c).replace('<svg', '<svg style="fill:' + COL[c] + ';transform:rotate(' + (c * 90 + 45) + 'deg)"')}</span>`).join('');
+  document.querySelectorAll('#mMode button').forEach(b => b.classList.toggle('on', +b.dataset.v === S.np));
+  $('seats').innerHTML = S.seats.map((s, c) => `<div class="seat${s.t === 'c' ? '' : ' nocpu'}" style="--c:${COL[c]}">${planeSvg(c)}
+    <div class="seg" data-seat="${c}">${[['h', '玩家'], ['c', '電腦'], ['x', '關閉']].map(([v, l]) => `<button data-t="${v}" class="${s.t === v ? 'on' : ''}">${CNAME[c]} ${l}</button>`).join('')}</div>
+    <div class="cfg"><div class="step"><button data-lv="-1" data-seat="${c}" aria-label="降低等級">−</button><span>${LVTXT(s.lv || 3)}</span><button data-lv="1" data-seat="${c}" aria-label="提高等級">＋</button></div><button class="pe" data-pe="${c}">${AP.PERS[s.pe || 0].name}</button></div></div>`).join('');
+  const RL = [['five', '擲 5 也可起飛', '預設只有 6 能起飛'], ['wall', '疊子成牆', '對手疊機不可越過也不可停上'], ['triple', '三連 6 懲罰', '本回合作廢、最後移動的飛機回機場'], ['first', '第一名產生即結束', '關閉時其餘玩家繼續爭名次']];
+  $('rules').innerHTML = RL.map(([k, l, d]) => `<button class="sw" role="switch" aria-checked="${!!S.rules[k]}" data-rule="${k}"><span>${l}<small>${d}</small></span><span class="trk"></span></button>`).join('') +
+    `<button class="sw" role="switch" aria-checked="${!!S.auto}" data-auto="1"><span>只有一架可動時自動移動<small>關閉則每步都自己點</small></span><span class="trk"></span></button>`;
+  const saved = LS.get('game', null); $('mResume').hidden = !(saved && saved.st && !saved.st.over) || !!(G && !G.over && ui !== 'idle');
+  $('mClose').hidden = !(G && !G.over);
+  const dk = todayKey(), dd = ST.daily[dk];
+  $('dailyInfo').textContent = dd ? `今日航班成績：第 ${dd.rank} 名（${dd.turns} 回合）` : '今日航班：所有人同一組骰序，挑戰名次';
+}
+function todayKey() { const t = new Date(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+$('menu').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; SFX.click();
+  if (b.dataset.t) { const c = +b.parentNode.dataset.seat; const nx = S.seats.map((s, k) => k === c ? Object.assign({}, s, { t: b.dataset.t, lv: s.lv || 3, pe: s.pe || 0 }) : s); if (nx.filter(s => s.t !== 'x').length < 2) { toast('至少需要 2 位玩家'); return; } S.seats = nx; }
+  else if (b.dataset.lv) { const s = S.seats[+b.dataset.seat]; s.lv = clamp((s.lv || 3) + +b.dataset.lv, 1, 5); }
+  else if (b.dataset.pe) { const s = S.seats[+b.dataset.pe]; s.pe = ((s.pe || 0) + 1) % 3; }
+  else if (b.dataset.rule) { S.rules[b.dataset.rule] = !S.rules[b.dataset.rule]; }
+  else if (b.dataset.auto) { S.auto = !S.auto; }
+  else if (b.dataset.v) { S.np = +b.dataset.v; }
+  else return;
+  saveS(); renderMenu();
+});
+$('mStart').onclick = () => { SFX.click(); newMatch(false); };
+$('mDaily').onclick = () => { SFX.click(); newMatch(true); };
+$('mResume').onclick = () => { SFX.click(); resume(); };
+$('mClose').onclick = () => { SFX.click(); hideAll(); };
+$('mHelp').onclick = () => { renderHelp(); show('help'); };
+$('mStats').onclick = () => { renderStats(); show('stats'); };
+$('mTut').onclick = () => { hideAll(); startTut(); };
+$('bMenu').onclick = () => { SFX.click(); renderMenu(); show('menu'); };
+$('bUndo').onclick = undo; $('bHint').onclick = hint;
+$('bSpeed').onclick = () => { S.speed = S.speed >= 4 ? 1 : S.speed * 2; saveS(); spdLabel(); SFX.click(); toast('電腦回合速度 ' + S.speed + '×', 900); };
+$('bSnd').onclick = () => { S.snd = !S.snd; saveS(); sndIcon(); if (S.snd) SFX.click(); };
+$('diceBtn').addEventListener('click', e => e.preventDefault());
+$('rAgain').onclick = () => { SFX.click(); newMatch(!!(gameInfo && gameInfo.daily)); };
+$('rMenu').onclick = () => { SFX.click(); hideAll(); renderMenu(); show('menu'); };
+function renderHelp() {
+  const r = S.rules;
+  $('helpBody').innerHTML = `<h3>目前規則</h3><ul>
+<li><b>起飛</b>：擲到 ${r.five ? '5 或 6' : '6'} 才能讓一架飛機從機場到起飛點，起飛那一步不再前進。</li>
+<li><b>移動</b>：順時針前進，只能進入自己顏色的終點跑道（6 格），要剛好抵達中心，點數超過就倒退。</li>
+<li><b>再擲</b>：擲到 6 可再擲一次。${r.triple ? '連續三次 6 則本回合作廢，最後移動的飛機（不在跑道上時）返回機場。' : '（三連 6 懲罰已關閉）'}</li>
+<li><b>跳格</b>：停在自己顏色的外圈格，直接跳到下一個同色格（+4）；每步最多跳一次，跳後落在捷徑格仍可飛。</li>
+<li><b>捷徑</b>：停上連著虛線的同色格，就沿虛線飛到對面同色格（+12），途經的對手跑道格上若有飛機也會被撞回。</li>
+<li><b>撞機</b>：停在對手飛機上就把它（整疊）送回機場。${r.wall ? '<b>疊子成牆</b>：對手 2 架以上的疊機不可越過、也不可停上。' : ''}</li>
+<li><b>疊機</b>：自己的飛機停在同一格就疊起來，可選擇單架或整疊一起走。</li>
+<li><b>勝負</b>：4 架（快速模式 2 架）全部抵達中心者勝。${r.first ? '第一名產生即結束。' : '其餘玩家繼續爭名次。'}</li>
+<li>沒有可動的飛機時自動跳過。</li></ul>
+<h3>操作</h3><ul><li>點骰子或在骰子區向上甩擲骰；點發亮的飛機移動，長按預覽落點。</li><li>動畫中點棋盤可跳過；「快轉」切換電腦回合 1×／2×／4×。</li><li>鍵盤：空白鍵擲骰、1–4 選飛機、按住 Shift 快轉。</li><li>悔棋回到你擲骰前，骰子結果保持同一序列。提示以「資深機長」的判斷建議並說明理由。</li></ul>
+<h3>電腦等級</h3><ul>${AP.LEVELS.map((l, i) => `<li>Lv${i + 1} ${l.name}：${l.desc}${l.err > 0 && l.err < 1 ? `，失誤率 ${Math.round(l.err * 100)}%` : ''}</li>`).join('')}</ul>
+<p style="font-size:12px;color:var(--ink2)">個性：莽撞機長（重攻擊）、謹慎領航（重安全）、效率塔台（均衡）。</p>`;
+}
+function renderStats() {
+  const t = ST, wr = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+  const A = [['win', '首航勝利', '贏得第一場'], ['ace', '撞機王', '一局撞機 5 次'], ['clean', '全身而退', '全程未被撞且抵達'], ['lucky', '幸運三連 6', '關閉三連 6 懲罰時連擲三個 6'], ['pro', '王牌之路', '不悔棋擊敗 Lv4 以上電腦'], ['daily', '每日航班', '完成一次每日航班']];
+  $('statsBody').innerHTML = `<div class="kv"><div><b>${t.games}</b>對局</div><div><b>${wr(t.wins, t.games)}</b>你的勝率</div><div><b>${t.games ? (t.turns / t.games).toFixed(0) : '—'}</b>平均回合</div><div><b>${t.caps}</b>你的撞機</div><div><b>${t.hits}</b>被撞回</div><div><b>${t.wins}</b>第一名</div></div>
+<h3>各色第一名比例</h3>${[0, 1, 2, 3].map(c => `<div class="rank" style="--c:${COL[c]}">${planeSvg(c)}<span>${CNAME[c]}色</span><span class="s">${t.colorWins[c]} / ${t.colorGames[c]} 局 · ${wr(t.colorWins[c], t.colorGames[c])}</span></div>`).join('')}
+<h3>成就</h3>${A.map(([k, n, d]) => `<div class="ach ${t.ach[k] ? 'got' : 'no'}"><i>${t.ach[k] ? '★' : '☆'}</i><span><b>${n}</b><br><span style="color:var(--ink2);font-size:12px">${d}</span></span></div>`).join('')}`;
+}
+// ---------- tutorial ----------
+const TUT = [
+  ['① 起飛', '飛機從角落的機場出發。擲到 6 才能起飛到起飛點（彩色圓點），下一次再沿箭頭進入外圈。'],
+  ['② 跳格', '停在與自己同色的外圈格，會直接跳到下一個同色格（+4）。紅色飛機就找紅色格！'],
+  ['③ 捷徑', '停上連著虛線的同色格，沿虛線飛越 12 格；經過的對手跑道格上若有飛機，一併撞回。'],
+  ['④ 撞機', '停在對手飛機上，就把它送回機場；6 可以再擲一次。最先讓所有飛機抵達中心的人獲勝！']
+];
+let tutI = 0;
+function startTut() { if (!G) newMatch(false); tutI = 0; $('tut').hidden = false; showTut(); }
+function showTut() {
+  const [t, p] = TUT[tutI]; $('tutT').textContent = t; $('tutP').textContent = p;
+  $('tutD').innerHTML = TUT.map((_, k) => `<i class="${k === tutI ? 'on' : ''}"></i>`).join('');
+  $('tutNext').textContent = tutI === TUT.length - 1 ? '開始玩' : '下一步';
+  tutHL = tutI;
+}
+$('tutNext').onclick = () => { SFX.click(); if (++tutI >= TUT.length) endTut(); else showTut(); };
+$('tutSkip').onclick = () => { SFX.click(); endTut(); };
+function endTut() { $('tut').hidden = true; tutHL = null; S.tut = true; saveS(); if (ui === 'idle') newMatch(false); }
+function drawTut(t) {
+  const u = B.u, pulse = .5 + .5 * Math.sin(t * 5), ring = (r, c, rad) => { const [x, y] = gx(r, c); ctx.beginPath(); ctx.arc(x, y, u * rad, 0, 7); ctx.stroke(); };
+  ctx.save(); ctx.strokeStyle = '#f2b632'; ctx.lineWidth = u * (.1 + .05 * pulse);
+  const me = 0;
+  if (tutHL === 0) { AP.HANG[me].forEach(h => ring(h[0], h[1], .8)); const L = AP.LAUNCH[me]; ring(L[0], L[1], .6); const s = AP.CELL[AP.absOf(me, 1)]; ring(s[0], s[1], .55); }
+  if (tutHL === 1) for (let p = 4; p <= 44; p += 4) { const s = AP.CELL[AP.absOf(me, p)]; ring(s[0], s[1], .55); }
+  if (tutHL === 2) { const a = AP.CELL[AP.absOf(me, AP.FLY)], b = AP.CELL[AP.absOf(me, AP.FLY + 12)], x = AP.RUN[3][AP.CROSS_H - 1]; ring(a[0], a[1], .6); ring(b[0], b[1], .6); ctx.strokeStyle = '#fff'; ring(x[0], x[1], .5); }
+  if (tutHL === 3) { for (let c = 0; c < 4; c++) { const s = AP.CELL[AP.absOf(c, 1)]; ring(s[0], s[1], .55); } ring(7, 7, 1.2); }
+  ctx.restore();
+}
+
+// ---------- resume / boot ----------
+function resume() {
+  const sv = LS.get('game', null);
+  if (!sv || !sv.st) { newMatch(false); return; }
+  G = sv.st; S.seatsG = sv.seats; gameInfo = sv.info || { undo: 0 };
+  if (G.phase === 'move') { /* rolled but not moved: keep the same die */ }
+  startShown(); undoStack = []; buildCards(); hideAll(); toast('繼續上一局', 1200); flow();
+}
+function onResize() { layout(); }
+addEventListener('resize', () => { onResize(); setTimeout(onResize, 120); });
+mqDark.addEventListener && mqDark.addEventListener('change', () => { layout(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { lastT = performance.now(); } });
+buildDice(); sndIcon(); spdLabel();
+(function boot() {
+  const sv = LS.get('game', null);
+  // a board is always visible behind the menu
+  G = AP.newGame({ np: S.np, active: S.seats.map(s => s.t !== 'x'), rules: S.rules, seed: 1 }); S.seatsG = S.seats.map(s => Object.assign({}, s)); gameInfo = { undo: 0 };
+  startShown(); buildCards(); layout(); updCards(); status('<b>歡迎登機</b><br>選好座位就起飛'); rollTip('');
+  ui = 'idle';
+  renderMenu(); show('menu');
+  if (sv && sv.st && !sv.st.over) $('mResume').hidden = false;
+  requestAnimationFrame(frame);
+})();
+// ---------- test hooks ----------
+window.__game = {
+  state: () => ({ st: G, ui, busy: busy(), human: G ? isHuman(G.turn) : false, over: !!(G && G.over), resultVisible: !$('result').hidden, chooser: !$('chooser').hidden, legal: legalNow.length, think: lastThink }),
+  planeXY: (c, i) => { const gp = gridPos(c, G.pos[c][i], i); return gx(gp[0], gp[1]); },
+  setSpeed: v => { S.speed = v; spdLabel(); }
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,862 @@
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<title>雨窗</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@300;600&family=Noto+Sans+TC:wght@400;500&display=swap">
+<style>
+/* One look on purpose: a fogged window at night. Controls are small dark glass tabs along the sill. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0a16;
+  --ink: #ece8f4;
+  --ink-soft: #a9a3bd;
+  --chip: rgba(13, 11, 26, 0.62);
+  --chip-line: rgba(220, 210, 255, 0.16);
+  --amber: #ffb35c;
+  --amber-ink: #241405;
+  --track: rgba(236, 232, 244, 0.22);
+  --focus: #ffd59a;
+  --serif: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+  --sans: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans);
+  overflow: hidden; -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+.brand {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: calc(env(safe-area-inset-left, 0px) + 16px);
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.6);
+}
+.brand h1 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: 30px; letter-spacing: 0.3em; line-height: 1.1; }
+.brand span { display: block; margin-top: 4px; font-size: 12px; letter-spacing: 0.25em; color: var(--ink-soft); }
+.hint {
+  position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%);
+  margin: 0; padding: 10px 18px; border-radius: 999px;
+  background: var(--chip); border: 1px solid var(--chip-line);
+  font-size: 15px; letter-spacing: 0.08em; white-space: nowrap;
+  pointer-events: none; transition: opacity 1s ease;
+}
+.hint.gone { opacity: 0; }
+.sill {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  width: min(560px, calc(100% - 32px)); box-sizing: border-box;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: 20px;
+  background: var(--chip); border: 1px solid var(--chip-line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.sill button {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 48px; min-width: 48px; padding: 0 14px;
+  font: inherit; font-size: 15px; letter-spacing: 0.05em; color: var(--ink);
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--chip-line); border-radius: 14px;
+  cursor: pointer; touch-action: manipulation; transition: background .2s, color .2s, transform .12s;
+}
+.sill button:active { transform: scale(0.96); }
+.sill button[aria-pressed="true"] { background: var(--amber); color: var(--amber-ink); border-color: transparent; }
+.sill button svg { width: 19px; height: 19px; flex: none; }
+.sill button:focus-visible, .sill input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.slider { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 0 4px; }
+.slider label { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.15em; display: flex; justify-content: space-between; }
+.slider output { color: var(--ink); font-variant-numeric: tabular-nums; }
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0;
+  background: transparent; cursor: pointer; touch-action: manipulation;
+}
+input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--amber) var(--p, 50%), var(--track) var(--p, 50%)); }
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--amber); }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9px; border-radius: 50%; background: var(--ink); border: 0; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); border: 0; }
+@media (pointer: coarse) { input[type="range"] { height: 40px; } input[type="range"]::-webkit-slider-thumb { width: 26px; height: 26px; margin-top: -11px; } }
+@media (max-width: 370px) { .sill button { padding: 0 10px; font-size: 14px; } .sill button .lbl-long { display: none; } }
+@media (prefers-reduced-motion: reduce) { .hint, .sill button { transition: none; } }
+</style>
+
+<canvas id="view" role="img" aria-label="起霧的雨夜窗戶，可用手指在霧上作畫"></canvas>
+<div class="brand"><h1>雨窗</h1><span>夜・霧・玻璃</span></div>
+<p class="hint" id="hint">用手指在起霧的玻璃上寫字</p>
+<div class="sill" role="group" aria-label="控制">
+  <button id="bSound" type="button" aria-pressed="false" title="雨聲 (S)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h4l5 4V6L8 10H4z"/><path class="w" d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>雨聲</span>
+  </button>
+  <div class="slider">
+    <label for="rng"><span>雨勢</span><output id="rngOut" for="rng">50</output></label>
+    <input id="rng" type="range" min="0" max="100" step="1" value="50" aria-label="雨勢">
+  </div>
+  <button id="bFog" type="button" title="重新起霧 (F)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9h11M6 13h14M4 17h10"/><path d="M17 6.5c1.2 0 2 .8 2 2"/></svg><span>起霧</span>
+  </button>
+</div>
+
+<script>
+(function () {
+'use strict';
+let view = document.getElementById('view');
+const hintEl = document.getElementById('hint');
+const bSound = document.getElementById('bSound');
+const bFog = document.getElementById('bFog');
+const rng = document.getElementById('rng');
+const rngOut = document.getElementById('rngOut');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarse = window.matchMedia('(pointer: coarse)').matches;
+
+/* ---------- settings ---------- */
+let intensity = 0.5;
+try { const v = localStorage.getItem('rainglass:intensity'); if (v !== null && !isNaN(+v)) intensity = Math.max(0, Math.min(1, +v)); } catch (e) { /* ignore */ }
+function syncSlider() {
+  const p = Math.round(intensity * 100);
+  rng.value = String(p); rngOut.textContent = String(p);
+  rng.style.setProperty('--p', p + '%');
+}
+syncSlider();
+
+/* ---------- rendering backend ---------- */
+let gl = null;
+try { gl = view.getContext('webgl', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false }) || view.getContext('experimental-webgl'); } catch (e) { gl = null; }
+let G = null;
+if (gl) { try { G = setupGL(); } catch (e) { console.warn(e); G = null; } }
+if (gl && !G) { const nv = view.cloneNode(false); view.replaceWith(nv); view = nv; gl = null; }
+const ctx2d = G ? null : view.getContext('2d');
+
+/* ---------- sizes ---------- */
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+const FOGCELL = 4;           // css px per fog cell
+let W = 1, H = 1, ds = 1, viewScale = 1, sizeK = 1;
+let Wf = 1, Hf = 1;
+let clear = new Float32Array(1), regrow = new Float32Array(1), fogBytes = new Uint8Array(1);
+
+const sharpCv = document.createElement('canvas');
+const blurCv = document.createElement('canvas');
+const dropsCv = document.createElement('canvas');
+const staticCv = document.createElement('canvas');
+const dctx = dropsCv.getContext('2d');
+const sctx = staticCv.getContext('2d');
+
+/* seeded rng so the city looks the same in both blur levels */
+function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+const PALETTE = [
+  [255, 176, 92], [255, 150, 60], [255, 214, 150], [255, 236, 210], // warm street & windows
+  [255, 64, 70], [255, 92, 60],                                     // tail lights
+  [70, 225, 230], [255, 80, 170], [120, 255, 160], [140, 150, 255]  // neon, traffic
+];
+function paintCity(cv) {
+  const w = cv.width, h = cv.height, g = cv.getContext('2d');
+  const R = mulberry(20241007);
+  const m = Math.min(w, h);
+  const hz = h * 0.64;
+  let gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, '#060818'); gr.addColorStop(0.42, '#141433'); gr.addColorStop(0.6, '#2a1c3c');
+  gr.addColorStop(0.68, '#1a1328'); gr.addColorStop(1, '#0a0812');
+  g.globalCompositeOperation = 'source-over';
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  // city haze glow
+  const hg = g.createRadialGradient(w * 0.55, hz, 0, w * 0.55, hz, w * 0.9);
+  hg.addColorStop(0, 'rgba(255,140,90,0.22)'); hg.addColorStop(1, 'rgba(255,140,90,0)');
+  g.fillStyle = hg; g.fillRect(0, 0, w, h);
+  // building silhouettes with windows
+  let x = -R() * 30;
+  while (x < w) {
+    const bw = m * (0.08 + R() * 0.14);
+    const bh = h * (0.12 + Math.pow(R(), 1.6) * 0.42);
+    const top = hz - bh;
+    g.fillStyle = R() < 0.5 ? '#0e0d22' : '#141029';
+    g.fillRect(x, top, bw, bh + 2);
+    const cols = Math.max(2, Math.floor(bw / (m * 0.022)));
+    const rows = Math.max(2, Math.floor(bh / (m * 0.03)));
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (R() > 0.32) continue;
+      const cc = R() < 0.8 ? PALETTE[(R() * 4) | 0] : PALETTE[6 + ((R() * 4) | 0)];
+      g.fillStyle = 'rgba(' + cc[0] + ',' + cc[1] + ',' + cc[2] + ',' + (0.35 + R() * 0.5).toFixed(2) + ')';
+      g.fillRect(x + (c + 0.25) * bw / cols, top + (r + 0.3) * bh / rows, bw / cols * 0.5, bh / rows * 0.4);
+    }
+    x += bw + m * (R() * 0.02);
+  }
+  // wet street
+  gr = g.createLinearGradient(0, hz, 0, h);
+  gr.addColorStop(0, 'rgba(30,20,40,0.9)'); gr.addColorStop(1, 'rgba(8,6,14,1)');
+  g.fillStyle = gr; g.fillRect(0, hz, w, h - hz);
+  g.globalCompositeOperation = 'lighter';
+  function disc(cx, cy, r, c, a) {
+    const gg = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+    const s = c[0] + ',' + c[1] + ',' + c[2] + ',';
+    gg.addColorStop(0, 'rgba(' + s + (a * 0.7).toFixed(3) + ')');
+    gg.addColorStop(0.78, 'rgba(' + s + (a * 0.82).toFixed(3) + ')');
+    gg.addColorStop(0.92, 'rgba(' + s + a.toFixed(3) + ')');
+    gg.addColorStop(1, 'rgba(' + s + '0)');
+    g.fillStyle = gg;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+  }
+  // tiny far lights
+  for (let i = 0; i < 160; i++) {
+    const c = PALETTE[(R() * 4) | 0];
+    disc(R() * w, hz - R() * h * 0.35 + h * 0.03, m * (0.004 + R() * 0.008), c, 0.35 + R() * 0.4);
+  }
+  // big bokeh
+  for (let i = 0; i < 64; i++) {
+    const t = R();
+    let c, y;
+    if (t < 0.45) { c = PALETTE[(R() * 4) | 0]; y = h * (0.2 + R() * 0.55); }
+    else if (t < 0.65) { c = PALETTE[4 + ((R() * 2) | 0)]; y = hz + h * (0.04 + R() * 0.12); }
+    else { c = PALETTE[6 + ((R() * 4) | 0)]; y = h * (0.15 + R() * 0.6); }
+    const r = m * (0.025 + Math.pow(R(), 2.2) * 0.1);
+    const cx = R() * w;
+    disc(cx, y, r, c, 0.16 + R() * 0.32);
+    if (y < hz && R() < 0.5) { // reflection on the wet street
+      const rg = g.createLinearGradient(0, hz, 0, h);
+      rg.addColorStop(0, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',0.12)');
+      rg.addColorStop(1, 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',0)');
+      g.fillStyle = rg; g.fillRect(cx - r * 0.35, hz, r * 0.7, h - hz);
+    }
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+const rawCv = document.createElement('canvas');
+function shrinkGrow(src, dst, factor) {
+  const t1 = document.createElement('canvas');
+  t1.width = Math.max(2, Math.round(src.width / factor)); t1.height = Math.max(2, Math.round(src.height / factor));
+  const c1 = t1.getContext('2d'); c1.imageSmoothingEnabled = true; c1.imageSmoothingQuality = 'high';
+  c1.drawImage(src, 0, 0, t1.width, t1.height);
+  let cur = t1;
+  while (cur.width * 2 < dst.width) {
+    const t = document.createElement('canvas');
+    t.width = cur.width * 2; t.height = cur.height * 2;
+    const c = t.getContext('2d'); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    c.drawImage(cur, 0, 0, t.width, t.height);
+    cur = t;
+  }
+  const cd = dst.getContext('2d'); cd.imageSmoothingEnabled = true; cd.imageSmoothingQuality = 'high';
+  cd.clearRect(0, 0, dst.width, dst.height);
+  cd.drawImage(cur, 0, 0, dst.width, dst.height);
+}
+function buildBackground() {
+  const bs = Math.min(0.75, 900 / Math.max(W, H));
+  rawCv.width = Math.max(2, Math.round(W * bs)); rawCv.height = Math.max(2, Math.round(H * bs));
+  paintCity(rawCv);
+  // the glass is in focus, the city never is: a mild blur behind clear glass, a heavy one behind fog
+  sharpCv.width = rawCv.width; sharpCv.height = rawCv.height;
+  shrinkGrow(rawCv, sharpCv, 3);
+  blurCv.width = Math.max(2, Math.round(rawCv.width / 2.5)); blurCv.height = Math.max(2, Math.round(rawCv.height / 2.5));
+  shrinkGrow(rawCv, blurCv, 12);
+}
+
+/* ---------- drop sprite ---------- */
+const SPR = 64;
+const sprite = document.createElement('canvas');
+sprite.width = sprite.height = SPR;
+(function makeSprite() {
+  const g = sprite.getContext('2d');
+  const img = g.createImageData(SPR, SPR);
+  const d = img.data;
+  for (let y = 0; y < SPR; y++) for (let x = 0; x < SPR; x++) {
+    const dx = (x + 0.5 - SPR / 2) / (SPR / 2), dy = (y + 0.5 - SPR / 2) / (SPR / 2);
+    const r = Math.sqrt(dx * dx + dy * dy);
+    const i = (y * SPR + x) * 4;
+    if (r >= 1) { d[i + 3] = 0; continue; }
+    const edgeA = r > 0.86 ? 1 - (r - 0.86) / 0.14 : 1;
+    if (G) {
+      // normal-map encoded: rg = offset direction, b = thickness
+      d[i] = Math.round(128 + dx * 127); d[i + 1] = Math.round(128 + dy * 127);
+      d[i + 2] = Math.round(255 * Math.sqrt(1 - r * r)); d[i + 3] = Math.round(255 * edgeA);
+    } else {
+      // 2D fallback: a shiny bead
+      const hl = Math.max(0, 1 - Math.hypot(dx + 0.35, dy + 0.4) / 0.35);
+      const rim = Math.max(0, (r - 0.6) / 0.4);
+      const v = Math.round(170 + 85 * hl);
+      d[i] = v; d[i + 1] = v; d[i + 2] = Math.min(255, v + 15);
+      d[i + 3] = Math.round(255 * edgeA * Math.min(1, 0.12 + 0.5 * rim * rim + 0.9 * hl));
+    }
+  }
+  g.putImageData(img, 0, 0);
+})();
+
+/* ---------- fog grid ---------- */
+function buildFog(keep) {
+  const oW = Wf, oH = Hf, old = clear;
+  Wf = Math.max(2, Math.ceil(W / FOGCELL)); Hf = Math.max(2, Math.ceil(H / FOGCELL));
+  clear = new Float32Array(Wf * Hf);
+  regrow = new Float32Array(Wf * Hf);
+  fogBytes = new Uint8Array(Wf * Hf);
+  const R = mulberry(77);
+  // patchy regrowth speed: blobby value noise
+  const G = 9, gw = Math.ceil(Wf / G) + 2, gh = Math.ceil(Hf / G) + 2, grid = new Float32Array(gw * gh);
+  for (let i = 0; i < grid.length; i++) grid[i] = R();
+  for (let y = 0; y < Hf; y++) for (let x = 0; x < Wf; x++) {
+    const fx = x / G, fy = y / G, ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = grid[iy * gw + ix], b = grid[iy * gw + ix + 1], c = grid[(iy + 1) * gw + ix], d = grid[(iy + 1) * gw + ix + 1];
+    const n = (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy;
+    regrow[y * Wf + x] = (1 / 15) * (0.55 + 0.9 * n);
+    if (keep && old.length > 1) {
+      const ox = Math.min(oW - 1, (x * oW / Wf) | 0), oy = Math.min(oH - 1, (y * oH / Hf) | 0);
+      clear[y * Wf + x] = old[oy * oW + ox];
+    }
+  }
+}
+function stamp(ax, ay, bx, by, rad, strength) {
+  ax /= FOGCELL; ay /= FOGCELL; bx /= FOGCELL; by /= FOGCELL; rad /= FOGCELL;
+  const soft = rad * 0.6 + 0.8;
+  const ext = rad + soft;
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - ext)), x1 = Math.min(Wf - 1, Math.ceil(Math.max(ax, bx) + ext));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - ext)), y1 = Math.min(Hf - 1, Math.ceil(Math.max(ay, by) + ext));
+  const vx = bx - ax, vy = by - ay, vv = vx * vx + vy * vy || 1e-6;
+  for (let y = y0; y <= y1; y++) {
+    const row = y * Wf;
+    for (let x = x0; x <= x1; x++) {
+      const px = x + 0.5 - ax, py = y + 0.5 - ay;
+      let t = (px * vx + py * vy) / vv; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = px - vx * t, dy = py - vy * t;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d >= ext) continue;
+      let v = d <= rad ? 1 : 1 - (d - rad) / soft;
+      v *= strength;
+      if (v > clear[row + x]) clear[row + x] = v;
+    }
+  }
+}
+function writeInFog(text) {
+  const c = document.createElement('canvas');
+  c.width = Wf; c.height = Hf;
+  const g = c.getContext('2d');
+  const size = Math.min(Hf * 0.24, Wf * 0.5);
+  g.font = '600 ' + Math.round(size) + 'px "Noto Serif TC", "Songti TC", serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#fff';
+  g.fillText(text, Wf * 0.5, Hf * 0.3);
+  const d = g.getImageData(0, 0, Wf, Hf).data;
+  for (let i = 0; i < Wf * Hf; i++) { const a = d[i * 4 + 3] / 255; if (a > clear[i]) clear[i] = a; }
+}
+
+/* ---------- drops ---------- */
+const drops = [];
+let maxActive = 260;
+function newDrop(x, y, r) {
+  if (drops.length >= maxActive) { paintStatic(x, y, Math.min(r, 3 * sizeK)); return; }
+  drops.push({ x, y, r, vx: 0, vy: 0, stall: Math.random() * 0.6, slideAt: (5.2 + Math.random() * 2.5) * sizeK, trail: 0, ph: Math.random() * 6.28, wob: 0.6 + Math.random() * 1.6, px: x, py: y, dead: false });
+}
+function paintStatic(x, y, r) {
+  sctx.drawImage(sprite, (x - r) * ds, (y - r * 1.05) * ds, 2 * r * ds, 2.1 * r * ds);
+}
+function eraseStatic(ax, ay, bx, by, w) {
+  sctx.globalCompositeOperation = 'destination-out';
+  sctx.lineWidth = w * ds;
+  sctx.beginPath(); sctx.moveTo(ax * ds, ay * ds); sctx.lineTo(bx * ds, by * ds + 0.01); sctx.stroke();
+  sctx.globalCompositeOperation = 'source-over';
+}
+function rainSpawn(dt) {
+  const rate = intensity * intensity * 40 + intensity * 14;
+  let n = rate * dt;
+  while (n > 0) {
+    if (n < 1 && Math.random() > n) break;
+    n -= 1;
+    const x = Math.random() * W, y = Math.random() * H * 1.02 - H * 0.02;
+    const t = Math.random();
+    const r = (t < 0.62 ? 1.2 + Math.random() * 2.4 : t < 0.93 ? 3.6 + Math.random() * 3.6 : 7 + Math.random() * 5) * sizeK;
+    if (r < 3.2 * sizeK) paintStatic(x, y, r); else newDrop(x, y, r);
+  }
+  // fine condensation mist
+  let m = (6 + intensity * 30) * dt;
+  while (m > 0) {
+    if (m < 1 && Math.random() > m) break;
+    m -= 1;
+    paintStatic(Math.random() * W, Math.random() * H, (0.5 + Math.random() * 1.1) * sizeK);
+  }
+}
+function updateDrops(dt, time) {
+  const g = 520 * sizeK;
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    d.px = d.x; d.py = d.y;
+    if (d.r < d.slideAt) { d.vy = 0; d.vx = 0; continue; }
+    if (d.stall > 0) {
+      d.stall -= dt; d.vy *= Math.exp(-dt * 14);
+    } else {
+      const target = (d.r - d.slideAt * 0.85) / sizeK * 22 + 30;
+      d.vy += (Math.min(target, 520) * sizeK - d.vy) * Math.min(1, dt * 3) + g * 0.02 * dt;
+      if (Math.random() < dt * 0.9 * (8 * sizeK / d.r)) d.stall = 0.08 + Math.random() * 0.45;
+    }
+    d.vx = Math.sin(time * d.wob + d.ph) * d.vy * 0.14 + Math.sin(time * 0.5 + d.ph * 3) * 3;
+    d.x += d.vx * dt; d.y += d.vy * dt;
+    const moved = Math.abs(d.y - d.py) + Math.abs(d.x - d.px);
+    if (moved > 0.01) {
+      stamp(d.px, d.py - d.r * 0.4, d.x, d.y, d.r * 0.82, 1);
+      eraseStatic(d.px, d.py - d.r * 0.2, d.x, d.y, d.r * 1.5);
+      d.r += moved * 0.006 * sizeK; // picks up the mist it wipes through
+      d.trail += moved;
+      if (d.trail > d.r * (1.4 + Math.random() * 2.2)) {
+        d.trail = 0;
+        const tr = d.r * (0.16 + Math.random() * 0.2);
+        paintStatic(d.x + (Math.random() - 0.5) * d.r * 0.5, d.y - d.r * (1.0 + Math.random() * 0.6), tr);
+        d.r -= tr * 0.18;
+      }
+    }
+    if (d.y - d.r > H + 4 || d.x < -40 || d.x > W + 40) d.dead = true;
+  }
+  // merge
+  for (let i = 0; i < drops.length; i++) {
+    const a = drops[i];
+    if (a.dead) continue;
+    for (let j = i + 1; j < drops.length; j++) {
+      const b = drops[j];
+      if (b.dead) continue;
+      const rs = (a.r + b.r) * 0.82;
+      const dx = a.x - b.x;
+      if (dx > rs || dx < -rs) continue;
+      const dy = a.y - b.y;
+      if (dx * dx + dy * dy > rs * rs) continue;
+      const big = a.r >= b.r ? a : b, sm = big === a ? b : a;
+      const nr = Math.sqrt(big.r * big.r + sm.r * sm.r) * 0.98;
+      const wa = big.r * big.r, wb = sm.r * sm.r;
+      big.x = (big.x * wa + sm.x * wb) / (wa + wb);
+      big.y = Math.max(big.y, sm.y) - (Math.abs(big.y - sm.y)) * 0.3;
+      big.vy = Math.max(big.vy, sm.vy); big.r = nr; big.stall = 0;
+      sm.dead = true;
+      if (sm === a) break;
+    }
+  }
+  let k = 0;
+  for (let i = 0; i < drops.length; i++) if (!drops[i].dead) drops[k++] = drops[i];
+  drops.length = k;
+}
+function drawDrops() {
+  dctx.clearRect(0, 0, dropsCv.width, dropsCv.height);
+  dctx.drawImage(staticCv, 0, 0);
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    const st = Math.min(d.vy / (400 * sizeK), 0.35);
+    const rx = d.r * (1 - st * 0.35), ry = d.r * (1 + st);
+    dctx.drawImage(sprite, (d.x - rx) * ds, (d.y - ry + st * d.r * 0.4) * ds, rx * 2 * ds, ry * 2 * ds);
+  }
+}
+
+/* ---------- moving car lights (drawn in shader) ---------- */
+const cars = [];
+const carBuf = new Float32Array(24), carCol = new Float32Array(18);
+function initCars() {
+  cars.length = 0;
+  for (let i = 0; i < 3; i++) cars.push(spawnCar(i, true));
+}
+function spawnCar(i, initial) {
+  const head = Math.random() < 0.5;
+  const dir = head ? 1 : -1;
+  return {
+    head, dir,
+    x: initial ? Math.random() : (dir > 0 ? -0.2 - Math.random() * 0.6 : 1.2 + Math.random() * 0.6),
+    y: head ? 0.705 + Math.random() * 0.02 : 0.69 + Math.random() * 0.015,
+    v: (0.04 + Math.random() * 0.05) * (reduceMotion ? 0.4 : 1),
+    gap: 0.05 + Math.random() * 0.02,
+    r: 0.022 + Math.random() * 0.012
+  };
+}
+function updateCars(dt) {
+  for (let i = 0; i < cars.length; i++) {
+    const c = cars[i];
+    c.x += c.dir * c.v * dt;
+    if ((c.dir > 0 && c.x > 1.25) || (c.dir < 0 && c.x < -0.25)) cars[i] = spawnCar(i, false);
+    const cc = cars[i];
+    const col = cc.head ? [1.0, 0.86, 0.62] : [1.0, 0.18, 0.16];
+    for (let k = 0; k < 2; k++) {
+      const j = i * 2 + k;
+      carBuf[j * 4] = cc.x + (k ? cc.gap : 0); carBuf[j * 4 + 1] = cc.y; carBuf[j * 4 + 2] = cc.r; carBuf[j * 4 + 3] = cc.head ? 0.55 : 0.45;
+      carCol[j * 3] = col[0]; carCol[j * 3 + 1] = col[1]; carCol[j * 3 + 2] = col[2];
+    }
+  }
+}
+
+/* ---------- WebGL ---------- */
+function setupGL() {
+  const vs = 'attribute vec2 a; varying vec2 vUv; void main(){ vUv = vec2(a.x * 0.5 + 0.5, 0.5 - a.y * 0.5); gl_Position = vec4(a, 0.0, 1.0); }';
+  const fs = `#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform sampler2D uSharp, uBlur, uDrops, uFog;
+uniform vec2 uRes;
+uniform float uAspect, uTime, uRain;
+uniform vec4 uCars[6];
+uniform vec3 uCarCol[6];
+float hash(vec2 p){ p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
+vec3 cars(vec2 uv, float blur){
+  vec3 c = vec3(0.0);
+  vec2 p = uv * vec2(uAspect, 1.0);
+  for (int i = 0; i < 6; i++) {
+    vec4 cr = uCars[i];
+    float r = cr.z * (1.0 + blur * 1.6);
+    float d = length(p - cr.xy * vec2(uAspect, 1.0)) / r;
+    float disc = 1.0 - smoothstep(mix(0.82, 0.15, blur), 1.0, d);
+    c += uCarCol[i] * disc * cr.w * (1.0 - blur * 0.45);
+  }
+  return c;
+}
+void main(){
+  vec2 uv = vUv;
+  float clr = smoothstep(0.06, 0.9, texture2D(uFog, uv).r);
+  vec3 sharp = texture2D(uSharp, uv).rgb + cars(uv, 0.0);
+  vec3 blur = texture2D(uBlur, uv).rgb + cars(uv, 1.0);
+  float lum = dot(blur, vec3(0.299, 0.587, 0.114));
+  vec3 fogc = mix(blur, vec3(lum), 0.3) * 0.9 + blur * 0.35 + vec3(0.055, 0.058, 0.08);
+  fogc += (hash(floor(uv * uRes * 0.5)) - 0.5) * 0.03;
+  vec3 col = mix(fogc, sharp * 1.12, clr);
+  vec4 dr = texture2D(uDrops, uv);
+  if (dr.a > 0.02) {
+    vec2 n = dr.rg * 2.0 - 1.0;
+    float rim = smoothstep(0.45, 1.0, length(n));
+    vec2 ruv = clamp(uv - n * vec2(0.075 / uAspect, 0.075) + vec2(0.0, -0.01), 0.0, 1.0);
+    vec3 dc = texture2D(uSharp, ruv).rgb * 1.35 + texture2D(uBlur, ruv).rgb * 0.35 + cars(ruv, 0.0) * 1.2 + 0.03;
+    dc *= 1.0 - rim * 0.4;
+    vec3 N = normalize(vec3(n, max(dr.b, 0.05) * 1.4));
+    float sp = pow(max(dot(N, normalize(vec3(-0.35, -0.55, 0.75))), 0.0), 24.0);
+    float bot = smoothstep(0.2, 0.9, n.y) * (1.0 - rim) * 0.25;
+    dc += sp * 0.7 + bot * dc;
+    col = mix(col, dc, smoothstep(0.05, 0.55, dr.a));
+  }
+  vec2 v = uv - 0.5;
+  col *= 1.0 - 0.45 * dot(v, v) * 1.6;
+  col *= 1.0 - uRain * 0.08;
+  gl_FragColor = vec4(col, 1.0);
+}`;
+  function sh(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'a'); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  gl.useProgram(p);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  function tex(unit, name) {
+    const t = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.uniform1i(gl.getUniformLocation(p, name), unit);
+    return t;
+  }
+  const T = { sharp: tex(0, 'uSharp'), blur: tex(1, 'uBlur'), drops: tex(2, 'uDrops'), fog: tex(3, 'uFog') };
+  const u = n => gl.getUniformLocation(p, n);
+  return { p, T, uRes: u('uRes'), uAspect: u('uAspect'), uTime: u('uTime'), uRain: u('uRain'), uCars: u('uCars'), uCarCol: u('uCarCol') };
+}
+function uploadBackground() {
+  if (!G) return;
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.T.sharp);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sharpCv);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.T.blur);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, blurCv);
+}
+
+/* ---------- 2D fallback compositing ---------- */
+const fogLayer = document.createElement('canvas');
+const maskCv = document.createElement('canvas');
+let maskImg = null;
+function build2DLayers() {
+  fogLayer.width = blurCv.width; fogLayer.height = blurCv.height;
+  const g = fogLayer.getContext('2d');
+  g.drawImage(blurCv, 0, 0);
+  g.fillStyle = 'rgba(150,150,175,0.16)'; g.fillRect(0, 0, fogLayer.width, fogLayer.height);
+  maskCv.width = Wf; maskCv.height = Hf;
+  maskImg = maskCv.getContext('2d').createImageData(Wf, Hf);
+}
+const tmpCv = document.createElement('canvas');
+
+/* ---------- resize ---------- */
+function resize(first) {
+  W = Math.max(1, view.clientWidth || window.innerWidth);
+  H = Math.max(1, view.clientHeight || window.innerHeight);
+  sizeK = Math.max(0.8, Math.min(1.6, Math.min(W, H) / 420));
+  ds = Math.min(1, Math.sqrt(1.1e6 / (W * H)));
+  viewScale = gl ? Math.min(DPR, 1.5) : Math.min(DPR, 1.25);
+  view.width = Math.round(W * viewScale); view.height = Math.round(H * viewScale);
+  maxActive = W * H > 600000 ? 380 : 240;
+  const oldStatic = !first && staticCv.width > 1 ? staticCv : null;
+  let keepCv = null;
+  if (oldStatic) { keepCv = document.createElement('canvas'); keepCv.width = staticCv.width; keepCv.height = staticCv.height; keepCv.getContext('2d').drawImage(staticCv, 0, 0); }
+  dropsCv.width = staticCv.width = Math.max(2, Math.round(W * ds));
+  dropsCv.height = staticCv.height = Math.max(2, Math.round(H * ds));
+  if (keepCv) sctx.drawImage(keepCv, 0, 0, staticCv.width, staticCv.height);
+  sctx.lineCap = 'round';
+  buildBackground();
+  buildFog(!first);
+  if (G) uploadBackground(); else build2DLayers();
+  tmpCv.width = view.width; tmpCv.height = view.height;
+}
+let resizeTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => resize(false), 150); });
+
+/* ---------- audio ---------- */
+let actx = null, master = null, bedGain = null, bedLP = null, rumbleGain = null, noiseBuf = null, soundOn = false, tickAcc = 0;
+function makeNoise(c, secs) {
+  const len = Math.floor(c.sampleRate * secs);
+  const b = c.createBuffer(1, len, c.sampleRate);
+  const d = b.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + w * 0.099046; b1 = 0.963 * b1 + w * 0.2965; b2 = 0.57 * b2 + w * 1.0526;
+    d[i] = (b0 + b1 + b2 + w * 0.1848) * 0.11;
+  }
+  return b;
+}
+function startAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  actx = new AC();
+  noiseBuf = makeNoise(actx, 3);
+  master = actx.createGain(); master.gain.value = 0; master.connect(actx.destination);
+  const src = actx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const hp = actx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 280;
+  bedLP = actx.createBiquadFilter(); bedLP.type = 'lowpass'; bedLP.frequency.value = 3000;
+  bedGain = actx.createGain();
+  src.connect(hp); hp.connect(bedLP); bedLP.connect(bedGain); bedGain.connect(master);
+  const src2 = actx.createBufferSource(); src2.buffer = noiseBuf; src2.loop = true; src2.playbackRate.value = 0.5;
+  const lp2 = actx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 380;
+  rumbleGain = actx.createGain();
+  src2.connect(lp2); lp2.connect(rumbleGain); rumbleGain.connect(master);
+  src.start(); src2.start(0, 1.3);
+  applyAudioLevels();
+  return true;
+}
+function applyAudioLevels() {
+  if (!actx) return;
+  const t = actx.currentTime;
+  bedGain.gain.setTargetAtTime(0.12 + intensity * 0.75, t, 0.25);
+  bedLP.frequency.setTargetAtTime(1400 + intensity * 4200, t, 0.25);
+  rumbleGain.gain.setTargetAtTime(0.15 + intensity * 0.5, t, 0.25);
+}
+function tick() {
+  const t = actx.currentTime + Math.random() * 0.03;
+  const s = actx.createBufferSource(); s.buffer = noiseBuf;
+  const bp = actx.createBiquadFilter(); bp.type = 'bandpass';
+  bp.frequency.value = 1600 + Math.random() * 4800; bp.Q.value = 2 + Math.random() * 6;
+  const g = actx.createGain();
+  const amp = (0.08 + Math.random() * 0.35) * (0.5 + intensity * 0.6);
+  const len = 0.025 + Math.random() * 0.06;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(amp, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  s.connect(bp); bp.connect(g); g.connect(master);
+  s.start(t, Math.random() * 2.5, len + 0.02);
+}
+function setSound(on) {
+  if (on && !actx) { if (!startAudio()) return; }
+  soundOn = on;
+  if (actx) {
+    if (on && actx.state === 'suspended') actx.resume();
+    master.gain.setTargetAtTime(on ? 0.9 : 0, actx.currentTime, 0.4);
+  }
+  bSound.setAttribute('aria-pressed', String(on));
+  bSound.querySelector('span').textContent = on ? '雨聲開' : '雨聲';
+}
+
+/* ---------- input ---------- */
+const pointers = new Map();
+let wiped = false;
+const WIPE = 17; // css px radius of a fingertip
+function wipe(ax, ay, bx, by) {
+  const r = coarse ? WIPE : WIPE * 0.85;
+  stamp(ax, ay, bx, by, r, 1);
+  eraseStatic(ax, ay, bx, by, r * 2.1);
+  // knock off sliding drops under the finger
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    const vx = bx - ax, vy = by - ay, vv = vx * vx + vy * vy || 1e-6;
+    let t = ((d.x - ax) * vx + (d.y - ay) * vy) / vv; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const dx = d.x - ax - vx * t, dy = d.y - ay - vy * t;
+    if (dx * dx + dy * dy < (r + d.r) * (r + d.r)) d.dead = true;
+  }
+  // water collects at the edge of a wiped stroke
+  const len = Math.hypot(bx - ax, by - ay);
+  if (len > 3 && Math.random() < Math.min(1, len / 24)) {
+    const nx = -(by - ay) / len, ny = (bx - ax) / len, side = Math.random() < 0.5 ? -1 : 1;
+    const f = r * (1.05 + Math.random() * 0.2) * side;
+    paintStatic(bx + nx * f, by + ny * f, (1.4 + Math.random() * 2.2) * sizeK);
+  }
+  if (!wiped) { wiped = true; hintEl.classList.add('gone'); }
+}
+function local(e) { const r = view.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+view.addEventListener('pointerdown', e => {
+  if (view.setPointerCapture) view.setPointerCapture(e.pointerId);
+  const p = local(e);
+  pointers.set(e.pointerId, p);
+  wipe(p[0], p[1], p[0] + 0.01, p[1]);
+  e.preventDefault();
+});
+view.addEventListener('pointermove', e => {
+  const last = pointers.get(e.pointerId);
+  if (!last) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+  if (evs && evs.length > 1) {
+    for (let i = 0; i < evs.length; i++) { const p = local(evs[i]); wipe(last[0], last[1], p[0], p[1]); last[0] = p[0]; last[1] = p[1]; }
+  } else {
+    const p = local(e); wipe(last[0], last[1], p[0], p[1]); last[0] = p[0]; last[1] = p[1];
+  }
+});
+function up(e) { pointers.delete(e.pointerId); }
+view.addEventListener('pointerup', up);
+view.addEventListener('pointercancel', up);
+
+let refog = 0;
+function setIntensity(v) {
+  intensity = Math.max(0, Math.min(1, v));
+  syncSlider(); applyAudioLevels();
+  try { localStorage.setItem('rainglass:intensity', String(intensity)); } catch (e) { /* ignore */ }
+}
+rng.addEventListener('input', () => setIntensity(+rng.value / 100));
+bSound.addEventListener('click', () => setSound(!soundOn));
+bFog.addEventListener('click', () => { refog = 1.2; });
+window.addEventListener('keydown', e => {
+  if (e.target === rng) return;
+  if (e.target && e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.key === 's' || e.key === 'S') setSound(!soundOn);
+  else if (e.key === 'f' || e.key === 'F') refog = 1.2;
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setIntensity(intensity + 0.1); e.preventDefault(); }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setIntensity(intensity - 0.1); e.preventDefault(); }
+});
+
+/* ---------- frame ---------- */
+let running = true, last = performance.now(), time = 0, evapT = 0, rafId = 0;
+function frame(now) {
+  if (!running) return;
+  let dt = (now - last) / 1000; last = now;
+  if (!(dt > 0)) dt = 1 / 60;
+  dt = Math.min(dt, 0.05);
+  time += dt;
+
+  rainSpawn(dt);
+  updateDrops(dt, time);
+  updateCars(dt);
+
+  // evaporate the fine static droplets slowly
+  evapT += dt;
+  if (evapT > 0.4) {
+    evapT = 0;
+    sctx.globalCompositeOperation = 'destination-out';
+    sctx.fillStyle = 'rgba(0,0,0,' + (0.03 + (1 - intensity) * 0.03).toFixed(3) + ')';
+    sctx.fillRect(0, 0, staticCv.width, staticCv.height);
+    sctx.globalCompositeOperation = 'source-over';
+  }
+
+  // fog regrowth (+ quick re-fog on demand)
+  const boost = refog > 0 ? 2.2 : 0;
+  if (refog > 0) refog -= dt;
+  const n = clear.length;
+  for (let i = 0; i < n; i++) {
+    let c = clear[i];
+    if (c > 0) { c -= dt * (regrow[i] + boost); if (c < 0) c = 0; clear[i] = c; }
+    fogBytes[i] = (c * 255) | 0;
+  }
+
+  drawDrops();
+
+  if (soundOn && actx) {
+    tickAcc += dt * (3 + intensity * intensity * 40);
+    while (tickAcc >= 1) { tickAcc -= 1; tick(); }
+  }
+
+  if (G) {
+    gl.viewport(0, 0, view.width, view.height);
+    gl.useProgram(G.p);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.T.drops);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, dropsCv);
+    gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, G.T.fog);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, Wf, Hf, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, fogBytes);
+    gl.uniform2f(G.uRes, view.width, view.height);
+    gl.uniform1f(G.uAspect, W / H);
+    gl.uniform1f(G.uTime, time);
+    gl.uniform1f(G.uRain, intensity);
+    gl.uniform4fv(G.uCars, carBuf);
+    gl.uniform3fv(G.uCarCol, carCol);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  } else if (ctx2d) {
+    draw2D();
+  }
+  rafId = requestAnimationFrame(frame);
+}
+function draw2D() {
+  const vw = view.width, vh = view.height;
+  ctx2d.drawImage(sharpCv, 0, 0, vw, vh);
+  // fog with wiped holes
+  const md = maskImg.data;
+  for (let i = 0; i < fogBytes.length; i++) { md[i * 4 + 3] = fogBytes[i]; }
+  maskCv.getContext('2d').putImageData(maskImg, 0, 0);
+  const t = tmpCv.getContext('2d');
+  t.globalCompositeOperation = 'source-over';
+  t.clearRect(0, 0, vw, vh);
+  t.drawImage(fogLayer, 0, 0, vw, vh);
+  t.globalCompositeOperation = 'destination-out';
+  t.imageSmoothingEnabled = true;
+  t.drawImage(maskCv, 0, 0, vw, vh);
+  t.globalCompositeOperation = 'source-over';
+  ctx2d.drawImage(tmpCv, 0, 0);
+  ctx2d.drawImage(dropsCv, 0, 0, vw, vh);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    running = false;
+    cancelAnimationFrame(rafId);
+    if (actx && actx.state === 'running') actx.suspend();
+  } else if (!running) {
+    running = true; last = performance.now();
+    if (actx && soundOn) actx.resume();
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(frame);
+  }
+});
+if (gl) view.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; hintEl.textContent = '繪圖資源被系統回收，請重新整理頁面'; hintEl.classList.remove('gone'); });
+
+/* ---------- start ---------- */
+resize(true);
+initCars();
+updateCars(0);
+writeInFog('雨');
+// a few drops already on the glass
+for (let i = 0; i < 26; i++) newDrop(Math.random() * W, Math.random() * H * 0.9, (3.5 + Math.random() * 5) * sizeK);
+for (let i = 0; i < 380; i++) paintStatic(Math.random() * W, Math.random() * H, (0.6 + Math.random() * 2.2) * sizeK);
+window.__rainglass = { get drops() { return drops.length; }, get clearSum() { let s = 0; for (let i = 0; i < clear.length; i++) s += clear[i]; return s; }, get sound() { return soundOn; }, get intensity() { return intensity; }, gl: !!G };
+rafId = requestAnimationFrame(frame);
+})();
+</script>

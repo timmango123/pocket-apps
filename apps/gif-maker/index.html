@@ -1,0 +1,437 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>GIF 製作器</title>
+<style>
+:root{
+  --bg:#e8ebe9; --surface:#f8f9f8; --surface-2:#ffffff; --ink:#1b2220; --muted:#55605c; --line:#c4cbc8; --line-2:#d9dfdc;
+  --mark:#ffd23f; --mark-ink:#1b2220; --sel:#1f6f54; --sel-ink:#ffffff; --sel-soft:#d6ebe2; --film:#232a28; --film-ink:#e9eeec; --err:#b3261e;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111514; --surface:#191e1c; --surface-2:#202624; --ink:#e6ebe9; --muted:#9da8a4; --line:#333d39; --line-2:#262e2b;
+  --mark:#ffd23f; --mark-ink:#1b2220; --sel:#5cc79d; --sel-ink:#07261a; --sel-soft:#183328; --film:#060807; --film-ink:#e9eeec; --err:#ff8f86; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111514; --surface:#191e1c; --surface-2:#202624; --ink:#e6ebe9; --muted:#9da8a4; --line:#333d39; --line-2:#262e2b;
+  --mark:#ffd23f; --mark-ink:#1b2220; --sel:#5cc79d; --sel-ink:#07261a; --sel-soft:#183328; --film:#060807; --film-ink:#e9eeec; --err:#ff8f86; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;padding:6px 16px calc(96px + env(safe-area-inset-bottom))}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
+.app{max-width:1180px;margin:0 auto}
+header.top{display:flex;align-items:center;gap:10px;min-height:52px;flex-wrap:wrap}
+header h1{margin:0 auto 0 0;font-size:18px;font-weight:800;letter-spacing:.02em;white-space:nowrap}
+header h1 span{background:var(--mark);color:var(--mark-ink);padding:0 5px;border-radius:2px;margin-right:2px}
+.seg{display:flex;border:1.5px solid var(--ink);border-radius:4px;overflow:hidden}
+.seg button{min-height:44px;min-width:64px;border:0;background:var(--surface-2);font-weight:700;cursor:pointer;padding:0 12px}
+.seg button+button{border-left:1.5px solid var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.btn{min-height:44px;padding:0 14px;border-radius:4px;border:1.5px solid var(--line);background:var(--surface-2);cursor:pointer;font-weight:700;font-size:14px;white-space:nowrap}
+.btn.mark{background:var(--mark);border-color:var(--mark);color:var(--mark-ink)}
+.btn.ink{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn:disabled{opacity:.45;cursor:default}
+@media (hover:hover){.btn:not(:disabled):hover{border-color:var(--ink)}}
+.layout{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.pv{position:relative;background:var(--film);border-radius:4px;display:grid;place-items:center;aspect-ratio:var(--ar,1.333);max-height:52vh;width:100%;overflow:hidden}
+.pv canvas,.pv img{max-width:100%;max-height:100%;display:block}
+.pv .tag{position:absolute;left:8px;top:8px;background:var(--mark);color:var(--mark-ink);font-size:12px;font-weight:800;padding:2px 8px;border-radius:2px}
+.pv .gif{position:absolute;right:8px;top:8px;background:var(--sel);color:var(--sel-ink);font-size:12px;font-weight:800;padding:2px 8px;border-radius:2px}
+.pvbar{display:flex;align-items:center;gap:10px;margin-top:6px}
+.pvbar .cnt{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.pvbar .sp{margin-left:auto;font-size:12px;color:var(--muted);font-family:var(--mono)}
+.box{background:var(--surface);border:1px solid var(--line-2);border-radius:4px;padding:12px;margin-top:12px}
+.box h2{margin:0 0 8px;font-size:14px;letter-spacing:.06em;color:var(--muted);font-weight:700}
+.strip{display:flex;gap:6px;overflow-x:auto;padding:12px 8px;background:var(--film);border-radius:3px;
+  background-image:radial-gradient(circle at 6px 4px,var(--bg) 2.2px,transparent 2.6px),radial-gradient(circle at 6px calc(100% - 4px),var(--bg) 2.2px,transparent 2.6px);background-size:14px 100%;background-repeat:repeat-x;overscroll-behavior-x:contain}
+.fr{flex:0 0 auto;width:76px;border:0;padding:0;background:none;cursor:pointer;color:var(--film-ink);text-align:center}
+.fr canvas{display:block;width:72px;height:72px;margin:0 auto;object-fit:contain;background:#000;border:2px solid transparent;border-radius:2px}
+.fr[aria-pressed="true"] canvas{border-color:var(--mark)}
+.fr .d{display:block;font-family:var(--mono);font-size:11px;margin-top:2px;opacity:.85}
+.fr .d.own{color:var(--mark);opacity:1}
+.fr.add{display:grid;place-items:center;width:72px;height:72px;border:2px dashed rgba(255,255,255,.4);border-radius:3px;font-size:13px;font-weight:700;align-self:start}
+.frEdit{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-top:10px}
+.field{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);min-width:0}
+.field input,.field select{min-height:44px;border:1.5px solid var(--line);border-radius:4px;background:var(--surface-2);padding:0 10px;width:100%;font-size:15px;color:var(--ink)}
+.frEdit .field{width:120px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.rng{display:grid;grid-template-columns:52px 1fr 70px;gap:8px;align-items:center;min-height:44px}
+.rng label{font-size:14px;font-weight:700}
+.rng output{font-family:var(--mono);font-size:13px;text-align:right;color:var(--muted)}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--sel);cursor:pointer}
+.check{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--sel)}
+.note{font-size:13px;color:var(--muted);margin:6px 0 0}
+.warn{color:var(--err)}
+video{display:block;width:100%;max-height:36vh;background:#000;border-radius:3px}
+.vEmpty{display:grid;place-items:center;gap:8px;padding:20px;border:2px dashed var(--line);border-radius:4px;text-align:center}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface-2);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:20}
+.bar .in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:10px}
+.bar .main{flex:1;min-height:52px;font-size:16px}
+.bar .info{font-size:13px;color:var(--muted);flex:1;min-width:0}
+.bar .info b{color:var(--ink);font-family:var(--mono)}
+.prog{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.prog .t{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog .b{height:8px;background:var(--line-2);border-radius:4px;overflow:hidden}
+.prog .b i{display:block;height:100%;width:0;background:var(--sel)}
+.toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:4px;font-size:14px;z-index:40;max-width:calc(100% - 32px)}
+.hintSave{font-size:12px;color:var(--muted);text-align:center;margin:6px 0 0}
+@media (min-width:920px){
+  .layout{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:start}
+  .pv{max-height:60vh}
+}
+@media (max-height:600px) and (orientation:landscape){
+  .layout{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  .pv{max-height:calc(100vh - 150px)}
+  .bar{padding-top:6px;padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+  .bar .main{min-height:44px}
+  body{padding-bottom:calc(70px + env(safe-area-inset-bottom))}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1><span>GIF</span> 製作器</h1>
+    <div class="seg" role="group" aria-label="來源">
+      <button type="button" id="mode-img" aria-pressed="true">圖片</button>
+      <button type="button" id="mode-vid" aria-pressed="false">影片</button>
+    </div>
+  </header>
+  <div class="layout">
+    <div>
+      <div class="pv" id="pv">
+        <canvas id="pvc"></canvas>
+        <img id="gifImg" alt="產生的 GIF" hidden>
+        <span class="tag" id="sampleTag">範例影格</span>
+        <span class="gif" id="gifTag" hidden>GIF 成品</span>
+      </div>
+      <div class="pvbar">
+        <button class="btn" id="playBtn" type="button" aria-label="暫停">❚❚ 暫停</button>
+        <span class="cnt" id="cnt">1 / 8</span>
+        <span class="sp" id="pvInfo"></span>
+      </div>
+      <p class="hintSave" id="saveHint" hidden>長按或右鍵 GIF 即可儲存。</p>
+    </div>
+    <div>
+      <section class="box" id="srcImg">
+        <h2>影格（點選可調整延遲、順序）</h2>
+        <div class="strip" id="strip"></div>
+        <div class="frEdit" id="frEdit" hidden>
+          <div class="field"><label for="frDelay">此格延遲 ms</label><input type="number" id="frDelay" min="20" max="10000" step="10" placeholder="同全域"></div>
+          <button class="btn" id="frLeft" type="button" aria-label="往前移">◀ 前移</button>
+          <button class="btn" id="frRight" type="button" aria-label="往後移">後移 ▶</button>
+          <button class="btn" id="frDel" type="button">刪除</button>
+        </div>
+        <input type="file" id="fileImg" accept="image/*" multiple hidden>
+        <p class="note">可一次選多張、拖放或貼上圖片。最多 150 格。</p>
+      </section>
+      <section class="box" id="srcVid" hidden>
+        <h2>影片片段（最長 15 秒）</h2>
+        <div class="vEmpty" id="vEmpty"><span>選一段手機影片，擷取成 GIF</span><button class="btn ink" id="pickVid" type="button">選擇影片</button></div>
+        <div id="vBox" hidden>
+          <video id="vid" muted playsinline preload="auto"></video>
+          <div class="rng"><label for="vStart">起點</label><input type="range" id="vStart" min="0" max="1" step="0.05" value="0"><output id="vStartOut">0.00s</output></div>
+          <div class="rng"><label for="vEnd">終點</label><input type="range" id="vEnd" min="0" max="1" step="0.05" value="1"><output id="vEndOut">0.00s</output></div>
+          <div class="grid">
+            <div class="field"><label for="fps">擷取幀率</label><select id="fps"><option value="5">5 fps</option><option value="10" selected>10 fps</option><option value="15">15 fps</option></select></div>
+            <div class="field"><span>選取長度</span><b id="vLen" style="min-height:44px;display:flex;align-items:center;font-family:var(--mono);color:var(--ink)">0.0 秒・0 格</b></div>
+          </div>
+          <button class="btn" id="pickVid2" type="button" style="margin-top:8px">換影片</button>
+        </div>
+        <input type="file" id="fileVid" accept="video/*" hidden>
+      </section>
+      <section class="box">
+        <h2>輸出設定</h2>
+        <div class="grid">
+          <div class="field"><label for="width">輸出寬度</label><select id="width"><option>240</option><option selected>320</option><option>480</option><option>640</option><option value="800">800</option></select></div>
+          <div class="field"><label for="speed">速度</label><select id="speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></div>
+          <div class="field"><label for="loop">循環</label><select id="loop"><option value="0">無限循環</option><option value="1">播放 1 次</option><option value="n">指定次數</option></select></div>
+          <div class="field" id="loopNBox" hidden><label for="loopN">播放次數</label><input type="number" id="loopN" min="2" max="100" value="3"></div>
+          <div class="field"><label for="dir">播放方式</label><select id="dir"><option value="fwd">正向</option><option value="rev">反向</option><option value="pp">來回</option></select></div>
+          <div class="field"><label for="colors">色彩數</label><select id="colors"><option>32</option><option>64</option><option>128</option><option selected>256</option></select></div>
+          <div class="field"><label for="fit">尺寸適配</label><select id="fit"><option value="cover">裁切填滿</option><option value="contain">留白加邊框</option></select></div>
+          <div class="field"><label for="bgc">邊框底色</label><input type="color" id="bgc" value="#ffffff" style="padding:2px 4px"></div>
+        </div>
+        <div class="rng" id="delayRow"><label for="delay">延遲</label><input type="range" id="delay" min="20" max="2000" step="10" value="150"><output id="delayOut">150ms</output></div>
+        <label class="check"><input type="checkbox" id="dither" checked>抖動（Floyd–Steinberg，漸層較平順）</label>
+        <label class="check"><input type="checkbox" id="optimize" checked>最佳化（只記錄變動區域，檔案較小）</label>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="bar">
+  <div class="in" id="barIdle"><button class="btn mark main" id="genBtn" type="button">產生 GIF</button></div>
+  <div class="in" id="barBusy" hidden><div class="prog"><span class="t" id="progT">準備中…</span><span class="b"><i id="progB"></i></span></div><button class="btn" id="cancelBtn" type="button">取消</button></div>
+  <div class="in" id="barDone" hidden><span class="info" id="doneInfo"></span><button class="btn mark" id="dlBtn" type="button">下載</button><button class="btn" id="againBtn" type="button">再調整</button></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const KEY='gif-maker:v1:';
+const store={get(k,d){try{const v=localStorage.getItem(KEY+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set(k,v){try{localStorage.setItem(KEY+k,JSON.stringify(v));}catch(e){}}};
+const toast=(m,ms=2600)=>{const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,ms);};
+let dl=null;
+const MAXF=150;
+
+/* ================= GIF encoder (runs in a Worker; also callable inline) ================= */
+function encoderModule(){
+function medianCut(samples, n){ // samples: Uint8Array rgb triples
+  const cnt=samples.length/3; const idx=new Uint32Array(cnt); for(let i=0;i<cnt;i++) idx[i]=i;
+  const boxes=[{lo:0,hi:cnt}];
+  const stat=b=>{ let mn=[255,255,255],mx=[0,0,0]; for(let i=b.lo;i<b.hi;i++){ const p=idx[i]*3; for(let c=0;c<3;c++){ const v=samples[p+c]; if(v<mn[c])mn[c]=v; if(v>mx[c])mx[c]=v; } }
+    const r=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]]; b.ch=r[0]>=r[1]&&r[0]>=r[2]?0:(r[1]>=r[2]?1:2); b.range=r[b.ch]; b.score=b.range*Math.sqrt(b.hi-b.lo); };
+  stat(boxes[0]);
+  while(boxes.length<n){ let best=-1,bs=0; for(let i=0;i<boxes.length;i++){ const b=boxes[i]; if(b.hi-b.lo>1&&b.range>0&&b.score>bs){bs=b.score;best=i;} } if(best<0) break;
+    const b=boxes[best], ch=b.ch; const sub=Array.from(idx.subarray(b.lo,b.hi)).sort((x,y)=>samples[x*3+ch]-samples[y*3+ch]); idx.set(sub,b.lo);
+    const mid=b.lo+((b.hi-b.lo)>>1); const a={lo:b.lo,hi:mid}, c={lo:mid,hi:b.hi}; stat(a); stat(c); boxes.splice(best,1,a,c); }
+  return boxes.map(b=>{ let r=0,g=0,bl=0; for(let i=b.lo;i<b.hi;i++){ const p=idx[i]*3; r+=samples[p]; g+=samples[p+1]; bl+=samples[p+2]; } const k=b.hi-b.lo||1; return [Math.round(r/k),Math.round(g/k),Math.round(bl/k)]; });
+}
+function makeMapper(pal){ const cache=new Int16Array(32768).fill(-1); const n=pal.length;
+  return (r,g,b)=>{ const key=((r>>3)<<10)|((g>>3)<<5)|(b>>3); let v=cache[key]; if(v>=0) return v; const R=(r&~7)+4,G=(g&~7)+4,B=(b&~7)+4; let best=0,bd=1e9;
+    for(let i=0;i<n;i++){ const p=pal[i]; const dr=p[0]-R,dg=p[1]-G,db=p[2]-B; const d=dr*dr*2+dg*dg*4+db*db*3; if(d<bd){bd=d;best=i;} } cache[key]=best; return best; }; }
+function mapFrame(px,w,h,pal,map,dither){ const out=new Uint8Array(w*h);
+  if(!dither){ for(let i=0,j=0;i<w*h;i++,j+=4) out[i]=map(px[j],px[j+1],px[j+2]); return out; }
+  let cur=new Float32Array((w+2)*3), nxt=new Float32Array((w+2)*3);
+  for(let y=0;y<h;y++){ for(let x=0;x<w;x++){ const j=(y*w+x)*4, e=(x+1)*3; let r=px[j]+cur[e], g=px[j+1]+cur[e+1], b=px[j+2]+cur[e+2];
+      r=r<0?0:r>255?255:r; g=g<0?0:g>255?255:g; b=b<0?0:b>255?255:b; const k=map(r|0,g|0,b|0); out[y*w+x]=k; const p=pal[k];
+      const er=r-p[0], eg=g-p[1], eb=b-p[2];
+      cur[e+3]+=er*7/16; cur[e+4]+=eg*7/16; cur[e+5]+=eb*7/16;
+      nxt[e-3]+=er*3/16; nxt[e-2]+=eg*3/16; nxt[e-1]+=eb*3/16;
+      nxt[e]+=er*5/16; nxt[e+1]+=eg*5/16; nxt[e+2]+=eb*5/16;
+      nxt[e+3]+=er/16; nxt[e+4]+=eg/16; nxt[e+5]+=eb/16; }
+    const t=cur; cur=nxt; nxt=t; nxt.fill(0); }
+  return out; }
+function lzw(indices, minCode, out){
+  const CLEAR=1<<minCode, EOI=CLEAR+1, HSIZE=5003; const htab=new Int32Array(HSIZE).fill(-1), ctab=new Int32Array(HSIZE);
+  let nBits=minCode+1, maxcode=(1<<nBits)-1, free=CLEAR+2, clearFlag=false; let acc=0, accBits=0; const bytes=[];
+  const emit=code=>{ acc|=code<<accBits; accBits+=nBits; while(accBits>=8){ bytes.push(acc&255); acc>>>=8; accBits-=8; }
+    if(free>maxcode||clearFlag){ if(clearFlag){ nBits=minCode+1; maxcode=(1<<nBits)-1; clearFlag=false; } else { nBits++; maxcode=nBits===12?4096:(1<<nBits)-1; } } };
+  emit(CLEAR); let ent=indices[0];
+  outer: for(let i=1;i<indices.length;i++){ const c=indices[i]; const fcode=(c<<12)+ent; let h=(c<<4)^ent;
+    if(htab[h]===fcode){ ent=ctab[h]; continue; }
+    if(htab[h]>=0){ const disp=h===0?1:HSIZE-h; do{ h-=disp; if(h<0) h+=HSIZE; if(htab[h]===fcode){ ent=ctab[h]; continue outer; } }while(htab[h]>=0); }
+    emit(ent); ent=c;
+    if(free<4096){ ctab[h]=free++; htab[h]=fcode; } else { htab.fill(-1); free=CLEAR+2; clearFlag=true; emit(CLEAR); } }
+  emit(ent); emit(EOI); if(accBits>0) bytes.push(acc&255);
+  out.push(minCode); for(let i=0;i<bytes.length;i+=255){ const n=Math.min(255,bytes.length-i); out.push(n); for(let k=0;k<n;k++) out.push(bytes[i+k]); } out.push(0);
+}
+function encodeGif(job, progress){
+  const {frames,w,h,delays,colors,dither,loop,optimize}=job; const N=frames.length;
+  // sample pixels for global palette (≤200k samples)
+  const total=w*h*N, step=Math.max(1,Math.ceil(total/200000)); const smp=[]; let k=0;
+  for(const f of frames){ const px=new Uint8Array(f); for(let i=(k%step)*4;i<px.length;i+=step*4){ smp.push(px[i],px[i+1],px[i+2]); } k+=step; }
+  const nCol=optimize?colors-1:colors; let pal=medianCut(Uint8Array.from(smp),nCol); if(!pal.length) pal=[[0,0,0]];
+  const transIdx=optimize?pal.length:-1; const palLen=pal.length+(optimize?1:0);
+  let sizeBits=1; while((1<<sizeBits)<palLen) sizeBits++; const minCode=Math.max(2,sizeBits);
+  const map=makeMapper(pal); const chunks=[]; let out=[];
+  const w16=v=>{ out.push(v&255,(v>>8)&255); }; const str=s=>{ for(const ch of s) out.push(ch.charCodeAt(0)); };
+  str('GIF89a'); w16(w); w16(h); out.push(0x80|(7<<4)|(sizeBits-1),0,0);
+  for(let i=0;i<(1<<sizeBits);i++){ const p=pal[i]||[0,0,0]; out.push(p[0],p[1],p[2]); }
+  if(loop!==1){ out.push(0x21,0xFF,0x0B); str('NETSCAPE2.0'); out.push(3,1); w16(loop===0?0:loop-1); out.push(0); }
+  let prev=null;
+  for(let fi=0;fi<N;fi++){
+    const px=new Uint8Array(frames[fi]); const idx=mapFrame(px,w,h,pal,map,dither);
+    let x0=0,y0=0,x1=w-1,y1=h-1, data=idx, useT=false;
+    if(optimize&&prev){ x0=w;y0=h;x1=-1;y1=-1; for(let y=0;y<h;y++){ const r=y*w; for(let x=0;x<w;x++) if(idx[r+x]!==prev[r+x]){ if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; } }
+      if(x1<0){ x0=y0=x1=y1=0; } const rw=x1-x0+1, rh=y1-y0+1; data=new Uint8Array(rw*rh); useT=true;
+      for(let y=0;y<rh;y++) for(let x=0;x<rw;x++){ const s=(y+y0)*w+x+x0; data[y*rw+x]=idx[s]===prev[s]?transIdx:idx[s]; } }
+    prev=idx;
+    const cs=Math.max(2,Math.round(delays[fi]/10));
+    out.push(0x21,0xF9,4,(1<<2)|(useT?1:0)); w16(cs); out.push(useT?transIdx:0,0);
+    out.push(0x2C); w16(x0); w16(y0); w16(x1-x0+1); w16(y1-y0+1); out.push(0);
+    lzw(data,minCode,out);
+    chunks.push(new Uint8Array(out)); out=[]; progress(fi+1,N);
+  }
+  chunks.push(new Uint8Array([0x3B])); return chunks;
+}
+return encodeGif;
+}
+const WORKER_SRC = encoderModule.toString()+"\nconst encodeGif=encoderModule();\nself.onmessage=e=>{ try{ const chunks=encodeGif(e.data,(d,t)=>self.postMessage({type:'progress',done:d,total:t})); self.postMessage({type:'done',chunks},chunks.map(c=>c.buffer)); }catch(err){ self.postMessage({type:'error',message:String(err&&err.message||err)}); } };";
+let workerURL=null;
+const workerOK=new Promise(res=>{ try{ workerURL=URL.createObjectURL(new Blob([WORKER_SRC],{type:'text/javascript'})); const t=new Worker(URL.createObjectURL(new Blob(['self.onmessage=e=>self.postMessage(e.data)'],{type:'text/javascript'})));
+  const to=setTimeout(()=>{ t.terminate(); res(false); },2000); t.onmessage=()=>{ clearTimeout(to); t.terminate(); res(true); }; t.onerror=()=>{ clearTimeout(to); t.terminate(); res(false); }; t.postMessage(1); }catch(e){ res(false); } });
+async function runEncoder(job,onProg){
+  if(!(await workerOK)){ await new Promise(r=>setTimeout(r,30)); return encoderModule()(job,onProg); }
+  return new Promise((resolve,reject)=>{
+    const w=new Worker(workerURL); current.worker=w;
+    w.onmessage=e=>{ const m=e.data; if(m.type==='progress') onProg(m.done,m.total); else if(m.type==='done'){ w.terminate(); current.worker=null; resolve(m.chunks); } else { w.terminate(); current.worker=null; reject(new Error(m.message)); } };
+    w.onerror=e=>{ w.terminate(); current.worker=null; reject(new Error(e.message||'worker')); };
+    w.postMessage(job,job.frames);
+  });
+}
+
+/* ================= state ================= */
+const def={width:320,speed:1,loop:'0',loopN:3,dir:'fwd',colors:256,fit:'cover',bg:'#ffffff',delay:150,dither:true,optimize:true,fps:10};
+const set=Object.assign({},def,store.get('settings',{})||{});
+const S={ mode:'img', frames:[], sel:-1, sample:true, playing:true, pvIdx:0, video:null, vName:'', gifURL:null, gifBlob:null };
+const current={worker:null,cancel:false};
+
+/* ================= sample frames ================= */
+function makeSampleFrames(){
+  const out=[]; const W=480,H=360, N=8;
+  for(let i=0;i<N;i++){ const c=document.createElement('canvas'); c.width=W;c.height=H; const x=c.getContext('2d');
+    x.fillStyle='#f4f1e8'; x.fillRect(0,0,W,H); x.strokeStyle='rgba(30,60,90,.12)'; x.lineWidth=1; for(let y=40;y<H;y+=28){ x.beginPath(); x.moveTo(0,y+.5); x.lineTo(W,y+.5); x.stroke(); }
+    x.fillStyle='#2d3b36'; x.fillRect(0,300,W,60);
+    const t=i/N, hgt=Math.abs(Math.cos(t*Math.PI)); const by=290-hgt*210, squash=hgt<0.12?1.35:1, bx=60+t*360;
+    x.fillStyle='rgba(0,0,0,.18)'; x.beginPath(); x.ellipse(bx,302,38*(1.2-hgt*.6),7,0,0,7); x.fill();
+    x.fillStyle=['#e4572e','#f3a712','#29335c','#669bbc','#e4572e','#f3a712','#29335c','#669bbc'][i];
+    x.beginPath(); x.ellipse(bx,by-10/squash+ (squash>1?6:0),36*squash,36/squash,0,0,7); x.fill();
+    x.fillStyle='#2d3b36'; x.font='700 22px ui-monospace,Menlo,monospace'; x.fillText(String(i+1).padStart(2,'0')+' / 08',W-130,34);
+    out.push({src:c,w:W,h:H,delay:null,name:'範例 '+(i+1)}); }
+  return out;
+}
+
+/* ================= frame helpers ================= */
+function outSize(){ const f=S.mode==='vid'&&S.video?{w:S.video.videoWidth,h:S.video.videoHeight}:S.frames[0]; let W=+set.width; if(!f) return {W,H:Math.round(W*.75)};
+  return {W,H:Math.max(2,Math.round(W*f.h/f.w))}; }
+function drawFit(x,src,sw,sh,W,H){ if(set.fit==='contain'){ x.fillStyle=set.bg; x.fillRect(0,0,W,H); const s=Math.min(W/sw,H/sh); x.drawImage(src,(W-sw*s)/2,(H-sh*s)/2,sw*s,sh*s); }
+  else { const s=Math.max(W/sw,H/sh); x.drawImage(src,(W-sw*s)/2,(H-sh*s)/2,sw*s,sh*s); } }
+const baseDelay=()=>S.mode==='vid'?1000/(+set.fps):+set.delay;
+function frameDelay(f){ return Math.max(20,Math.round(((f&&f.delay)||baseDelay())/(+set.speed)/10)*10); }
+function order(list){ if(set.dir==='rev') return list.slice().reverse(); if(set.dir==='pp'){ const b=list.slice(1,-1).reverse(); return list.concat(b); } return list.slice(); }
+
+/* ================= strip ================= */
+function drawStrip(){
+  const st=$('#strip'); st.innerHTML='';
+  S.frames.forEach((f,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='fr'; b.id='fr-'+i; b.setAttribute('aria-pressed',i===S.sel); b.setAttribute('aria-label',`第 ${i+1} 格`);
+    b.innerHTML='<canvas width="72" height="72"></canvas><span class="d"></span>'; const c=b.querySelector('canvas').getContext('2d'); c.fillStyle='#000'; c.fillRect(0,0,72,72); const s=Math.min(72/f.w,72/f.h); c.drawImage(f.src,(72-f.w*s)/2,(72-f.h*s)/2,f.w*s,f.h*s);
+    const d=b.querySelector('.d'); d.textContent=(f.delay?f.delay:+set.delay)+'ms'; if(f.delay) d.classList.add('own');
+    b.onclick=()=>{ S.sel=S.sel===i?-1:i; drawStrip(); showFrame(i); }; st.appendChild(b); });
+  const add=document.createElement('button'); add.type='button'; add.className='fr add'; add.id='addImg'; add.textContent='＋ 加入'; add.onclick=()=>$('#fileImg').click(); st.appendChild(add);
+  const e=$('#frEdit'); e.hidden=S.sel<0; if(S.sel>=0){ $('#frDelay').value=S.frames[S.sel].delay||''; $('#frLeft').disabled=S.sel===0; $('#frRight').disabled=S.sel===S.frames.length-1; }
+  updateGen();
+}
+$('#frDelay').addEventListener('change',e=>{ if(S.sel<0) return; const v=parseInt(e.target.value,10); S.frames[S.sel].delay=isFinite(v)&&v>=20?Math.min(10000,v):null; drawStrip(); invalidate(); });
+$('#frLeft').onclick=()=>moveSel(-1); $('#frRight').onclick=()=>moveSel(1);
+function moveSel(d){ const i=S.sel, j=i+d; if(j<0||j>=S.frames.length) return; [S.frames[i],S.frames[j]]=[S.frames[j],S.frames[i]]; S.sel=j; drawStrip(); invalidate(); $('#fr'+(d<0?'Left':'Right')).focus(); }
+$('#frDel').onclick=()=>{ if(S.sel<0) return; S.frames.splice(S.sel,1); S.sel=Math.min(S.sel,S.frames.length-1); if(!S.frames.length) S.sel=-1; drawStrip(); invalidate(); };
+
+async function addImages(files){
+  files=[...files].filter(f=>!f.type||f.type.startsWith('image/')); if(!files.length) return;
+  if(S.sample){ S.frames=[]; S.sample=false; $('#sampleTag').hidden=true; }
+  let bad=0;
+  for(const f of files){ if(S.frames.length>=MAXF){ toast(`最多 ${MAXF} 格，其餘未加入`); break; }
+    let img=null; try{ img=await createImageBitmap(f,{imageOrientation:'from-image'}); }catch(e){ const u=URL.createObjectURL(f); try{ const im=new Image(); im.src=u; await im.decode(); img=im; }catch(e2){} finally{ URL.revokeObjectURL(u); } }
+    if(!img){ bad++; continue; } const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; const sc=Math.min(1,1600/Math.max(w,h));
+    const c=document.createElement('canvas'); c.width=Math.round(w*sc); c.height=Math.round(h*sc); c.getContext('2d').drawImage(img,0,0,c.width,c.height); if(img.close) img.close();
+    S.frames.push({src:c,w:c.width,h:c.height,delay:null,name:f.name}); }
+  if(bad) toast(`${bad} 個檔案無法讀取`); else toast(`已加入 ${files.length} 張`);
+  drawStrip(); invalidate();
+}
+$('#fileImg').onchange=e=>{ addImages(e.target.files); e.target.value=''; };
+addEventListener('dragover',e=>e.preventDefault());
+addEventListener('drop',e=>{ e.preventDefault(); const fs=[...(e.dataTransfer?.files||[])]; const v=fs.find(f=>f.type.startsWith('video/')); if(v&&S.mode==='vid') loadVideo(v); else addImages(fs); });
+addEventListener('paste',e=>{ const fs=[...(e.clipboardData?.files||[])]; if(fs.length) addImages(fs); });
+
+/* ================= preview player ================= */
+let pvTimer=0;
+function pvFrames(){ if(S.mode==='img') return order(S.frames.map(f=>({src:f.src,w:f.w,h:f.h,delay:f.delay}))); return S.vFrames?order(S.vFrames):[]; }
+function invalidate(){ clearDone(); restartPreview(); }
+function restartPreview(){ clearTimeout(pvTimer); S.pvIdx=0; tick(true); }
+function showFrame(i){ const list=S.mode==='img'?S.frames:[]; if(!list[i]) return; S.playing=false; updPlay(); clearTimeout(pvTimer); draw(list[i],i,list.length); }
+function draw(f,i,n){ const {W,H}=outSize(); const c=$('#pvc'); const sc=Math.min(1,480/W); c.width=Math.round(W*sc); c.height=Math.round(H*sc);
+  const x=c.getContext('2d'); x.clearRect(0,0,c.width,c.height); drawFit(x,f.src,f.w,f.h,c.width,c.height); $('#cnt').textContent=`${i+1} / ${n}`; $('#pv').style.setProperty('--ar',(W/H).toFixed(4)); }
+function tick(first){
+  if(S.gifURL) return; const list=pvFrames();
+  if(!list.length&&S.mode==='vid'&&S.video&&S.video.readyState>=2){ const {W,H}=outSize(); draw({src:S.video,w:S.video.videoWidth,h:S.video.videoHeight},0,1); $('#cnt').textContent=S.video.currentTime.toFixed(2)+'s'; $('#pvInfo').textContent=`${W}×${H}・按產生後擷取`; return; }
+  if(!list.length){ const c=$('#pvc'); const x=c.getContext('2d'); c.width=320;c.height=240; x.fillStyle='#000'; x.fillRect(0,0,320,240); x.fillStyle='#bbb'; x.font='15px system-ui,sans-serif'; x.textAlign='center';
+    x.fillText(S.mode==='vid'?(S.video?'按「產生 GIF」擷取影格':'請先選擇影片'):'加入至少 2 張圖片',160,124); $('#cnt').textContent='0 / 0'; $('#pvInfo').textContent=''; return; }
+  if(S.pvIdx>=list.length) S.pvIdx=0; const f=list[S.pvIdx]; draw(f,S.pvIdx,list.length);
+  const tot=list.reduce((a,f)=>a+frameDelay(f),0); const {W,H}=outSize(); $('#pvInfo').textContent=`${W}×${H}・${(tot/1000).toFixed(2)}s`;
+  if(S.playing){ pvTimer=setTimeout(()=>{ S.pvIdx=(S.pvIdx+1)%list.length; tick(); },frameDelay(f)); }
+}
+function updPlay(){ $('#playBtn').textContent=S.playing?'❚❚ 暫停':'▶ 播放'; $('#playBtn').setAttribute('aria-label',S.playing?'暫停':'播放'); }
+$('#playBtn').onclick=()=>{ S.playing=!S.playing; updPlay(); if(S.gifURL){ /* gif plays by itself */ return; } clearTimeout(pvTimer); if(S.playing) tick(); };
+
+/* ================= video ================= */
+const vid=$('#vid');
+for(const ev of ['seeked','loadeddata']) vid.addEventListener(ev,()=>{ if(S.mode==='vid'&&!S.gifURL&&$('#barBusy').hidden) tick(); });
+function seekTo(v,t){ return new Promise((res,rej)=>{ let done=false; const to=setTimeout(()=>{ if(!done){ done=true; res(); } },3000);
+  v.addEventListener('seeked',()=>{ if(done) return; done=true; clearTimeout(to); if(v.requestVideoFrameCallback){ let ok=false; v.requestVideoFrameCallback(()=>{ ok=true; res(); }); setTimeout(()=>{ if(!ok) res(); },120); } else res(); },{once:true});
+  v.currentTime=t; }); }
+async function fixDuration(v){ if(isFinite(v.duration)&&v.duration>0) return v.duration; await new Promise(r=>{ const h=()=>{ if(isFinite(v.duration)){ v.removeEventListener('durationchange',h); r(); } }; v.addEventListener('durationchange',h); v.currentTime=1e7; setTimeout(r,3000); }); const d=v.duration; v.currentTime=0; return isFinite(d)?d:0; }
+async function loadVideo(file){
+  if(!file) return; if(S.vURL) URL.revokeObjectURL(S.vURL); S.vURL=URL.createObjectURL(file); S.vName=file.name||'video'; S.vFrames=null;
+  vid.src=S.vURL; vid.load();
+  try{ await new Promise((res,rej)=>{ vid.onloadedmetadata=res; vid.onerror=()=>rej(new Error('decode')); setTimeout(()=>rej(new Error('timeout')),10000); }); }
+  catch(e){ toast('此影片格式不支援，請改用 MP4（H.264）或 WebM',4000); return; }
+  const d=await fixDuration(vid); if(!d){ toast('無法取得影片長度'); return; }
+  S.video=vid; S.vDur=d; $('#vEmpty').hidden=true; $('#vBox').hidden=false;
+  for(const id of ['vStart','vEnd']){ $('#'+id).max=d.toFixed(2); } $('#vStart').value=0; $('#vEnd').value=Math.min(d,15).toFixed(2); updRange(); updateGen(); invalidate(); toast('已載入影片 '+S.vName);
+}
+function updRange(src){ let a=+$('#vStart').value, b=+$('#vEnd').value; if(b<a+0.1){ if(src==='vStart') a=Math.max(0,b-0.1); else b=Math.min(S.vDur,a+0.1); }
+  if(b-a>15){ if(src==='vStart') b=a+15; else a=b-15; } $('#vStart').value=a; $('#vEnd').value=b;
+  $('#vStartOut').textContent=a.toFixed(2)+'s'; $('#vEndOut').textContent=b.toFixed(2)+'s'; const n=Math.max(1,Math.floor((b-a)*(+set.fps))); $('#vLen').textContent=`${(b-a).toFixed(1)} 秒・${n} 格`; }
+for(const id of ['vStart','vEnd']) $('#'+id).addEventListener('input',()=>{ updRange(id); S.vFrames=null; clearDone(); try{ vid.currentTime=+$('#'+id).value; }catch(e){} });
+$('#pickVid').onclick=$('#pickVid2').onclick=()=>$('#fileVid').click();
+$('#fileVid').onchange=e=>{ loadVideo(e.target.files[0]); e.target.value=''; };
+async function extractVideo(onProg){
+  let a=+$('#vStart').value, b=+$('#vEnd').value, fps=+set.fps; let n=Math.max(1,Math.floor((b-a)*fps+1e-6));
+  if(n>MAXF){ fps=Math.max(1,Math.floor(MAXF/(b-a))); n=Math.max(1,Math.floor((b-a)*fps)); toast(`超過 ${MAXF} 格，已自動降為 ${fps} fps`); }
+  const {W,H}=outSize(); const frames=[];
+  vid.pause();
+  for(let i=0;i<n;i++){ if(current.cancel) throw new Error('cancel'); const t=Math.min(S.vDur-0.001,a+i/fps); await seekTo(vid,t);
+    const c=document.createElement('canvas'); c.width=W; c.height=H; drawFit(c.getContext('2d'),vid,vid.videoWidth,vid.videoHeight,W,H); frames.push({src:c,w:W,h:H,delay:1000/fps}); onProg(i+1,n); }
+  return frames;
+}
+
+/* ================= generate ================= */
+function updateGen(){ const n=S.mode==='img'?S.frames.length:(S.video?2:0); const b=$('#genBtn'); b.disabled=n<2;
+  b.textContent=S.mode==='img'&&n===1?'至少 2 格才能產生':S.mode==='img'&&n===0?'請加入圖片':S.mode==='vid'&&!S.video?'請先選擇影片':'產生 GIF'; }
+function bar(which){ for(const id of ['barIdle','barBusy','barDone']) $('#'+id).hidden=id!==which; }
+function clearDone(){ if(S.gifURL){ URL.revokeObjectURL(S.gifURL); S.gifURL=null; S.gifBlob=null; } $('#gifImg').hidden=true; $('#gifImg').removeAttribute('src'); $('#pvc').hidden=false; $('#gifTag').hidden=true; $('#saveHint').hidden=true; bar('barIdle'); }
+$('#genBtn').onclick=async()=>{
+  current.cancel=false; bar('barBusy'); const P=(t,p)=>{ $('#progT').textContent=t; $('#progB').style.width=(p*100).toFixed(1)+'%'; };
+  try{
+    let {W,H}=outSize(); let src;
+    if(S.mode==='vid'){ P('擷取影格…',0); const fr=await extractVideo((d,t)=>P(`擷取影格 ${d} / ${t}`,d/t*.4)); S.vFrames=fr; src=order(fr); }
+    else src=order(S.frames);
+    if(src.length<2){ toast('至少需要 2 格'); bar('barIdle'); return; }
+    if(W*H*4*src.length>138e6&&W>320){ const k=320/W; W=320; H=Math.max(2,Math.round(H*k)); toast('影格太多，已自動降為 320 寬以免記憶體不足'); }
+    const bufs=[], delays=[]; for(const f of src){ const c=document.createElement('canvas'); c.width=W; c.height=H; const x=c.getContext('2d',{willReadFrequently:true}); drawFit(x,f.src,f.w,f.h,W,H); bufs.push(x.getImageData(0,0,W,H).data.buffer); delays.push(frameDelay(f)); }
+    if(current.cancel) throw new Error('cancel');
+    const loop=set.loop==='0'?0:set.loop==='1'?1:Math.max(2,Math.min(100,+set.loopN||2));
+    const base=S.mode==='vid'?.4:0;
+    const chunks=await runEncoder({frames:bufs,w:W,h:H,delays,colors:+set.colors,dither:!!set.dither,loop,optimize:!!set.optimize},(d,t)=>P(`編碼 ${d} / ${t} 格`,base+(1-base)*d/t));
+    if(current.cancel) throw new Error('cancel');
+    const blob=new Blob(chunks,{type:'image/gif'}); S.gifBlob=blob; S.gifURL=URL.createObjectURL(blob); window.__lastGif={blob,frames:src.length,w:W,h:H,delays,loop};
+    clearTimeout(pvTimer); $('#pvc').hidden=true; const im=$('#gifImg'); im.src=S.gifURL; im.hidden=false; $('#gifTag').hidden=false; $('#pv').style.setProperty('--ar',(W/H).toFixed(4));
+    $('#cnt').textContent=`${src.length} 格`; $('#pvInfo').textContent=`${W}×${H}`;
+    const mb=blob.size/1048576; $('#doneInfo').innerHTML=`<b>${mb>=1?mb.toFixed(2)+' MB':(blob.size/1024).toFixed(0)+' KB'}</b>・${src.length} 格・${W}×${H}`+(blob.size>20*1048576?'<br><span class="warn">超過 20MB，可降低寬度、色數或幀率</span>':'');
+    $('#dlBtn').hidden=!dl; $('#saveHint').hidden=!!dl; bar('barDone');
+  }catch(e){ if(current.worker){ current.worker.terminate(); current.worker=null; } bar('barIdle'); if(e.message==='cancel') toast('已取消'); else { console.warn(e); toast('產生失敗：'+(e.message||'記憶體不足')); } }
+};
+$('#cancelBtn').onclick=()=>{ current.cancel=true; if(current.worker){ current.worker.terminate(); current.worker=null; } bar('barIdle'); toast('已取消'); };
+$('#againBtn').onclick=()=>{ clearDone(); restartPreview(); };
+$('#dlBtn').onclick=async()=>{ if(!dl||!S.gifBlob) return; const name=(S.mode==='vid'?S.vName.replace(/\.[^.]+$/,''):(S.sample?'sample':'animation'))+'.gif';
+  try{ await dl.save({filename:name,data:S.gifBlob}); toast('已儲存 '+name); }catch(e){ toast(/declin|cancel|abort/i.test(String(e&&(e.name||e.message)))?'已取消下載':'下載失敗，可長按 GIF 儲存'); $('#saveHint').hidden=false; } };
+
+/* ================= settings ================= */
+function saveSet(){ store.set('settings',set); }
+const bind=(id,key,conv=v=>v)=>{ const el=$('#'+id); if(el.type==='checkbox') el.checked=!!set[key]; else el.value=set[key];
+  el.addEventListener(el.type==='range'?'input':'change',()=>{ set[key]=el.type==='checkbox'?el.checked:conv(el.value); saveSet(); onSet(key); }); };
+bind('width','width',v=>+v); bind('speed','speed',v=>+v); bind('loop','loop'); bind('loopN','loopN',v=>+v); bind('dir','dir'); bind('colors','colors',v=>+v); bind('fit','fit'); bind('bgc','bg'); bind('delay','delay',v=>+v); bind('dither','dither'); bind('optimize','optimize'); bind('fps','fps',v=>+v);
+function onSet(k){ $('#loopNBox').hidden=set.loop!=='n'; $('#delayOut').textContent=set.delay+'ms'; if(k==='delay') drawStrip(); if(k==='fps'){ S.vFrames=null; if(S.video) updRange(); } invalidate(); }
+
+/* ================= mode ================= */
+function setMode(m){ S.mode=m; $('#mode-img').setAttribute('aria-pressed',m==='img'); $('#mode-vid').setAttribute('aria-pressed',m==='vid');
+  $('#srcImg').hidden=m!=='img'; $('#srcVid').hidden=m!=='vid'; $('#delayRow').hidden=m!=='img'; $('#sampleTag').hidden=!(m==='img'&&S.sample); updateGen(); invalidate(); }
+$('#mode-img').onclick=()=>setMode('img'); $('#mode-vid').onclick=()=>setMode('vid');
+
+/* ================= init ================= */
+S.frames=makeSampleFrames(); $('#loopNBox').hidden=set.loop!=='n'; $('#delayOut').textContent=set.delay+'ms';
+drawStrip(); setMode('img'); updPlay();
+(async()=>{ try{ dl=await window.claude?.use?.('downloads')||null; }catch(e){ dl=null; } })();
+window.__gm={S,set,setMode,loadVideo,encoderModule,workerOK};
+})();
+</script>

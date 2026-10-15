@@ -1,0 +1,450 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>時間戳轉換</title>
+<style>
+/* Observatory log: blue-grey chart paper, cobalt hands, a tick-marked ruler under the live counter */
+:root{
+  --bg:#e7ebf0; --surface:#f8fafc; --sunk:#eef2f6; --ink:#0e1a2b; --muted:#4a586b; --faint:#7a8799;
+  --line:#cfd7e1; --line-strong:#a9b5c4; --accent:#1d4ed8; --accent-ink:#ffffff; --accent-soft:#dbe5fb;
+  --tick:#8fa0b6; --live-bg:#0e1a2b; --live-ink:#eef3fa; --warn:#8a4b00; --warn-soft:#fbe9cf; --bad:#b4231a; --bad-soft:#f8e0dd; --ok:#17663d;
+  --shadow:0 12px 30px rgba(14,26,43,.16);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b111a; --surface:#121a26; --sunk:#0e1520; --ink:#e3e9f2; --muted:#9fadc0; --faint:#73819a;
+  --line:#223044; --line-strong:#33455e; --accent:#7ea6ff; --accent-ink:#081430; --accent-soft:#17284a;
+  --tick:#4a6182; --live-bg:#17243a; --live-ink:#e3e9f2; --warn:#f3bb62; --warn-soft:#33260f; --bad:#ff8a7e; --bad-soft:#3a1916; --ok:#7fd6a3;
+  --shadow:0 12px 30px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b111a; --surface:#121a26; --sunk:#0e1520; --ink:#e3e9f2; --muted:#9fadc0; --faint:#73819a;
+  --line:#223044; --line-strong:#33455e; --accent:#7ea6ff; --accent-ink:#081430; --accent-soft:#17284a;
+  --tick:#4a6182; --live-bg:#17243a; --live-ink:#e3e9f2; --warn:#f3bb62; --warn-soft:#33260f; --bad:#ff8a7e; --bad-soft:#3a1916; --ok:#7fd6a3;
+  --shadow:0 12px 30px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding-block:0 calc(32px + env(safe-area-inset-bottom));padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right))}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1160px;margin:0 auto}
+header.top{display:flex;align-items:baseline;gap:10px;padding:16px 0 8px}
+header.top h1{margin:0;font-size:20px;font-weight:800;letter-spacing:.04em}
+header.top span{font:12px var(--mono);color:var(--faint)}
+.btn{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--line-strong);background:var(--surface);border-radius:3px;cursor:pointer;font-size:14px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+@media (hover:hover){.btn:hover{border-color:var(--accent)}}
+/* live strip */
+.live{position:relative;background:var(--live-bg);color:var(--live-ink);border-radius:4px;padding:14px 14px 26px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;overflow:hidden}
+.live::after{content:"";position:absolute;left:0;right:0;bottom:0;height:14px;
+  background:repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 10px) bottom/100% 7px no-repeat,repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 50px) bottom/100% 14px no-repeat;opacity:.8}
+.live .sweep{position:absolute;bottom:0;left:0;width:2px;height:18px;background:var(--accent);transition:left .25s linear}
+.live button.val{border:0;background:transparent;color:inherit;cursor:pointer;text-align:left;padding:2px 0;min-height:44px}
+.live .sec{font:800 clamp(34px,10vw,56px)/1 var(--mono);letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.live .ms{font:600 15px var(--mono);opacity:.75;display:block;margin-top:4px}
+.live .cap{font:700 11px var(--mono);letter-spacing:.18em;opacity:.65;display:block;margin-bottom:2px}
+.live .sp{flex:1}
+.live .btn{background:transparent;color:inherit;border-color:color-mix(in srgb,var(--live-ink) 40%,transparent)}
+.grid{display:grid;gap:14px;margin-top:14px}
+@media (min-width:760px){.grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.col{display:grid;gap:14px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--ink);border-radius:3px;padding:14px;min-width:0}
+.panel h2{margin:0 0 10px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.panel h2 small{font:500 12px var(--sans);color:var(--faint)}
+.panel h2 .tag{font:700 10.5px var(--mono);letter-spacing:.1em;color:var(--accent);border:1px solid currentColor;padding:1px 6px;border-radius:2px}
+input[type=text],input[type=number],input[type=datetime-local],select,textarea{width:100%;min-height:44px;border:1px solid var(--line-strong);background:var(--sunk);border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:15px}
+select{font-family:var(--sans);font-size:14px}
+textarea{min-height:120px;resize:vertical;line-height:1.5}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>.grow{flex:1;min-width:0}
+.big{font-size:19px!important;font-weight:700}
+.fl{display:block;font-size:12.5px;color:var(--muted);margin:0 0 4px}
+.res{margin:12px 0 0;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.res .r{display:grid;grid-template-columns:96px minmax(0,1fr);border-bottom:1px solid var(--line);min-height:44px}
+.res .r:last-child{border-bottom:0}
+.res .k{font-size:12.5px;color:var(--muted);padding:11px 8px 11px 10px;background:var(--sunk);border-right:1px solid var(--line)}
+.res button{border:0;background:transparent;text-align:left;padding:10px;font:600 14px/1.45 var(--mono);cursor:pointer;overflow-wrap:anywhere;color:var(--ink);min-height:44px}
+@media (hover:hover){.res button:hover{background:var(--accent-soft)}}
+.res .r.main button{font-size:16px;color:var(--accent)}
+.note{margin:10px 0 0;padding:8px 10px;border-radius:3px;font-size:13.5px;border-left:3px solid currentColor}
+.note.warn{color:var(--warn);background:var(--warn-soft)}
+.note.bad{color:var(--bad);background:var(--bad-soft)}
+.note.info{color:var(--muted);background:var(--sunk)}
+.zones{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.zones li{display:grid;grid-template-columns:minmax(0,1fr) auto 44px;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-bottom:1px solid var(--line);background:var(--surface);transition:transform .2s;touch-action:pan-y}
+.zones li:last-child{border-bottom:0}
+.zones .city{font-weight:700;font-size:15px}
+.zones .tz{display:block;font:12px var(--mono);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zones button.t{border:0;background:transparent;cursor:pointer;text-align:right;font:700 18px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);padding:4px 0;min-height:44px}
+.zones button.t small{display:block;font:500 12px var(--mono);color:var(--muted)}
+.zones .del{width:44px;height:44px;border:0;background:transparent;cursor:pointer;color:var(--faint);font-size:20px;border-radius:3px}
+@media (hover:hover){.zones .del:hover{color:var(--bad);background:var(--bad-soft)}}
+.zones li.self .city::after{content:"本機";font:700 10.5px var(--sans);color:var(--accent);border:1px solid currentColor;border-radius:2px;padding:0 4px;margin-left:6px;vertical-align:2px}
+.refline{font-size:13px;color:var(--muted);margin:0 0 8px}
+details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:800;font-size:15px;list-style:none;gap:8px}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:rotate(-45deg);transition:transform .15s}
+details[open] summary::before{transform:rotate(45deg)}
+.tbl{overflow-x:auto;margin-top:10px;border:1px solid var(--line);border-radius:3px}
+table{border-collapse:collapse;width:100%;font:13px var(--mono)}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font:700 12px var(--sans);color:var(--muted);background:var(--sunk)}
+td.err{color:var(--bad);font-family:var(--sans)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:4px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+@media (max-width:380px){.res .r{grid-template-columns:82px minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top"><h1>時間戳轉換</h1><span>UNIX EPOCH · 本機計算</span></header>
+
+<section class="live" aria-label="目前時間戳">
+  <button class="val" id="liveCopy" aria-label="複製目前秒數"><span class="cap">NOW · UNIX 秒</span><span class="sec" id="liveSec">0</span><span class="ms" id="liveMs">0 ms</span></button>
+  <span class="sp"></span>
+  <button class="btn" id="livePause">暫停</button>
+  <i class="sweep" id="sweep"></i>
+</section>
+
+<div class="grid">
+  <div class="col">
+    <section class="panel" aria-labelledby="h-ts">
+      <h2 id="h-ts">時間戳 → 日期 <span class="tag" id="tsSample">範例</span></h2>
+      <div class="row">
+        <div class="grow"><label class="fl" for="tsIn">時間戳或日期字串</label><input type="text" id="tsIn" class="big" value="1700000000" inputmode="text" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="grow"><label class="fl" for="unit">單位</label>
+          <select id="unit"><option value="auto">自動判斷</option><option value="s">秒</option><option value="ms">毫秒</option><option value="us">微秒</option><option value="ns">奈秒</option></select></div>
+        <div style="align-self:flex-end"><button class="btn" id="tsNow">現在</button></div>
+      </div>
+      <div id="tsOut"></div>
+    </section>
+    <section class="panel" aria-labelledby="h-dt">
+      <h2 id="h-dt">日期 → 時間戳</h2>
+      <div class="row">
+        <div class="grow" style="min-width:190px"><label class="fl" for="dtIn">日期與時間</label><input type="datetime-local" id="dtIn"></div>
+        <div style="width:92px"><label class="fl" for="dtSec">秒</label><input type="number" id="dtSec" min="0" max="59" value="0" inputmode="numeric"></div>
+      </div>
+      <div style="margin-top:8px"><label class="fl" for="dtZone">時區</label><select id="dtZone"></select></div>
+      <div id="dtOut"></div>
+    </section>
+  </div>
+  <div class="col">
+    <section class="panel" aria-labelledby="h-z">
+      <h2 id="h-z">多時區對照</h2>
+      <p class="refline" id="zoneRef"></p>
+      <label class="row" style="min-height:44px;font-size:14px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="zoneLive" style="width:20px;height:20px;accent-color:var(--accent)"> 改用現在時間（每秒更新）</label>
+      <ul class="zones" id="zones"></ul>
+      <div class="row" style="margin-top:10px">
+        <div class="grow"><label class="fl" for="zoneAdd">加入時區</label><select id="zoneAdd"></select></div>
+        <div style="align-self:flex-end"><button class="btn pri" id="zoneAddBtn">＋ 加入</button></div>
+      </div>
+      <p class="refline" style="margin:8px 0 0">點時間可複製；在列上向左滑或按 × 可刪除。</p>
+    </section>
+    <section class="panel">
+      <details id="batch">
+        <summary>批次轉換</summary>
+        <label class="fl" for="batchIn" style="margin-top:6px">每行一個時間戳（範例資料，可直接替換）</label>
+        <textarea id="batchIn" spellcheck="false">0
+1700000000
+1700000000123
+1700000000123456789
+-86400
+1700000000.5
+2024/02/29 12:00:00
+hello</textarea>
+        <div class="tbl" id="batchOut"></div>
+        <div class="row" style="margin-top:10px"><span style="flex:1;font-size:13px;color:var(--muted)" id="batchMeta"></span><button class="btn" id="batchCopy">複製表格（TSV）</button></div>
+      </details>
+    </section>
+  </div>
+</div>
+</div>
+<div id="toastHost" aria-live="polite"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem("timestamp:v1:" + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v){ try { localStorage.setItem("timestamp:v1:" + k, JSON.stringify(v)); } catch (e) {} }
+};
+let toastT;
+function toast(msg){ const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, 2000); }
+function copyText(text, el){
+  const fallback = () => {
+    try { const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0"; document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); if (ok){ toast("已複製"); return; } } catch (e) {}
+    if (el){ const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    toast("無法自動複製，已選取文字，請長按手動複製");
+  };
+  try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast("已複製：" + (text.length > 40 ? text.slice(0, 40) + "…" : text)), fallback); else fallback(); } catch (e) { fallback(); }
+}
+const pad = (n, w = 2) => String(n).padStart(w, "0");
+const MAXMS = 8.64e15;
+const LOCAL_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; } })();
+const WD = ["日", "一", "二", "三", "四", "五", "六"];
+const CITY = { "Asia/Taipei": "台北", "UTC": "UTC", "Etc/UTC": "UTC", "Asia/Tokyo": "東京", "America/New_York": "紐約", "Europe/London": "倫敦", "America/Los_Angeles": "洛杉磯", "America/Chicago": "芝加哥", "America/Denver": "丹佛", "Europe/Paris": "巴黎", "Europe/Berlin": "柏林", "Europe/Amsterdam": "阿姆斯特丹", "Europe/Madrid": "馬德里", "Europe/Rome": "羅馬", "Europe/Moscow": "莫斯科", "Asia/Shanghai": "上海", "Asia/Hong_Kong": "香港", "Asia/Macau": "澳門", "Asia/Singapore": "新加坡", "Asia/Seoul": "首爾", "Asia/Bangkok": "曼谷", "Asia/Ho_Chi_Minh": "胡志明市", "Asia/Manila": "馬尼拉", "Asia/Jakarta": "雅加達", "Asia/Kuala_Lumpur": "吉隆坡", "Asia/Kolkata": "加爾各答", "Asia/Dubai": "杜拜", "Australia/Sydney": "雪梨", "Australia/Melbourne": "墨爾本", "Australia/Perth": "伯斯", "Pacific/Auckland": "奧克蘭", "Pacific/Honolulu": "檀香山", "America/Toronto": "多倫多", "America/Vancouver": "溫哥華", "America/Sao_Paulo": "聖保羅", "America/Mexico_City": "墨西哥城", "Africa/Cairo": "開羅", "Africa/Johannesburg": "約翰尼斯堡", "Europe/Istanbul": "伊斯坦堡", "Asia/Jerusalem": "耶路撒冷", "America/Anchorage": "安克拉治" };
+const FALLBACK_ZONES = Object.keys(CITY).filter(z => z !== "Etc/UTC").concat(["Europe/Zurich", "Europe/Stockholm", "Asia/Karachi"]);
+let ZONES = FALLBACK_ZONES.slice();
+try { if (Intl.supportedValuesOf){ ZONES = Intl.supportedValuesOf("timeZone"); if (!ZONES.includes("UTC")) ZONES = ["UTC"].concat(ZONES); } } catch (e) {}
+for (const z of FALLBACK_ZONES.concat([LOCAL_TZ])) if (!ZONES.includes(z)){ try { new Intl.DateTimeFormat("en-US", { timeZone: z }); ZONES.push(z); } catch (e) {} }
+ZONES = ZONES.filter(z => z !== "UTC").sort(); ZONES.unshift("UTC");
+Object.assign(CITY, { "Asia/Calcutta": "加爾各答", "Asia/Saigon": "胡志明市", "Asia/Rangoon": "仰光", "Asia/Katmandu": "加德滿都" });
+const cityOf = z => CITY[z] || z.split("/").pop().replace(/_/g, " ");
+
+// ---- time zone math ----
+const fmtCache = {};
+function fmt(tz){
+  if (!fmtCache[tz]) fmtCache[tz] = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", era: "short", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric", weekday: "short" });
+  return fmtCache[tz];
+}
+const WDN = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function partsAt(tz, ms){
+  const o = {};
+  for (const p of fmt(tz).formatToParts(new Date(ms))) o[p.type] = p.value;
+  let y = +o.year; if (/^B/.test(o.era)) y = 1 - y;
+  return { y, mo: +o.month, d: +o.day, h: +o.hour % 24, mi: +o.minute, s: +o.second, wd: WDN[o.weekday] };
+}
+function utcFields(y, mo, d, h, mi, s){ const dt = new Date(0); dt.setUTCFullYear(y, mo - 1, d); dt.setUTCHours(h, mi, s, 0); return dt.getTime(); }
+function offsetAt(tz, ms){ const sec = Math.floor(ms / 1000) * 1000, p = partsAt(tz, sec); return utcFields(p.y, p.mo, p.d, p.h, p.mi, p.s) - sec; }
+// wall-clock fields in tz → instant. status: ok | gap (does not exist) | dup (two instants, earlier used)
+function wallToUtc(tz, y, mo, d, h, mi, s){
+  const wall = utcFields(y, mo, d, h, mi, s);
+  const offs = [...new Set([offsetAt(tz, wall - 86400000), offsetAt(tz, wall), offsetAt(tz, wall + 86400000)])];
+  const valid = [...new Set(offs.map(o => wall - o).filter(t => offsetAt(tz, t) === wall - t))].sort((a, b) => a - b);
+  if (valid.length === 0) return { t: wall - offsetAt(tz, wall - 86400000), status: "gap" };
+  return { t: valid[0], status: valid.length > 1 ? "dup" : "ok", alt: valid[1] };
+}
+const offStr = (o, colon = true) => { const sg = o < 0 ? "-" : "+", a = Math.abs(o) / 60000; return sg + pad(Math.floor(a / 60)) + (colon ? ":" : "") + pad(a % 60); };
+const yStr = y => y < 0 ? "-" + pad(-y, 6) : y > 9999 ? "+" + pad(y, 6) : pad(y, 4);
+function dayOfYear(p){ return Math.round((utcFields(p.y, p.mo, p.d, 0, 0, 0) - utcFields(p.y, 1, 1, 0, 0, 0)) / 86400000) + 1; }
+function isoWeek(p){
+  const t = utcFields(p.y, p.mo, p.d, 0, 0, 0), dow = (new Date(t).getUTCDay() + 6) % 7;
+  const thu = new Date(t + (3 - dow) * 86400000), wy = thu.getUTCFullYear();
+  const w = 1 + Math.floor((thu.getTime() - utcFields(wy, 1, 1, 0, 0, 0)) / (7 * 86400000));
+  return { wy, w };
+}
+const RTF = (() => { try { return new Intl.RelativeTimeFormat("zh-TW", { numeric: "auto" }); } catch (e) { return null; } })();
+function relative(ms, now){
+  const d = ms - now, a = Math.abs(d) / 1000;
+  const [v, u] = a < 60 ? [d / 1000, "second"] : a < 3600 ? [d / 60000, "minute"] : a < 86400 ? [d / 3600000, "hour"] : a < 86400 * 30 ? [d / 86400000, "day"] : a < 86400 * 365 ? [d / (86400000 * 30.4375), "month"] : [d / (86400000 * 365.25), "year"];
+  const n = Math.round(v);
+  if (RTF) return RTF.format(n, u);
+  return Math.abs(n) + { second: " 秒", minute: " 分鐘", hour: " 小時", day: " 天", month: " 個月", year: " 年" }[u] + (n < 0 ? "前" : "後");
+}
+
+// ---- parsing ----
+const UNIT_NS = { s: 1000000000n, ms: 1000000n, us: 1000n, ns: 1n };
+const UNIT_ZH = { s: "秒", ms: "毫秒", us: "微秒", ns: "奈秒" };
+function detectUnit(digits){ const n = digits.replace(/^0+(?=\d)/, "").length; return n <= 11 ? "s" : n <= 14 ? "ms" : n <= 17 ? "us" : "ns"; }
+function parseTs(raw, unit){
+  const str = raw.trim().replace(/[\s_,]/g, "");
+  if (!str) return { err: "empty" };
+  const m = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(str);
+  if (m){
+    const u = unit === "auto" ? detectUnit(m[2]) : unit, per = UNIT_NS[u];
+    const frac = (m[3] || "").slice(0, 9);
+    let ns = BigInt(m[2]) * per;
+    if (frac) ns += BigInt(frac) * per / (10n ** BigInt(frac.length));
+    if (m[1] === "-") ns = -ns;
+    return fromNs(ns, u, true);
+  }
+  // date strings
+  let ms = NaN;
+  const d = /^(\d{1,6})[\/.-](\d{1,2})[\/.-](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/.exec(raw.trim());
+  if (d && (raw.includes("/") || raw.includes("."))){
+    const r = wallToUtc(LOCAL_TZ, +d[1], +d[2], +d[3], +(d[4] || 0), +(d[5] || 0), +(d[6] || 0));
+    ms = r.t + (d[7] ? +d[7].padEnd(3, "0") : 0);
+    if (+d[2] < 1 || +d[2] > 12 || +d[3] < 1 || +d[3] > 31) ms = NaN;
+  } else ms = Date.parse(raw.trim());
+  if (isNaN(ms)) return { err: "bad" };
+  return fromNs(BigInt(ms) * 1000000n, null, false);
+}
+function fromNs(ns, unit, numeric){
+  let ms = ns / 1000000n, sub = ns % 1000000n;
+  if (sub < 0n){ ms -= 1n; sub += 1000000n; }
+  const out = { ns, unit, numeric, sub };
+  if (ms > BigInt(MAXMS) || ms < -BigInt(MAXMS)){ out.err = "range"; return out; }
+  out.ms = Number(ms);
+  return out;
+}
+function nsToDecimal(ns, per){
+  const neg = ns < 0n, a = neg ? -ns : ns, ip = a / per, fp = a % per;
+  let s = ip.toString();
+  if (fp){ const w = per.toString().length - 1; s += "." + fp.toString().padStart(w, "0").replace(/0+$/, ""); }
+  return (neg ? "-" : "") + s;
+}
+function isoSub(r){
+  let iso = new Date(r.ms).toISOString();
+  if (r.sub){ iso = iso.replace(/\.(\d{3})Z$/, (_, a) => "." + (a + pad(Number(r.sub), 6)).replace(/0+$/, "") + "Z"); }
+  return iso;
+}
+function localIso(tz, ms){
+  const p = partsAt(tz, ms), o = offsetAt(tz, ms);
+  const msPart = ((ms % 1000) + 1000) % 1000;
+  return { p, o, iso: `${yStr(p.y)}-${pad(p.mo)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}${msPart ? "." + pad(msPart, 3) : ""}${offStr(o)}` };
+}
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], DAYEN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function rfc2822(tz, ms){ const p = partsAt(tz, ms), o = offsetAt(tz, ms); return `${DAYEN[p.wd]}, ${pad(p.d)} ${MON[p.mo - 1]} ${p.y} ${pad(p.h)}:${pad(p.mi)}:${pad(p.s)} ${offStr(o, false)}`; }
+const human = p => `${yStr(p.y)}-${pad(p.mo)}-${pad(p.d)} ${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}`;
+
+// ---- result rendering ----
+function resRows(host, rows){
+  const box = document.createElement("div"); box.className = "res";
+  for (const [k, v, cls] of rows){
+    const r = document.createElement("div"); r.className = "r" + (cls ? " " + cls : "");
+    const kk = document.createElement("div"); kk.className = "k"; kk.textContent = k;
+    const b = document.createElement("button"); b.type = "button"; b.textContent = v; b.onclick = () => copyText(v, b);
+    if (k === "相對時間") b.dataset.rel = "1";
+    r.append(kk, b); box.appendChild(r);
+  }
+  host.appendChild(box);
+}
+function note(host, cls, text){ const p = document.createElement("p"); p.className = "note " + cls; p.textContent = text; host.appendChild(p); }
+
+let current = null; // last parsed instant (ms) for zones
+function renderTs(){
+  const host = $("tsOut"); host.innerHTML = "";
+  const unit = $("unit").value, raw = $("tsIn").value;
+  $("tsSample").hidden = raw.trim() !== "1700000000";
+  const r = parseTs(raw, unit);
+  if (r.err === "empty"){ note(host, "info", "輸入秒、毫秒、微秒或奈秒時間戳，也可輸入 2024-05-01T08:00:00Z、2024/05/01 08:00 或 RFC 2822 字串。"); current = null; renderZones(); return; }
+  if (r.err === "bad"){ note(host, "bad", "無法辨識：請輸入數字時間戳或日期字串。"); current = null; renderZones(); return; }
+  if (r.err === "range"){ note(host, "bad", "超出可表示範圍（±8.64×10¹⁵ 毫秒，約西元前 271821 年至 275760 年）。"); current = null; renderZones(); return; }
+  current = r.ms;
+  const L = localIso(LOCAL_TZ, r.ms), p = L.p, wk = isoWeek(p);
+  const secStr = nsToDecimal(r.ns, UNIT_NS.s), msStr = nsToDecimal(r.ns, UNIT_NS.ms);
+  const rows = [
+    ["本地時間", `${human(p)}（週${WD[p.wd]}）`, "main"],
+    ["UTC", human(partsAt("UTC", r.ms)) + " UTC"],
+    ["ISO 8601", isoSub(r)],
+    ["ISO 本地", L.iso],
+    ["RFC 2822", rfc2822(LOCAL_TZ, r.ms)],
+    ["相對時間", relative(r.ms, Date.now())],
+    ["秒", secStr],
+    ["毫秒", msStr],
+    ["星期", "週" + WD[p.wd]],
+    ["年中第幾天", `第 ${dayOfYear(p)} 天`],
+    ["ISO 週數", `${wk.wy}-W${pad(wk.w)}（第 ${wk.w} 週）`],
+  ];
+  if (r.unit && unit === "auto") rows.splice(6, 0, ["判斷單位", UNIT_ZH[r.unit] + "（可在上方手動指定）"]);
+  else if (!r.numeric) rows.splice(6, 0, ["來源", "日期字串（無時區時以本機 " + LOCAL_TZ + " 解讀）"]);
+  if (r.sub) rows.push(["奈秒", r.ns.toString()]);
+  resRows(host, rows);
+  if (r.ns / UNIT_NS.s > 2147483647n || r.ns / UNIT_NS.s < -2147483648n) note(host, "warn", "超過 32 位元有號整數上限（2038-01-19 03:14:07 UTC），舊系統以 32 位元儲存會溢位。");
+  note(host, "info", "本機時區：" + LOCAL_TZ + "（UTC" + offStr(L.o) + "）。點任一值即可複製。");
+  renderZones();
+}
+$("tsIn").addEventListener("input", renderTs);
+$("unit").value = store.get("unit", "auto");
+if (!UNIT_ZH[$("unit").value]) $("unit").value = "auto";
+$("unit").addEventListener("change", () => { store.set("unit", $("unit").value); renderTs(); });
+$("tsNow").onclick = () => { $("tsIn").value = String(Math.floor(Date.now() / 1000)); renderTs(); };
+
+// ---- date → timestamp ----
+function fillZoneSelect(sel, value){
+  const frag = document.createDocumentFragment();
+  for (const z of ZONES){ const o = document.createElement("option"); o.value = z; o.textContent = (CITY[z] ? CITY[z] + " · " : "") + z; frag.appendChild(o); }
+  sel.appendChild(frag); sel.value = value;
+}
+fillZoneSelect($("dtZone"), LOCAL_TZ);
+(() => { const p = partsAt(LOCAL_TZ, Date.now()); $("dtIn").value = `${yStr(p.y)}-${pad(p.mo)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}`; $("dtSec").value = p.s; })();
+function renderDt(){
+  const host = $("dtOut"); host.innerHTML = "";
+  const v = $("dtIn").value, m = /^(\d{4,6})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(v);
+  if (!m){ note(host, "info", "請選擇日期與時間。"); return; }
+  let sec = parseInt($("dtSec").value, 10); if (!(sec >= 0)) sec = 0; if (sec > 59) sec = 59;
+  if (m[6] != null && $("dtSec").value === "") sec = +m[6];
+  const tz = $("dtZone").value, r = wallToUtc(tz, +m[1], +m[2], +m[3], +m[4], +m[5], sec);
+  const o = offsetAt(tz, r.t);
+  resRows(host, [["秒", String(Math.floor(r.t / 1000)), "main"], ["毫秒", String(r.t)], ["ISO 8601", new Date(r.t).toISOString()], ["該時區", localIso(tz, r.t).iso], ["偏移", "UTC" + offStr(o)]]);
+  if (r.status === "gap") note(host, "bad", `此時間在 ${tz} 不存在（夏令時間調快跳過的時段），上面是往後順延到實際存在的時刻 ${human(partsAt(tz, r.t))}。`);
+  if (r.status === "dup") note(host, "warn", `此時間在 ${tz} 出現兩次（夏令時間結束），已採用較早者；較晚的是 ${Math.floor(r.alt / 1000)}（UTC${offStr(offsetAt(tz, r.alt))}）。`);
+}
+["dtIn", "dtSec", "dtZone"].forEach(id => $(id).addEventListener(id === "dtZone" ? "change" : "input", renderDt));
+
+// ---- zones ----
+let zones = store.get("zones", null);
+if (!Array.isArray(zones) || !zones.every(z => typeof z === "string")) zones = ["Asia/Taipei", "UTC", "Asia/Tokyo", "America/New_York", "Europe/London"];
+zones = zones.filter(z => { try { fmt(z); return true; } catch (e) { return false; } });
+fillZoneSelect($("zoneAdd"), "Europe/Paris");
+function zoneInstant(){ return $("zoneLive").checked || current == null ? Date.now() : current; }
+function renderZones(){
+  const t = zoneInstant(), ul = $("zones"); ul.innerHTML = "";
+  $("zoneRef").textContent = ($("zoneLive").checked || current == null ? "對照時刻：現在" : "對照時刻：上方「時間戳 → 日期」的結果") + "（" + new Date(t).toISOString().replace(".000", "") + "）";
+  zones.forEach((z, i) => {
+    const p = partsAt(z, t), o = offsetAt(z, t), li = document.createElement("li");
+    if (z === LOCAL_TZ) li.className = "self";
+    const name = document.createElement("div"); name.innerHTML = `<span class="city"></span><span class="tz"></span>`;
+    name.firstChild.textContent = cityOf(z); name.lastChild.textContent = "UTC" + offStr(o) + " · " + z;
+    const tb = document.createElement("button"); tb.className = "t"; tb.type = "button";
+    const val = `${pad(p.h)}:${pad(p.mi)}:${pad(p.s)}`;
+    tb.innerHTML = `<span></span><small></small>`; tb.firstChild.textContent = val; tb.lastChild.textContent = `${p.mo}/${p.d} 週${WD[p.wd]}`;
+    tb.onclick = () => copyText(`${human(p)} ${z} (UTC${offStr(o)})`, tb);
+    const del = document.createElement("button"); del.className = "del"; del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "移除 " + cityOf(z)); del.id = "zone-del-" + i;
+    del.onclick = () => removeZone(i);
+    li.append(name, tb, del); swipe(li, () => removeZone(i)); ul.appendChild(li);
+  });
+  if (!zones.length) ul.innerHTML = '<li style="grid-template-columns:1fr;color:var(--muted)">尚未加入任何時區</li>';
+}
+let swiping = false; // a zone row is being swiped: live mode must not rebuild the list mid-gesture
+function swipe(el, done){
+  let x0 = null, y0 = 0, id = null;
+  el.addEventListener("pointerdown", e => { if (e.pointerType === "mouse") return; x0 = e.clientX; y0 = e.clientY; id = e.pointerId; swiping = true; });
+  el.addEventListener("pointermove", e => { if (x0 == null || e.pointerId !== id) return; const dx = e.clientX - x0; if (Math.abs(e.clientY - y0) > 30){ x0 = null; swiping = false; el.style.transform = ""; return; } if (dx < 0) el.style.transform = `translateX(${dx}px)`; });
+  const end = e => { if (x0 == null) return; const dx = e.clientX - x0; x0 = null; swiping = false; if (dx < -90) done(); else el.style.transform = ""; };
+  el.addEventListener("pointerup", end); el.addEventListener("pointercancel", () => { x0 = null; swiping = false; el.style.transform = ""; });
+}
+function removeZone(i){ const z = zones[i]; zones.splice(i, 1); store.set("zones", zones); renderZones(); toast("已移除 " + cityOf(z)); }
+$("zoneAddBtn").onclick = () => { const z = $("zoneAdd").value; if (zones.includes(z)){ toast("已在清單中"); return; } zones.push(z); store.set("zones", zones); renderZones(); toast("已加入 " + cityOf(z)); };
+$("zoneLive").addEventListener("change", renderZones);
+
+// ---- batch ----
+let batchTsv = "";
+function renderBatch(){
+  const lines = $("batchIn").value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const head = ["輸入", "單位", "UTC（ISO 8601）", "本地時間", "秒"];
+  const rows = lines.map(l => {
+    const r = parseTs(l, "auto");
+    if (r.err) return [l, "", r.err === "range" ? "超出可表示範圍" : "無法辨識", "", ""];
+    return [l, r.unit ? UNIT_ZH[r.unit] : "日期", isoSub(r), human(partsAt(LOCAL_TZ, r.ms)), nsToDecimal(r.ns, UNIT_NS.s)];
+  });
+  batchTsv = [head].concat(rows).map(r => r.join("\t")).join("\n");
+  const t = document.createElement("table"), th = document.createElement("tr");
+  head.forEach(h => { const c = document.createElement("th"); c.textContent = h; th.appendChild(c); });
+  const thead = document.createElement("thead"); thead.appendChild(th); t.appendChild(thead);
+  const tb = document.createElement("tbody");
+  rows.forEach(r => { const tr = document.createElement("tr"); r.forEach((v, i) => { const c = document.createElement("td"); c.textContent = v; if (i === 2 && !r[1]) c.className = "err"; tr.appendChild(c); }); tb.appendChild(tr); });
+  t.appendChild(tb); $("batchOut").innerHTML = ""; $("batchOut").appendChild(t);
+  $("batchMeta").textContent = `${rows.length} 行，${rows.filter(r => !r[1]).length} 行無法辨識`;
+}
+$("batchIn").addEventListener("input", renderBatch);
+$("batchCopy").onclick = () => copyText(batchTsv, $("batchOut"));
+
+// ---- live clock ----
+let paused = false, timer = null;
+function tick(){
+  const now = Date.now();
+  $("liveSec").textContent = Math.floor(now / 1000);
+  $("liveMs").textContent = now + " ms";
+  $("sweep").style.left = ((now % 60000) / 60000 * 100).toFixed(2) + "%";
+  const rel = document.querySelector('#tsOut [data-rel]');
+  if (rel && current != null) rel.textContent = relative(current, now);
+  if ($("zoneLive").checked && now % 1000 < 260 && !swiping) renderZones();
+}
+function startTimer(){ if (timer || paused || document.hidden) return; tick(); timer = setInterval(tick, 250); }
+function stopTimer(){ clearInterval(timer); timer = null; }
+document.addEventListener("visibilitychange", () => document.hidden ? stopTimer() : startTimer());
+$("livePause").onclick = () => { paused = !paused; $("livePause").textContent = paused ? "繼續" : "暫停"; paused ? stopTimer() : startTimer(); };
+$("liveCopy").onclick = () => copyText($("liveSec").textContent, $("liveSec"));
+
+renderTs(); renderDt(); renderBatch(); startTimer();
+window.__ts = { parseTs, wallToUtc, offsetAt, partsAt, isoWeek, dayOfYear, nsToDecimal, isoSub, relative, timerActive: () => !!timer, LOCAL_TZ };
+window.__tsReady = true;
+</script>
