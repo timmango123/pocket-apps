@@ -91,7 +91,8 @@ const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg);
           const minT = Math.min(...[it.w.A, it.w.B].filter(Boolean));
           if (it.hr > (minT - DED) * v.sc + 0.01 && it.hr > 3) P(`hub on peg ${it.i} (r ${it.hr.toFixed(1)}) covers its ${minT}-tooth gear (root ${((minT - DED) * v.sc).toFixed(1)})`);
         }
-        out.labels = lay.labels.length; out.items = lay.items.filter(it => it.p.kind !== 'crank').length; out.crowded = lay.crowded;
+        out.labels = lay.labels.length; out.items = lay.items.length; out.crowded = lay.crowded;
+        out.crankLabel = lay.labels.some(l => l.it.p.kind === 'crank' && l.txt === String(L.crankT));
         out.zoomBtn = !document.getElementById('zoomBtn').hidden;
         return out;
       });
@@ -100,6 +101,7 @@ const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg);
       for (const pr of r.problems) ok(false, `${tag}: ${pr}`);
       if (!r.problems.length) pass++;
       ok(!r.crowded || r.zoomBtn, `${tag}: labels left out but no zoom button`);
+      ok(r.crankLabel, `${tag}: crank gear shows its tooth count`);
       console.log(`  ${tag}: stage ${r.stageH.toFixed(0)}px, scale ${r.sc.toFixed(2)}, labels ${r.labels}/${r.items}${r.problems.length ? ', ' + r.problems.length + ' problems' : ''}`);
       if (SHOTS) await p.screenshot({ path: path.join(SHOTS, `${w}x${h}-${mode}-L${n}.png`) });
     }
