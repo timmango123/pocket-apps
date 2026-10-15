@@ -1,5 +1,6 @@
 // QR 碼掃描器驗證：node verify.js
 // 用 qr-maker 實際產生的 PNG 與截圖，再做旋轉、縮小、加雜訊、模糊、透視、JPEG 壓縮等變形後，以內建解碼器解讀。
+// 相機即時掃描：以 Chromium 假相機（--use-file-for-fake-video-capture 播放含 QR 碼的 MJPEG）測內建解碼器與 BarcodeDetector 兩條路徑。
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs');
 const wrap = (src, out) => fs.writeFileSync(out, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(src, 'utf8') + '</body></html>');
@@ -200,6 +201,33 @@ const PAYLOADS = [
   const ls = await page.evaluate(() => Object.keys(localStorage));
   ok(ls.every(k => k.startsWith('qr-scanner:v1:')), '儲存鍵：' + ls.join(', '));
   await page.click('#hist-close');
+  // ---------- 5a. 相機：沒有權限／被嵌入頁面擋下 ----------
+  await page.click('#btn-camera');
+  await page.waitForFunction(() => document.getElementById('status').classList.contains('err'), null, { timeout: 10000 });
+  const camErr = await page.evaluate(() => ({ t: document.getElementById('status').textContent, html: document.getElementById('status').innerHTML, live: document.getElementById('stage').classList.contains('live'), prev: !document.getElementById('preview').hidden }));
+  ok(!camErr.live && camErr.prev && /相簿選圖/.test(camErr.t), '相機無法使用：顯示原因、退回原本畫面：' + camErr.t.slice(0, 50));
+  ok(/timmango123\.github\.io\/pocket-apps\/tools\/#qr-scanner" target="_blank"/.test(camErr.html) || /找不到/.test(camErr.t), '非網站環境附上網站版連結（或沒有相機時說找不到）');
+  // 相機掃描用的影格：640×480 灰底、略傾斜的 QR 碼（以頁面內建編碼器產生），輸出 JPEG
+  const CAM_PAYLOADS = ['WIFI:T:WPA;S:相機測試;P:secret123;;', 'https://www.example.com.tw/live?scan=1'];
+  const frames = await page.evaluate(texts => texts.map(text => {
+    const q = QRCore.encodeQR(text, { ecl: 'M' }), n = q.size, ppm = Math.floor(260 / (n + 8)), side = (n + 8) * ppm;
+    const c = document.createElement('canvas'); c.width = 640; c.height = 480; const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 640, 480); g.addColorStop(0, '#7d8a84'); g.addColorStop(1, '#4b5550'); x.fillStyle = g; x.fillRect(0, 0, 640, 480);
+    x.translate(330, 236); x.rotate(0.09); x.fillStyle = '#f4f2ea'; x.fillRect(-side / 2, -side / 2, side, side); x.fillStyle = '#16191b';
+    for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.modules[r * n + k]) x.fillRect(-side / 2 + (k + 4) * ppm, -side / 2 + (r + 4) * ppm, ppm + 0.4, ppm + 0.4);
+    return c.toDataURL('image/jpeg', 0.85);
+  }), CAM_PAYLOADS);
+  const blankFrame = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 640; c.height = 480; const x = c.getContext('2d'); x.fillStyle = '#5a625e'; x.fillRect(0, 0, 640, 480); return c.toDataURL('image/jpeg', 0.85); });
+  // 嵌入頁面（sandbox iframe，等同 claude.ai）不允許相機
+  { const fp = await ctx.newPage(); const fe = [];
+    fp.on('pageerror', e => fe.push(String(e))); fp.on('console', m => { if (m.type() === 'error') fe.push(m.text()); });
+    const src = fs.readFileSync(SRC, 'utf8').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    await fp.setContent(`<iframe sandbox="allow-scripts allow-popups" style="width:390px;height:800px;border:0" srcdoc="${src}"></iframe>`); await fp.waitForTimeout(1500);
+    const f = fp.frames()[1]; await f.click('#btn-camera'); await f.waitForTimeout(300);
+    const h = await f.innerHTML('#status');
+    ok(/不允許使用相機/.test(h) && h.includes('href="https://timmango123.github.io/pocket-apps/tools/#qr-scanner" target="_blank"'), 'sandbox iframe 不允許相機：說明需要網站版並附新分頁連結');
+    ok(fe.length === 0, 'sandbox iframe 內無 console 錯誤 ' + fe.join(' | '));
+    await fp.close(); }
   ok(errors.length === 0, 'no console errors ' + errors.join(' | '));
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '390 無水平捲動');
   await ctx.close();
@@ -216,6 +244,73 @@ const PAYLOADS = [
     await c.close();
   }
   await browser.close();
+
+  // ---------- 5b. 相機即時掃描（假相機） ----------
+  // MJPEG：先約 1.5 秒空白畫面（確定是「持續掃描」才找到），之後是 QR 碼；Chromium 會循環播放。
+  for (const [i, f] of frames.entries()) {
+    const jpg = Buffer.from(f.split(',')[1], 'base64'), blank = Buffer.from(blankFrame.split(',')[1], 'base64');
+    const file = path.join(OUT, `fake-cam-${i}.mjpeg`);
+    fs.writeFileSync(file, Buffer.concat([...Array(45).fill(blank), ...Array(30).fill(jpg)]));
+  }
+  for (const [label, init, file, payload] of [
+    ['內建解碼器', () => { window.__forceInternal = true; }, 'fake-cam-0.mjpeg', CAM_PAYLOADS[0]],
+    ['BarcodeDetector', null, 'fake-cam-1.mjpeg', CAM_PAYLOADS[1]],
+  ]) {
+    const cb = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--use-file-for-fake-video-capture=' + path.join(OUT, file)] });
+    const cctx = await cb.newContext(mob); await cctx.grantPermissions(['camera']);
+    if (init) await cctx.addInitScript(init);
+    const cp = await cctx.newPage(), ce = [];
+    cp.on('pageerror', e => ce.push(String(e))); cp.on('console', m => { if (m.type() === 'error') ce.push(m.text()); });
+    await cp.goto('file://' + WRAP); await cp.waitForTimeout(1200);
+    let native = false;
+    if (!init) {
+      native = await cp.evaluate(async () => { try { return 'BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code'); } catch { return false; } });
+      if (!native) {
+        // 這個 Chromium（Linux）沒有 BarcodeDetector：換上一個介面相同的替身，內部用頁面的解碼器，
+        // 用來驗證「影片 → detect(video) → cornerPoints → 結果」這條路的串接。
+        await cp.evaluate(() => {
+          window.__detectCalls = 0;
+          window.BarcodeDetector = class { static async getSupportedFormats() { return ['qr_code']; }
+            async detect(src) { window.__detectCalls++; if (!(src instanceof HTMLVideoElement) || !src.videoWidth) throw new Error('not a playing video');
+              const c = document.createElement('canvas'); c.width = src.videoWidth; c.height = src.videoHeight; const x = c.getContext('2d'); x.drawImage(src, 0, 0);
+              return QRScan.scanImageData(x.getImageData(0, 0, c.width, c.height).data, c.width, c.height).map(r => ({ rawValue: r.text, format: 'qr_code', cornerPoints: r.corners.map(([x, y]) => ({ x, y })), boundingBox: {} })); } };
+        });
+      }
+    }
+    const engine = init ? '內建解碼器（強制 __forceInternal）' : native ? 'BarcodeDetector（瀏覽器原生）' : 'BarcodeDetector 路徑（Linux Chromium 無原生 API，以同介面替身驗證串接）';
+    // 先開再關：釋放相機、回到範例畫面
+    await cp.click('#btn-camera');
+    await cp.waitForFunction(() => { const v = document.getElementById('cam'); return v.videoWidth > 0 && !v.hidden; }, null, { timeout: 10000 });
+    const live = await cp.evaluate(() => ({ live: document.getElementById('stage').classList.contains('live'), finder: !document.getElementById('finder').hidden, torch: document.getElementById('cam-torch').hidden, fm: document.getElementById('cam').srcObject.getVideoTracks()[0].getSettings().facingMode }));
+    ok(live.live && live.finder && live.torch, `${label}：相機畫面與取景框出現；假相機沒有手電筒 → 不顯示手電筒按鈕`);
+    if (label === '內建解碼器') await cp.screenshot({ path: path.join(OUT, '390x844-camera.png') });
+    await cp.click('#cam-close');
+    const closed = await cp.evaluate(() => ({ cam, src: document.getElementById('cam').srcObject, prev: !document.getElementById('preview').hidden, tag: !document.getElementById('stage-tag').hidden }));
+    ok(closed.cam === null && closed.src === null && closed.prev && closed.tag, `${label}：關閉相機後釋放串流、回到原本的範例圖`);
+    // 頁面隱藏時自動關相機
+    await cp.click('#btn-camera'); await cp.waitForFunction(() => document.getElementById('cam').videoWidth > 0, null, { timeout: 10000 });
+    const tracks = await cp.evaluate(() => { window.__tr = document.getElementById('cam').srcObject.getTracks(); Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); const r = window.__tr.map(t => t.readyState); Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); return r; });
+    ok(tracks.every(t => t === 'ended') && await cp.evaluate(() => cam === null), `${label}：頁面隱藏時停止相機（track ended）`);
+    // 正式掃描
+    await cp.evaluate(() => { localStorage.clear(); history.length = 0; });
+    const t0 = Date.now();
+    await cp.click('#btn-camera');
+    const got = await cp.waitForFunction(() => /相機解出/.test(document.getElementById('status').textContent), null, { timeout: 30000 }).then(() => true, () => false);
+    const r = await cp.evaluate(() => ({ status: document.getElementById('status').textContent, card: document.querySelector('.card') && document.querySelector('.card').innerText, type: document.querySelector('.card') && document.querySelector('.card').dataset.type, tech: document.querySelector('.card .tech') && document.querySelector('.card .tech').textContent,
+      cam, src: document.getElementById('cam').srcObject, ended: (window.__tr2 || []).length, poly: document.querySelectorAll('#pv-overlay polygon').length, prev: !document.getElementById('preview').hidden, live: document.getElementById('stage').classList.contains('live'),
+      hist: JSON.parse(localStorage.getItem('qr-scanner:v1:history') || '[]'), calls: window.__detectCalls }));
+    console.log(`    ${label}: ${r.status}（含開相機 ${((Date.now() - t0) / 1000).toFixed(1)} 秒）${r.calls != null ? `，detect() 呼叫 ${r.calls} 次` : ''}`);
+    ok(got && r.card && (payload.startsWith('WIFI') ? r.type === 'wifi' && r.card.includes('相機測試') && !r.card.includes('secret123') : r.type === 'url' && r.card.includes('www.example.com.tw')), `${engine}：即時掃描解出「${payload.slice(0, 24)}…」並用原本的結果卡顯示`);
+    ok(r.cam === null && r.src === null && !r.live && r.prev && r.poly === 1, `${label}：找到後立刻關相機，留下該格畫面並框出 QR 碼`);
+    ok(/相機/.test(r.tech || '') && r.hist[0] && r.hist[0].text === payload && r.hist[0].source === 'camera', `${label}：結果標示來源（${r.tech}），歷史紀錄來源為「相機」`);
+    if (!init && !native) ok(r.calls >= 1, `${label}：使用 detect(video) 而非內建解碼器`);
+    if (payload.startsWith('WIFI')) { await cp.click('[data-act="showpw"]'); ok((await cp.textContent('.card .pw')) === 'secret123', `${label}：Wi‑Fi 密碼可顯示`); }
+    if (label === '內建解碼器') await cp.screenshot({ path: path.join(OUT, '390x844-camera-result.png') });
+    ok(ce.length === 0, `${label}：無 console 錯誤 ${ce.join(' | ')}`);
+    ok(await cp.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label}：無水平捲動`);
+    await cb.close();
+  }
+  for (const f of ['fake-cam-0.mjpeg', 'fake-cam-1.mjpeg']) fs.unlinkSync(path.join(OUT, f));
   fs.unlinkSync(WRAP); fs.unlinkSync(MWRAP);
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
   process.exit(fails ? 1 : 0);
