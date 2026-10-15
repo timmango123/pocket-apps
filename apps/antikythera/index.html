@@ -220,6 +220,41 @@ header { display: flex; align-items: center; gap: 8px; padding: 8px 12px 4px; }
   .tray.two .token { height: 50px; width: 50px; }
   .tray.two .token canvas { width: 28px; height: 28px; }
 }
+/* phones held upright: the gear box stays one swipeable row, and three dials get one slim row each
+   (three narrow cards wrapped long ratios to four lines) — both leave the height to the board */
+@media (max-width: 979px) and (orientation: portrait) {
+  .tray.two { display: flex; }
+  .tray.two .token { width: 54px; height: 60px; }
+  .tray.two .token canvas { width: 34px; height: 34px; }
+  .targets.n3 { flex-direction: column; gap: 3px; }
+  .targets.n3 .dialcard { grid-template-columns: auto auto auto minmax(0, 1fr); gap: 0 8px; padding: 1px 8px; }
+  .targets.n3 .dialcard canvas { width: 20px; height: 20px; grid-row: 1; }
+  .targets.n3 .dialcard .t1 { display: block; grid-row: 1; font-size: 13px; }
+  .targets.n3 .dialcard .t2, .targets.n3 .dialcard .t3 { grid-column: auto; grid-row: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; letter-spacing: 0; }
+}
+/* short phones held upright (iPhone SE, any phone inside the game hub or with the browser bars showing):
+   the title and level bar share one row, so the board keeps the height */
+@media (max-width: 979px) and (max-height: 799px) and (orientation: portrait) {
+  .app { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  header { grid-column: 2; grid-row: 1; padding: 4px 8px 2px 0; gap: 6px; }
+  .brand { display: none; }
+  .icon-btn { width: 38px; height: 38px; }
+  .levelbar { grid-column: 1; grid-row: 1; padding: 4px 0 2px 8px; gap: 4px; }
+  #bestTxt { display: none; }
+  .pressbar { grid-column: 1 / -1; grid-row: 2; padding-bottom: 4px; }
+  .targets { grid-column: 1 / -1; grid-row: 3; }
+  .stage { grid-column: 1 / -1; grid-row: 4; }
+  .trayWrap { grid-column: 1 / -1; grid-row: 5; padding-top: 4px; }
+  .controls { grid-column: 1 / -1; grid-row: 6; padding: 4px 12px 6px; }
+  .controls .btn { min-height: 42px; }
+}
+@media (max-width: 979px) and (max-height: 640px) and (orientation: portrait) {
+  .trayLabel { display: none; }
+  .dialcard { grid-template-columns: auto minmax(0, 1fr); }
+  .dialcard canvas { grid-row: 1 / 3; }
+  .dialcard .t1 { display: none; }
+  .dialcard .t2, .dialcard .t3 { grid-column: 2; }
+}
 @media (prefers-reduced-motion: reduce) { .dialcard { transition: none; } }
 </style>
 
@@ -735,6 +770,7 @@ const statusEl = $('status');
 let dpr = 1, cw = 0, ch = 0, sc = 1, ox = 0, oy = 0;
 let sc0 = 1, ox0 = 0, oy0 = 0, zoom = 1, panX = 0, panY = 0; // fitted view, then the player's zoom / pan on top
 let bgCanvas = null;
+let layoutInfo = null, labelsCrowded = false; // what draw() last put on the board (labels may be left out when crowded)
 const spriteCache = new Map();
 
 /* ---------- audio ---------- */
@@ -878,9 +914,9 @@ function resize() {
   cw = Math.max(50, r.width); ch = Math.max(50, r.height);
   dpr = Math.min(2, window.devicePixelRatio || 1);
   board.width = Math.round(cw * dpr); board.height = Math.round(ch * dpr);
-  const pad = cw < 600 ? 6 : 14, top = cw < 600 ? 14 : 26;
+  const pad = cw < 600 ? 6 : 14, top = cw < 600 ? 30 : 26; // phones: keep the plate's contents below the status pill
   sc0 = Math.min((cw - pad * 2) / (bW() + 20), (ch - pad * 2 - top) / (bH() + 20));
-  sc0 = Math.max(0.3, sc0);
+  sc0 = Math.max(0.1, sc0); // always fit the whole plate; the zoom button / pinch magnify it
   ox0 = (cw - bW() * sc0) / 2; oy0 = (ch - bH() * sc0) / 2 + top / 2 - 3;
   applyView();
   spriteCache.clear();
@@ -889,9 +925,9 @@ function resize() {
   dirty = true;
 }
 // zoom: the fitted board scaled about the stage centre, then panned; pan is clamped so the board never leaves the stage
-const MAX_ZOOM = 3;
+const maxZoom = () => Math.max(3, 1.1 / sc0);
 function applyView() {
-  zoom = Math.max(1, Math.min(MAX_ZOOM, zoom));
+  zoom = Math.max(1, Math.min(maxZoom(), zoom));
   sc = sc0 * zoom;
   const bx = ox0 * zoom + cw / 2 * (1 - zoom), by = oy0 * zoom + ch / 2 * (1 - zoom), m = 8;
   const clampPan = (p, base, size, view) => {
@@ -902,13 +938,13 @@ function applyView() {
   panY = clampPan(panY, by, (bH() + 20) * sc, ch);
   ox = bx + panX; oy = by + panY;
   const zb = $('zoomBtn');
-  zb.hidden = sc0 > 0.8;
+  zb.hidden = sc0 > 0.8 && !labelsCrowded;
   zb.setAttribute('aria-pressed', String(zoom > 1.01));
 }
 // set zoom so world point (wx, wy) sits at stage point (sx, sy)
 function zoomTo(z, wx, wy, sx, sy) {
   const old = sc;
-  zoom = Math.max(1, Math.min(MAX_ZOOM, z));
+  zoom = Math.max(1, Math.min(maxZoom(), z));
   const s = sc0 * zoom;
   panX = sx - wx * s - (ox0 * zoom + cw / 2 * (1 - zoom));
   panY = sy - wy * s - (oy0 * zoom + ch / 2 * (1 - zoom));
@@ -1365,7 +1401,7 @@ board.addEventListener('wheel', e => {
   zoomTo(zoom * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0015)), (sx - ox) / sc, (sy - oy) / sc, sx, sy);
 }, { passive: false });
 $('zoomBtn').addEventListener('click', () => {
-  const z = zoom > 1.01 ? 1 : Math.min(MAX_ZOOM, Math.max(1.6, 0.85 / sc0));
+  const z = zoom > 1.01 ? 1 : Math.min(maxZoom(), Math.max(1.6, 0.85 / sc0));
   zoomTo(z, (cw / 2 - ox) / sc, (ch / 2 - oy) / sc, cw / 2, ch / 2);
 });
 // make sure we detach the board-piece move listener too
@@ -1558,8 +1594,8 @@ function draw(now) {
     // stud
     const rg = g.createRadialGradient(x - 1.5, y - 1.5, 0.5, x, y, 7);
     rg.addColorStop(0, '#f0c98a'); rg.addColorStop(0.6, '#9a6a35'); rg.addColorStop(1, '#3f2a14');
-    g.fillStyle = rg; g.beginPath(); g.arc(x, y, Math.max(4, 5 * sc), 0, TAU); g.fill();
-    g.fillStyle = '#120c06'; g.beginPath(); g.arc(x, y, Math.max(1.5, 1.8 * sc), 0, TAU); g.fill();
+    g.fillStyle = rg; g.beginPath(); g.arc(x, y, Math.max(2.5, Math.min(4, 8 * sc), 5 * sc), 0, TAU); g.fill();
+    g.fillStyle = '#120c06'; g.beginPath(); g.arc(x, y, Math.max(1, Math.min(1.5, 3 * sc), 1.8 * sc), 0, TAU); g.fill();
   });
 
   // gears: lower layer first, then upper
@@ -1576,41 +1612,66 @@ function draw(now) {
       }
     });
   }
-  // hubs, labels, warnings
+  // hubs, labels, warnings. Hubs scale with the board (a fixed 6 px cap hid whole 12-tooth gears on a
+  // small board); labels go below the hub, else above / right / left, and are left out when every spot
+  // would cover another label or hub — zooming in brings them back.
+  const items = [];
   L.pegs.forEach((p, i) => {
     let w = null;
     if (p.kind === 'crank') w = { A: L.crankT, B: 0 };
     else if (placement.has(i)) { if (drag && drag.kind === 'piece' && drag.moved && drag.from === i) return; const pl = placement.get(i); w = pieceWheels(pl.piece, pl.orient); }
     if (!w) return;
-    const x = ox + p.x * sc, y = oy + p.y * sc;
+    items.push({ p, i, w, x: ox + p.x * sc, y: oy + p.y * sc, hr: Math.max(3, Math.min(6, 8 * sc), 7 * sc) });
+  });
+  const lfs = Math.max(10, 11 * sc), lh = Math.max(14, 15 * sc);
+  g.font = `700 ${lfs}px "Noto Serif TC", serif`;
+  const hubBoxes = items.map(it => [it.x - it.hr, it.y - it.hr, it.x + it.hr, it.y + it.hr]);
+  const sr = stage.getBoundingClientRect(), overUi = [statusEl, $('zoomBtn')].filter(el => !el.hidden).map(el => { const r = el.getBoundingClientRect(); return [r.left - sr.left, r.top - sr.top, r.right - sr.left, r.bottom - sr.top]; });
+  const labels = [];
+  const hits = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  let crowded = false;
+  for (const it of [...items.filter(t => t.p.kind === 'out'), ...items.filter(t => t.p.kind === 'free')]) {
+    const { x, y, hr, w } = it;
+    const txt = w.A && w.B ? `${w.A}/${w.B}` : String(w.A || w.B);
+    const tw = g.measureText(txt).width + 8;
+    const spots = [[x - tw / 2, y + hr + 3], [x - tw / 2, y - hr - 3 - lh], [x + hr + 3, y - lh / 2], [x - hr - 3 - tw, y - lh / 2]];
+    let box = null;
+    for (const [lx, ly] of spots) {
+      const b = [lx, ly, lx + tw, ly + lh];
+      if (b[0] < 0 || b[1] < 0 || b[2] > cw || b[3] > ch) continue;
+      if (labels.some(l => hits(l.box, b)) || overUi.some(u => hits(u, b)) || hubBoxes.some((h, k) => items[k] !== it && hits(h, b))) continue;
+      box = b; break;
+    }
+    if (box) labels.push({ box, txt, it }); else crowded = true;
+  }
+  layoutInfo = { items, labels, crowded, sc, ox, oy, cw, ch };
+  if (zoom <= 1.01 && crowded !== labelsCrowded) { labelsCrowded = crowded; $('zoomBtn').hidden = sc0 > 0.8 && !labelsCrowded; }
+  for (const it of items) {
+    const { p, i, x, y, hr, w } = it;
     const bad = ev.clash.has(i) || ev.conflict.has(i);
     if (bad) {
       const pulse = reduceMotion ? 0.7 : 0.55 + 0.45 * Math.sin(now / 140);
       g.strokeStyle = `rgba(229,96,63,${pulse})`; g.lineWidth = 3;
       g.beginPath(); g.arc(x, y, outerR(w) * sc + 3, 0, TAU); g.stroke();
     }
-    const hr = Math.max(6, 7 * sc);
-    const rg = g.createRadialGradient(x - 2, y - 2, 1, x, y, hr);
+    const ho = Math.min(2, hr / 3), rg = g.createRadialGradient(x - ho, y - ho, ho / 2, x, y, hr);
     rg.addColorStop(0, '#ffe0a8'); rg.addColorStop(1, '#6e4520');
     g.fillStyle = rg; g.beginPath(); g.arc(x, y, hr, 0, TAU); g.fill();
-    if (p.kind !== 'crank') {
-      const txt = w.A && w.B ? `${w.A}/${w.B}` : String(w.A || w.B);
-      g.font = `700 ${Math.max(10, 11 * sc)}px "Noto Serif TC", serif`;
-      const tw = g.measureText(txt).width + 8;
-      const ly = y + hr + 3;
-      g.fillStyle = 'rgba(10,14,12,.78)'; roundRect(g, x - tw / 2, ly, tw, Math.max(14, 15 * sc), 7); g.fill();
-      g.fillStyle = w.A ? '#f0d6a8' : '#b89a78'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(txt, x, ly + Math.max(14, 15 * sc) / 2 + 0.5);
-      if (!w.A) { g.fillStyle = 'rgba(15,22,19,.55)'; g.beginPath(); g.arc(x, y, hr, 0, TAU); g.fill(); }
-    }
+    if (p.kind !== 'crank' && !w.A) { g.fillStyle = 'rgba(15,22,19,.55)'; g.beginPath(); g.arc(x, y, hr, 0, TAU); g.fill(); }
     if (p.kind === 'out') {
       // pointer on the dial axle
       const inf = ev.pegInfo.get(i);
       const a = (inf && inf.ratio && !ev.jammed ? fracVal(inf.ratio) * crankAngle : 0) - Math.PI / 2;
-      g.strokeStyle = OUT[p.out].col; g.lineWidth = 3; g.lineCap = 'round';
+      g.strokeStyle = OUT[p.out].col; g.lineWidth = Math.min(3, Math.max(1.5, 4 * sc)); g.lineCap = 'round';
       g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * (16 * sc + 2), y + Math.sin(a) * (16 * sc + 2)); g.stroke();
     }
-  });
+  }
+  g.font = `700 ${lfs}px "Noto Serif TC", serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const { box, txt, it } of labels) {
+    g.fillStyle = 'rgba(10,14,12,.78)'; roundRect(g, box[0], box[1], box[2] - box[0], lh, 7); g.fill();
+    g.fillStyle = it.w.A ? '#f0d6a8' : '#b89a78';
+    g.fillText(txt, (box[0] + box[2]) / 2, box[1] + lh / 2 + 0.5);
+  }
   // crank handle
   {
     const c = L.pegs[0];
@@ -1618,9 +1679,9 @@ function draw(now) {
     const x = ox + c.x * sc, y = oy + c.y * sc, hl = (L.crankT + 14) * sc;
     const hx = x + Math.cos(a) * hl, hy = y + Math.sin(a) * hl;
     g.lineCap = 'round';
-    g.strokeStyle = '#3c2612'; g.lineWidth = 9 * Math.max(0.7, sc); g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
-    g.strokeStyle = '#d19a55'; g.lineWidth = 6 * Math.max(0.7, sc); g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
-    const kr = Math.max(9, 11 * sc);
+    g.strokeStyle = '#3c2612'; g.lineWidth = 9 * Math.max(0.45, Math.min(0.7, sc * 1.4), sc); g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
+    g.strokeStyle = '#d19a55'; g.lineWidth = 6 * Math.max(0.45, Math.min(0.7, sc * 1.4), sc); g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
+    const kr = Math.max(5, Math.min(9, 18 * sc), 11 * sc);
     const rg = g.createRadialGradient(hx - 3, hy - 3, 1, hx, hy, kr);
     rg.addColorStop(0, '#ffe2ae'); rg.addColorStop(1, '#7a4c22');
     g.fillStyle = rg; g.beginPath(); g.arc(hx, hy, kr, 0, TAU); g.fill();
@@ -1680,6 +1741,6 @@ resize();
 if (!store.get('antikythera.seenHelp', false)) { /* show inline toast only; help is one tap away */ }
 requestAnimationFrame(frame);
 // expose for testing
-window.__antikythera = { _build: build, _procSpec: procSpec, _params: params, pegScreen(i) { const r = board.getBoundingClientRect(); const p = L.pegs[i]; return [r.left + ox + p.x * sc, r.top + oy + p.y * sc]; }, get level() { return L; }, get placement() { return placement; }, get ev() { return ev; }, loadLevel, getLevel, solve() { for (const s of L.solution) placement.set(s.peg, { piece: L.pieces.find(p => p.id === s.piece), orient: s.orient }); renderTray(); reevaluate(); } };
+window.__antikythera = { _build: build, _procSpec: procSpec, _params: params, pegScreen(i) { const r = board.getBoundingClientRect(); const p = L.pegs[i]; return [r.left + ox + p.x * sc, r.top + oy + p.y * sc]; }, get level() { return L; }, get layout() { return layoutInfo; }, get view() { return { sc, sc0, ox, oy, cw, ch, zoom }; }, get placement() { return placement; }, get ev() { return ev; }, loadLevel, getLevel, solve() { for (const s of L.solution) placement.set(s.peg, { piece: L.pieces.find(p => p.id === s.piece), orient: s.orient }); renderTray(); reevaluate(); } };
 })();
 </script>
