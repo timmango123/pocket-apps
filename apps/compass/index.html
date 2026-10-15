@@ -1,0 +1,467 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>指南針</title>
+<style>
+/* An orienteering compass: chart-paper dial, navy ink, red north, a fixed lubber mark. Night: luminous mint on black. */
+:root {
+  --bg: #e9edf1; --card: #f8f9fa; --line: rgba(16, 32, 56, .14); --line-2: rgba(16, 32, 56, .28);
+  --ink: #12213a; --ink-2: #33435c; --muted: #5a6779;
+  --face: #fffdf6; --face-2: #f1ecdd; --bezel: #12213a; --bezel-2: #2c3e5c; --tick: #12213a; --tick-soft: rgba(18, 33, 58, .45);
+  --north: #d1352a; --target: #138a4b; --target-bg: #d8f1e2; --target-ink: #0d5e33;
+  --warn: #8a4b00; --warn-bg: #fff0d4;
+  --on: #12213a; --on-ink: #ffffff; --focus: #1b56d6;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #070b10; --card: #10161e; --line: rgba(190, 240, 215, .1); --line-2: rgba(190, 240, 215, .24);
+    --ink: #e4f2ea; --ink-2: #b9cfc3; --muted: #7f948a;
+    --face: #0d141c; --face-2: #070b10; --bezel: #1d2833; --bezel-2: #33424f; --tick: #bdf3d6; --tick-soft: rgba(189, 243, 214, .4);
+    --north: #ff5b48; --target: #4fe08f; --target-bg: #0f2b1c; --target-ink: #7cf0ae;
+    --warn: #ffc06e; --warn-bg: #2d2010;
+    --on: #bdf3d6; --on-ink: #06110b; --focus: #8fb2ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #070b10; --card: #10161e; --line: rgba(190, 240, 215, .1); --line-2: rgba(190, 240, 215, .24);
+  --ink: #e4f2ea; --ink-2: #b9cfc3; --muted: #7f948a;
+  --face: #0d141c; --face-2: #070b10; --bezel: #1d2833; --bezel-2: #33424f; --tick: #bdf3d6; --tick-soft: rgba(189, 243, 214, .4);
+  --north: #ff5b48; --target: #4fe08f; --target-bg: #0f2b1c; --target-ink: #7cf0ae;
+  --warn: #ffc06e; --warn-bg: #2d2010;
+  --on: #bdf3d6; --on-ink: #06110b; --focus: #8fb2ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.4; min-height: 100vh; min-height: 100dvh; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button, input { font: inherit; color: inherit; }
+.wrap { max-width: 460px; margin: 0 auto; padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 12px; }
+
+.top { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+.top h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: .04em; flex: 1; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.top h1 small { font: 600 11px var(--mono); letter-spacing: .18em; color: var(--muted); text-transform: uppercase; }
+.tbtn { min-width: 44px; min-height: 44px; border-radius: 22px; border: 1px solid var(--line-2); background: var(--card); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0 12px; }
+.tbtn svg { width: 20px; height: 20px; }
+
+/* readout */
+.readout { display: flex; flex-direction: column; align-items: center; gap: 4px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: copy; border-radius: 14px; padding: 2px 8px; }
+.big { display: flex; align-items: baseline; justify-content: center; gap: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.big .v { font: 700 56px/1.05 var(--mono); letter-spacing: -.03em; }
+.big .n { font-size: 30px; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); }
+.readout.alt .v { font-size: 30px; color: var(--ink-2); font-weight: 700; }
+.readout.alt .n { font-size: 56px; line-height: 1.05; color: var(--ink); letter-spacing: .04em; }
+.meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; font-size: 13px; color: var(--muted); min-height: 26px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--line-2); font-weight: 700; color: var(--ink-2); background: var(--card); }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.chip.ok .dot { background: var(--target); }
+.chip.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.chip.warn .dot { background: var(--warn); }
+
+/* dial */
+.dialbox { position: relative; width: min(300px, calc(100vw - 48px)); aspect-ratio: 1; margin: 2px auto 0; }
+.dialbox svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.bez { fill: var(--bezel); }
+.bez-2 { fill: none; stroke: var(--bezel-2); stroke-width: 2; }
+.face { fill: url(#faceGrad); }
+.tk { stroke: var(--tick-soft); stroke-width: 1.2; }
+.tk.m { stroke: var(--tick); stroke-width: 1.6; }
+.tk.M { stroke: var(--tick); stroke-width: 2.6; }
+.tk.N { stroke: var(--north); stroke-width: 3; }
+.num { fill: var(--tick); font: 600 11px var(--mono); text-anchor: middle; }
+.card { fill: var(--tick); font: 800 22px var(--sans); text-anchor: middle; }
+.card.n { fill: var(--north); font-size: 26px; }
+.icard { fill: var(--tick-soft); font: 700 12px var(--sans); text-anchor: middle; }
+.northpt { fill: var(--north); }
+.southpt { fill: var(--tick-soft); }
+.tgt { fill: var(--target); }
+.lubber { fill: var(--north); stroke: var(--face); stroke-width: 2; stroke-linejoin: round; }
+.lubber-line { stroke: var(--north); stroke-width: 2.4; }
+.hubring { fill: var(--face); stroke: var(--tick-soft); stroke-width: 1.4; }
+.hubcross { stroke: var(--tick-soft); stroke-width: 1; }
+.tiltdot { fill: var(--ink-2); opacity: .75; }
+#hubBtn { position: absolute; left: 50%; top: 50%; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 0; background: transparent; cursor: pointer; }
+
+.turn { align-self: center; min-height: 44px; display: flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 16px; font-weight: 800; font-size: 18px; background: var(--card); border: 1px solid var(--line-2); font-variant-numeric: tabular-nums; }
+.turn svg { width: 22px; height: 22px; }
+.turn.ok { background: var(--target); color: #fff; border-color: transparent; }
+:root[data-theme="dark"] .turn.ok { color: #06110b; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .turn.ok { color: #06110b; } }
+
+.btn { min-height: 52px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--card); cursor: pointer; font-weight: 800; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; }
+.btn svg { width: 20px; height: 20px; }
+.btn[aria-pressed="true"] { background: var(--target-bg); color: var(--target-ink); border-color: var(--target); }
+@media (hover: hover) { .btn:hover, .tbtn:hover { border-color: var(--ink-2); } }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; display: grid; gap: 8px; }
+.row { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+.row > span { font-weight: 700; font-size: 14px; color: var(--ink-2); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line-2); border-radius: 12px; padding: 3px; gap: 3px; min-width: 176px; }
+.seg button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; font-weight: 700; cursor: pointer; color: var(--ink-2); padding: 0 10px; }
+.seg button[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
+.decl { display: flex; align-items: center; gap: 6px; }
+.decl button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; cursor: pointer; font-size: 20px; font-weight: 700; }
+.decl input { width: 84px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--face); text-align: center; font: 700 17px var(--mono); }
+.note { font-size: 12px; color: var(--muted); margin: 0; }
+
+.gate { background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.gate p { margin: 0; font-size: 14px; color: var(--ink-2); }
+.go { min-height: 56px; border-radius: 14px; border: 0; background: var(--on); color: var(--on-ink); font-size: 17px; font-weight: 800; letter-spacing: .04em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.go svg { width: 22px; height: 22px; }
+.go:disabled { opacity: .5; cursor: default; }
+.msg { border-radius: 12px; padding: 10px 12px; background: var(--warn-bg); color: var(--ink); font-size: 14px; border: 1px solid var(--line); }
+.msg strong { display: block; color: var(--warn); margin-bottom: 2px; font-size: 15px; }
+.msg a { color: var(--focus); font-weight: 700; word-break: break-all; }
+#toast { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 50; background: var(--on); color: var(--on-ink); padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); width: max-content; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>指南針<small>Compass</small></h1>
+    <button class="tbtn" id="themeBtn" type="button" aria-label="切換主題"></button>
+  </header>
+
+  <div class="readout" id="readout" role="button" tabindex="0" aria-label="目前方位，長按複製">
+    <div class="big"><span class="v" id="hDeg">—°</span><span class="n" id="hName">　</span></div>
+    <div class="meta"><span class="chip" id="refChip">磁北</span><span class="chip" id="accChip"><span class="dot"></span><span id="accText">尚未啟用</span></span></div>
+  </div>
+
+  <div class="dialbox" id="dialbox">
+    <svg viewBox="0 0 300 300" aria-hidden="true">
+      <defs><radialGradient id="faceGrad" cx="50%" cy="45%" r="60%"><stop offset="0" stop-color="var(--face)"/><stop offset="1" stop-color="var(--face-2)"/></radialGradient></defs>
+      <circle class="bez" cx="150" cy="150" r="149"/>
+      <circle class="bez-2" cx="150" cy="150" r="143"/>
+      <circle class="face" cx="150" cy="150" r="138"/>
+      <g id="rose">
+        <g id="ticks"></g>
+        <g id="tgt" hidden><path class="tgt" d="M150 14 l9 -1 -9 17 -9 -17z"/></g>
+      </g>
+      <circle class="hubring" cx="150" cy="150" r="30"/>
+      <line class="hubcross" x1="124" y1="150" x2="176" y2="150"/><line class="hubcross" x1="150" y1="124" x2="150" y2="176"/>
+      <circle class="tiltdot" id="tiltDot" cx="150" cy="150" r="6"/>
+      <line class="lubber-line" x1="150" y1="14" x2="150" y2="28"/>
+      <path class="lubber" d="M150 18 L139 -2 L161 -2 Z"/>
+    </svg>
+    <button type="button" id="hubBtn" aria-label="切換顯示度數或 16 方位"></button>
+  </div>
+
+  <div class="turn" id="turn" hidden aria-live="polite"></div>
+
+  <section class="gate" id="gate">
+    <p>指南針會讀取手機的<b>方位感測器</b>（磁力計）。點下面的按鈕開始，iPhone 會詢問是否允許。</p>
+    <div id="gateMsg" hidden></div>
+    <button class="go" id="goBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M12 5.5l3 6.5h-6z" fill="currentColor"/><path d="M12 18.5l-3-6.5h6z"/></svg>啟用指南針</button>
+  </section>
+
+  <button class="btn" id="tgtBtn" type="button" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg><span id="tgtLbl">鎖定此方向</span></button>
+
+  <section class="panel" aria-label="設定">
+    <div class="row"><span id="refLbl">基準</span>
+      <div class="seg" role="group" aria-labelledby="refLbl"><button type="button" id="magBtn" aria-pressed="true">磁北</button><button type="button" id="trueBtn" aria-pressed="false">真北</button></div>
+    </div>
+    <div class="row"><span><label for="declIn">磁偏角</label></span>
+      <div class="decl"><button type="button" id="declMinus" aria-label="磁偏角減 0.5">−</button><input id="declIn" type="number" inputmode="decimal" step="0.1" min="-30" max="30" value="-4.5"><button type="button" id="declPlus" aria-label="磁偏角加 0.5">+</button></div>
+    </div>
+    <p class="note">真北 = 磁北方位 + 磁偏角（偏東為正、偏西為負）。台灣約 −4.5°。點盤面中心切換度數／16 方位，長按方位可複製。</p>
+  </section>
+</div>
+<div id="toast" hidden role="status"></div>
+
+<script>
+/*CORE-START*/
+// Pure compass math. Headings are degrees clockwise from north, 0…360.
+var DEG = 180 / Math.PI;
+function norm360(a) { a = ((a % 360) + 360) % 360; return a === 360 ? 0 : a; }
+// Shortest signed difference target − current, in [-180, 180).
+function angleDiff(target, cur) { return ((((target - cur + 540) % 360) + 360) % 360) - 180; }
+// Smoothing that never takes the long way round 359° → 0°. Returns an unwrapped value (good for CSS rotation).
+function smoothAngle(cur, target, k) { if (cur == null || !isFinite(cur)) return target; return cur + (k == null ? 0.2 : k) * angleDiff(target, cur); }
+function screenAngle(soAngle, winOrientation) {
+  var a = typeof soAngle === 'number' && isFinite(soAngle) ? soAngle : (typeof winOrientation === 'number' && isFinite(winOrientation) ? winOrientation : 0);
+  return norm360(Math.round(a / 90) * 90);
+}
+// Android / spec absolute alpha is counter-clockwise from north.
+function headingFromAlpha(alpha, scr) { return norm360(360 - alpha + (scr || 0)); }
+// Tilt-compensated heading from absolute alpha/beta/gamma (W3C Z-X'-Y' Euler angles). The facing direction is the
+// horizontal line perpendicular to the screen's left-right axis: the top edge when the phone lies flat, the back
+// camera when it is held upright, and unaffected by rolling the phone sideways or pitching it up.
+function headingFromEuler(alpha, beta, gamma, scr) {
+  var a = alpha / DEG, b = (beta || 0) / DEG, g = (gamma || 0) / DEG, r = (scr || 0) / DEG;
+  var ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
+  // device x and y axes in the world frame (E = east, N = north)
+  var xE = ca * cg - sa * sb * sg, xN = sa * cg + ca * sb * sg;
+  var yE = -sa * cb, yN = ca * cb;
+  // the screen's right-hand axis, then up × right gives the horizontal facing direction
+  var rE = Math.cos(r) * xE - Math.sin(r) * yE, rN = Math.cos(r) * xN - Math.sin(r) * yN;
+  if (Math.hypot(rE, rN) < 1e-3) return headingFromAlpha(alpha, scr);
+  return norm360(Math.atan2(-rN, rE) * DEG);
+}
+// iOS: webkitCompassHeading is already clockwise from magnetic north (device top).
+function headingFromWebkit(h, scr) { return norm360(h + (scr || 0)); }
+// True north: magnetic heading + declination (east positive, west negative).
+function toTrue(mag, decl) { return norm360(mag + (decl || 0)); }
+var DIR16 = ['北', '東北偏北', '東北', '東北偏東', '東', '東南偏東', '東南', '東南偏南', '南', '西南偏南', '西南', '西南偏西', '西', '西北偏西', '西北', '西北偏北'];
+function dirIndex(h) { return Math.round(norm360(h) / 22.5) % 16; }
+function dirName(h) { return DIR16[dirIndex(h)]; }
+// Turn guidance toward a locked bearing.
+function turnHint(target, heading) {
+  var d = angleDiff(target, heading), n = Math.round(Math.abs(d));
+  if (Math.abs(d) < 3) return { d: d, ok: true, text: '方向正確' };
+  return { d: d, ok: false, text: (d > 0 ? '向右轉 ' : '向左轉 ') + n + '°' };
+}
+// How far the screen is tilted from lying flat (0 = flat, 90 = upright).
+function tiltOf(beta, gamma) { return Math.acos(Math.max(-1, Math.min(1, Math.cos((beta || 0) / DEG) * Math.cos((gamma || 0) / DEG)))) * DEG; }
+// Circular standard deviation (degrees) of a list of headings.
+function circStd(arr) {
+  if (arr.length < 2) return 0;
+  var s = 0, c = 0; for (var i = 0; i < arr.length; i++) { s += Math.sin(arr[i] / DEG); c += Math.cos(arr[i] / DEG); }
+  var R = Math.min(1, Math.hypot(s, c) / arr.length);
+  return Math.sqrt(-2 * Math.log(R || 1e-9)) * DEG;
+}
+// iOS gives webkitCompassAccuracy (± degrees, negative = invalid); elsewhere use 2-second jitter.
+function needsCalibration(accuracy, jitter) {
+  if (typeof accuracy === 'number' && isFinite(accuracy)) return accuracy < 0 || accuracy > 20;
+  return jitter > 10;
+}
+function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; }
+/*CORE-END*/
+
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var KEY = 'compass.v1';
+  var S = { trueNorth: false, declination: -4.5, target: null, mode: 'deg', theme: 'auto' };
+  try {
+    var sv = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (sv) {
+      S.trueNorth = !!sv.trueNorth;
+      if (isFinite(+sv.declination) && Math.abs(+sv.declination) <= 30 && sv.declination !== null) S.declination = +sv.declination;
+      if (sv.target != null && isFinite(+sv.target)) S.target = norm360(+sv.target);
+      if (sv.mode === '16pt') S.mode = '16pt';
+      if (['auto', 'light', 'dark'].indexOf(sv.theme) >= 0) S.theme = sv.theme;
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var ICON = {
+    auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>'
+  };
+  function applyTheme() {
+    if (S.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', S.theme);
+    $('#themeBtn').innerHTML = ICON[S.theme];
+    $('#themeBtn').setAttribute('aria-label', '主題：' + { auto: '跟隨系統', light: '淺色', dark: '深色' }[S.theme] + '（點擊切換）');
+  }
+  $('#themeBtn').addEventListener('click', function () { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme]; applyTheme(); save(); });
+  applyTheme();
+  var toastT;
+  function toast(t) { var el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 2000); }
+  function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+  // ---------- rose ----------
+  (function drawRose() {
+    var h = '', c = 150;
+    function pt(r, a) { var t = a / DEG; return [(c + r * Math.sin(t)).toFixed(2), (c - r * Math.cos(t)).toFixed(2)]; }
+    for (var d = 0; d < 360; d += 5) {
+      var M = d % 30 === 0, m = d % 10 === 0, len = M ? 15 : m ? 10 : 6, p1 = pt(137, d), p2 = pt(137 - len, d);
+      h += '<line class="tk' + (d === 0 ? ' N' : M ? ' M' : m ? ' m' : '') + '" x1="' + p1[0] + '" y1="' + p1[1] + '" x2="' + p2[0] + '" y2="' + p2[1] + '"/>';
+      if (M && d % 90) { var q = pt(112, d); h += '<text class="num" x="' + q[0] + '" y="' + q[1] + '" dy="4" transform="rotate(' + d + ' ' + q[0] + ' ' + q[1] + ')">' + d + '</text>'; }
+    }
+    [['北', 0, 'card n'], ['東', 90, 'card'], ['南', 180, 'card'], ['西', 270, 'card'], ['東北', 45, 'icard'], ['東南', 135, 'icard'], ['西南', 225, 'icard'], ['西北', 315, 'icard']].forEach(function (L) {
+      var q = pt(L[2] === 'icard' ? 94 : 103, L[1]);
+      h += '<text class="' + L[2] + '" x="' + q[0] + '" y="' + q[1] + '" dy="' + (L[2] === 'icard' ? 4 : 8) + '" transform="rotate(' + L[1] + ' ' + q[0] + ' ' + q[1] + ')">' + L[0] + '</text>';
+    });
+    // north pointer and a small south tail inside the hub ring
+    h += '<path class="northpt" d="M150 70 L158 120 L142 120 Z"/><path class="southpt" d="M150 230 L158 180 L142 180 Z"/>';
+    $('#ticks').innerHTML = h;
+  })();
+
+  // ---------- state ----------
+  var R = {
+    running: false, got: false, any: false, relOnly: false, src: null, absSeen: false,
+    raw: null, cur: null, acc: null, beta: 0, gamma: 0, hist: [], calibUntil: 0,
+    timer: 0, raf: 0, forceAngle: null, onTarget: false
+  };
+  function curScr() {
+    if (R.forceAngle != null) return R.forceAngle;
+    var so; try { so = screen.orientation && screen.orientation.angle; } catch (e) {}
+    return screenAngle(so, window.orientation);
+  }
+  function feed(h, acc) {
+    R.raw = h; R.acc = acc;
+    R.cur = smoothAngle(R.cur, h, 0.2);
+    var now = performance.now();
+    R.hist.push([now, angleDiff(h, norm360(R.cur))]);
+    while (R.hist.length && now - R.hist[0][0] > 2000) R.hist.shift();
+    if (!R.got) { R.got = true; clearTimeout(R.timer); $('#gate').hidden = true; $('#tgtBtn').hidden = false; }
+  }
+  function onAbs(e) {
+    if (e.alpha == null) return;
+    R.any = true; R.absSeen = true; R.src = 'abs';
+    R.beta = e.beta || 0; R.gamma = e.gamma || 0;
+    feed(headingFromEuler(e.alpha, e.beta, e.gamma, curScr()), null);
+  }
+  function onRel(e) {
+    if (e.alpha == null && e.beta == null && e.webkitCompassHeading == null) return;
+    R.any = true;
+    if (e.beta != null) { R.beta = e.beta; R.gamma = e.gamma || 0; }
+    var w = e.webkitCompassHeading;
+    if (typeof w === 'number' && isFinite(w) && w >= 0) { R.src = 'ios'; feed(headingFromWebkit(w, curScr()), typeof e.webkitCompassAccuracy === 'number' ? e.webkitCompassAccuracy : null); return; }
+    if (R.absSeen) return;
+    if (e.absolute === true && e.alpha != null) { R.src = 'abs'; feed(headingFromEuler(e.alpha, e.beta, e.gamma, curScr()), null); return; }
+    if (e.alpha != null) R.relOnly = true;
+  }
+  function onCal() { R.calibUntil = performance.now() + 6000; }
+  var listening = false;
+  function listen(on) {
+    if (on === listening) return; listening = on;
+    var f = on ? 'addEventListener' : 'removeEventListener';
+    window[f]('deviceorientationabsolute', onAbs); window[f]('deviceorientation', onRel); window[f]('compassneedscalibration', onCal);
+  }
+
+  // ---------- messages ----------
+  var SITE = 'https://timmango123.github.io/pocket-apps/tools/#compass';
+  function onSite() {
+    var h = '';
+    try { h = location.hostname || ''; } catch (e) {}
+    try { if (!h && window.top) h = window.top.location.hostname; } catch (e) {}
+    return /(^|\.)github\.io$/.test(h);
+  }
+  function showMsg(title, body, retry, noLink) {
+    var link = onSite() || noLink ? '' : '<br>在 claude.ai 上感測器通常被封鎖，請用手機開啟網站版：<br><a href="' + SITE + '" target="_blank" rel="noopener">' + SITE.replace('https://', '') + '</a>';
+    $('#gateMsg').innerHTML = '<div class="msg"><strong>' + title + '</strong>' + body + link + '</div>';
+    $('#gateMsg').hidden = false;
+    $('#goBtn').disabled = false; $('#goBtn').lastChild.nodeValue = retry ? '再試一次' : '啟用指南針';
+    $('#gate').hidden = false; $('#tgtBtn').hidden = true; $('#turn').hidden = true;
+    setAcc('', '未啟用');
+  }
+  function timeout() {
+    if (R.got) return;
+    var rel = R.relOnly;
+    stop();
+    if (rel) showMsg('此裝置不提供絕對方位', '瀏覽器只給相對角度，無法判斷哪裡是北方。請改用 Chrome（Android）或 Safari（iPhone）。', true, true);
+    else showMsg('這台裝置沒有感測器或瀏覽器不提供', '2 秒內沒有收到方位資料。請用有磁力計的手機開啟。' + (window.isSecureContext === false ? '感測器只在 HTTPS 網頁提供。' : ''), true);
+  }
+
+  // ---------- start / stop ----------
+  var wake = null;
+  function lockWake() { try { if (navigator.wakeLock && document.visibilityState === 'visible') navigator.wakeLock.request('screen').then(function (w) { wake = w; }, function () {}); } catch (e) {} }
+  function start() {
+    $('#gateMsg').hidden = true;
+    if (typeof DeviceOrientationEvent === 'undefined') { timeout(); return; }
+    var p = null;
+    try { if (typeof DeviceOrientationEvent.requestPermission === 'function') p = DeviceOrientationEvent.requestPermission(); } catch (e) { p = Promise.reject(e); }
+    $('#goBtn').disabled = true;
+    Promise.resolve(p).then(function (r) { return r; }, function (e) { return 'error:' + (e && e.name || 'Error'); }).then(function (r) {
+      if (r === 'denied') { showMsg('方向取用被拒絕', 'iPhone／iPad：關閉這個分頁重新開啟再點一次並選「允許」；若仍無效，到「設定 > Safari」開啟「動作與方向取用」。', true, true); return; }
+      if (typeof r === 'string' && r.indexOf('error:') === 0) { showMsg('無法取得感測器權限', '瀏覽器拒絕了請求（' + r.slice(6) + '）。這通常是內嵌頁面被限制。', true); return; }
+      R.running = true; R.got = false; R.relOnly = false; R.any = false;
+      listen(true); lockWake(); loop();
+      setAcc('', '等待方位資料…');
+      clearTimeout(R.timer); R.timer = setTimeout(timeout, 2000);
+    });
+  }
+  function stop() { R.running = false; listen(false); cancelAnimationFrame(R.raf); clearTimeout(R.timer); try { if (wake) wake.release(); } catch (e) {} wake = null; }
+  $('#goBtn').addEventListener('click', start);
+  document.addEventListener('visibilitychange', function () {
+    if (!R.running) return;
+    if (document.visibilityState === 'hidden') { listen(false); cancelAnimationFrame(R.raf); }
+    else { listen(true); lockWake(); loop(); }
+  });
+
+  // ---------- settings ----------
+  function decl() { return S.trueNorth ? S.declination : 0; }
+  function renderRef() {
+    $('#magBtn').setAttribute('aria-pressed', String(!S.trueNorth));
+    $('#trueBtn').setAttribute('aria-pressed', String(S.trueNorth));
+    $('#refChip').textContent = S.trueNorth ? '真北（' + (S.declination > 0 ? '+' : '') + S.declination + '°）' : '磁北';
+    if (document.activeElement !== $('#declIn')) $('#declIn').value = S.declination;
+  }
+  $('#magBtn').addEventListener('click', function () { S.trueNorth = false; save(); renderRef(); draw(); });
+  $('#trueBtn').addEventListener('click', function () { S.trueNorth = true; save(); renderRef(); draw(); });
+  function setDecl(v) { v = Math.round(v * 10) / 10; if (!isFinite(v)) return; S.declination = Math.max(-30, Math.min(30, v)); save(); renderRef(); draw(); }
+  $('#declIn').addEventListener('change', function () { setDecl(parseFloat(this.value)); this.value = S.declination; });
+  $('#declMinus').addEventListener('click', function () { setDecl(S.declination - 0.5); });
+  $('#declPlus').addEventListener('click', function () { setDecl(S.declination + 0.5); });
+  $('#hubBtn').addEventListener('click', function () { S.mode = S.mode === 'deg' ? '16pt' : 'deg'; save(); draw(); toast(S.mode === 'deg' ? '以度數為主' : '以 16 方位為主'); });
+
+  // ---------- target ----------
+  function renderTarget() {
+    var on = S.target != null;
+    $('#tgtBtn').setAttribute('aria-pressed', String(on));
+    $('#tgtLbl').textContent = on ? '清除目標（' + fmtHeading(toTrue(S.target, decl())) + '）' : '鎖定此方向';
+    if (on) $('#tgt').removeAttribute('hidden'); else $('#tgt').setAttribute('hidden', '');
+    if (on) $('#tgt').setAttribute('transform', 'rotate(' + toTrue(S.target, decl()).toFixed(2) + ' 150 150)');
+    $('#turn').hidden = !on || !R.got;
+  }
+  $('#tgtBtn').addEventListener('click', function () {
+    if (S.target != null) { S.target = null; R.onTarget = false; }
+    else if (R.cur != null) { S.target = norm360(R.cur); R.onTarget = true; buzz(20); toast('已鎖定 ' + fmtHeading(toTrue(S.target, decl()))); }
+    save(); draw();
+  });
+
+  // ---------- copy (long press) ----------
+  var lp = 0;
+  function text() { if (R.cur == null) return ''; var h = toTrue(R.cur, decl()); return fmtHeading(h) + ' ' + dirName(h) + '（' + (S.trueNorth ? '真北' : '磁北') + '）'; }
+  function copy() {
+    var t = text(); if (!t) return;
+    var done = function () { toast('已複製：' + t); buzz(15); };
+    try { navigator.clipboard.writeText(t).then(done, function () { toast(t); }); } catch (e) { toast(t); }
+  }
+  var ro = $('#readout');
+  ro.addEventListener('pointerdown', function () { clearTimeout(lp); lp = setTimeout(copy, 550); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { ro.addEventListener(ev, function () { clearTimeout(lp); }); });
+  ro.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  ro.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copy(); } });
+
+  // ---------- drawing ----------
+  function setAcc(kind, t) { var c = $('#accChip'); c.className = 'chip' + (kind ? ' ' + kind : ''); if ($('#accText').textContent !== t) $('#accText').textContent = t; }
+  var ARROW = {
+    r: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
+    l: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6M11 6l-6 6 6 6"/></svg>',
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  };
+  function draw() {
+    renderRef(); renderTarget();
+    $('#readout').classList.toggle('alt', S.mode === '16pt');
+    if (R.cur == null) return;
+    var dispUnwrapped = R.cur + decl(), h = norm360(dispUnwrapped);
+    $('#rose').setAttribute('transform', 'rotate(' + (-dispUnwrapped).toFixed(2) + ' 150 150)');
+    $('#hDeg').textContent = fmtHeading(h);
+    $('#hName').textContent = dirName(h);
+    // tilt bubble in the hub: the dot drifts toward the high side
+    var bx = Math.max(-22, Math.min(22, -R.gamma / 30 * 22)), by = Math.max(-22, Math.min(22, -R.beta / 30 * 22));
+    var bd = Math.hypot(bx, by); if (bd > 22) { bx *= 22 / bd; by *= 22 / bd; }
+    $('#tiltDot').setAttribute('transform', 'translate(' + bx.toFixed(1) + ' ' + by.toFixed(1) + ')');
+    // accuracy / tilt
+    var jitter = circStd(R.hist.map(function (x) { return x[1]; }));
+    var tilt = tiltOf(R.beta, R.gamma);
+    if (performance.now() < R.calibUntil || needsCalibration(R.acc, jitter)) setAcc('warn', '需要校正：以 8 字形揮動手機');
+    else if (tilt > 45) setAcc('warn', '請將手機放平');
+    else setAcc('ok', '精度良好');
+    if (S.target != null) {
+      var t = turnHint(S.target, norm360(R.cur)), tu = $('#turn');
+      tu.className = 'turn' + (t.ok ? ' ok' : '');
+      var html = t.ok ? ARROW.ok + t.text : t.d > 0 ? t.text + ARROW.r : ARROW.l + t.text;
+      if (tu.dataset.h !== html) { tu.innerHTML = html; tu.dataset.h = html; }
+      if (t.ok && !R.onTarget) buzz(40);
+      R.onTarget = t.ok;
+    }
+  }
+  function loop() {
+    cancelAnimationFrame(R.raf);
+    var f = function () { if (!R.running || document.visibilityState === 'hidden') return; draw(); R.raf = requestAnimationFrame(f); };
+    R.raf = requestAnimationFrame(f);
+  }
+  draw();
+  window.__compass = { R: R, S: S, setForceAngle: function (a) { R.forceAngle = a; }, draw: draw };
+})();
+</script>

@@ -38,6 +38,7 @@ TOOLS = [
     ('id-photo'          , '證件照排版', 'image', '裁成一吋、二吋並排滿 4×6 相紙，方便沖印。'),
     ('gif-maker'         , 'GIF 製作器', 'image', '多張圖或短影片轉成 GIF，可調速度與尺寸。'),
     ('video-frames'      , '影片截圖器', 'image', '載入影片逐格瀏覽，擷取高畫質截圖或連拍拼圖。'),
+    ('mirror'            , '鏡子', 'image', '前鏡頭當鏡子，凍結畫面放大看細節，附補光外框。'),
     ('palette-lab'       , '調色盤工作室', 'design', '由照片取色或主色產生配色，檢查對比度，複製 HEX/RGB/HSL。'),
     ('gradient-maker'    , '漸層產生器', 'design', '視覺化調整線性、放射、錐形漸層，輸出 CSS 或圖片。'),
     ('css-shadow'        , '陰影與圓角產生器', 'design', '拖拉調整 box-shadow、圓角、玻璃擬態效果並複製 CSS。'),
@@ -67,7 +68,7 @@ TOOLS = [
     ('pass-forge'        , '密碼產生器', 'secure', '高強度密碼或好記詞組密碼，顯示破解時間估計。'),
     ('secret-note'       , '文字加密便條', 'secure', '用密碼以 AES 加密文字，產生可貼出去的密文。'),
     ('qr-maker'          , 'QR 碼產生器', 'secure', '文字、網址、Wi‑Fi、名片轉 QR 碼，可調顏色並下載。'),
-    ('qr-scanner'        , 'QR 碼掃描器（選圖）', 'secure', '從相簿選圖或貼上截圖，解讀裡面的 QR 碼。'),
+    ('qr-scanner'        , 'QR 碼掃描器', 'secure', '用相機即時掃描，或從相簿選圖、貼上截圖，解讀網址、Wi‑Fi 與名片。'),
     ('decide-wheel'      , '隨機決定器', 'party', '自訂轉盤、抽籤、擲骰，聚會吃什麼一轉就決定。'),
     ('team-picker'       , '分組與抽人', 'party', '名單隨機分組、抽出順序，可排除重複。'),
     ('score-board'       , '記分板', 'party', '多人或兩隊大字記分，桌遊、球賽用，可撤銷。'),
@@ -88,6 +89,12 @@ TOOLS = [
     ('metronome'         , '節拍器', 'sound', '精準節拍器，可設拍號、重音、漸快練習。'),
     ('tone-gen'          , '頻率產生器', 'sound', '產生指定頻率的正弦波、方波，測喇叭或耳朵聽力範圍。'),
     ('screen-light'      , '螢幕補光', 'sound', '全螢幕純色補光，可調色溫與亮度，附 SOS 閃爍。'),
+    ('tuner'             , '調音器', 'sound', '對著麥克風彈一根弦，指針告訴你偏高偏低，支援吉他、烏克麗麗、小提琴、貝斯。'),
+    ('decibel-meter'     , '噪音分貝計', 'sound', '用麥克風量環境音量，看即時分貝、平均值與歷史曲線，可匯出 CSV。'),
+    ('voice-memo'        , '錄音機', 'sound', '錄音看波形，剪掉頭尾空白再下載，錄音只存在本機。'),
+    ('level-meter'       , '水平儀', 'sensor', '氣泡水平儀、邊緣水平與量角器，可校正、鎖定讀數，水平時變綠並提示音。'),
+    ('compass'           , '指南針', 'sensor', '方位角與 16 方位大字顯示，可切換真北／磁北，鎖定目標方向並提示左右轉。'),
+    ('gps-speed'         , '測速與里程', 'sensor', '用 GPS 即時測速、記里程並畫出路線，算出平均與最高速度，可匯出 GPX。'),
 ]
 
 # Tools are published without a doctype (the Artifact tool adds the skeleton), so give each

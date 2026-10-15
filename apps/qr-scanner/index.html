@@ -68,6 +68,18 @@ h1 svg { width: 26px; height: 26px; color: var(--accent); }
 .preview polygon { fill: rgba(79, 208, 141, .18); stroke: var(--corner); stroke-width: 3; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .stage-tag { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 4px; z-index: 2; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.actions .wide { grid-column: 1 / -1; min-height: 52px; font-size: 16px; }
+.stage.live { min-height: 0; aspect-ratio: 3 / 4; max-height: 72vh; width: 100%; }
+@media (min-width: 820px) { .stage.live { aspect-ratio: 4 / 3; } }
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--stage); }
+.stage.live .finder { z-index: 1; }
+.stage.live .finder .box { box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .35); border-radius: 10px; }
+.cam-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff; font-size: 13px; padding: 4px 12px; border-radius: 14px; z-index: 2; white-space: nowrap; }
+.cam-bar { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; justify-content: center; gap: 12px; z-index: 3; }
+.cam-bar button { min-height: 48px; min-width: 48px; padding: 0 16px; border-radius: 24px; border: 1px solid rgba(255,255,255,.35); background: rgba(10,15,18,.62); color: #fff; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cam-bar button svg { width: 20px; height: 20px; }
+.cam-bar button[aria-pressed="true"] { background: #f5d04c; color: #1d1a0c; border-color: #f5d04c; }
+.status a { color: inherit; font-weight: 700; }
 .status { margin: 10px 0 0; font-size: 14px; color: var(--muted); min-height: 21px; }
 .status.err { color: var(--danger); font-weight: 600; }
 .status.busy::before { content: ""; display: inline-block; width: 12px; height: 12px; border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; margin-right: 6px; vertical-align: -1px; animation: spin .8s linear infinite; }
@@ -129,15 +141,22 @@ h1 svg { width: 26px; height: 26px; color: var(--accent); }
     <div class="empty-msg" id="empty-msg"><b>選擇、貼上或拖入圖片</b>截圖、相簿照片都可以。圖片只在這台裝置上解讀，不會上傳。</div>
     <div class="preview" id="preview" hidden><canvas id="pv-canvas"></canvas><svg id="pv-overlay" preserveAspectRatio="xMidYMid meet"></svg></div>
     <span class="stage-tag" id="stage-tag" hidden>範例</span>
+    <video id="cam" playsinline muted autoplay hidden></video>
+    <span class="cam-hint" id="cam-hint" hidden>把 QR 碼放進框內</span>
+    <div class="cam-bar" id="cam-bar" hidden>
+      <button type="button" id="cam-torch" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M8 3h8l-1 6h-6zM9 9h6v12H9z"/><path d="M12 13v3"/></svg>手電筒</button>
+      <button type="button" id="cam-close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>關閉相機</button>
+    </div>
   </div>
   <div class="actions">
-    <label class="btn primary" for="file-input" id="btn-pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>從相簿選圖</label>
+    <button class="btn primary wide" id="btn-camera" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="cam-btn-txt">用相機掃描</span></button>
+    <label class="btn" for="file-input" id="btn-pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>從相簿選圖</label>
     <button class="btn" id="btn-paste" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1"/></svg>貼上圖片</button>
   </div>
   <input type="file" id="file-input" accept="image/*" class="sr" tabindex="-1">
   <div class="pastezone" id="pastezone" contenteditable="true" hidden aria-label="貼上區" spellcheck="false">在這裡長按（或按 Ctrl／⌘＋V）貼上圖片</div>
   <p class="status" id="status" role="status"></p>
-  <p class="note">也可以把圖片直接拖進上方深色區域。這個版本不使用相機：請先用手機相機拍下 QR 碼，再從相簿選取。</p>
+  <p class="note">相機畫面只在這台裝置上即時解讀，不錄影也不上傳。也可以從相簿選圖、貼上截圖，或把圖片直接拖進上方深色區域。</p>
 </section>
 <section class="results-col" id="results" aria-live="polite"></section>
 </div>
@@ -826,6 +845,7 @@ function loadImage(blob) {
 let busy = false, lastUrl = null;
 async function handleBlob(blob, source) {
   if (!blob || busy) return;
+  if (cam) stopCamera(true);
   if (!/^image\//.test(blob.type || 'image/')) { setStatus('這不是圖片檔案', 'err'); return; }
   busy = true; setStatus('解碼中…', 'busy');
   try {
@@ -845,6 +865,130 @@ async function handleBlob(blob, source) {
   } catch (e) { setStatus(e.message || '讀取失敗', 'err'); }
   finally { busy = false; }
 }
+
+/* =================== 相機即時掃描 =================== */
+// 按下才開後鏡頭；BarcodeDetector 可用時直接偵測影片，否則把取景框附近縮小裁切後交給內建解碼器（解完一張才排下一張）。
+const SITE = 'https://timmango123.github.io/pocket-apps/tools/#qr-scanner';
+let cam = null;
+function policyBlocked(feature) {
+  try { const p = document.permissionsPolicy || document.featurePolicy; if (p && p.allowsFeature) return !p.allowsFeature(feature); } catch {}
+  return false;
+}
+function onSite() { try { return [location.origin, ...Array.from(location.ancestorOrigins || [])].some(o => /timmango123\.github\.io/.test(o)); } catch { return false; } }
+const siteLink = `<a href="${SITE}" target="_blank" rel="noopener">在新分頁開啟網站版 ↗</a>`;
+function setStatusHtml(html, kind) { const s = $('status'); s.innerHTML = html; s.className = 'status' + (kind ? ' ' + kind : ''); }
+function camFail(e) {
+  const name = typeof e === 'string' ? e : (e && e.name) || '';
+  const tail = '仍可以「從相簿選圖」或貼上截圖。';
+  if (name === 'policy') return setStatusHtml(`這個嵌入頁面不允許使用相機。即時掃描需要網站版：${siteLink}　${tail}`, 'err');
+  if (name === 'unsupported') return setStatusHtml(`這個瀏覽器${window.isSecureContext === false ? '在非 https 連線下' : ''}無法使用相機。${onSite() ? '' : '請改用網站版：' + siteLink + '　'}${tail}`, 'err');
+  if (name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError') {
+    if (!onSite()) return setStatusHtml(`無法使用相機：權限被拒，或這個嵌入頁面擋下了相機。請改用網站版：${siteLink}　${tail}`, 'err');
+    return setStatusHtml(`相機權限被拒絕。請到瀏覽器設定允許這個網站使用相機後再試。${tail}`, 'err');
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') return setStatus('找不到可用的相機。' + tail, 'err');
+  if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') return setStatus('相機正被其他 App 使用，請關閉後再試。' + tail, 'err');
+  if (name === 'timeout') return setStatus('相機沒有傳來畫面，請關閉其他使用相機的 App 後再試。' + tail, 'err');
+  setStatus('無法開啟相機' + (name ? `（${name}）` : '') + '。' + tail, 'err');
+}
+function camView(on) {
+  stage.classList.toggle('live', on);
+  $('cam').hidden = !on; $('cam-bar').hidden = !on; $('cam-hint').hidden = !on;
+  $('cam-btn-txt').textContent = on ? '停止相機' : '用相機掃描';
+  if (on) { $('preview').hidden = true; $('empty-msg').hidden = true; $('stage-tag').hidden = true; $('finder').hidden = false; }
+}
+async function startCamera() {
+  ensureAudio();
+  if (cam || busy) return;
+  if (policyBlocked('camera')) return camFail('policy');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return camFail('unsupported');
+  const my = cam = { restore: { preview: !$('preview').hidden, empty: !$('empty-msg').hidden, tag: !$('stage-tag').hidden }, n: 0, t0: performance.now() };
+  camView(true); $('cam-hint').textContent = '等待相機權限…';
+  setStatus('正在開啟相機…', 'busy');
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } }); }
+  catch (e) { if (cam === my) { stopCamera(false); camFail(e); } return; }
+  if (cam !== my) { stream.getTracks().forEach(t => t.stop()); return; } // 使用者已取消
+  my.stream = stream; my.track = stream.getVideoTracks()[0];
+  const v = $('cam'); v.srcObject = stream;
+  try { await v.play(); } catch {}
+  if (cam !== my) return;
+  $('cam-hint').textContent = '把 QR 碼放進框內';
+  setStatus('對準 QR 碼，會自動辨識', 'busy');
+  try { const caps = my.track && my.track.getCapabilities ? my.track.getCapabilities() : {}; $('cam-torch').hidden = !caps.torch; } catch { $('cam-torch').hidden = true; }
+  $('cam-torch').setAttribute('aria-pressed', 'false');
+  my.watchdog = setTimeout(() => { if (cam === my && !my.frames) { stopCamera(false); camFail('timeout'); } }, 8000);
+  my.det = await getDetector();
+  scanLoop(my);
+}
+function stopCamera(keepView) {
+  const c = cam; cam = null;
+  if (!c) return;
+  clearTimeout(c.timer); clearTimeout(c.watchdog);
+  if (c.stream) c.stream.getTracks().forEach(t => { try { t.stop(); } catch {} });
+  const v = $('cam'); try { v.pause(); } catch {} v.srcObject = null;
+  camView(false);
+  if (!keepView) {
+    $('preview').hidden = !c.restore.preview; $('empty-msg').hidden = !c.restore.empty; $('stage-tag').hidden = !c.restore.tag;
+    $('finder').hidden = c.restore.preview;
+    if ($('status').classList.contains('busy')) setStatus('');
+  }
+}
+// 物件填滿（cover）時影片中實際看得到的區域，與取景框對應的影片座標
+function camRegions(v) {
+  const vw = v.videoWidth, vh = v.videoHeight, W = stage.clientWidth || vw, H = stage.clientHeight || vh;
+  const k = Math.max(W / vw, H / vh), visW = Math.min(vw, W / k), visH = Math.min(vh, H / k);
+  const vis = { x: (vw - visW) / 2, y: (vh - visH) / 2, w: visW, h: visH };
+  const box = Math.min(W * 0.62, 240) / k * 1.45, side = Math.min(box, visW, visH);
+  return { vis, crop: { x: (vw - side) / 2, y: (vh - side) / 2, w: side, h: side }, vw, vh };
+}
+async function scanFrame(c, v) {
+  const { vis, crop, vw, vh } = camRegions(v);
+  if (c.det) {
+    try { const r = await c.det.detect(v); if (r.length) return r.map(b => ({ text: b.rawValue, corners: b.cornerPoints.map(p => [p.x, p.y]), engine: '瀏覽器內建・相機' })); } catch {}
+    return null;
+  }
+  // 內建解碼器：多數時候只解取景框附近（較快），每三張改解整個可見畫面，每六張試一次反色
+  c.n++;
+  const full = c.n % 3 === 0, R = full ? vis : crop, max = full ? 720 : 560, s = Math.min(1, max / Math.max(R.w, R.h));
+  const w = Math.max(1, Math.round(R.w * s)), h = Math.max(1, Math.round(R.h * s));
+  if (!c.cv) { c.cv = document.createElement('canvas'); c.ctx = c.cv.getContext('2d', { willReadFrequently: true }); }
+  c.cv.width = w; c.cv.height = h; c.ctx.drawImage(v, R.x, R.y, R.w, R.h, 0, 0, w, h);
+  const res = QRScan.scanImageData(c.ctx.getImageData(0, 0, w, h).data, w, h, { invert: c.n % 6 === 5 });
+  return res.length ? res.map(r => ({ ...r, corners: r.corners.map(([x, y]) => [R.x + x / s, R.y + y / s]), engine: '內建解碼器・相機' })) : null;
+}
+async function scanLoop(c) {
+  if (cam !== c) return;
+  const v = $('cam');
+  if (v.readyState >= 2 && v.videoWidth && !document.hidden) {
+    c.frames = (c.frames || 0) + 1;
+    let res = null;
+    try { res = await scanFrame(c, v); } catch {}
+    if (cam !== c) return;
+    if (res && res.length) return camFound(c, v, res);
+  }
+  c.timer = setTimeout(() => scanLoop(c), c.det ? 120 : 200);
+}
+function camFound(c, v, res) {
+  const vw = v.videoWidth, vh = v.videoHeight, sec = ((performance.now() - c.t0) / 1000).toFixed(1);
+  showPreview(v, vw, vh, false); // 先拍下這一格再關相機
+  stopCamera(true);
+  drawOverlay(res, vw, vh);
+  setStatus(`相機解出 ${res.length} 個 QR 碼・${sec} 秒`);
+  renderResults(res, false);
+  feedback();
+  if (prefs.history) { for (const r of res.slice().reverse()) addHistory(r.text, 'camera'); }
+  if (innerWidth < 820) $('results').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+}
+$('btn-camera').addEventListener('click', () => { if (cam) stopCamera(false); else startCamera(); });
+$('cam-close').addEventListener('click', () => stopCamera(false));
+$('cam-torch').addEventListener('click', async () => {
+  const b = $('cam-torch'), on = b.getAttribute('aria-pressed') !== 'true';
+  try { await cam.track.applyConstraints({ advanced: [{ torch: on }] }); b.setAttribute('aria-pressed', String(on)); }
+  catch { toast('無法開啟手電筒'); b.hidden = true; }
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && cam) stopCamera(false); });
+addEventListener('pagehide', () => { if (cam) stopCamera(false); });
 
 /* =================== 預覽與框線 =================== */
 function showPreview(src, w, h, sample) {

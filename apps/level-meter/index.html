@@ -1,0 +1,758 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>水平儀</title>
+<style>
+/* A machinist's spirit level: brushed-aluminium body, lime vial fluid, a white bubble. Turns green when level. */
+:root {
+  --bg: #e6e7e3; --bg-level: #cfeccf;
+  --panel: #f5f5f2; --line: rgba(22, 26, 30, .14); --line-2: rgba(22, 26, 30, .26);
+  --ink: #1a1e22; --ink-2: #394048; --muted: #5a6168;
+  --metal-1: #fbfbf9; --metal-2: #cdcfcb; --metal-3: #a3a7a7;
+  --fluid-1: #f1f9b4; --fluid-2: #cfe45e; --fluid-3: #9fbb2c;
+  --mark: rgba(36, 48, 8, .62); --mark-soft: rgba(36, 48, 8, .3);
+  --bubble: rgba(255, 255, 255, .93); --bubble-rim: rgba(70, 90, 20, .45);
+  --needle: #d2422a; --ok: #1f7f43; --ok-ink: #ffffff; --warn: #8a4b00; --warn-bg: #fff0d4;
+  --on: #1a1e22; --on-ink: #ffffff; --focus: #1b56d6;
+  --scrim: rgba(12, 14, 16, .55);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111315; --bg-level: #0c2a18;
+    --panel: #1b1e21; --line: rgba(255, 255, 255, .1); --line-2: rgba(255, 255, 255, .22);
+    --ink: #eceff1; --ink-2: #c4c9ce; --muted: #8e959c;
+    --metal-1: #484d53; --metal-2: #2a2e32; --metal-3: #16181a;
+    --fluid-1: #cfe868; --fluid-2: #93ba28; --fluid-3: #3f580c;
+    --mark: rgba(12, 22, 0, .7); --mark-soft: rgba(12, 22, 0, .35);
+    --bubble: rgba(250, 255, 235, .92); --bubble-rim: rgba(40, 60, 0, .5);
+    --needle: #ff7b55; --ok: #46d07f; --ok-ink: #062012; --warn: #ffc06e; --warn-bg: #2d2010;
+    --on: #eceff1; --on-ink: #111315; --focus: #8fb2ff; --scrim: rgba(0, 0, 0, .7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111315; --bg-level: #0c2a18;
+  --panel: #1b1e21; --line: rgba(255, 255, 255, .1); --line-2: rgba(255, 255, 255, .22);
+  --ink: #eceff1; --ink-2: #c4c9ce; --muted: #8e959c;
+  --metal-1: #484d53; --metal-2: #2a2e32; --metal-3: #16181a;
+  --fluid-1: #cfe868; --fluid-2: #93ba28; --fluid-3: #3f580c;
+  --mark: rgba(12, 22, 0, .7); --mark-soft: rgba(12, 22, 0, .35);
+  --bubble: rgba(250, 255, 235, .92); --bubble-rim: rgba(40, 60, 0, .5);
+  --needle: #ff7b55; --ok: #46d07f; --ok-ink: #062012; --warn: #ffc06e; --warn-bg: #2d2010;
+  --on: #eceff1; --on-ink: #111315; --focus: #8fb2ff; --scrim: rgba(0, 0, 0, .7);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.4;
+  min-height: 100vh; min-height: 100dvh; overflow-x: hidden; transition: background-color .35s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+body.is-level { background: var(--bg-level); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+.wrap { max-width: 460px; margin: 0 auto; padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 12px; }
+
+.top { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+.top h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: .04em; flex: 1; display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.top h1 small { font: 600 11px var(--mono); letter-spacing: .16em; color: var(--muted); text-transform: uppercase; }
+.tbtn { min-width: 44px; min-height: 44px; border-radius: 22px; border: 1px solid var(--line-2); background: var(--panel); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.tbtn svg { width: 20px; height: 20px; }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 3px; gap: 3px; }
+.seg button { min-height: 44px; border: 0; border-radius: 11px; background: transparent; cursor: pointer; font-weight: 700; font-size: 15px; color: var(--ink-2); display: flex; align-items: center; justify-content: center; gap: 7px; }
+.seg button svg { width: 20px; height: 20px; flex: none; }
+.seg button[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
+
+/* ---------- instrument stage ---------- */
+.stage { position: relative; min-height: 318px; display: flex; flex-direction: column; align-items: center; justify-content: center; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.metal {
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, rgba(0,0,0,.035) 1px 3px),
+    linear-gradient(160deg, var(--metal-1), var(--metal-2) 55%, var(--metal-3));
+  box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -1px 0 rgba(0,0,0,.12) inset, 0 10px 26px rgba(0,0,0,.16), 0 2px 4px rgba(0,0,0,.12);
+}
+.fluid {
+  background: radial-gradient(circle at 50% 42%, var(--fluid-1), var(--fluid-2) 58%, var(--fluid-3));
+  box-shadow: inset 0 6px 14px rgba(0,0,0,.28), inset 0 -3px 8px rgba(255,255,255,.25);
+}
+.bubble {
+  position: absolute; left: 50%; top: 50%; border-radius: 50%; will-change: transform; pointer-events: none;
+  background: radial-gradient(circle at 38% 32%, #fff 0 18%, var(--bubble) 42%, rgba(255,255,255,.55) 72%, rgba(255,255,255,.25));
+  box-shadow: 0 0 0 1px var(--bubble-rim), 0 2px 6px rgba(0,0,0,.18) inset, 0 1px 2px rgba(255,255,255,.4);
+}
+/* flat: bullseye vial */
+.vial { position: relative; width: min(280px, calc(100vw - 64px)); aspect-ratio: 1; border-radius: 50%; }
+.vial .fluid { position: absolute; inset: 3.6%; border-radius: 50%; overflow: hidden; }
+.vial svg.marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.marks .ring { fill: none; stroke: var(--mark); stroke-width: 1.6; }
+.marks .ring.soft { stroke: var(--mark-soft); stroke-dasharray: 3 4; }
+.marks .cross { stroke: var(--mark-soft); stroke-width: 1.2; }
+.marks text { fill: var(--mark); font: 600 9px var(--mono); }
+body.is-level .marks .ring:not(.soft) { stroke: var(--ok); stroke-width: 2.4; }
+#fBubble { width: 15.7%; height: 15.7%; margin: -7.85% 0 0 -7.85%; }
+
+/* edge: tubular vial */
+.tube-box { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.tube { position: relative; width: 100%; height: 80px; border-radius: 40px; padding: 9px; }
+.tube .fluid { position: relative; width: 100%; height: 100%; border-radius: 31px; overflow: hidden; background: linear-gradient(180deg, var(--fluid-1), var(--fluid-2) 45%, var(--fluid-3)); }
+.tube svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tube svg line { stroke: var(--mark); stroke-width: 1.5; }
+.tube svg line.minor { stroke: var(--mark-soft); }
+.tube svg line.zero { stroke-width: 2.4; }
+body.is-level .tube svg line.zero { stroke: var(--ok); }
+#eBubble { width: 72px; height: 40px; margin: -20px 0 0 -36px; border-radius: 20px; }
+.bigdeg { font: 700 64px/1 var(--mono); letter-spacing: -.02em; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 2px; }
+.bigdeg small { font-size: 30px; font-weight: 600; color: var(--muted); }
+.subline { font-size: 14px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.subline b { color: var(--ink-2); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.ref-tag { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2); border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; color: var(--ink-2); background: var(--panel); }
+
+/* protractor */
+.prot { width: 100%; max-width: 360px; }
+.prot svg { width: 100%; height: auto; display: block; }
+.prot .face { fill: url(#metalGrad); stroke: var(--line-2); stroke-width: 1; }
+.prot .tick { stroke: var(--ink-2); stroke-width: 1; }
+.prot .tick.mid { stroke-width: 1.4; }
+.prot .tick.maj { stroke-width: 2; stroke: var(--ink); }
+.prot .num { fill: var(--ink-2); font: 600 11px var(--mono); }
+.prot .sweep { fill: var(--needle); opacity: .16; }
+.prot .needle { stroke: var(--needle); stroke-width: 3; stroke-linecap: round; }
+.prot .hub { fill: var(--needle); }
+.prot .base { stroke: var(--ink); stroke-width: 2; }
+
+/* ---------- readouts ---------- */
+.reads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.read { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px 9px; min-width: 0; }
+.read span { display: block; font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+.read b { display: block; font: 700 26px/1.15 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.02em; }
+.read b small { font-size: 15px; color: var(--muted); font-weight: 600; margin-left: 1px; }
+body.is-level .read.key b { color: var(--ok); }
+
+.status { min-height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 700; color: var(--ink-2); text-align: center; }
+.status .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 7px 14px; background: var(--panel); border: 1px solid var(--line); }
+.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.status.level .pill { background: var(--ok); color: var(--ok-ink); border-color: transparent; }
+.status.level .dot { background: var(--ok-ink); }
+.status.warn .pill { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.status.warn .dot { background: var(--warn); }
+.status button.link { border: 0; background: none; color: inherit; text-decoration: underline; font-weight: 700; cursor: pointer; min-height: 32px; padding: 0 2px; }
+
+/* ---------- controls ---------- */
+.ctrls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cbtn { min-height: 56px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--panel); cursor: pointer; font-weight: 700; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--ink); }
+.cbtn svg { width: 20px; height: 20px; flex: none; }
+.cbtn[aria-pressed="true"] { background: var(--on); color: var(--on-ink); border-color: var(--on); }
+@media (hover: hover) { .cbtn:hover, .tbtn:hover, .seg button:not([aria-pressed="true"]):hover { border-color: var(--ink-2); } }
+.lockmark { display: none; }
+body.is-locked .lockmark { display: inline-flex; color: var(--needle); }
+.lockmark svg { width: 18px; height: 18px; }
+
+/* ---------- gate ---------- */
+.gate { background: var(--panel); border: 1px solid var(--line-2); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.gate p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.go { min-height: 56px; border-radius: 14px; border: 0; background: var(--on); color: var(--on-ink); font-size: 17px; font-weight: 800; letter-spacing: .04em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.go svg { width: 22px; height: 22px; }
+.go:disabled { opacity: .5; cursor: default; }
+.msg { border-radius: 12px; padding: 10px 12px; background: var(--warn-bg); color: var(--ink); font-size: 14px; border: 1px solid var(--line); }
+.msg strong { display: block; color: var(--warn); margin-bottom: 2px; font-size: 15px; }
+.msg a { color: var(--focus); font-weight: 700; word-break: break-all; }
+.fine { font-size: 12px; color: var(--muted); margin: 0; text-align: center; }
+
+/* ---------- calibration sheet ---------- */
+.scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; padding: 16px; }
+.sheet { background: var(--panel); color: var(--ink); width: 100%; max-width: 420px; border-radius: 18px; padding: 18px; border: 1px solid var(--line-2); box-shadow: 0 20px 60px rgba(0,0,0,.35); max-height: calc(100% - 16px); overflow: auto; margin-bottom: env(safe-area-inset-bottom); }
+.sheet h2 { margin: 0 0 6px; font-size: 19px; }
+.sheet p { margin: 6px 0; font-size: 14px; color: var(--ink-2); }
+.steps { display: grid; gap: 8px; margin: 12px 0; }
+.stepc { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 10px; font-size: 14px; }
+.stepc i { font-style: normal; flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; border: 1.5px solid var(--line-2); font-size: 13px; }
+.stepc.on { border-color: var(--on); }
+.stepc.done i { background: var(--ok); color: var(--ok-ink); border-color: transparent; }
+.stepc b { display: block; }
+.countdown { font: 700 15px var(--mono); color: var(--needle); }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 8px; }
+.btn { min-height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; cursor: pointer; font-weight: 700; font-size: 15px; color: var(--ink); }
+.btn.primary { background: var(--on); color: var(--on-ink); border-color: var(--on); }
+.btn:disabled { opacity: .45; cursor: default; }
+
+#toast { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 50; background: var(--on); color: var(--on-ink); padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); width: max-content; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+
+@media (min-width: 720px) and (min-height: 600px) { .wrap { padding-top: 24px; } }
+@media (prefers-reduced-motion: reduce) { body { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>水平儀<small>Level</small></h1>
+    <span class="lockmark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+    <button class="tbtn" id="themeBtn" type="button" aria-label="切換主題"></button>
+  </header>
+
+  <div class="seg" role="group" aria-label="模式">
+    <button type="button" data-mode="flat" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>平面</button>
+    <button type="button" data-mode="edge" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="8" width="19" height="8" rx="4"/><rect x="9" y="10" width="6" height="4" rx="2" fill="currentColor" stroke="none"/></svg>邊緣</button>
+    <button type="button" data-mode="prot" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M12 18l5-6"/></svg>量角器</button>
+  </div>
+
+  <section class="stage" id="stage" aria-label="儀表（雙擊切換模式）">
+    <div class="pane" data-pane="flat">
+      <div class="vial metal" id="vial">
+        <div class="fluid"></div>
+        <svg class="marks" viewBox="0 0 280 280" aria-hidden="true">
+          <line class="cross" x1="140" y1="22" x2="140" y2="258"/><line class="cross" x1="22" y1="140" x2="258" y2="140"/>
+          <circle class="ring soft" cx="140" cy="140" r="76"/>
+          <circle class="ring" cx="140" cy="140" r="54.4"/>
+          <circle class="ring" cx="140" cy="140" r="32.8"/>
+          <text x="144" y="61">5°</text><text x="144" y="83">3°</text><text x="144" y="104.5">1°</text>
+        </svg>
+        <div class="bubble" id="fBubble"></div>
+      </div>
+    </div>
+    <div class="pane tube-box" data-pane="edge" hidden>
+      <div class="tube metal" id="tube">
+        <div class="fluid"><svg id="tubeTicks" aria-hidden="true"></svg><div class="bubble" id="eBubble"></div></div>
+      </div>
+      <div class="bigdeg" id="eBig" aria-live="off">—<small>°</small></div>
+      <div class="subline"><span class="ref-tag" id="eRef">以水平為準</span><span>坡度 <b id="eSlope">—</b></span><span>原始 <b id="eRaw">—</b></span></div>
+    </div>
+    <div class="pane prot" data-pane="prot" hidden>
+      <svg viewBox="0 0 320 186" aria-hidden="true">
+        <defs><linearGradient id="metalGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--metal-1)"/><stop offset="1" stop-color="var(--metal-2)"/></linearGradient></defs>
+        <path class="face" d="M8 172 A152 152 0 0 1 312 172 Z"/>
+        <g id="protTicks"></g>
+        <path class="sweep" id="pSweep" d=""/>
+        <line class="base" x1="8" y1="172" x2="312" y2="172"/>
+        <g id="pNeedle"><line class="needle" x1="160" y1="172" x2="300" y2="172"/></g>
+        <circle class="hub" cx="160" cy="172" r="7"/>
+      </svg>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:6px">
+        <div class="bigdeg" id="pBig">—<small>°</small></div>
+        <div class="subline"><span class="ref-tag" id="pRef">基準：水平面</span><button type="button" class="btn" id="pClear" hidden>清除基準</button></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="reads" id="reads">
+    <div class="read key"><span id="r1l">左右 X</span><b id="r1">—</b></div>
+    <div class="read key"><span id="r2l">前後 Y</span><b id="r2">—</b></div>
+    <div class="read"><span id="r3l">坡度</span><b id="r3">—</b></div>
+  </div>
+
+  <div class="status" id="status" aria-live="polite"><span class="pill"><span class="dot"></span><span id="statusText">尚未啟用感測器</span></span></div>
+
+  <section class="gate" id="gate">
+    <p>水平儀會讀取手機的<b>動作與方向感測器</b>。點下面的按鈕開始（iPhone 會詢問是否允許）。</p>
+    <div id="gateMsg" hidden></div>
+    <button class="go" id="goBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="9" width="18" height="6" rx="3"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 3v3M12 18v3"/></svg>啟用感測器</button>
+    
+  </section>
+
+  <div class="ctrls" id="ctrls" hidden>
+    <button class="cbtn" type="button" id="calBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span id="calLbl">校正</span></button>
+    <button class="cbtn" type="button" id="lockBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>鎖定讀數</button>
+    <button class="cbtn" type="button" id="sndBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></svg>聲音提示</button>
+  </div>
+  <p class="fine" id="fine">雙擊儀表可切換模式 · 平放用「平面」，貼著邊緣立起用「邊緣」</p>
+</div>
+
+<div class="scrim" id="calDlg" hidden role="dialog" aria-modal="true" aria-labelledby="calTitle">
+  <div class="sheet">
+    <h2 id="calTitle">兩步校正</h2>
+    <p id="calIntro">消除手機本身與手機殼造成的偏差。兩步都放在<b>同一個位置</b>。</p>
+    <div class="steps">
+      <div class="stepc on" id="cs1"><i>1</i><div><b id="cs1t">放在平面上</b><span id="cs1d">按「記錄第一點」後保持不動。</span> <span class="countdown" id="cd1"></span></div></div>
+      <div class="stepc" id="cs2"><i>2</i><div><b id="cs2t">原地旋轉 180°</b><span id="cs2d">把手機掉頭放回同一位置，再按「記錄第二點」。</span> <span class="countdown" id="cd2"></span></div></div>
+    </div>
+    <p id="calNow" class="fine" style="text-align:left"></p>
+    <div class="acts">
+      <button type="button" class="btn" id="calReset">清除校正</button>
+      <button type="button" class="btn" id="calCancel">關閉</button>
+      <button type="button" class="btn primary" id="calStep">記錄第一點</button>
+    </div>
+  </div>
+</div>
+<div id="toast" hidden role="status"></div>
+
+<script>
+/*CORE-START*/
+// Pure math for the level. Gravity vectors are the W3C "up" (reaction) vector in the device frame:
+// x → right edge, y → top edge, z → out of the screen; flat face-up = (0, 0, +9.81).
+var DEG = 180 / Math.PI;
+function norm180(a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a === -180 ? 180 : a; }
+function norm360(a) { return ((a % 360) + 360) % 360; }
+// Screen rotation in degrees (0/90/180/270): prefer screen.orientation.angle, else window.orientation (-90 → 270).
+function screenAngle(soAngle, winOrientation) {
+  var a = typeof soAngle === 'number' && isFinite(soAngle) ? soAngle : (typeof winOrientation === 'number' && isFinite(winOrientation) ? winOrientation : 0);
+  return norm360(Math.round(a / 90) * 90);
+}
+// Rotate a device-frame (x, y) vector into the frame of the screen as the user sees it.
+function toScreen(x, y, angle) {
+  var r = angle / DEG, c = Math.cos(r), s = Math.sin(r);
+  var sx = x * c - y * s, sy = x * s + y * c;
+  return [Math.abs(sx) < 1e-12 ? 0 : sx, Math.abs(sy) < 1e-12 ? 0 : sy];
+}
+// deviceorientation beta/gamma → unit up vector in the device frame (Z-X'-Y' Euler angles).
+function gravityFromOrientation(beta, gamma) {
+  var b = beta / DEG, g = gamma / DEG;
+  return [-Math.cos(b) * Math.sin(g), Math.sin(b), Math.cos(b) * Math.cos(g)];
+}
+// Tilt angles in screen terms. x > 0: right side is higher (bubble goes right). y > 0: top is higher.
+// edge: rotation of the screen in its own plane, 0 when the screen's bottom edge is level, > 0 counter-clockwise.
+function tilt(gx, gy, gz, angle) {
+  var s = toScreen(gx, gy, angle || 0), n = Math.hypot(gx, gy, gz) || 1;
+  return {
+    x: Math.atan2(s[0], gz) * DEG,
+    y: Math.atan2(s[1], gz) * DEG,
+    edge: Math.atan2(s[0], s[1]) * DEG,
+    total: Math.acos(Math.max(-1, Math.min(1, gz / n))) * DEG
+  };
+}
+// Edge reading relative to the nearest level (0/180) or plumb (±90) line.
+function edgeDeviation(edge) {
+  var k = Math.round(edge / 90), dev = edge - 90 * k;
+  return { dev: Math.abs(dev) < 1e-9 ? 0 : dev, ref: (k % 2 === 0) ? 'level' : 'plumb' };
+}
+// Two-step calibration: reading 1, then the same spot after turning the phone 180° → bias = mean.
+function calibOffset(r1, r2) { return (r1 + r2) / 2; }
+function calibOffsetAngle(r1, r2) { return norm180(r1 + norm180(r2 - r1) / 2); }
+function lowpass(v, raw, k) { return v + (k == null ? 0.15 : k) * (raw - v); }
+function lowpassAngle(v, raw, k) { return norm180(v + (k == null ? 0.15 : k) * norm180(raw - v)); }
+function stdev(a) {
+  if (a.length < 2) return 0;
+  var m = 0, i; for (i = 0; i < a.length; i++) m += a[i]; m /= a.length;
+  var s = 0; for (i = 0; i < a.length; i++) s += (a[i] - m) * (a[i] - m);
+  return Math.sqrt(s / a.length);
+}
+// Angle between the current up vector and a reference (protractor), 0…180.
+function angleBetween(g, ref) {
+  var d = g[0] * ref[0] + g[1] * ref[1] + g[2] * ref[2], n = Math.hypot(g[0], g[1], g[2]) * Math.hypot(ref[0], ref[1], ref[2]);
+  if (!n) return 0;
+  return Math.acos(Math.max(-1, Math.min(1, d / n))) * DEG;
+}
+// iOS reports accelerationIncludingGravity with the opposite sign. Vote with the orientation sensor:
+// +1 when the motion vector agrees with W3C "up", -1 when it is inverted, 0 when unsure.
+function signVote(g, beta, gamma) {
+  var u = gravityFromOrientation(beta, gamma), n = Math.hypot(g[0], g[1], g[2]);
+  if (n < 3) return 0;
+  var d = (g[0] * u[0] + g[1] * u[1] + g[2] * u[2]) / n;
+  return d > 0.6 ? 1 : d < -0.6 ? -1 : 0;
+}
+// Bubble displacement (px, screen coordinates, y down) inside a circle: maxAngle reaches the rim.
+function bubbleOffset(x, y, maxAngle, radius) {
+  var px = x / maxAngle * radius, py = -y / maxAngle * radius, d = Math.hypot(px, py);
+  if (d > radius) { px *= radius / d; py *= radius / d; }
+  return [px, py];
+}
+function tubeOffset(a, maxAngle, half) { return Math.max(-half, Math.min(half, a / maxAngle * half)); }
+// Level with hysteresis: enter below `enter`, leave above `exit`.
+function levelState(prev, m, enter, exit) { m = Math.abs(m); return prev ? m <= (exit || 0.4) : m < (enter || 0.3); }
+// Beep spacing for the sound hint: 0 = continuous tone (level), null = silent (too far).
+function beepInterval(m) { m = Math.abs(m); if (m < 0.3) return 0; if (m > 10) return null; return Math.round(70 + (m / 10) * 830); }
+function slopePct(a) { return Math.tan(a / DEG) * 100; }
+/*CORE-END*/
+
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var KEY = 'level-meter.v1';
+  var S = { mode: 'flat', offset: { x: 0, y: 0, edge: 0 }, sound: false, theme: 'auto' };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved) {
+      if (['flat', 'edge', 'prot'].indexOf(saved.mode) >= 0) S.mode = saved.mode;
+      if (saved.offset) ['x', 'y', 'edge'].forEach(function (k) { var v = +saved.offset[k]; if (isFinite(v) && Math.abs(v) < 20) S.offset[k] = v; });
+      S.sound = !!saved.sound;
+      if (['auto', 'light', 'dark'].indexOf(saved.theme) >= 0) S.theme = saved.theme;
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var ICON = {
+    auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>',
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    dark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>'
+  };
+  function applyTheme() {
+    if (S.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', S.theme);
+    $('#themeBtn').innerHTML = ICON[S.theme];
+    $('#themeBtn').setAttribute('aria-label', '主題：' + { auto: '跟隨系統', light: '淺色', dark: '深色' }[S.theme] + '（點擊切換）');
+  }
+  $('#themeBtn').addEventListener('click', function () { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme]; applyTheme(); save(); });
+  applyTheme();
+
+  var toastT;
+  function toast(t) { var el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 2200); }
+  function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+  function fmt(a, d) { if (a == null || !isFinite(a)) return '—'; var s = Math.abs(a).toFixed(d == null ? 1 : d); if (+s === 0) return s; return (a < 0 ? '−' : '') + s; }
+
+  // ---------- static drawing ----------
+  (function drawProtractor() {
+    var g = $('#protTicks'), cx = 160, cy = 172, R = 150, h = '';
+    for (var d = 0; d <= 180; d += 2) {
+      var maj = d % 30 === 0, mid = d % 10 === 0, len = maj ? 16 : mid ? 11 : 6, r = d / DEG;
+      var c = Math.cos(r), s = Math.sin(r);
+      h += '<line class="tick' + (maj ? ' maj' : mid ? ' mid' : '') + '" x1="' + (cx + c * (R - 2)).toFixed(1) + '" y1="' + (cy - s * (R - 2)).toFixed(1) + '" x2="' + (cx + c * (R - 2 - len)).toFixed(1) + '" y2="' + (cy - s * (R - 2 - len)).toFixed(1) + '"/>';
+      if (maj) h += '<text class="num" text-anchor="middle" x="' + (cx + c * (R - 30)).toFixed(1) + '" y="' + (cy - s * (R - 30) + 4 - (d % 180 === 0 ? 12 : 0)).toFixed(1) + '">' + d + '</text>';
+    }
+    g.innerHTML = h;
+  })();
+  function drawTubeTicks() {
+    var svg = $('#tubeTicks'), box = svg.getBoundingClientRect(), W = box.width, H = box.height;
+    if (!W) return;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    var half = W / 2 - 40, h = '';
+    for (var d = -5; d <= 5; d++) {
+      if (!d) continue;
+      var x = W / 2 + d / 5 * half, minor = true;
+      h += '<line class="' + (minor ? 'minor' : 'zero') + '" x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + (minor ? H * .3 : 2) + '" y2="' + (minor ? H * .7 : H - 2) + '"/>';
+    }
+    // the two lines that frame a centred bubble
+    h += '<line class="zero" x1="' + (W / 2 - 41) + '" x2="' + (W / 2 - 41) + '" y1="2" y2="' + (H - 2) + '"/><line class="zero" x1="' + (W / 2 + 41) + '" x2="' + (W / 2 + 41) + '" y1="2" y2="' + (H - 2) + '"/>';
+    svg.innerHTML = h;
+  }
+
+  // ---------- state ----------
+  var R = {
+    running: false, got: false, motionAt: 0, sign: 1, signSettled: false, votes: 0, rawMotion: null,
+    g: null, x: null, y: null, e: null, p: null, hx: [], hy: [], he: [], hp: [], ref: null,
+    locked: false, level: false, unsteady: false, timer: 0, raf: 0, forceAngle: null, capture: null
+  };
+  var isIOS = (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') || /iP(hone|ad|od)/.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+  R.sign = isIOS ? -1 : 1;
+  function curAngle() {
+    if (R.forceAngle != null) return R.forceAngle;
+    var so; try { so = screen.orientation && screen.orientation.angle; } catch (e) {}
+    return screenAngle(so, window.orientation);
+  }
+  function push(arr, v) { arr.push(v); if (arr.length > 10) arr.shift(); }
+
+  function ingest(g) {
+    var t = tilt(g[0], g[1], g[2], curAngle());
+    R.g = g;
+    if (R.x == null) { R.x = t.x; R.y = t.y; R.e = t.edge; }
+    else { R.x = lowpass(R.x, t.x); R.y = lowpass(R.y, t.y); R.e = lowpassAngle(R.e, t.edge); }
+    push(R.hx, t.x); push(R.hy, t.y); push(R.he, R.e + norm180(t.edge - R.e));
+    var pa = angleBetween(g, R.ref || [0, 0, 1]);
+    R.p = R.p == null ? pa : lowpass(R.p, pa); push(R.hp, pa);
+    if (R.capture) R.capture.push(t);
+  }
+  function markGot() {
+    if (R.got) return;
+    R.got = true; clearTimeout(R.timer);
+    $('#gate').hidden = true; $('#ctrls').hidden = false;
+  }
+  function onMotion(ev) {
+    var a = ev.accelerationIncludingGravity;
+    if (!a || a.x == null || a.y == null || a.z == null) return;
+    markGot(); R.motionAt = Date.now();
+    R.rawMotion = [a.x, a.y, a.z];
+    ingest([a.x * R.sign, a.y * R.sign, a.z * R.sign]);
+  }
+  function onOrient(ev) {
+    if (ev.beta == null || ev.gamma == null) return;
+    markGot();
+    if (R.rawMotion && !R.signSettled) {
+      R.votes += signVote(R.rawMotion, ev.beta, ev.gamma);
+      if (Math.abs(R.votes) >= 5) { R.sign = R.votes > 0 ? 1 : -1; R.signSettled = true; }
+    }
+    if (Date.now() - R.motionAt > 600) {
+      var u = gravityFromOrientation(ev.beta, ev.gamma);
+      ingest([u[0] * 9.81, u[1] * 9.81, u[2] * 9.81]);
+    }
+  }
+  var listening = false;
+  function listen(on) {
+    if (on === listening) return; listening = on;
+    var f = on ? 'addEventListener' : 'removeEventListener';
+    window[f]('devicemotion', onMotion); window[f]('deviceorientation', onOrient);
+  }
+
+  // ---------- environment / messages ----------
+  var SITE = 'https://timmango123.github.io/pocket-apps/tools/#level-meter';
+  function onSite() {
+    var h = '';
+    try { h = location.hostname || ''; } catch (e) {}
+    try { if (!h && window.top) h = window.top.location.hostname; } catch (e) {}
+    return /(^|\.)github\.io$/.test(h);
+  }
+  function showMsg(title, body, retry) {
+    var m = $('#gateMsg');
+    var link = onSite() ? '' : '<br>在 claude.ai 上感測器通常被封鎖，請用手機開啟網站版：<br><a href="' + SITE + '" target="_blank" rel="noopener">' + SITE.replace('https://', '') + '</a>';
+    m.innerHTML = '<div class="msg"><strong>' + title + '</strong>' + body + link + '</div>';
+    m.hidden = false;
+    $('#goBtn').disabled = false;
+    $('#goBtn').lastChild.nodeValue = retry ? '再試一次' : '啟用感測器';
+    $('#gate').hidden = false; $('#ctrls').hidden = true;
+    setStatus('', '感測器未啟用');
+  }
+  function noSensor() {
+    stop();
+    showMsg('這台裝置沒有感測器或瀏覽器不提供', '2 秒內沒有收到任何傾斜資料。請用有動作感測器的手機或平板開啟。' + (window.isSecureContext === false ? '感測器只在 HTTPS 網頁提供。' : ''), true);
+  }
+
+  // ---------- start / stop ----------
+  var wake = null;
+  function lockWake() {
+    try { if (navigator.wakeLock && document.visibilityState === 'visible') navigator.wakeLock.request('screen').then(function (w) { wake = w; }, function () {}); } catch (e) {}
+  }
+  function start() {
+    $('#gateMsg').hidden = true;
+    if (typeof DeviceMotionEvent === 'undefined' && typeof DeviceOrientationEvent === 'undefined') { noSensor(); return; }
+    var reqs = [];
+    try { if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') reqs.push(DeviceMotionEvent.requestPermission()); } catch (e) { reqs.push(Promise.reject(e)); }
+    try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') reqs.push(DeviceOrientationEvent.requestPermission()); } catch (e) { reqs.push(Promise.reject(e)); }
+    $('#goBtn').disabled = true;
+    Promise.all(reqs.map(function (p) { return Promise.resolve(p).then(function (r) { return r; }, function (e) { return 'error:' + (e && e.name || 'Error'); }); })).then(function (res) {
+      if (res.length && res.every(function (r) { return r !== 'granted'; })) {
+        if (res.some(function (r) { return r === 'denied'; })) {
+          showMsg('動作與方向取用被拒絕', 'iPhone／iPad：關閉這個分頁重新開啟再點一次並選「允許」；若仍無效，到「設定 > Safari」開啟「動作與方向取用」。', true);
+        } else {
+          showMsg('無法取得感測器權限', '瀏覽器拒絕了請求（' + res.join('、').replace(/error:/g, '') + '）。這通常是內嵌頁面被限制。', true);
+        }
+        return;
+      }
+      R.running = true; R.got = false;
+      listen(true); lockWake(); loop();
+      setStatus('', '等待感測器資料…');
+      clearTimeout(R.timer);
+      R.timer = setTimeout(function () { if (!R.got) noSensor(); }, 2000);
+    });
+  }
+  function stop() { R.running = false; listen(false); cancelAnimationFrame(R.raf); clearTimeout(R.timer); tone(false); try { if (wake) wake.release(); } catch (e) {} wake = null; }
+  $('#goBtn').addEventListener('click', start);
+  document.addEventListener('visibilitychange', function () {
+    if (!R.running) return;
+    if (document.visibilityState === 'hidden') { listen(false); cancelAnimationFrame(R.raf); tone(false); }
+    else { listen(true); lockWake(); loop(); }
+  });
+
+  // ---------- mode ----------
+  var MODES = ['flat', 'edge', 'prot'];
+  function setMode(m) {
+    S.mode = m; save();
+    document.querySelectorAll('.seg button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
+    document.querySelectorAll('[data-pane]').forEach(function (p) { p.hidden = p.dataset.pane !== m; });
+    var labels = { flat: ['左右 X', '前後 Y', '坡度'], edge: ['角度', '坡度', '傾斜'], prot: ['相對角', '坡度', '相對水平'] }[m];
+    $('#r1l').textContent = labels[0]; $('#r2l').textContent = labels[1]; $('#r3l').textContent = labels[2];
+    $('#calLbl').textContent = m === 'prot' ? '歸零' : '校正';
+    if (m === 'edge') requestAnimationFrame(drawTubeTicks);
+    R.level = false;
+    draw(true);
+  }
+  document.querySelectorAll('.seg button').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
+  var lastTap = { t: 0, x: 0, y: 0 };
+  $('#stage').addEventListener('pointerup', function (e) {
+    if (e.target.closest('button')) return;
+    var now = performance.now();
+    if (now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      setMode(MODES[(MODES.indexOf(S.mode) + 1) % 3]); toast({ flat: '平面模式', edge: '邊緣模式', prot: '量角器模式' }[S.mode]); lastTap.t = 0;
+    } else lastTap = { t: now, x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener('resize', function () { if (S.mode === 'edge') drawTubeTicks(); });
+
+  // ---------- lock / sound ----------
+  $('#lockBtn').addEventListener('click', function () {
+    R.locked = !R.locked;
+    this.setAttribute('aria-pressed', String(R.locked));
+    document.body.classList.toggle('is-locked', R.locked);
+    if (R.locked) tone(false);
+    draw(true);
+  });
+  var AC = null, osc = null, gain = null, nextBeep = 0;
+  function ensureAudio() {
+    if (!AC) {
+      var C = window.AudioContext || window.webkitAudioContext; if (!C) return false;
+      try { AC = new C(); } catch (e) { return false; }
+    }
+    if (AC.state === 'suspended') AC.resume().catch(function () {});
+    return true;
+  }
+  function tone(on) {
+    if (!AC) return;
+    if (on && !osc) {
+      osc = AC.createOscillator(); gain = AC.createGain(); osc.frequency.value = 1046; osc.type = 'sine';
+      gain.gain.setValueAtTime(0, AC.currentTime); gain.gain.linearRampToValueAtTime(0.12, AC.currentTime + 0.03);
+      osc.connect(gain).connect(AC.destination); osc.start();
+    } else if (!on && osc) {
+      var o = osc, g = gain; osc = gain = null;
+      try { g.gain.setTargetAtTime(0, AC.currentTime, 0.02); o.stop(AC.currentTime + 0.15); } catch (e) {}
+    }
+  }
+  function beep() {
+    var o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.frequency.value = 880; o.type = 'sine';
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(g).connect(AC.destination); o.start(t); o.stop(t + 0.07);
+  }
+  function setSound(on) {
+    S.sound = on && ensureAudio(); save();
+    $('#sndBtn').setAttribute('aria-pressed', String(S.sound));
+    if (!S.sound) tone(false);
+  }
+  $('#sndBtn').addEventListener('click', function () { setSound(!S.sound); if (S.sound) toast('越接近水平嗶聲越快，水平時持續音（請關閉靜音模式）'); });
+  // sound needs a gesture to start; a saved "on" shows as off until tapped
+  S.sound = false;
+
+  // ---------- calibration / zero ----------
+  var cal = { step: 0, r1: null, mode: 'flat' };
+  function sample(ms, cb) {
+    R.capture = [];
+    setTimeout(function () {
+      var c = R.capture || []; R.capture = null;
+      if (!c.length) { cb(null); return; }
+      var mx = 0, my = 0, me = 0, e0 = c[0].edge;
+      c.forEach(function (t) { mx += t.x; my += t.y; me += e0 + norm180(t.edge - e0); });
+      cb({ x: mx / c.length, y: my / c.length, edge: norm180(me / c.length) });
+    }, ms);
+  }
+  function countdown(el, n, done) {
+    el.textContent = n + '…';
+    if (n <= 0) { el.textContent = '記錄中'; done(); return; }
+    setTimeout(function () { countdown(el, n - 1, done); }, 700);
+  }
+  function calRender() {
+    var edge = cal.mode === 'edge';
+    $('#cs1t').textContent = edge ? '把手機長邊貼著平直的邊緣立起' : '平放在桌面或層板上';
+    $('#cs2t').textContent = edge ? '左右掉頭，貼回同一段邊緣' : '原地旋轉 180°';
+    $('#cs2d').textContent = edge ? '螢幕朝向另一面也沒關係：按下後有 3 秒可以翻轉並放好。' : '把手機掉頭放回同一位置，再按「記錄第二點」。';
+    $('#cs1').className = 'stepc' + (cal.step === 0 ? ' on' : ' done');
+    $('#cs2').className = 'stepc' + (cal.step === 1 ? ' on' : cal.step > 1 ? ' done' : '');
+    $('#calStep').textContent = cal.step === 0 ? '記錄第一點' : cal.step === 1 ? '記錄第二點' : '完成';
+    var o = S.offset;
+    $('#calNow').textContent = '目前偏移：' + (edge ? '邊緣 ' + fmt(o.edge, 2) + '°' : 'X ' + fmt(o.x, 2) + '°、Y ' + fmt(o.y, 2) + '°');
+  }
+  function openCal() {
+    cal = { step: 0, r1: null, mode: S.mode === 'edge' ? 'edge' : 'flat' };
+    $('#cd1').textContent = ''; $('#cd2').textContent = '';
+    calRender(); $('#calDlg').hidden = false; $('#calStep').disabled = false; $('#calStep').focus();
+  }
+  $('#calBtn').addEventListener('click', function () {
+    if (S.mode === 'prot') {
+      if (!R.g) return;
+      R.ref = R.g.slice(); R.p = 0; R.hp = [];
+      $('#pRef').textContent = '基準：已歸零'; $('#pClear').hidden = false; toast('已把目前姿態設為 0°'); buzz(20); return;
+    }
+    openCal();
+  });
+  $('#pClear').addEventListener('click', function () { R.ref = null; R.p = null; $('#pRef').textContent = '基準：水平面'; this.hidden = true; });
+  $('#calCancel').addEventListener('click', function () { $('#calDlg').hidden = true; R.capture = null; });
+  $('#calReset').addEventListener('click', function () {
+    if (cal.mode === 'edge') S.offset.edge = 0; else { S.offset.x = 0; S.offset.y = 0; }
+    save(); calRender(); toast('已清除校正');
+  });
+  $('#calStep').addEventListener('click', function () {
+    var btn = this;
+    if (cal.step >= 2) { $('#calDlg').hidden = true; return; }
+    if (!R.got) { toast('還沒有感測器資料'); return; }
+    btn.disabled = true;
+    var cd = cal.step === 0 ? $('#cd1') : $('#cd2');
+    countdown(cd, cal.step === 1 && cal.mode === 'edge' ? 4 : 2, function () {
+      sample(600, function (r) {
+        btn.disabled = false;
+        if (!r) { cd.textContent = '沒有資料'; return; }
+        cd.textContent = '✓'; buzz(30);
+        if (cal.step === 0) { cal.r1 = r; cal.step = 1; }
+        else {
+          if (cal.mode === 'edge') S.offset.edge = calibOffsetAngle(cal.r1.edge, r.edge);
+          else { S.offset.x = calibOffset(cal.r1.x, r.x); S.offset.y = calibOffset(cal.r1.y, r.y); }
+          if (Math.abs(S.offset.x) > 8 || Math.abs(S.offset.y) > 8 || Math.abs(S.offset.edge) > 8) {
+            S.offset = { x: 0, y: 0, edge: 0 }; cd.textContent = '偏差過大，請確認兩次放在同一位置'; cal.step = 0; calRender(); return;
+          }
+          save(); cal.step = 2; toast('校正完成');
+        }
+        calRender();
+      });
+    });
+  });
+
+  // ---------- drawing ----------
+  var hint = null;
+  function setStatus(kind, text, action) {
+    var el = $('#status');
+    el.className = 'status' + (kind ? ' ' + kind : '');
+    var key = kind + '|' + text + '|' + (action ? action.label : '');
+    if (el.dataset.key === key) return;
+    el.dataset.key = key;
+    $('#statusText').textContent = text;
+    var old = el.querySelector('button.link'); if (old) old.remove();
+    if (action) { var b = document.createElement('button'); b.type = 'button'; b.className = 'link'; b.textContent = action.label; b.addEventListener('click', action.fn); el.querySelector('.pill').appendChild(b); }
+  }
+  function readings() {
+    if (R.x == null) return null;
+    var o = S.offset, x = R.x - o.x, y = R.y - o.y, e = norm180(R.e - o.edge), ed = edgeDeviation(e);
+    return { x: x, y: y, e: e, dev: ed.dev, ref: ed.ref, p: R.p, gz: R.g ? R.g[2] : 9.81,
+      sx: stdev(R.hx), sy: stdev(R.hy), se: stdev(R.he), sp: stdev(R.hp) };
+  }
+  var shown = null;
+  function draw(force) {
+    var r = readings();
+    if (R.locked && !force) return;
+    if (R.locked && shown) r = shown;
+    if (!r) return;
+    shown = r;
+    var vial = $('#vial'), m, unsteady;
+    if (S.mode === 'flat') {
+      var w = vial.offsetWidth || 280, k = w / 280, off = bubbleOffset(r.x, r.y, 10, 108 * k);
+      $('#fBubble').style.transform = 'translate(' + off[0].toFixed(2) + 'px,' + off[1].toFixed(2) + 'px)';
+      $('#r1').innerHTML = fmt(r.x) + '<small>°</small>';
+      $('#r2').innerHTML = fmt(r.y) + '<small>°</small>';
+      var tot = Math.hypot(r.x, r.y);
+      $('#r3').innerHTML = (tot > 60 ? '—' : slopePct(tot).toFixed(1)) + '<small>%</small>';
+      m = Math.max(Math.abs(r.x), Math.abs(r.y)); unsteady = Math.max(r.sx, r.sy) > 0.5;
+    } else if (S.mode === 'edge') {
+      var fl = $('#tube .fluid'), half = (fl.offsetWidth || 340) / 2 - 40;
+      $('#eBubble').style.transform = 'translateX(' + tubeOffset(r.dev, 5, half).toFixed(2) + 'px)';
+      $('#eBig').innerHTML = fmt(r.dev) + '<small>°</small>';
+      $('#eRef').textContent = r.ref === 'plumb' ? '以垂直為準' : '以水平為準';
+      $('#eSlope').textContent = slopePct(Math.abs(r.dev)).toFixed(1) + '%';
+      $('#eRaw').textContent = fmt(r.e) + '°';
+      $('#r1').innerHTML = fmt(r.dev) + '<small>°</small>';
+      $('#r2').innerHTML = slopePct(Math.abs(r.dev)).toFixed(1) + '<small>%</small>';
+      $('#r3').innerHTML = fmt(r.e) + '<small>°</small>';
+      m = r.dev; unsteady = r.se > 0.5;
+    } else {
+      var a = Math.max(0, Math.min(180, r.p || 0)), rad = a / DEG, cx = 160, cy = 172, Rr = 118;
+      $('#pNeedle').setAttribute('transform', 'rotate(' + (-a).toFixed(2) + ' 160 172)');
+      $('#pSweep').setAttribute('d', a < 0.05 ? '' : 'M160 172 L' + (cx + Rr) + ' 172 A' + Rr + ' ' + Rr + ' 0 0 0 ' + (cx + Math.cos(rad) * Rr).toFixed(2) + ' ' + (cy - Math.sin(rad) * Rr).toFixed(2) + ' Z');
+      $('#pBig').innerHTML = fmt(a) + '<small>°</small>';
+      $('#r1').innerHTML = fmt(a) + '<small>°</small>';
+      $('#r2').innerHTML = (a > 80 ? '—' : slopePct(a).toFixed(1)) + '<small>%</small>';
+      var flat = R.g ? tilt(R.g[0], R.g[1], R.g[2], 0).total : 0;
+      $('#r3').innerHTML = fmt(flat) + '<small>°</small>';
+      m = a; unsteady = r.sp > 0.5;
+    }
+    if (R.locked) { setStatus('', '讀數已鎖定，再按一次解除'); return; }
+    var lv = levelState(R.level, m, 0.3, 0.4);
+    if (lv && !R.level) buzz(40);
+    R.level = lv;
+    document.body.classList.toggle('is-level', lv);
+    if (S.mode === 'flat' && Math.abs(r.gz) < 2) setStatus('warn', '手機接近直立，平面模式不準', { label: '改用邊緣', fn: function () { setMode('edge'); } });
+    else if (unsteady) setStatus('warn', '請保持穩定');
+    else if (lv) setStatus('level', S.mode === 'prot' ? '與基準相同' : S.mode === 'edge' && r.ref === 'plumb' ? '已垂直' : '已水平');
+    else setStatus('', S.mode === 'prot' ? '相對角度' : '偏離 ' + fmt(Math.abs(m)) + '°');
+    // sound
+    if (S.sound && AC && document.visibilityState === 'visible') {
+      var iv = beepInterval(m);
+      if (iv === 0) tone(true);
+      else { tone(false); var now = performance.now(); if (iv != null && now >= nextBeep) { beep(); nextBeep = now + iv; } }
+    }
+  }
+  function loop() {
+    cancelAnimationFrame(R.raf);
+    var f = function () { if (!R.running || document.visibilityState === 'hidden') return; draw(); R.raf = requestAnimationFrame(f); };
+    R.raf = requestAnimationFrame(f);
+  }
+
+  setMode(S.mode);
+  // for demo/verify.js
+  window.__level = { R: R, S: S, readings: readings, setForceAngle: function (a) { R.forceAngle = a; }, draw: draw };
+})();
+</script>

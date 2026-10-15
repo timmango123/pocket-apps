@@ -1,0 +1,962 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>錄音機</title>
+<style>
+/* A pocket field recorder: warm paper body, a dark glass display with a scrolling level meter, one big red key. */
+:root {
+  --bg: #f3eee5;
+  --card: #fffbf4;
+  --card-2: #f7f1e6;
+  --ink: #1f1b16;
+  --ink-2: #4a4239;
+  --muted: #6e6457;
+  --line: #e2d8c7;
+  --line-2: #cbbfa9;
+  --red: #c8102e;
+  --red-ink: #ffffff;
+  --red-soft: #fbe2e2;
+  --amber: #b86e00;
+  --sel: rgba(232, 168, 56, 0.20);
+  --wave: #2b3446;
+  --wave-off: #b9b0a2;
+  --played: #c8102e;
+  --screen: #16181c;
+  --screen-line: #2a2e35;
+  --screen-ink: #f4f1ea;
+  --screen-dim: #8c919b;
+  --live: #ff5a6a;
+  --ok: #24764a;
+  --focus: #1b56d6;
+  --shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 10px 30px -18px rgba(60, 40, 10, .45);
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12110f; --card: #1b1916; --card-2: #23201c; --ink: #f0eadf; --ink-2: #d2c9bb; --muted: #a39887;
+    --line: #2f2b26; --line-2: #48423a; --red: #ff4d5e; --red-ink: #1a0004; --red-soft: #3a1418; --amber: #f0a83c;
+    --sel: rgba(240, 168, 60, 0.16); --wave: #d6dde9; --wave-off: #59524a; --played: #ff6b79;
+    --screen: #0a0b0d; --screen-line: #24272d; --live: #ff6474; --ok: #6fd39a; --focus: #8fb2ff;
+    --shadow: 0 10px 30px -18px rgba(0,0,0,.9);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12110f; --card: #1b1916; --card-2: #23201c; --ink: #f0eadf; --ink-2: #d2c9bb; --muted: #a39887;
+  --line: #2f2b26; --line-2: #48423a; --red: #ff4d5e; --red-ink: #1a0004; --red-soft: #3a1418; --amber: #f0a83c;
+  --sel: rgba(240, 168, 60, 0.16); --wave: #d6dde9; --wave-off: #59524a; --played: #ff6b79;
+  --screen: #0a0b0d; --screen-line: #24272d; --live: #ff6474; --ok: #6fd39a; --focus: #8fb2ff;
+  --shadow: 0 10px 30px -18px rgba(0,0,0,.9);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans);
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  -webkit-tap-highlight-color: transparent; overflow-x: hidden;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.app { max-width: 1120px; margin: 0 auto; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 12px; }
+.top h1 { margin: 0; font-size: 20px; letter-spacing: .04em; display: flex; align-items: center; gap: 9px; font-weight: 700; }
+.top h1 .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+.usage { font: 12.5px/1 var(--mono); color: var(--muted); background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; white-space: nowrap; }
+
+.cols { display: block; }
+.rec { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 12px 12px 16px; box-shadow: var(--shadow); }
+.screen { background: var(--screen); border: 1px solid var(--screen-line); border-radius: 16px; padding: 10px 12px 12px; color: var(--screen-ink); position: relative; overflow: hidden; }
+.screen::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.06), transparent 40%); }
+.screen-top { display: flex; justify-content: space-between; align-items: center; font: 11.5px/1 var(--mono); letter-spacing: .08em; color: var(--screen-dim); text-transform: uppercase; }
+.state { display: inline-flex; align-items: center; gap: 6px; }
+.state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--screen-dim); }
+.rec.on .state { color: var(--live); }
+.rec.on .state::before { background: var(--live); animation: blink 1s steps(2, start) infinite; }
+.rec.paused .state { color: #f0b54a; }
+.rec.paused .state::before { background: #f0b54a; }
+@keyframes blink { to { visibility: hidden; } }
+#live { display: block; width: 100%; height: 120px; margin: 8px 0 4px; }
+.timer { font: 600 48px/1 var(--mono); letter-spacing: .02em; text-align: center; font-variant-numeric: tabular-nums; padding: 2px 0 2px; }
+.timer .tenth { color: var(--screen-dim); }
+.ctrls { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 16px; }
+.round { width: 56px; height: 56px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--card-2); display: grid; place-items: center; transition: opacity .15s, transform .1s; }
+.round:active:not(:disabled) { transform: scale(.94); }
+.round:disabled { opacity: .35; }
+.round svg { width: 22px; height: 22px; }
+.recbtn { width: 88px; height: 88px; border-radius: 50%; border: 0; padding: 0; background: var(--card); position: relative; display: grid; place-items: center; box-shadow: 0 0 0 3px var(--line-2) inset, 0 6px 18px -8px rgba(200, 16, 46, .6); }
+.recbtn .core { width: 66px; height: 66px; border-radius: 50%; background: var(--red); transition: width .22s ease, height .22s ease, border-radius .22s ease; }
+.recbtn::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid var(--red); opacity: 0; pointer-events: none; }
+.rec.on .recbtn .core, .rec.paused .recbtn .core { width: 34px; height: 34px; border-radius: 8px; }
+.rec.on .recbtn::after { animation: pulse 1.4s ease-out infinite; }
+@keyframes pulse { 0% { transform: scale(.92); opacity: .75; } 100% { transform: scale(1.18); opacity: 0; } }
+.recbtn:disabled { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { .rec.on .recbtn::after, .rec.on .state::before { animation: none; } .rec.on .recbtn::after { opacity: .6; } }
+.hint { margin: 12px 4px 0; text-align: center; color: var(--muted); font-size: 13px; }
+.notice { margin: 12px 2px 0; padding: 11px 13px; border-radius: 12px; background: var(--red-soft); color: var(--ink); font-size: 13.5px; border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+.notice a { color: var(--red); font-weight: 600; word-break: break-all; }
+.notice b { display: block; margin-bottom: 3px; }
+
+.banner { margin-top: 12px; background: var(--card); border: 1px dashed var(--amber); border-radius: 14px; padding: 11px 13px; font-size: 13.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.banner span { flex: 1 1 180px; }
+.chip { border: 1px solid var(--line-2); background: var(--card-2); border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; }
+.chip.solid { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.listhead { display: flex; align-items: baseline; justify-content: space-between; margin: 22px 4px 8px; }
+.listhead h2 { margin: 0; font-size: 15px; letter-spacing: .06em; color: var(--ink-2); }
+.listhead span { color: var(--muted); font-size: 13px; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.memo { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; overflow: clip; }
+.memo.open { border-color: var(--line-2); box-shadow: var(--shadow); }
+.swipe { position: relative; overflow: hidden; overflow: clip; }
+.under { position: absolute; inset: 0 0 0 auto; width: 92px; border: 0; background: var(--red); color: var(--red-ink); font-weight: 600; }
+.row { position: relative; display: flex; align-items: center; gap: 12px; padding: 11px 12px; background: var(--card); min-height: 64px; touch-action: pan-y; user-select: none; -webkit-user-select: none; transition: transform .2s ease; cursor: pointer; }
+.row.drag { transition: none; }
+.spark { width: 52px; height: 32px; flex: none; border-radius: 8px; background: var(--card-2); }
+.info { flex: 1; min-width: 0; }
+.nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meta { font: 12.5px/1.3 var(--mono); color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag { font-family: var(--sans); font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--card-2); border: 1px solid var(--line); margin-left: 4px; }
+.chev { width: 10px; height: 10px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: 0 6px 4px 0; transition: transform .2s; flex: none; }
+.memo.open .chev { transform: rotate(-135deg); margin-bottom: -4px; }
+.empty { text-align: center; color: var(--muted); padding: 28px 16px; border: 1px dashed var(--line-2); border-radius: 16px; font-size: 14px; }
+.empty svg { display: block; margin: 0 auto 8px; opacity: .6; }
+
+/* editor */
+.editor { padding: 4px 12px 14px; border-top: 1px solid var(--line); }
+.ed-title { display: none; }
+.wavewrap { margin: 0 -12px; padding: 0 12px; touch-action: none; }
+.wavebox { position: relative; height: 96px; margin: 12px 0 6px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; border-radius: 10px; background: var(--card-2); }
+.wavebox canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 10px; }
+.shade { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); pointer-events: none; }
+.shade.l { left: 0; border-radius: 10px 0 0 10px; }
+.shade.r { right: 0; border-radius: 0 10px 10px 0; }
+.handle { position: absolute; top: 0; bottom: 0; width: 22px; margin-left: -11px; pointer-events: none; outline: none; }
+.handle::before { content: ""; position: absolute; left: 9.5px; top: -3px; bottom: -3px; width: 3px; background: var(--amber); border-radius: 2px; }
+.handle span { position: absolute; top: 50%; left: 0; width: 22px; height: 34px; margin-top: -17px; border-radius: 7px; background: var(--amber); box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.handle span::before, .handle span::after { content: ""; position: absolute; top: 9px; bottom: 9px; width: 2px; background: rgba(255,255,255,.75); border-radius: 1px; }
+.handle span::before { left: 7px; } .handle span::after { right: 7px; }
+.side .wavewrap { margin: 0 -16px; padding: 0 16px; }
+.handle:focus-visible span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.playhead { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; background: var(--played); pointer-events: none; border-radius: 1px; }
+.wavemsg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 16px; color: var(--muted); font-size: 13px; pointer-events: none; }
+.times { display: flex; justify-content: space-between; font: 12.5px/1.2 var(--mono); color: var(--muted); padding: 0 2px; }
+.times b { color: var(--amber); font-weight: 600; }
+.playrow { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.play { width: 52px; height: 52px; border-radius: 50%; border: 0; background: var(--ink); color: var(--bg); display: grid; place-items: center; flex: none; }
+.play svg { width: 22px; height: 22px; }
+.pos { font: 600 16px/1.15 var(--mono); color: var(--ink); white-space: nowrap; flex: 1; min-width: 0; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.pos small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.speeds { display: flex; background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; flex: none; }
+.speeds button { border: 0; background: none; border-radius: 8px; padding: 0 7px; min-width: 40px; height: 36px; font: 12.5px/1 var(--mono); color: var(--muted); }
+.speeds button[aria-checked="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 700; }
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.btn { min-height: 46px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card-2); display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 14.5px; padding: 0 10px; }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.accent { background: var(--amber); border-color: var(--amber); color: #fff; }
+.btn.danger { color: var(--red); }
+.btn:disabled { opacity: .4; }
+.acts .wide { grid-column: 1 / -1; }
+.ednote { margin: 10px 2px 0; font-size: 12.5px; color: var(--muted); min-height: 1em; }
+.ednote.warn { color: var(--amber); }
+
+.side { display: none; }
+
+/* sheets & toast */
+.scrim { position: fixed; inset: 0; background: rgba(10, 8, 6, .5); z-index: 30; display: flex; align-items: flex-end; justify-content: center; padding: 16px; }
+.sheet { width: 100%; max-width: 440px; background: var(--card); border-radius: 20px; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); border: 1px solid var(--line); }
+.sheet h3 { margin: 0 0 6px; font-size: 17px; }
+.sheet p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.sheet .stack { display: grid; gap: 8px; }
+.sheet input { width: 100%; min-height: 46px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card-2); color: var(--ink); padding: 0 12px; font: inherit; margin-bottom: 12px; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 10px 10px 16px; border-radius: 12px; font-size: 14px; z-index: 40; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.toast button { border: 0; background: transparent; color: var(--bg); font-weight: 700; text-decoration: underline; min-height: 32px; padding: 0 6px; }
+
+@media (min-width: 880px) {
+  .cols { display: grid; grid-template-columns: minmax(340px, 400px) 1fr; gap: 24px; align-items: start; }
+  .side { display: block; position: sticky; top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 8px 8px 8px; box-shadow: var(--shadow); min-height: 300px; }
+  .side .editor { border-top: 0; padding: 12px 16px 16px; }
+  .side .ed-title { display: block; margin: 4px 0 0; font-size: 18px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side .wavebox { height: 160px; }
+  .side-empty { display: grid; place-items: center; min-height: 280px; color: var(--muted); text-align: center; padding: 20px; }
+  .acts { grid-template-columns: repeat(3, 1fr); }
+  .acts .wide { grid-column: auto; }
+  .memo.open .chev { transform: rotate(-45deg); margin-bottom: 0; }
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <h1><span class="dot" aria-hidden="true"></span>錄音機</h1>
+    <span class="usage" id="usage" title="錄音占用的空間">已用 0 B</span>
+  </header>
+  <div class="cols">
+    <div>
+      <section class="rec" id="rec" aria-label="錄音">
+        <div class="screen">
+          <div class="screen-top"><span class="state" id="recState">待命</span><span id="recFmt"></span></div>
+          <canvas id="live" aria-hidden="true"></canvas>
+          <div class="timer" id="timer" role="timer" aria-live="off">00:00<span class="tenth">.0</span></div>
+        </div>
+        <div class="ctrls">
+          <button class="round" id="pauseBtn" type="button" disabled aria-label="暫停錄音"></button>
+          <button class="recbtn" id="recBtn" type="button" aria-label="開始錄音"><span class="core"></span></button>
+          <button class="round" id="discardBtn" type="button" disabled aria-label="捨棄這段錄音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        </div>
+        <p class="hint" id="recHint">按紅色按鈕開始錄音，錄音只存在這台裝置。</p>
+        <div class="notice" id="notice" hidden role="alert"></div>
+      </section>
+      <div class="banner" id="recover" hidden>
+        <span id="recoverMsg">上次的錄音沒有正常結束。</span>
+        <button class="chip solid" id="recoverYes" type="button">復原</button>
+        <button class="chip" id="recoverNo" type="button">捨棄</button>
+      </div>
+      <div class="listhead"><h2>我的錄音</h2><span id="count"></span></div>
+      <ul class="list" id="list"></ul>
+      <div class="empty" id="empty">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        還沒有錄音。錄完會出現在這裡，可以播放、剪掉頭尾再下載。
+      </div>
+    </div>
+    <aside class="side" id="side" aria-label="播放與剪輯">
+      <div class="side-empty" id="sideEmpty">從左邊選一段錄音<br>來播放與剪輯</div>
+    </aside>
+  </div>
+</div>
+
+<div class="editor" id="editor" hidden>
+  <div class="ed-title" id="edTitle"></div>
+  <div class="wavewrap" id="wavewrap"><div class="wavebox" id="wavebox" aria-label="波形：點一下跳到該位置，拖曳黃色把手選擇保留範圍">
+    <canvas id="thumb"></canvas>
+    <div class="shade l" id="shadeL"></div><div class="shade r" id="shadeR"></div>
+    <div class="playhead" id="playhead"></div>
+    <div class="handle" id="h0" role="slider" tabindex="0" aria-label="剪輯起點"><span></span></div>
+    <div class="handle" id="h1" role="slider" tabindex="0" aria-label="剪輯終點"><span></span></div>
+    <div class="wavemsg" id="waveMsg" hidden></div>
+  </div></div>
+  <div class="times"><span id="tA">00:00.0</span><b id="tLen"></b><span id="tB">00:00.0</span></div>
+  <div class="playrow">
+    <button class="play" id="playBtn" type="button" aria-label="播放"></button>
+    <div class="pos"><span id="posNow">00:00.0</span><small>/ <span id="posDur">00:00.0</span></small></div>
+    <div class="speeds" role="radiogroup" aria-label="播放速度" id="speeds">
+      <button type="button" role="radio" data-r="0.75" aria-checked="false">0.75×</button><button type="button" role="radio" data-r="1" aria-checked="true">1×</button><button type="button" role="radio" data-r="1.5" aria-checked="false">1.5×</button><button type="button" role="radio" data-r="2" aria-checked="false">2×</button>
+    </div>
+  </div>
+  <div class="acts">
+    <button class="btn" id="autoBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h3M18 12h3M8 6v12M16 6v12M11 9v6M13 8v8"/></svg>自動修剪</button>
+    <button class="btn accent" id="applyBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.5 8.5 20 18M8.5 15.5 20 6"/></svg>套用剪輯</button>
+    <button class="btn primary wide" id="dlBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span id="dlLabel">下載</span></button>
+    <button class="btn" id="renameBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM13 7l4 4"/></svg>重新命名</button>
+    <button class="btn danger" id="delBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>刪除</button>
+  </div>
+  <p class="ednote" id="edNote"></p>
+</div>
+
+<div class="scrim" id="trimSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="trimTitle">
+    <h3 id="trimTitle">套用剪輯</h3>
+    <p id="trimDesc"></p>
+    <div class="stack">
+      <button class="btn accent" id="trimNew" type="button">另存成新錄音（保留原檔）</button>
+      <button class="btn" id="trimReplace" type="button">取代原錄音</button>
+      <button class="btn" id="trimCancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
+<div class="scrim" id="nameSheet" hidden>
+  <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="nameTitle" id="nameForm">
+    <h3 id="nameTitle">重新命名</h3>
+    <input id="nameInput" maxlength="60" autocomplete="off" aria-label="錄音名稱">
+    <div class="stack">
+      <button class="btn primary" type="submit">儲存</button>
+      <button class="btn" id="nameCancel" type="button">取消</button>
+    </div>
+  </form>
+</div>
+<div class="toast" id="toast" hidden role="status"><span id="toastMsg"></span><button id="toastAct" type="button" hidden></button></div>
+<audio id="player" preload="auto" hidden></audio>
+
+<script>
+/*CORE-START*/
+const MIME_ORDER = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+function pickMime(isSupported) {
+  for (const m of MIME_ORDER) { try { if (isSupported(m)) return m; } catch (e) { /* ignore */ } }
+  return '';
+}
+function extForMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('wav')) return 'wav';
+  if (m.includes('mp4') || m.includes('aac') || m.includes('m4a')) return 'm4a';
+  if (m.includes('ogg')) return 'ogg';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  return 'webm';
+}
+// mm:ss.s, or h:mm:ss.s past an hour; never rounds up into "60"
+function fmtClock(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0;
+  const t = Math.floor(sec * 10 + 1e-6), d = t % 10, s = Math.floor(t / 10), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = s % 60;
+  const p = n => String(n).padStart(2, '0');
+  return (h ? h + ':' + p(m) : p(m)) + ':' + p(ss) + '.' + d;
+}
+function fmtBytes(n) {
+  if (!(n > 0)) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+function defaultName(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `錄音 ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function safeFileName(name, ext) {
+  let s = String(name || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
+  if (!s) s = 'recording';
+  if (s.length > 80) s = s.slice(0, 80).trim();
+  return s + '.' + ext;
+}
+// Min/max per bucket over the whole signal: {min:Float32Array, max:Float32Array}
+function computePeaks(data, n) {
+  n = Math.max(1, n | 0);
+  const min = new Float32Array(n), max = new Float32Array(n), len = data.length;
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * len / n), b = Math.max(a + 1, Math.floor((i + 1) * len / n));
+    let lo = 0, hi = 0;
+    for (let j = a; j < b && j < len; j++) { const v = data[j]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    min[i] = lo; max[i] = hi;
+  }
+  return { min, max };
+}
+// Re-bucket cached peaks to w columns (w may be larger or smaller than the cache)
+function peaksForWidth(peaks, w) {
+  const n = peaks.min.length, min = new Float32Array(w), max = new Float32Array(w);
+  if (!n) return { min, max };
+  for (let x = 0; x < w; x++) {
+    const a = Math.floor(x * n / w), b = Math.max(a + 1, Math.floor((x + 1) * n / w));
+    let lo = 0, hi = 0;
+    for (let i = a; i < b && i < n; i++) { if (peaks.min[i] < lo) lo = peaks.min[i]; if (peaks.max[i] > hi) hi = peaks.max[i]; }
+    min[x] = lo; max[x] = hi;
+  }
+  return { min, max };
+}
+// Move one trim handle, keeping 0 <= a <= b - minLen <= dur
+function setHandle(sel, which, t, dur, minLen) {
+  minLen = Math.min(minLen, dur);
+  let a = sel.a, b = sel.b;
+  if (which === 0) a = Math.min(Math.max(0, t), b - minLen);
+  else b = Math.max(Math.min(dur, t), a + minLen);
+  a = Math.max(0, a); b = Math.min(dur, b);
+  return { a, b };
+}
+function isFullRange(sel, dur) { return sel.a <= 0.01 && sel.b >= dur - 0.01; }
+// Seconds -> [start, end) sample indices inside a buffer of len samples
+function sampleRange(a, b, sr, len) {
+  const s0 = Math.max(0, Math.min(len, Math.round(a * sr))), s1 = Math.max(s0, Math.min(len, Math.round(b * sr)));
+  return [s0, s1];
+}
+function sliceChannels(chs, s0, s1) { return chs.map(c => c.slice(s0, s1)); }
+// Two channels that carry the same signal are written as mono
+function sameChannels(chs) {
+  if (chs.length < 2) return true;
+  const a = chs[0], b = chs[1], step = Math.max(1, Math.floor(a.length / 4000));
+  for (let i = 0; i < a.length; i += step) if (Math.abs(a[i] - b[i]) > 1e-4) return false;
+  return true;
+}
+// 16-bit PCM WAV with the standard 44-byte header
+function encodeWAV(chs, sampleRate) {
+  const nc = chs.length, len = nc ? chs[0].length : 0, dataSize = len * nc * 2;
+  const buf = new ArrayBuffer(44 + dataSize), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + dataSize, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nc, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * nc * 2, true); v.setUint16(32, nc * 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, dataSize, true);
+  let o = 44;
+  for (let i = 0; i < len; i++) for (let c = 0; c < nc; c++) {
+    let s = chs[c][i]; s = s > 1 ? 1 : s < -1 ? -1 : (s || 0);
+    v.setInt16(o, s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff), true); o += 2;
+  }
+  return buf;
+}
+// Silence finder for 自動修剪: first/last 50 ms window whose RMS beats -45 dBFS, padded by 100 ms
+function findSoundBounds(data, sr, opt) {
+  const o = Object.assign({ win: 0.05, db: -45, pad: 0.1 }, opt || {});
+  const W = Math.max(1, Math.round(o.win * sr)), thr = Math.pow(10, o.db / 20), n = Math.ceil(data.length / W), dur = data.length / sr;
+  const loud = i => { let s = 0; const a = i * W, b = Math.min(data.length, a + W); for (let j = a; j < b; j++) s += data[j] * data[j]; return Math.sqrt(s / (b - a)) > thr; };
+  let i0 = -1, i1 = -1;
+  for (let i = 0; i < n; i++) if (loud(i)) { i0 = i; break; }
+  if (i0 < 0) return null;
+  for (let i = n - 1; i >= i0; i--) if (loud(i)) { i1 = i; break; }
+  return { a: Math.max(0, i0 * W / sr - o.pad), b: Math.min(dur, Math.min(data.length, (i1 + 1) * W) / sr + o.pad) };
+}
+function mixdown(chs) {
+  if (chs.length === 1) return chs[0];
+  const out = new Float32Array(chs[0].length);
+  for (const c of chs) for (let i = 0; i < out.length; i++) out[i] += c[i] / chs.length;
+  return out;
+}
+/*CORE-END*/
+
+(() => {
+  'use strict';
+  // The editor moves in and out of the document, so ids are looked up once while everything is attached
+  const EL = {}; document.querySelectorAll('[id]').forEach(e => { EL[e.id] = e; });
+  const $ = id => EL[id] || (EL[id] = document.getElementById(id));
+  const SITE = 'https://timmango123.github.io/pocket-apps/tools/#voice-memo';
+  const MAX_SEC = 3600, MIN_SEC = 0.5, PEAK_N = 800, MIN_TRIM = 0.1;
+  const ICON = {
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>',
+    resume: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="var(--red)"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>'
+  };
+  $('pauseBtn').innerHTML = ICON.pause; $('playBtn').innerHTML = ICON.play;
+
+  /* ---------- toast ---------- */
+  let toastT = 0;
+  function toast(msg, act, fn, ms) {
+    $('toastMsg').textContent = msg;
+    const b = $('toastAct'); b.hidden = !act; b.textContent = act || ''; b.onclick = () => { $('toast').hidden = true; fn && fn(); };
+    $('toast').hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { $('toast').hidden = true; }, ms || (act ? 6000 : 2600));
+  }
+
+  /* ---------- downloads ---------- */
+  let DL = null;
+  (async () => { try { DL = await window.claude?.use?.('downloads') || null; } catch (e) { DL = null; } })();
+  async function saveFile(filename, blob) {
+    if (DL) {
+      try { await DL.save({ filename, data: blob }); toast('已送出下載：' + filename); }
+      catch (e) { if (!/declin|cancel|denied/i.test(String(e && (e.message || e.name)))) toast('下載失敗'); }
+      return;
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('已下載：' + filename);
+  }
+
+  /* ---------- storage (IndexedDB) ---------- */
+  let db = null;
+  const memStore = { memos: new Map(), pending: new Map() };
+  function openDB() {
+    return new Promise(res => {
+      let r;
+      try { r = indexedDB.open('voice-memo', 1); } catch (e) { return res(null); }
+      r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('memos')) d.createObjectStore('memos', { keyPath: 'id' }); if (!d.objectStoreNames.contains('pending')) d.createObjectStore('pending', { keyPath: 'id' }); };
+      r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+    });
+  }
+  function tx(store, mode, fn) {
+    if (!db) { const m = memStore[store]; return Promise.resolve(fn(null, m)); }
+    return new Promise((res, rej) => {
+      let out; try { const t = db.transaction(store, mode), s = t.objectStore(store); const q = fn(s); t.oncomplete = () => res(q && 'result' in q ? q.result : out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }
+      catch (e) { rej(e); }
+    });
+  }
+  const dbAll = store => db ? tx(store, 'readonly', s => s.getAll()) : Promise.resolve([...memStore[store].values()]);
+  const dbPut = (store, v) => db ? tx(store, 'readwrite', s => s.put(v)) : (memStore[store].set(v.id, v), Promise.resolve());
+  const dbDel = (store, id) => db ? tx(store, 'readwrite', s => s.delete(id)) : (memStore[store].delete(id), Promise.resolve());
+  let persistAsked = false;
+  function askPersist() { if (persistAsked) return; persistAsked = true; try { navigator.storage?.persist?.().catch(() => {}); } catch (e) { /* ignore */ } }
+
+  /* ---------- state ---------- */
+  let memos = [];
+  const sel = { id: null, buf: null, bad: false, a: 0, b: 0, dur: 0, url: null, rate: 1, decodeTok: 0 };
+  const player = $('player');
+  const memo = id => memos.find(m => m.id === id);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  function updateUsage() {
+    const total = memos.reduce((s, m) => s + (m.size || 0), 0);
+    $('usage').textContent = '已用 ' + fmtBytes(total);
+    $('count').textContent = memos.length ? memos.length + ' 段' : '';
+    $('empty').hidden = memos.length > 0;
+  }
+
+  /* ---------- list ---------- */
+  const isDesk = matchMedia('(min-width: 880px)');
+  function drawSpark(cv, peaks) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), w = 52, h = 32;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const c = cv.getContext('2d'); c.scale(dpr, dpr);
+    const css = getComputedStyle(document.documentElement);
+    c.fillStyle = css.getPropertyValue('--wave-off').trim() || '#999';
+    const bars = 13, bw = 2, gap = (w - 8 - bars * bw) / (bars - 1);
+    let p = null;
+    if (peaks && peaks.min && peaks.min.length) p = peaksForWidth({ min: Float32Array.from(peaks.min), max: Float32Array.from(peaks.max) }, bars);
+    for (let i = 0; i < bars; i++) {
+      const amp = p ? Math.max(Math.abs(p.min[i]), p.max[i]) : 0.12 + 0.1 * Math.sin(i * 1.7) ** 2;
+      const bh = Math.max(2, Math.min(h - 8, Math.pow(Math.min(1, amp), 0.6) * (h - 8)));
+      if (p) c.fillStyle = css.getPropertyValue('--wave').trim();
+      c.fillRect(4 + i * (bw + gap), (h - bh) / 2, bw, bh);
+    }
+  }
+  function render() {
+    const ed = $('editor'); if (ed.parentNode) ed.parentNode.removeChild(ed);
+    const ul = $('list'); ul.textContent = '';
+    for (const m of memos) {
+      const li = document.createElement('li'); li.className = 'memo' + (m.id === sel.id ? ' open' : ''); li.dataset.id = m.id;
+      const kind = extForMime(m.mime).toUpperCase();
+      li.innerHTML = `<div class="swipe"><button class="under" type="button" tabindex="-1">刪除</button><div class="row" role="button" tabindex="0" aria-expanded="${m.id === sel.id}"><canvas class="spark" aria-hidden="true"></canvas><div class="info"><div class="nm"></div><div class="meta"></div></div><span class="chev" aria-hidden="true"></span></div></div><div class="slot"></div>`;
+      li.querySelector('.nm').textContent = m.name;
+      li.querySelector('.meta').innerHTML = `${fmtClock(m.duration)} · ${fmtBytes(m.size)}<span class="tag">${kind}</span>`;
+      drawSpark(li.querySelector('.spark'), m.peaks);
+      bindRow(li, m.id);
+      ul.appendChild(li);
+    }
+    updateUsage(); placeEditor();
+  }
+  function placeEditor() {
+    const ed = $('editor');
+    if (!sel.id) { ed.hidden = true; if (ed.parentNode) ed.parentNode.removeChild(ed); $('sideEmpty').hidden = false; return; }
+    let host;
+    if (isDesk.matches) { host = $('side'); $('sideEmpty').hidden = true; }
+    else { host = document.querySelector(`.memo[data-id="${sel.id}"] .slot`); $('sideEmpty').hidden = false; }
+    if (host && ed.parentNode !== host) host.appendChild(ed);
+    ed.hidden = !host;
+    requestAnimationFrame(drawThumb);
+  }
+  isDesk.addEventListener?.('change', placeEditor);
+  function bindRow(li, id) {
+    const row = li.querySelector('.row'), under = li.querySelector('.under');
+    let sx = 0, sy = 0, dx = 0, mode = null, open = false, pid = null;
+    const setX = x => { row.style.transform = x ? `translateX(${x}px)` : ''; };
+    row.addEventListener('pointerdown', e => { if (e.button) return; sx = e.clientX; sy = e.clientY; dx = 0; mode = 'maybe'; pid = e.pointerId; });
+    row.addEventListener('pointermove', e => {
+      if (e.pointerId !== pid || !mode) return;
+      const ddx = e.clientX - sx, ddy = e.clientY - sy;
+      if (mode === 'maybe') { if (Math.abs(ddx) > 10 && Math.abs(ddx) > Math.abs(ddy) * 1.3) { mode = 'swipe'; row.classList.add('drag'); try { row.setPointerCapture(pid); } catch (er) { /* ignore */ } } else if (Math.abs(ddy) > 10) mode = null; }
+      if (mode === 'swipe') { dx = Math.max(-110, Math.min(0, (open ? -92 : 0) + ddx)); setX(dx); }
+    });
+    const end = e => {
+      if (e.pointerId !== pid) return;
+      row.classList.remove('drag');
+      if (mode === 'swipe') { open = dx < -50; setX(open ? -92 : 0); row.dataset.swiped = '1'; setTimeout(() => { delete row.dataset.swiped; }, 50); }
+      mode = null; pid = null;
+    };
+    row.addEventListener('pointerup', end); row.addEventListener('pointercancel', end);
+    row.addEventListener('click', () => { if (row.dataset.swiped) return; if (open) { open = false; setX(0); return; } toggle(id); });
+    row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(id); } else if (e.key === 'Delete') removeMemo(id); });
+    under.addEventListener('click', () => removeMemo(id));
+  }
+  function toggle(id) { if (sel.id === id && !isDesk.matches) closeSel(); else openSel(id); }
+
+  /* ---------- selection / playback ---------- */
+  let decodeCtx = null;
+  function decode(blob) {
+    return blob.arrayBuffer().then(ab => {
+      if (!decodeCtx) { const O = window.OfflineAudioContext || window.webkitOfflineAudioContext; decodeCtx = new O(1, 1, 48000); }
+      return new Promise((res, rej) => { try { const p = decodeCtx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); } catch (e) { rej(e); } });
+    });
+  }
+  function closeSel() {
+    player.pause(); stopPlayLoop();
+    if (sel.url) { URL.revokeObjectURL(sel.url); sel.url = null; }
+    try { player.removeAttribute('src'); player.load(); } catch (e) { /* ignore */ }
+    sel.id = null; sel.buf = null; sel.bad = false; sel.decodeTok++;
+    render();
+  }
+  function openSel(id) {
+    const m = memo(id); if (!m) return;
+    if (sel.id && sel.id !== id) { player.pause(); stopPlayLoop(); }
+    if (sel.url) URL.revokeObjectURL(sel.url);
+    sel.id = id; sel.buf = null; sel.bad = false; sel.dur = m.duration; sel.a = 0; sel.b = m.duration;
+    sel.url = URL.createObjectURL(m.blob); player.src = sel.url; setRate(sel.rate);
+    $('edTitle').textContent = m.name;
+    render(); updateEditor();
+    const tok = ++sel.decodeTok;
+    $('waveMsg').hidden = !!m.peaks; $('waveMsg').textContent = '讀取波形中…';
+    decode(m.blob).then(buf => {
+      if (tok !== sel.decodeTok) return;
+      sel.buf = buf;
+      const chs = []; for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+      let dirty = false;
+      if (Math.abs(buf.duration - m.duration) > 0.05) { m.duration = buf.duration; dirty = true; }
+      if (!m.peaks) { const pk = computePeaks(mixdown(chs), PEAK_N); m.peaks = { min: Array.from(pk.min, v => +v.toFixed(3)), max: Array.from(pk.max, v => +v.toFixed(3)) }; dirty = true; }
+      if (isFullRange(sel, sel.dur) || sel.b > buf.duration) { sel.a = 0; sel.b = buf.duration; }
+      sel.dur = buf.duration;
+      $('waveMsg').hidden = true;
+      if (dirty) { dbPut('memos', m).catch(() => {}); const li = document.querySelector(`.memo[data-id="${m.id}"]`); if (li) { drawSpark(li.querySelector('.spark'), m.peaks); li.querySelector('.meta').innerHTML = `${fmtClock(m.duration)} · ${fmtBytes(m.size)}<span class="tag">${extForMime(m.mime).toUpperCase()}</span>`; } }
+      updateEditor();
+    }).catch(() => {
+      if (tok !== sel.decodeTok) return;
+      sel.bad = true; $('waveMsg').hidden = false; $('waveMsg').textContent = '此格式無法在此瀏覽器編輯，仍可播放與下載';
+      updateEditor();
+    });
+  }
+  function setRate(r) {
+    sel.rate = r; player.playbackRate = r;
+    try { player.preservesPitch = true; player.webkitPreservesPitch = true; player.mozPreservesPitch = true; } catch (e) { /* ignore */ }
+    for (const b of $('speeds').children) b.setAttribute('aria-checked', String(+b.dataset.r === r));
+  }
+  $('speeds').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setRate(+b.dataset.r); });
+
+  let playRaf = 0;
+  function stopPlayLoop() { cancelAnimationFrame(playRaf); playRaf = 0; $('playBtn').innerHTML = ICON.play; $('playBtn').setAttribute('aria-label', '播放'); updatePlayhead(); }
+  function playLoop() {
+    if (player.currentTime >= sel.b - 0.005 && !player.paused) { player.pause(); player.currentTime = sel.b; }
+    updatePlayhead();
+    if (!player.paused) playRaf = requestAnimationFrame(playLoop); else stopPlayLoop();
+  }
+  $('playBtn').onclick = async () => {
+    if (!sel.id) return;
+    if (!player.paused) { player.pause(); return; }
+    let t = player.currentTime || 0;
+    if (t < sel.a || t >= sel.b - 0.05) t = sel.a;
+    try { player.currentTime = t; } catch (e) { /* ignore */ }
+    try { await player.play(); } catch (e) { toast('無法播放這段錄音'); return; }
+    $('playBtn').innerHTML = ICON.stop; $('playBtn').setAttribute('aria-label', '暫停');
+    cancelAnimationFrame(playRaf); playRaf = requestAnimationFrame(playLoop);
+  };
+  player.addEventListener('pause', () => { if (playRaf) stopPlayLoop(); });
+  player.addEventListener('ended', stopPlayLoop);
+  function seek(t) { try { player.currentTime = Math.max(0, Math.min(sel.dur, t)); } catch (e) { /* ignore */ } updatePlayhead(); }
+
+  /* ---------- editor drawing ---------- */
+  const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function drawThumb() {
+    const cv = $('thumb'), box = $('wavebox'); if ($('editor').hidden || !box.clientWidth) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), W = box.clientWidth, H = box.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+    const m = memo(sel.id); if (!m) return;
+    c.strokeStyle = cssv('--line-2'); c.lineWidth = 1; c.beginPath(); c.moveTo(0, H / 2 + .5); c.lineTo(W, H / 2 + .5); c.stroke();
+    if (!m.peaks) return;
+    const cols = Math.max(1, Math.floor(W)), p = peaksForWidth({ min: Float32Array.from(m.peaks.min), max: Float32Array.from(m.peaks.max) }, cols);
+    let gmax = 0.05; for (let i = 0; i < cols; i++) gmax = Math.max(gmax, -p.min[i], p.max[i]);
+    const k = (H / 2 - 6) / Math.min(1, gmax * 1.05), on = cssv('--wave'), off = cssv('--wave-off');
+    const xa = sel.a / sel.dur * W, xb = sel.b / sel.dur * W;
+    for (let x = 0; x < cols; x++) {
+      const y0 = H / 2 - p.max[x] * k, y1 = H / 2 - p.min[x] * k;
+      c.fillStyle = x >= xa && x <= xb ? on : off;
+      c.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+    }
+  }
+  function updatePlayhead() {
+    if (!sel.id || !sel.dur) return;
+    const t = player.currentTime || 0;
+    $('playhead').style.left = (Math.min(1, t / sel.dur) * 100) + '%';
+    $('posNow').textContent = fmtClock(t);
+  }
+  function updateEditor() {
+    const m = memo(sel.id); if (!m) return;
+    const dur = sel.dur || 0, pa = dur ? sel.a / dur * 100 : 0, pb = dur ? sel.b / dur * 100 : 100;
+    $('h0').style.left = pa + '%'; $('h1').style.left = pb + '%';
+    $('shadeL').style.width = pa + '%'; $('shadeR').style.width = (100 - pb) + '%';
+    $('h0').setAttribute('aria-valuetext', fmtClock(sel.a)); $('h1').setAttribute('aria-valuetext', fmtClock(sel.b));
+    $('tA').textContent = fmtClock(sel.a); $('tB').textContent = fmtClock(sel.b);
+    const full = isFullRange(sel, dur);
+    $('tLen').textContent = full ? '' : '保留 ' + fmtClock(sel.b - sel.a);
+    $('posDur').textContent = fmtClock(dur);
+    const canEdit = !!sel.buf && !sel.bad;
+    $('h0').hidden = $('h1').hidden = $('shadeL').hidden = $('shadeR').hidden = !canEdit;
+    $('autoBtn').disabled = !canEdit; $('applyBtn').disabled = !canEdit || full;
+    $('dlLabel').textContent = '下載 .' + extForMime(m.mime);
+    const note = $('edNote');
+    if (sel.bad) { note.textContent = '此格式無法在此瀏覽器編輯，仍可下載。'; note.className = 'ednote warn'; }
+    else if (!full) { note.textContent = '黃色把手之間是要保留的部分；按「套用剪輯」存成 WAV 後再下載。'; note.className = 'ednote'; }
+    else { note.textContent = m.mime.includes('wav') ? '已剪輯的錄音，下載為 WAV。' : '拖曳黃色把手剪掉頭尾，或按「自動修剪」去掉前後的安靜部分。'; note.className = 'ednote'; }
+    updatePlayhead(); drawThumb();
+  }
+
+  /* ---------- trim handles ---------- */
+  (function bindWave() {
+    // the touch area is the whole editor width, so a handle at either end still has a 44 px target
+    const box = $('wavebox'), wrap = $('wavewrap'); let drag = -1, pid = null;
+    const tAt = e => { const r = box.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * sel.dur; };
+    wrap.addEventListener('pointerdown', e => {
+      if (!sel.id || !sel.dur) return;
+      const br = box.getBoundingClientRect(); if (e.clientY < br.top - 6 || e.clientY > br.bottom + 6) return;
+      const r = box.getBoundingClientRect(), x = e.clientX - r.left, xa = sel.a / sel.dur * r.width, xb = sel.b / sel.dur * r.width;
+      const canEdit = !!sel.buf && !sel.bad, da = Math.abs(x - xa), db = Math.abs(x - xb);
+      if (canEdit && Math.min(da, db) <= 22) {
+        drag = da < db || (da === db && x < xa) ? 0 : 1;
+        if (da === db && x > xb) drag = 1;
+        pid = e.pointerId; try { wrap.setPointerCapture(pid); } catch (er) { /* ignore */ }
+        e.preventDefault(); $(drag ? 'h1' : 'h0').focus({ preventScroll: true });
+      } else if (x >= 0 && x <= r.width) seek(tAt(e));
+    });
+    wrap.addEventListener('pointermove', e => {
+      if (drag < 0 || e.pointerId !== pid) return;
+      const n = setHandle(sel, drag, tAt(e), sel.dur, MIN_TRIM); sel.a = n.a; sel.b = n.b; updateEditor();
+    });
+    const end = e => { if (e.pointerId !== pid) return; if (drag >= 0) { if (e.type === 'pointerup') { const n = setHandle(sel, drag, tAt(e), sel.dur, MIN_TRIM); sel.a = n.a; sel.b = n.b; updateEditor(); } const t = player.currentTime; if (t < sel.a || t > sel.b) seek(drag ? Math.max(sel.a, sel.b - 1) : sel.a); } drag = -1; pid = null; };
+    wrap.addEventListener('pointerup', end); wrap.addEventListener('pointercancel', end);
+    for (const w of [0, 1]) $('h' + w).addEventListener('keydown', e => {
+      const step = e.shiftKey ? 1 : 0.1, d = { ArrowLeft: -step, ArrowDown: -step, ArrowRight: step, ArrowUp: step }[e.key];
+      if (d == null) return; e.preventDefault();
+      const n = setHandle(sel, w, (w ? sel.b : sel.a) + d, sel.dur, MIN_TRIM); sel.a = n.a; sel.b = n.b; updateEditor();
+    });
+  })();
+  window.addEventListener('resize', () => { drawThumb(); sizeLive(); });
+
+  $('autoBtn').onclick = () => {
+    if (!sel.buf) return;
+    const chs = []; for (let c = 0; c < sel.buf.numberOfChannels; c++) chs.push(sel.buf.getChannelData(c));
+    const r = findSoundBounds(mixdown(chs), sel.buf.sampleRate);
+    if (!r) { toast('整段都很安靜，找不到聲音'); return; }
+    if (r.b - r.a < MIN_TRIM) r.b = Math.min(sel.dur, r.a + MIN_TRIM);
+    const before = sel.b - sel.a; sel.a = r.a; sel.b = r.b; updateEditor(); seek(sel.a);
+    toast(isFullRange(sel, sel.dur) ? '頭尾沒有明顯的靜音' : `已選取有聲音的部分（去掉 ${(before - (sel.b - sel.a)).toFixed(1)} 秒）`);
+  };
+
+  function trimmedBlob() {
+    const buf = sel.buf, [s0, s1] = sampleRange(sel.a, sel.b, buf.sampleRate, buf.length);
+    let chs = []; for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) chs.push(buf.getChannelData(c));
+    if (sameChannels(chs)) chs = chs.slice(0, 1);
+    const parts = sliceChannels(chs, s0, s1);
+    const pk = computePeaks(mixdown(parts), PEAK_N);
+    return { blob: new Blob([encodeWAV(parts, buf.sampleRate)], { type: 'audio/wav' }), duration: (s1 - s0) / buf.sampleRate, peaks: { min: Array.from(pk.min, v => +v.toFixed(3)), max: Array.from(pk.max, v => +v.toFixed(3)) } };
+  }
+  $('applyBtn').onclick = () => {
+    if (!sel.buf || isFullRange(sel, sel.dur)) return;
+    $('trimDesc').textContent = `保留 ${fmtClock(sel.a)} – ${fmtClock(sel.b)}（${(sel.b - sel.a).toFixed(1)} 秒），存成 WAV 檔。`;
+    $('trimSheet').hidden = false; $('trimNew').focus();
+  };
+  const closeTrim = () => { $('trimSheet').hidden = true; };
+  $('trimCancel').onclick = closeTrim;
+  $('trimSheet').addEventListener('click', e => { if (e.target === $('trimSheet')) closeTrim(); });
+  async function doTrim(replace) {
+    closeTrim(); const m = memo(sel.id); if (!m || !sel.buf) return;
+    player.pause();
+    let r; try { r = trimmedBlob(); } catch (e) { toast('剪輯失敗'); return; }
+    let target;
+    if (replace) { target = m; Object.assign(m, { blob: r.blob, mime: 'audio/wav', size: r.blob.size, duration: r.duration, peaks: r.peaks }); }
+    else { target = { id: uid(), name: (m.name + '（剪輯）').slice(0, 60), createdAt: Date.now(), duration: r.duration, mime: 'audio/wav', size: r.blob.size, blob: r.blob, peaks: r.peaks }; memos.unshift(target); }
+    try { await dbPut('memos', target); } catch (e) { toast('儲存失敗：裝置空間可能不足'); }
+    sel.id = null; openSel(target.id);
+    toast(replace ? '已取代原錄音' : '已另存成新錄音');
+  }
+  $('trimNew').onclick = () => doTrim(false);
+  $('trimReplace').onclick = () => doTrim(true);
+
+  $('dlBtn').onclick = () => { const m = memo(sel.id); if (m) saveFile(safeFileName(m.name, extForMime(m.mime)), m.blob); };
+  $('renameBtn').onclick = () => { const m = memo(sel.id); if (!m) return; $('nameInput').value = m.name; $('nameSheet').hidden = false; $('nameInput').focus(); $('nameInput').select(); };
+  $('nameCancel').onclick = () => { $('nameSheet').hidden = true; };
+  $('nameSheet').addEventListener('click', e => { if (e.target === $('nameSheet')) $('nameSheet').hidden = true; });
+  $('nameForm').addEventListener('submit', e => {
+    e.preventDefault(); const m = memo(sel.id), v = $('nameInput').value.trim();
+    $('nameSheet').hidden = true; if (!m || !v || v === m.name) return;
+    m.name = v.slice(0, 60); dbPut('memos', m).catch(() => {}); $('edTitle').textContent = m.name; render();
+  });
+  $('delBtn').onclick = () => { if (sel.id) removeMemo(sel.id); };
+  function removeMemo(id) {
+    const m = memo(id); if (!m) return;
+    if (sel.id === id) closeSel();
+    memos = memos.filter(x => x !== m); dbDel('memos', id).catch(() => {}); render();
+    toast(`已刪除「${m.name}」`, '復原', () => { memos.push(m); memos.sort((a, b) => b.createdAt - a.createdAt); dbPut('memos', m).catch(() => {}); render(); });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { $('trimSheet').hidden = true; $('nameSheet').hidden = true; }
+  });
+
+  /* ---------- live meter ---------- */
+  const live = $('live'); let liveBars = [], liveW = 0;
+  function sizeLive() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1); liveW = live.clientWidth || 300;
+    live.width = Math.round(liveW * dpr); live.height = Math.round(120 * dpr); drawLive();
+  }
+  function drawLive() {
+    const dpr = live.width / (liveW || 1), c = live.getContext('2d'), W = liveW, H = 120;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+    c.fillStyle = 'rgba(255,255,255,.12)';
+    for (let x = 2; x < W; x += 6) c.fillRect(x, H / 2 - .5, 2, 1);
+    const step = 5, n = Math.floor(W / step), red = cssv('--live') || '#ff5a6a';
+    const start = Math.max(0, liveBars.length - n);
+    for (let i = start; i < liveBars.length; i++) {
+      const x = W - (liveBars.length - i) * step, v = liveBars[i], h = Math.max(2, Math.min(H - 6, Math.pow(v, 0.55) * (H - 6)));
+      c.fillStyle = i === liveBars.length - 1 ? '#fff' : red; c.globalAlpha = 0.35 + 0.65 * ((i - start) / Math.max(1, n));
+      c.fillRect(x, (H - h) / 2, 3, h);
+    }
+    c.globalAlpha = 1;
+  }
+
+  /* ---------- recording ---------- */
+  const R = { state: 'idle', stream: null, rec: null, chunks: [], mime: '', ac: null, an: null, data: null, raf: 0, acc: 0, since: 0, startedAt: 0, warned: false, lastBar: 0, barPeak: 0, wake: null, saveT: 0, discard: false, reason: '' };
+  const elapsed = () => R.acc + (R.state === 'rec' ? (performance.now() - R.since) / 1000 : 0);
+  function setTimer(sec) { const s = fmtClock(sec), i = s.lastIndexOf('.'); $('timer').innerHTML = s.slice(0, i) + '<span class="tenth">' + s.slice(i) + '</span>'; }
+  function setUI() {
+    const rec = $('rec'), on = R.state === 'rec', paused = R.state === 'paused', busy = on || paused;
+    rec.classList.toggle('on', on); rec.classList.toggle('paused', paused);
+    $('recState').textContent = on ? '錄音中' : paused ? '已暫停' : R.state === 'starting' ? '準備中' : '待命';
+    $('recBtn').setAttribute('aria-label', busy ? '停止並儲存' : '開始錄音');
+    $('recBtn').disabled = R.state === 'starting' || R.state === 'stopping';
+    $('pauseBtn').disabled = !busy || !(R.rec && R.rec.pause);
+    $('discardBtn').disabled = !busy;
+    $('pauseBtn').innerHTML = paused ? ICON.resume : ICON.pause;
+    $('pauseBtn').setAttribute('aria-label', paused ? '繼續錄音' : '暫停錄音');
+    $('recHint').textContent = busy ? (paused ? '已暫停，按左邊按鈕繼續；按方形鍵停止並儲存。' : '按方形鍵停止並儲存。鎖螢幕或切到其他 App 時會繼續錄音。') : '按紅色按鈕開始錄音，錄音只存在這台裝置。';
+  }
+  function showNotice(html) { const n = $('notice'); if (!html) { n.hidden = true; n.innerHTML = ''; return; } n.innerHTML = html; n.hidden = false; }
+  const siteLink = `<a href="${SITE}" target="_blank" rel="noopener">${SITE}</a>`;
+
+  async function startRec() {
+    showNotice('');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      showNotice(`<b>這裡無法使用麥克風</b>這個環境不支援或不開放錄音。請改用網站版：${siteLink}`); return;
+    }
+    let policyBlocked = false;
+    try { const fp = document.permissionsPolicy || document.featurePolicy; if (fp && fp.allowsFeature && !fp.allowsFeature('microphone')) policyBlocked = true; } catch (e) { /* ignore */ }
+    R.state = 'starting'; setUI();
+    try {
+      const est = await navigator.storage?.estimate?.();
+      if (est && est.quota && est.quota - (est.usage || 0) < 50 * 1048576) toast('裝置剩餘空間不足 50 MB，長時間錄音可能無法保存');
+    } catch (e) { /* ignore */ }
+    const t0 = performance.now();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false }); }
+    catch (e) {
+      R.state = 'idle'; setUI();
+      const n = e && e.name, quick = performance.now() - t0 < 250;
+      if (n === 'NotAllowedError' || n === 'SecurityError') {
+        if (policyBlocked || quick) showNotice(`<b>這個環境不開放麥克風</b>錄音需要網站版，請在新分頁開啟：${siteLink}<br>已存的錄音仍可在這裡播放與下載。`);
+        else showNotice(`<b>沒有取得麥克風權限</b>請在瀏覽器網址列旁的權限設定允許「麥克風」，再按一次錄音鍵。也可以改用網站版：${siteLink}`);
+      } else if (n === 'NotFoundError' || n === 'OverconstrainedError') showNotice('<b>找不到麥克風</b>請確認裝置有麥克風或已接上耳機麥克風。');
+      else if (n === 'NotReadableError' || n === 'AbortError') showNotice('<b>麥克風正被其他 App 使用</b>請關閉通話或其他錄音 App 後再試一次。');
+      else showNotice(`<b>無法開始錄音</b>${(e && e.message) ? String(e.message).replace(/[<>&]/g, '') : ''}`);
+      return;
+    }
+    R.stream = stream; R.chunks = []; R.acc = 0; R.warned = false; R.discard = false; R.reason = ''; liveBars = [];
+    R.mime = pickMime(m => MediaRecorder.isTypeSupported(m));
+    try { R.rec = new MediaRecorder(stream, R.mime ? { mimeType: R.mime } : undefined); }
+    catch (e) { try { R.rec = new MediaRecorder(stream); R.mime = ''; } catch (e2) { releaseStream(); R.state = 'idle'; setUI(); showNotice('<b>這個瀏覽器無法錄音</b>請改用最新版 Chrome 或 Safari。'); return; } }
+    R.rec.ondataavailable = ev => { if (ev.data && ev.data.size) R.chunks.push(ev.data); };
+    R.rec.onstop = finishRec;
+    // the system took the mic away (call, another app, iOS background): keep what was recorded
+    stream.getAudioTracks().forEach(tr => tr.addEventListener('ended', () => { if (recording() && R.stream === stream) stopRec('interrupted'); }));
+    R.rec.onerror = () => { toast('錄音發生錯誤，已停止'); try { R.rec.state !== 'inactive' && R.rec.stop(); } catch (e) { /* ignore */ } };
+    try { R.rec.start(1000); } catch (e) { releaseStream(); R.state = 'idle'; setUI(); showNotice('<b>無法開始錄音</b>請再試一次。'); return; }
+    R.mime = R.rec.mimeType || R.mime || 'audio/webm';
+    $('recFmt').textContent = extForMime(R.mime).toUpperCase();
+    R.startedAt = Date.now(); R.since = performance.now(); R.state = 'rec'; setUI();
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      R.ac = new AC(); const src = R.ac.createMediaStreamSource(stream); R.an = R.ac.createAnalyser(); R.an.fftSize = 2048; src.connect(R.an);
+      R.data = new Float32Array(R.an.fftSize); if (R.ac.state === 'suspended') R.ac.resume().catch(() => {});
+    } catch (e) { R.an = null; }
+    R.lastBar = performance.now(); R.barPeak = 0;
+    cancelAnimationFrame(R.raf); R.raf = requestAnimationFrame(tick);
+    getWake();
+    clearInterval(R.saveT); R.saveT = setInterval(savePending, 10000);
+  }
+  function tick(now) {
+    if (R.state !== 'rec' && R.state !== 'paused') return;
+    const sec = elapsed(); setTimer(sec);
+    if (R.state === 'rec') {
+      let pk = 0;
+      if (R.an) { try { R.an.getFloatTimeDomainData(R.data); for (let i = 0; i < R.data.length; i++) { const v = Math.abs(R.data[i]); if (v > pk) pk = v; } } catch (e) { /* ignore */ } }
+      R.barPeak = Math.max(R.barPeak, pk);
+      if (now - R.lastBar >= 50) { liveBars.push(Math.min(1, R.barPeak)); if (liveBars.length > 2000) liveBars.splice(0, 1000); R.barPeak = 0; R.lastBar = now; drawLive(); }
+      if (sec >= MAX_SEC - 60 && !R.warned) { R.warned = true; toast('再 1 分鐘就到單次錄音上限 60 分鐘', null, null, 5000); }
+      if (sec >= MAX_SEC) { stopRec('limit'); return; }
+    }
+    R.raf = requestAnimationFrame(tick);
+  }
+  function releaseStream() {
+    if (R.stream) { R.stream.getTracks().forEach(t => t.stop()); R.stream = null; }
+    if (R.ac) { R.ac.close().catch(() => {}); R.ac = null; R.an = null; }
+    if (R.wake) { R.wake.release().catch(() => {}); R.wake = null; }
+    clearInterval(R.saveT); cancelAnimationFrame(R.raf);
+  }
+  function stopRec(reason, discard) {
+    if (!R.rec || (R.state !== 'rec' && R.state !== 'paused')) return;
+    R.acc = elapsed(); R.state = 'stopping'; R.discard = !!discard; R.reason = reason || '';
+    setUI();
+    try { R.rec.stop(); } catch (e) { finishRec(); }
+    if (R.stream) R.stream.getTracks().forEach(t => t.stop());
+  }
+  async function finishRec() {
+    const dur = R.acc, chunks = R.chunks, mime = R.mime, discard = R.discard, reason = R.reason;
+    releaseStream(); R.rec = null; R.chunks = []; R.state = 'idle'; setUI(); setTimer(0); liveBars = []; drawLive(); $('recFmt').textContent = '';
+    const dropPending = () => dbDel('pending', 'cur').catch(() => {});
+    if (discard) { dropPending(); toast('已捨棄這段錄音'); return; }
+    if (dur < MIN_SEC || !chunks.length) { dropPending(); toast('錄音太短（少於 0.5 秒），沒有儲存'); return; }
+    const blob = new Blob(chunks, { type: mime.split(';')[0] || 'audio/webm' });
+    const m = { id: uid(), name: defaultName(new Date(R.startedAt)), createdAt: R.startedAt, duration: dur, mime: blob.type, size: blob.size, blob, peaks: null };
+    memos.unshift(m);
+    // the 10 s backup is dropped only once the finished recording is safely stored
+    try { await dbPut('memos', m); dropPending(); askPersist(); } catch (e) { toast('儲存失敗：裝置空間可能不足，請先下載'); }
+    openSel(m.id);
+    if (reason === 'interrupted') toast('麥克風被系統中斷，已儲存到中斷前的錄音', null, null, 5000);
+    else if (reason === 'limit') toast('已達 60 分鐘上限，錄音已儲存');
+    else toast('已儲存 ' + fmtClock(dur));
+    if (!isDesk.matches) setTimeout(() => document.querySelector(`.memo[data-id="${m.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+  }
+  async function savePending() {
+    if (!R.chunks.length || !db) return;
+    try { await dbPut('pending', { id: 'cur', createdAt: R.startedAt, duration: elapsed(), mime: (R.mime || '').split(';')[0], blob: new Blob(R.chunks, { type: (R.mime || '').split(';')[0] }) }); } catch (e) { /* ignore */ }
+  }
+  async function getWake() { try { if (navigator.wakeLock && document.visibilityState === 'visible') R.wake = await navigator.wakeLock.request('screen'); } catch (e) { R.wake = null; } }
+
+  $('recBtn').onclick = () => { if (R.state === 'rec' || R.state === 'paused') stopRec('user'); else if (R.state === 'idle') startRec(); };
+  $('discardBtn').onclick = () => stopRec('user', true);
+  $('pauseBtn').onclick = () => {
+    if (!R.rec) return;
+    try {
+      if (R.state === 'rec') { R.rec.pause(); R.acc = elapsed(); R.state = 'paused'; }
+      else if (R.state === 'paused') { R.rec.resume(); R.since = performance.now(); R.state = 'rec'; }
+    } catch (e) { toast('這個瀏覽器不支援暫停'); }
+    setUI();
+  };
+  document.addEventListener('keydown', e => {
+    if (e.code !== 'Space' || e.repeat) return;
+    const t = e.target; if (t && t.closest && t.closest('button, input, textarea, select, [role="slider"], [role="button"], a')) return;
+    if (!$('trimSheet').hidden || !$('nameSheet').hidden) return;
+    e.preventDefault(); $('recBtn').click();
+  });
+
+  // Screen locked / app switched: a recording keeps going (lectures with the screen off); the backup is flushed right away.
+  // Not recording: nothing holds the mic. The page actually going away (pagehide): stop and save.
+  let hiddenWhileRec = false;
+  const recording = () => R.state === 'rec' || R.state === 'paused';
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      player.pause();
+      if (recording()) { hiddenWhileRec = true; savePending(); } else if (R.state === 'idle') releaseStream();
+    } else if (recording()) {
+      if (!R.wake) getWake();
+      if (hiddenWhileRec) { hiddenWhileRec = false; toast('錄音持續中。iOS 在背景可能中斷錄音，請確認計時有在跑', null, null, 4500); }
+    } else hiddenWhileRec = false;
+  });
+  window.addEventListener('pagehide', () => { if (recording()) { savePending(); stopRec('pagehide'); } else releaseStream(); });
+
+  /* ---------- recovery ---------- */
+  async function checkPending() {
+    let p; try { p = (await dbAll('pending')).find(x => x.id === 'cur'); } catch (e) { return; }
+    if (!p || !p.blob || !p.blob.size) return;
+    $('recoverMsg').textContent = `上次的錄音沒有正常結束（約 ${fmtClock(p.duration)}）。要復原嗎？`;
+    $('recover').hidden = false;
+    $('recoverYes').onclick = async () => {
+      $('recover').hidden = true;
+      const m = { id: uid(), name: defaultName(new Date(p.createdAt)) + '（復原）', createdAt: p.createdAt, duration: p.duration, mime: p.mime || p.blob.type || 'audio/webm', size: p.blob.size, blob: p.blob, peaks: null };
+      memos.unshift(m); memos.sort((a, b) => b.createdAt - a.createdAt);
+      try { await dbPut('memos', m); } catch (e) { /* ignore */ }
+      dbDel('pending', 'cur').catch(() => {}); openSel(m.id); toast('已復原');
+    };
+    $('recoverNo').onclick = () => { $('recover').hidden = true; dbDel('pending', 'cur').catch(() => {}); };
+  }
+
+  /* ---------- boot ---------- */
+  setUI(); setTimer(0); sizeLive(); updateUsage();
+  (async () => {
+    db = await openDB();
+    if (!db) { showNotice('<b>這個瀏覽器無法長期保存錄音</b>關閉頁面後錄音會消失，錄完請記得下載。'); }
+    try { memos = (await dbAll('memos')).filter(m => m && m.blob); } catch (e) { memos = []; }
+    memos.sort((a, b) => b.createdAt - a.createdAt);
+    render();
+    if (isDesk.matches && memos.length) openSel(memos[0].id);
+    checkPending();
+  })();
+  // theme changes repaint canvases
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { drawThumb(); drawLive(); render(); });
+  window.__vm = { memos: () => memos, sel, R };
+})();
+</script>
