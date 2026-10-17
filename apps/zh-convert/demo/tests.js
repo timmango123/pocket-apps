@@ -1,0 +1,235 @@
+// Conversion tests for 簡繁轉換 (zh-convert). Loads the engine between the CORE markers of ../index.html.
+// Usage: node tests.js
+const fs = require('fs'), path = require('path');
+const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
+const ZC = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return ZC;')();
+let pass = 0, fail = 0;
+function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } }
+const s2t = (t, o) => ZC.join(ZC.convert(t, Object.assign({ dir: 's2t' }, o || {})));
+const t2s = (t, o) => ZC.join(ZC.convert(t, Object.assign({ dir: 't2s' }, o || {})));
+function eq(fn, src, want, label) { const got = fn(src); ok(got === want, `${label || ''} ${src} → ${got} (want ${want})`); }
+
+// ---- file budget ----
+ok(Buffer.byteLength(html) < 400 * 1024, 'index.html under 400 KB (' + Buffer.byteLength(html) + ')');
+ok(ZC.build().sp.m.size > 9000 && ZC.build().sc.size > 3500, 'tables loaded (phrases ' + ZC.build().sp.m.size + ', chars ' + ZC.build().sc.size + ')');
+
+// ---- simplified -> traditional (Taiwan): one-to-many resolved by phrases ----
+const S2T = `头发>頭髮 发展>發展 干净>乾淨 干部>幹部 后来>後來 皇后>皇后 里面>裡面 公里>公里 面条>麵條 钟表>鐘錶 只有>只有 一只>一隻
+系统>系統 关系>關係 联系>聯繫 复杂>複雜 重复>重複 答复>答覆 台风>颱風 松树>松樹 放松>放鬆 制度>制度 制造>製造
+什么>什麼 几个>幾個 范围>範圍 丑陋>醜陋 小丑>小丑 游泳>游泳 旅游>旅遊 合并>合併 并且>並且 同志>同志 志愿>志願 历史>歷史 日历>日曆
+征求>徵求 象征>象徵 出征>出征 征服>征服 曲折>曲折 歌曲>歌曲 酒曲>酒麴 占领>佔領 占卜>占卜 咸丰>咸豐 咸鱼>鹹魚 于是>於是 杰出>傑出 尽管>儘管 尽力>盡力
+云南>雲南 划船>划船 计划>計畫 向导>嚮導 导入>導入 伙伴>夥伴 蒙古>蒙古 蒙蔽>矇蔽 郁闷>鬱悶 复习>複習 复兴>復興 恢复>恢復 复印>複印 回复>回覆 修复>修復
+若干>若干 饼干>餅乾 干杯>乾杯 干脆>乾脆 干扰>干擾 干涉>干涉 干活>幹活 干嘛>幹嘛 干旱>乾旱 干燥>乾燥 干预>干預 干线>幹線 天干地支>天干地支 主干>主幹 树干>樹幹 干货>乾貨 才干>才幹 能干>能幹 豆腐干>豆腐乾 干妈>乾媽 晾干>晾乾 外强中干>外強中乾 干细胞>幹細胞
+这里>這裡 那里>那裡 哪里>哪裡 心里>心裡 手里>手裡 里程碑>里程碑 英里>英里 邻里>鄰里 故里>故里 里头>裡頭 表里如一>表裡如一 公里数>公里數
+当天>當天 上当>上當 当铺>當鋪 妥当>妥當 相当>相當 斗争>鬥爭 战斗>戰鬥 北斗星>北斗星 一斗米>一斗米 漏斗>漏斗 烟斗>菸斗 斗篷>斗篷 奋斗>奮鬥
+余下>餘下 剩余>剩餘 业余>業餘 余额>餘額 采访>採訪 采用>採用 风采>風采 精彩>精彩 山谷>山谷 谷物>穀物 稻谷>稻穀 峡谷>峽谷 谷歌>谷歌
+困难>困難 困倦>睏倦 饥饿>飢餓 叶子>葉子 树叶>樹葉 适合>適合 舒适>舒適 借钱>借錢 借口>藉口 凭借>憑藉 借助>藉助 借鉴>借鑑
+冲动>衝動 冲突>衝突 冲洗>沖洗 冲浪>衝浪 冲泡>沖泡 气冲冲>氣沖沖 栏杆>欄杆 笔杆>筆桿 杠杆>槓桿 杆菌>桿菌 电线杆>電線杆
+胡说>胡說 胡萝卜>胡蘿蔔 胡须>鬍鬚 胡子>鬍子 二胡>二胡 必须>必須 须知>須知 触须>觸鬚 舍得>捨得 宿舍>宿舍 舍弃>捨棄 施舍>施捨 退避三舍>退避三舍
+涂料>塗料 糊涂>糊塗 折叠>摺疊 折扣>折扣 打折>打折 骨折>骨折 存折>存摺 奏折>奏摺 蔑视>蔑視 污蔑>汙衊 怎么>怎麼 那么>那麼 老幺>老么
+发现>發現 理发>理髮 毛发>毛髮 发型>髮型 假发>假髮 白发>白髮 卷发>捲髮 洗发水>洗髮精 千钧一发>千鈞一髮 令人发指>令人髮指 脱发>脫髮 发际线>髮際線 发夹>髮夾
+系鞋带>繫鞋帶 系上安全带>繫上安全帶 系领带>繫領帶 维系>維繫 系数>係數 中文系>中文系 太阳系>太陽系 系统性>系統性
+复制>複製 复述>複述 复活>復活 复仇>復仇 复原>復原 复合>複合 复数>複數 复旦>復旦 复查>複查 复赛>複賽 复核>複核 复审>複審 复试>複試 康复>康復 报复>報復 复苏>復甦 复古>復古 收复>收復 光复>光復 复辟>復辟 批复>批覆 反复>反覆 复发>復發
+时钟>時鐘 闹钟>鬧鐘 钟头>鐘頭 分钟>分鐘 钟声>鐘聲 钟楼>鐘樓 钟情>鍾情 钟爱>鍾愛 一见钟情>一見鍾情 钟馗>鍾馗 钟乳石>鐘乳石 警钟>警鐘 挂钟>掛鐘
+面包>麵包 面粉>麵粉 面食>麵食 面馆>麵館 面筋>麵筋 方便面>方便麵 拉面>拉麵 炒面>炒麵 泡面>泡麵 凉面>涼麵 面前>面前 面对>面對 面积>面積 面子>面子 见面>見面 表面>表面 里面>裡面 外面>外面 后面>後面 全面>全面 画面>畫面 桌面>桌面 面试>面試 面膜>面膜 牛肉面>牛肉麵 面包车>麵包車 面线>麵線
+后天>後天 以后>以後 然后>然後 最后>最後 后悔>後悔 后果>後果 落后>落後 王后>王后 太后>太后 后宫>後宮 皇太后>皇太后 后羿>后羿 天后>天后 影后>影后 后台>後台 后备箱>後車廂
+只要>只要 两只>兩隻 几只>幾隻 这只>這隻 只身>隻身 船只>船隻 只字未提>隻字未提 形单影只>形單影隻
+注册>註冊 注意>注意 注释>註釋 注明>註明 注销>註銷 备注>備註 关注>關注 专注>專注 孤注一掷>孤注一擲
+准备>準備 准确>準確 批准>批准 标准>標準 水准>水準 准时>準時 不准>不准 准许>准許 瞄准>瞄準 核准>核准
+制作>製作 制定>制定 制服>制服 制止>制止 控制>控制 限制>限制 编制>編制 体制>體制 复制>複製 研制>研製 腌制>醃製 录制>錄製 粗制滥造>粗製濫造 定制>訂製 自制力>自制力
+几乎>幾乎 几何>幾何 几率>機率 茶几>茶几 窗明几净>窗明几淨 所剩无几>所剩無幾
+咸阳>咸陽 咸菜>鹹菜 老少咸宜>老少咸宜 咸鸭蛋>鹹鴨蛋 游戏>遊戲 游客>遊客 游行>遊行 游泳池>游泳池 导游>導遊 游击>游擊 游牧>游牧 上游>上游 游标>游標 电子游戏>電子遊戲 游轮>遊輪
+周末>週末 周年>週年 周期>週期 周刊>週刊 一周>一週 上周>上週 每周>每週 周围>周圍 周到>周到 周杰伦>周杰倫 周朝>周朝 圆周>圓周 周转>週轉
+规划>規劃 策划>策劃 划分>劃分 划算>划算 划桨>划槳 划破>劃破 划时代>劃時代 比划>比劃
+由于>由於 对于>對於 关于>關於 属于>屬於 等于>等於 终于>終於 至于>至於 不至于>不至於 姓于>姓于 于谦>于謙 单于>單于
+范例>範例 模范>模範 示范>示範 规范>規範 防范>防範 师范>師範 范仲淹>范仲淹 范冰冰>范冰冰
+台湾>台灣 台北>台北 台中>台中 舞台>舞台 平台>平台 柜台>櫃檯 电视台>電視台 阳台>陽台 讲台>講台 台阶>台階 台面>檯面 台灯>檯燈 台球>檯球 写字台>寫字檯 台词>台詞 台风眼>颱風眼 台商>台商 台积电>台積電
+松鼠>松鼠 松柏>松柏 松子>松子 松下>松下 轻松>輕鬆 松开>鬆開 松手>鬆手 松懈>鬆懈 宽松>寬鬆 蓬松>蓬鬆 肉松>肉鬆 松饼>鬆餅 松一口气>鬆一口氣
+占据>佔據 占有>佔有 占用>佔用 占比>佔比 占便宜>佔便宜 霸占>霸佔 独占>獨佔 占星>占星 占了>佔了
+借书>借書 借阅>借閱 借条>借條 借由>藉由 借着>藉著 借此>藉此 借故>藉故 借机>藉機 借刀杀人>借刀殺人 借题发挥>借題發揮
+发布>發布 公布>公布 宣布>宣布 分布>分布 布局>布局 布置>布置 遍布>遍布
+了解>了解 不了解>不了解 明了>明瞭 一目了然>一目瞭然 了望>瞭望
+么>麼 要么>要麼 多么>多麼 幺妹>么妹
+干得好>幹得好 干什么>幹什麼 干一场>幹一場 实干>實幹 苦干>苦幹 干完>幹完 干过>幹過 干不了>幹不了
+`;
+for (const line of S2T.trim().split('\n')) for (const e of line.trim().split(/\s+/)) { const [a, b] = e.split('>'); eq(s2t, a, b, 's2t'); }
+
+// ---- sentences ----
+const SENT = [
+  ['他的头发很长，公司的发展很快。', '他的頭髮很長，公司的發展很快。'],
+  ['请把房间打扫干净，干部们都来了，若干个问题。', '請把房間打掃乾淨，幹部們都來了，若干個問題。'],
+  ['后来皇后到了里面，走了三公里，吃了一碗面条，看了钟表，只有一只猫。', '後來皇后到了裡面，走了三公里，吃了一碗麵條，看了鐘錶，只有一隻貓。'],
+  ['系统和关系，联系我们，复杂的事情重复做，答复他，台风来了，松树下放松一下，制度和制造业。', '系統和關係，聯繫我們，複雜的事情重複做，答覆他，颱風來了，松樹下放鬆一下，制度和製造業。'],
+  ['他是个很有才干的干部，在单位里干得很出色。', '他是個很有才幹的幹部，在單位裡幹得很出色。'],
+  ['这只小狗很可爱，只要你叫它，它就会摇尾巴。', '這隻小狗很可愛，只要你叫它，它就會搖尾巴。'],
+  ['我的头发该剪了，发型师说要等一个钟头。时钟敲了十二下，闹钟也响了。', '我的頭髮該剪了，髮型師說要等一個鐘頭。時鐘敲了十二下，鬧鐘也響了。'],
+  ['据报道，台湾地区的经济增长率在第三季度达到了百分之三点二。', '據報道，台灣地區的經濟增長率在第三季度達到了百分之三點二。'],
+  ['她在图书馆里看书，后来觉得有点儿困，就回宿舍睡觉了。', '她在圖書館裡看書，後來覺得有點兒困，就回宿舍睡覺了。'],
+  ['今天天气很好，我们一起去公园散步吧。', '今天天氣很好，我們一起去公園散步吧。'],
+  ['Hello 世界 123！', 'Hello 世界 123！'],
+  ['', ''],
+  ['换行\n保留\n\n空行', '換行\n保留\n\n空行'],
+];
+for (const [a, b] of SENT) eq(s2t, a, b, 'sentence');
+// 臺 option off keeps 臺
+eq(t => s2t(t, { tai: false }), '台湾的舞台和台风，台面上的台灯', '臺灣的舞臺和颱風，檯面上的檯燈', 'tai=false');
+eq(t => s2t(t, { tai: true }), '台湾的舞台和台风，台面上的台灯', '台灣的舞台和颱風，檯面上的檯燈', 'tai=true');
+
+// ---- traditional -> simplified ----
+const T2S = `乾淨>干净 乾燥>干燥 乾杯>干杯 乾隆>乾隆 乾坤>乾坤 幹部>干部 幹活>干活 才幹>才干 干擾>干扰 若干>若干 餅乾>饼干
+頭髮>头发 髮型>发型 發展>发展 理髮>理发 鬍鬚>胡须 鬍子>胡子 胡說>胡说 鬚髮>须发
+麵條>面条 麵包>面包 泡麵>泡面 面對>面对 裡面>里面 麵粉>面粉 炒麵>炒面
+鐘錶>钟表 時鐘>时钟 鬧鐘>闹钟 鍾情>钟情 姓鍾>姓钟 錶帶>表带 手錶>手表 表示>表示 代表>代表
+一隻貓>一只猫 只有>只有 隻字未提>只字未提 船隻>船只 隻身>只身
+系統>系统 關係>关系 聯繫>联系 繫鞋帶>系鞋带 係數>系数 維繫>维系
+複雜>复杂 重複>重复 答覆>答复 回覆>回复 恢復>恢复 復習>复习 複習>复习 復興>复兴 覆蓋>覆盖 顛覆>颠覆 反覆>反复
+颱風>台风 臺灣>台湾 台灣>台湾 舞臺>舞台 檯面>台面 櫃檯>柜台 電視台>电视台 陽台>阳台
+放鬆>放松 松樹>松树 輕鬆>轻松 鬆開>松开 蓬鬆>蓬松 製造>制造 制度>制度 製作>制作 複製>复制 製品>制品
+計畫>计划 計劃>计划 規劃>规划 企畫>企划 筆畫>笔画 畫家>画家 劃分>划分 划算>划算
+週末>周末 週年>周年 週期>周期 周圍>周围 一週>一周 每週>每周 周杰倫>周杰伦
+瞭解>了解 了解>了解 明瞭>明了 瞭望>瞭望 一目瞭然>一目了然
+藉口>借口 藉由>借由 藉著>借着 憑藉>凭借 狼藉>狼藉 慰藉>慰藉 借錢>借钱
+佈置>布置 分佈>分布 公佈>公布 宣佈>宣布 布局>布局
+什麼>什么 甚麼>什么 怎麼>怎么 那麼>那么 么妹>幺妹 老么>老幺
+於是>于是 由於>由于 對於>对于 關於>关于 終於>终于 於>于
+範圍>范围 模範>模范 示範>示范 范仲淹>范仲淹
+註冊>注册 注意>注意 註釋>注释 備註>备注 徵求>征求 象徵>象征 特徵>特征 徵收>征收 魏徵>魏徵 宮商角徵羽>宫商角徵羽
+佔領>占领 佔據>占据 佔用>占用 占卜>占卜 占星>占星 霸佔>霸占
+看著>看着 接著>接着 隨著>随着 沿著>沿着 忙著>忙着 睡著了>睡着了 穿著>穿着 著名>著名 著作>著作 顯著>显著 土著>土著 著急>着急 著手>着手 著迷>着迷 著火>着火 著涼>着凉 著落>着落 著陸>着陆 著重>着重 著眼>着眼 著想>着想 執著>执着 沉著>沉着 附著>附着 衣著>衣着 有著>有着 拿著>拿着 等著>等着 說著>说着 跟著>跟着 試著>试着 名著>名著 編著>编著 原著>原著 臭名昭著>臭名昭著 著作權>著作权
+鬥爭>斗争 戰鬥>战斗 北斗>北斗 奮鬥>奋斗 餘下>余下 剩餘>剩余 採訪>采访 風采>风采 穀物>谷物 山谷>山谷 睏倦>困倦 飢餓>饥饿 葉子>叶子 適合>适合
+衝突>冲突 沖洗>冲洗 捨得>舍得 宿舍>宿舍 塗料>涂料 摺疊>折叠 折扣>折扣 存摺>存折 汙衊>污蔑 蔑視>蔑视
+髮>发 發>发 後>后 后>后 裡>里 里>里 麵>面 面>面 鐘>钟 鍾>钟 隻>只 只>只 繫>系 係>系 複>复 復>复 覆>覆 颱>台 臺>台 鬆>松 松>松 製>制 制>制 徵>征 徴>徴
+`;
+for (const line of T2S.trim().split('\n')) for (const e of line.trim().split(/\s+/)) { const [a, b] = e.split('>'); eq(t2s, a, b, 't2s'); }
+eq(t2s, '他看著我笑了，接著就走了。著名的作家寫了一本著作。', '他看着我笑了，接着就走了。著名的作家写了一本著作。', 't2s sentence');
+eq(t2s, '乾隆皇帝的房間很乾淨，幹部們在幹活。', '乾隆皇帝的房间很干净，干部们在干活。', 't2s sentence');
+
+// ---- Taiwan vocabulary ----
+const TW = `软件>軟體 信息>資訊 网络>網路 视频>影片 质量>品質 程序>程式 内存>記憶體 鼠标>滑鼠 打印>列印 出租车>計程車 自行车>腳踏車
+硬件>硬體 数据库>資料庫 服务器>伺服器 操作系统>作業系統 文件夹>資料夾 博客>部落格 激光>雷射 短信>簡訊 互联网>網際網路 屏幕>螢幕 字节>位元組 概率>機率 默认>預設 菜单>選單 链接>連結 登录>登入 用户>使用者 搜索>搜尋 分辨率>解析度 像素>畫素 兼容>相容 优化>最佳化 代码>程式碼 编程>程式設計 算法>演算法 函数>函式 变量>變數 数组>陣列 模块>模組 接口>介面 调试>偵錯 运行>執行 项目>專案 进程>程序 驱动程序>驅動程式
+土豆>馬鈴薯 西红柿>番茄 酸奶>優格 方便面>泡麵 冰棍>冰棒 公交车>公車 摩托车>機車 空调>冷氣 洗发水>洗髮精 创可贴>OK繃 圆珠笔>原子筆 盒饭>便當 幼儿园>幼稚園 熊猫>貓熊 悉尼>雪梨 新西兰>紐西蘭 朝鲜>北韓 奔驰>賓士 智能手机>智慧型手機 智能>智慧 数码相机>數位相機 账号>帳號 结账>結帳 地铁>捷運 堵车>塞車 外卖>外送 菠萝>鳳梨 猕猴桃>奇異果 三文鱼>鮭魚 芝士>起司 充电宝>行動電源 点赞>按讚 工资>薪水 简历>履歷 初中>國中 酒店>飯店 计算机>電腦 笔记本电脑>筆記型電腦 台式机>桌上型電腦 人工智能>人工智慧 云计算>雲端運算 芯片>晶片 硅谷>矽谷 纳米>奈米 报道>報導 复印>影印 厘米>公分 乒乓球>桌球 世界杯>世界盃 特朗普>川普 乔布斯>賈伯斯 谷歌>Google
+`;
+const s2tw = t => s2t(t, { tw: true });
+for (const line of TW.trim().split('\n')) for (const e of line.trim().split(/\s+/)) { const [a, b] = e.split('>'); eq(s2tw, a, b, 's2t+tw'); }
+// toggle off leaves vocabulary alone
+eq(s2t, '软件 信息 网络 视频 质量 程序 内存 鼠标 打印 出租车 自行车', '軟件 信息 網絡 視頻 質量 程序 內存 鼠標 打印 出租車 自行車', 's2t tw=off');
+eq(s2tw, '这个软件的质量很高，程序运行得很快，内存占用也很少。', '這個軟體的品質很高，程式執行得很快，記憶體佔用也很少。', 's2t+tw sentence');
+eq(s2tw, '请用鼠标点击打印按钮，把文件发送到我的邮箱。', '請用滑鼠點選列印按鈕，把文件傳送到我的信箱。', 's2t+tw sentence');
+// 台灣用語 does not touch words that are not vocabulary differences, and ordinary words still convert
+eq(s2tw, '支持你的类型', '支持你的類型', 's2t+tw leaves 支持/類型');
+eq(s2tw, '他的头发很长', '他的頭髮很長', 's2t+tw ordinary');
+
+// reverse: Taiwan wording back to mainland wording, then simplified
+const TWR = `軟體>软件 資訊>信息 網路>网络 影片>视频 品質>质量 程式>程序 記憶體>内存 滑鼠>鼠标 列印>打印 計程車>出租车 腳踏車>自行车 硬體>硬件 資料庫>数据库 伺服器>服务器 作業系統>操作系统 資料夾>文件夹 部落格>博客 雷射>激光 簡訊>短信 螢幕>屏幕 位元組>字节 機率>概率 預設>默认 選單>菜单 連結>链接 登入>登录 使用者>用户 搜尋>搜索 解析度>分辨率 畫素>像素 相容>兼容 程式碼>代码 演算法>算法 函式>函数 變數>变量 陣列>数组 模組>模块 介面>接口 專案>项目
+泡麵>方便面 公車>公交车 機車>摩托车 冷氣>空调 洗髮精>洗发水 原子筆>圆珠笔 便當>盒饭 幼稚園>幼儿园 貓熊>熊猫 雪梨>悉尼 紐西蘭>新西兰 北韓>朝鲜 賓士>奔驰 捷運>地铁 塞車>堵车 帳號>账号 結帳>结账 履歷>简历 電腦>计算机 筆記型電腦>笔记本电脑 人工智慧>人工智能 晶片>芯片 奈米>纳米 報導>报道 桌球>乒乓球 世界盃>世界杯 川普>特朗普 賈伯斯>乔布斯 Google>谷歌 網際網路>互联网 原始碼>源代码 OK繃>创可贴 智慧型手機>智能手机 數位相機>数码相机
+`;
+const t2sw = t => t2s(t, { tw: true });
+for (const line of TWR.trim().split('\n')) for (const e of line.trim().split(/\s+/)) { const [a, b] = e.split('>'); eq(t2sw, a, b, 't2s+tw'); }
+eq(t2s, '軟體 資訊 網路 影片 品質', '软体 资讯 网路 影片 品质', 't2s tw=off');
+eq(t2sw, '這個軟體的品質很高，程式執行得很快。', '这个软件的质量很高，程序执行得很快。', 't2s+tw sentence');
+// words that are also normal mainland words are left alone by the reverse table
+eq(t2sw, '文件 資料 智慧 影像 裝置 番茄 馬鈴薯', '文件 资料 智慧 影像 装置 番茄 马铃薯', 't2s+tw skips shared words');
+
+// ---- round trips ----
+const TW_TEXT = [
+  '今天天氣很好，我們一起去公園散步吧。他說他明天會來，但是我不太相信。',
+  '這隻小狗很可愛，只要你叫牠，牠就會搖尾巴。',
+  '我的頭髮該剪了，髮型師說要等一個鐘頭。時鐘敲了十二下，鬧鐘也響了。',
+  '請把房間打掃乾淨，幹部們都來了。後來皇后到了裡面，走了三公里，吃了一碗麵條。',
+  '系統和關係，聯繫我們，複雜的事情重複做，答覆他，颱風來了，松樹下放鬆一下，制度和製造業。',
+  '台灣的夜市很熱鬧，大家一邊吃一邊聊天，週末的時候人更多。',
+  '歷史上有許多傑出的人物，他們的故事至今仍然被傳頌。',
+  '這個問題非常複雜，需要仔細研究才能找到合適的答案。',
+  '我們公司的產品品質很好，客戶都很滿意，業績逐年成長。',
+  '他每天早上六點起床，先跑步三公里，然後吃早餐、看報紙。',
+];
+for (const t of TW_TEXT) { const back = s2t(t2s(t)); ok(back === t, `round trip t→s→t: ${t} → ${t2s(t)} → ${back}`); }
+const CN_TEXT = [
+  '今天天气很好，我们一起去公园散步吧。他说他明天会来，但是我不太相信。',
+  '他的头发很长，公司的发展很快。后来皇后到了里面，走了三公里。',
+  '请把房间打扫干净，干部们都来了，若干个问题。',
+  '系统和关系，联系我们，复杂的事情重复做，答复他，台风来了，松树下放松一下。',
+  '这个软件的质量很高，程序运行得很快，内存占用也很少。',
+  '我们公司的产品质量很好，客户都很满意，业绩逐年增长。',
+];
+for (const t of CN_TEXT) { const back = t2s(s2t(t)); ok(back === t, `round trip s→t→s: ${t} → ${s2t(t)} → ${back}`); }
+// round trip with 台灣用語 both ways
+for (const t of ['这个软件的质量很高，程序的内存占用也很少。', '请用鼠标点击打印按钮，然后把文件夹里的视频上传到服务器。']) {
+  const tw = s2t(t, { tw: true }), back = t2s(tw, { tw: true });
+  ok(back === t, `round trip with vocabulary: ${t} → ${tw} → ${back}`);
+}
+// idempotent: converting already-traditional text with s2t changes nothing on common text
+for (const t of TW_TEXT) ok(s2t(t) === t, `s2t is idempotent on traditional text: ${t} → ${s2t(t)}`);
+for (const t of CN_TEXT) ok(t2s(t) === t, `t2s is idempotent on simplified text: ${t} → ${t2s(t)}`);
+
+// ---- segments / highlighting ----
+{
+  const segs = ZC.convert('头发很长，软件好。', { dir: 's2t', tw: true });
+  ok(ZC.join(segs) === '頭髮很長，軟體好。', 'segments join to output');
+  const ch = segs.filter(s => s.k);
+  ok(ch.length === 3 && ch[0].s === '头发' && ch[0].k === 1 && ch[1].s === '长' && ch[2].s === '软件' && ch[2].k === 2 && ch[2].o === '軟體' && ch[2].p === '軟件', 'segment kinds: 1 char/phrase, 2 vocabulary with plain fallback ' + JSON.stringify(ch));
+  ok(segs.some(s => s.k === 0 && s.s === '很') && segs.some(s => s.k === 0 && s.s === '，') && segs.some(s => s.k === 0 && s.s === '好。'), 'unchanged runs are kept separate from vocabulary matches ' + JSON.stringify(segs));
+  const vocab = ZC.convert('这是软件工程和网络信息安全。', { dir: 's2t', tw: true });
+  ok(vocab.filter(s => s.k === 2).map(s => s.s).join(',') === '软件,网络,信息安全', 'vocabulary segments are tight: ' + JSON.stringify(vocab));
+  ok(vocab.filter(s => s.k === 0).every(s => !/[软件网络信息]/.test(s.s)), 'no vocabulary text left in unchanged runs');
+  const t = ZC.convert('這個軟體很好', { dir: 't2s', tw: true });
+  ok(ZC.join(t) === '这个软件很好' && t.some(s => s.k === 2 && s.s === '軟體' && s.o === '软件' && s.p === '软体'), 't2s vocabulary segment ' + JSON.stringify(t));
+  const v = ZC.convert('猫陪着我。台上', { dir: 's2t' });
+  ok(v.length === 4 && v[0].s === '猫' && v[0].k === 1 && v[1].s === '陪' && v[1].k === 0 && v[2].s === '着' && v[2].o === '著' && v[2].k === 1 && v[3].s === '我。台上' && v[3].k === 0, 'variant characters inside unchanged runs are marked alone: ' + JSON.stringify(v));
+  const none = ZC.convert('ABC 123', { dir: 's2t' });
+  ok(none.length === 1 && none[0].k === 0, 'ascii only is one unchanged segment');
+}
+
+// ---- alternatives ----
+{
+  const a = ZC.alts({ s: '发', o: '發', k: 1 }, { dir: 's2t' });
+  ok(a[0] === '發' && a.includes('髮'), '发 alternatives include 髮: ' + a.join('/'));
+  const g = ZC.alts({ s: '干', o: '幹', k: 1 }, { dir: 's2t' });
+  ok(g[0] === '幹' && g.includes('乾') && g.includes('干'), '干 alternatives: ' + g.join('/'));
+  const hf = ZC.alts({ s: '头发', o: '頭髮', k: 1 }, { dir: 's2t' });
+  ok(hf[0] === '頭髮' && hf.includes('頭發'), '头发 alternatives: ' + hf.join('/'));
+  const li = ZC.alts({ s: '里', o: '裡', k: 1 }, { dir: 's2t' });
+  ok(li.includes('里') && !li.includes('裏'), '里 alternatives use Taiwan form 裡, not 裏: ' + li.join('/'));
+  const tw = ZC.alts({ s: '软件', o: '軟體', k: 2, p: '軟件' }, { dir: 's2t' });
+  ok(tw[0] === '軟體' && tw[1] === '軟件', 'vocabulary alternatives offer the plain conversion: ' + tw.join('/'));
+  const q = ZC.alts({ s: '乾', o: '干', k: 1 }, { dir: 't2s' });
+  ok(q[0] === '干' && q.includes('乾'), '乾 alternatives in t2s: ' + q.join('/'));
+  const z = ZC.alts({ s: '著', o: '着', k: 1 }, { dir: 't2s' });
+  ok(z.includes('著'), '著 alternatives in t2s: ' + z.join('/'));
+  const none = ZC.alts({ s: '很', o: '很', k: 0 }, { dir: 's2t' });
+  ok(none[0] === '很', 'unchanged alternatives');
+  ok(ZC.alts({ s: '发', o: '發', k: 1 }, { dir: 's2t' }).length <= 10, 'alternatives capped');
+}
+
+// ---- custom dictionary ----
+{
+  const custom = [{ from: '土豆', to: '洋芋', dir: 's2t' }, { from: '软件', to: '軟件', dir: 's2t' }, { from: '軟體', to: '软体', dir: 't2s' }];
+  eq(t => s2t(t, { custom, tw: true }), '土豆和软件', '洋芋和軟件', 'custom wins over vocabulary');
+  eq(t => s2t(t, { custom }), '土豆和软件', '洋芋和軟件', 'custom wins over characters');
+  eq(t => t2s(t, { custom, tw: true }), '軟體', '软体', 'custom in t2s wins over reverse vocabulary');
+  eq(t => t2s(t, { custom: [{ from: '土豆', to: '洋芋', dir: 's2t' }] }), '土豆', '土豆', 'custom entry only applies in its direction');
+  const segs = ZC.convert('土豆', { dir: 's2t', custom });
+  ok(segs.length === 1 && segs[0].k === 3 && segs[0].o === '洋芋', 'custom segment kind 3');
+  eq(t => s2t(t, { custom: [{ from: '头发', to: '頭髮絲', dir: 's2t' }] }), '头发长', '頭髮絲長', 'custom entries may change length');
+  eq(t => s2t(t, { custom: [{ from: '长', to: '', dir: 's2t' }] }), '头发长', '頭髮', 'custom entry may delete');
+}
+
+// ---- counting ----
+{
+  const c = ZC.count('Hello world 你好嗎 123');
+  ok(c.chars === 16 && c.cjk === 3 && c.words === 3, 'count: ' + JSON.stringify(c));
+  ok(ZC.count('').chars === 0, 'count empty');
+  ok(ZC.count('你好\n世界').cjk === 4, 'count ignores newlines');
+}
+
+// ---- performance ----
+{
+  const big = '他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快。'.repeat(1500);
+  const t0 = Date.now(); s2t(big, { tw: true }); const ms = Date.now() - t0;
+  ok(ms < 1500, `50k chars with vocabulary in ${ms} ms`);
+  const t1 = Date.now(); t2s(s2t(big), { tw: true }); const ms2 = Date.now() - t1;
+  ok(ms2 < 1500, `50k chars reverse in ${ms2} ms`);
+}
+
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
