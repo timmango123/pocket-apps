@@ -37,6 +37,7 @@ const FH = 480;
   ok(full > half && half > none && none > 0 && full % 100 === 0, 'capture bonus rewards remaining time, rounded to 100');
   ok(C.captureBonus(2, 30, 30) > C.captureBonus(0, 30, 30), 'later stages pay more');
   ok(!C.nextExtend(499999, 0) && C.nextExtend(500000, 0) && !C.nextExtend(500000, 1) && C.nextExtend(1200000, 1) && !C.nextExtend(9e9, 2), 'extends at 500k and 1.2M, only once each');
+ok(C.PLAYER.save >= 0.2 && C.PLAYER.save <= 0.25, 'the save-yourself window after a hit is 0.2–0.25 s (human reaction time)');
 ok(C.DIFFS[0].autoBomb === true && !C.DIFFS[1].autoBomb && !C.DIFFS[2].autoBomb && !C.DIFFS[3].autoBomb, 'only 簡單 has the auto-bomb guard');
 ok(C.DIFFS.every(d => d.blurb && d.blurb.indexOf((d.lives + 1) + ' 條命') === 0 && d.blurb.indexOf('炸彈 ' + d.bombs) > 0), 'difficulty blurbs state the real lives and bombs');
   ok(Math.abs(C.aimAt(0, 0, 0, 10) - Math.PI / 2) < 1e-9, 'aimAt points straight down for a target below');
@@ -44,7 +45,7 @@ ok(C.DIFFS.every(d => d.blurb && d.blurb.indexOf((d.lives + 1) + ' 條命') === 
 // --- difficulty table ---
 {
   for (let i = 1; i < C.DIFFS.length; i++) ok(C.DIFFS[i].dens > C.DIFFS[i - 1].dens && C.DIFFS[i].spd > C.DIFFS[i - 1].spd && C.DIFFS[i].hp > C.DIFFS[i - 1].hp, 'difficulty ' + i + ' is harder than ' + (i - 1));
-  ok(C.DIFFS.length === 4 && C.DIFFS.every(d => d.lives >= 2 && d.bombs >= 3), 'four difficulties, each with lives and bombs');
+  ok(C.DIFFS.length === 4 && C.DIFFS.every(d => d.lives >= 2 && d.bombs >= 2) && C.DIFFS[3].bombs < C.DIFFS[2].bombs && C.DIFFS[3].dens > C.DIFFS[2].dens, 'four difficulties with lives and bombs; 地獄 has fewer bombs and denser patterns than 困難');
 }
 // --- bullet physics ---
 {
