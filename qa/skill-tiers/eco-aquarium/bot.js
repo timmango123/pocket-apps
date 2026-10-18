@@ -92,7 +92,7 @@ class Keeper {
     return ok;
   }
   // what a human reads
-  async hud() { return this.page.evaluate(() => ({ q: document.getElementById('qlab').textContent, sub: document.getElementById('qsub').textContent, light: document.querySelectorAll('#lightDots i.on').length, clock: document.getElementById('clockT').textContent })); }
+  async hud() { return this.page.evaluate(() => { const b = id => { const e = document.getElementById(id); return e ? (e.classList.contains('bad') ? 2 : e.classList.contains('on') ? 1 : 0) : 0; }; return { q: document.getElementById('qlab').textContent, sub: document.getElementById('qsub').textContent, light: document.querySelectorAll('#lightDots i.on').length, clock: document.getElementById('clockT').textContent, feedBadge: b('feedBadge'), waterBadge: b('waterBadge') }; }); }
   async stats() {
     if (!await this.openStats()) return null;
     const txt = await this.page.evaluate(() => ({ rows: [...document.querySelectorAll('#statRows .stat')].map(r => r.textContent.replace(/\s+/g, ' ')), pop: document.getElementById('popRow').textContent }));
@@ -162,14 +162,15 @@ async function act(K, T, rnd, s, log, read) {
     // else: looks and leaves
   } else if (T.policy === 'casual') {
     if (mistake()) { log.mistakes++; if (await K.tap('#bLight')) log.actions.light++; return; }
-    if (hungry) await K.feed(1 + (rnd() < 0.3 ? 1 : 0)); else if (rnd() < 0.35) await K.feed(1);
-    if (label !== '清澈' && rnd() < 0.85) await K.water();
+    if (hungry || hud.feedBadge) await K.feed(1 + (rnd() < 0.3 ? 1 : 0)); else if (rnd() < 0.35) await K.feed(1);
+    if ((label !== '清澈' || hud.waterBadge) && rnd() < 0.85) await K.water();
     if (rnd() < 0.08) await K.lifeAction('guppy', 'fish', true);
   } else if (T.policy === 'skilled' || T.policy === 'world') {
     const W = T.policy === 'world';
     const st = await K.stats(); if (!st) return;
     if (mistake()) { log.mistakes++; await K.feed(3); return; }
-    const pinches = hungry ? Math.ceil(st.fish / (W ? 7 : 9)) : (log.checkins % 2 === 0 ? 1 : 0);
+    // a pinch is sized for the tank (the game scales it), so one pinch when the fish look hungry, two when the badge is red
+    const pinches = hud.feedBadge === 2 ? 2 : hungry || hud.feedBadge ? 1 : (log.checkins % 2 === 0 ? 1 : 0);
     if (pinches) await K.feed(Math.min(pinches, 4));
     if (st.nitrate > (W ? 30 : 40) || st.ammonia > (W ? 0.15 : 0.2) || st.algae > (W ? 35 : 45)) await K.water();
     const lightTarget = st.algae > 30 ? 1 : st.algae < 6 ? 3 : 2; await K.setLight(lightTarget);
@@ -178,9 +179,9 @@ async function act(K, T, rnd, s, log, read) {
     if (st.algae > 30 && rnd() < 0.5) await K.lifeAction('oto', 'fish', true);
     if (W && st.detritus > 1.2) await K.lifeAction('shrimp', 'cleaner', true);
   } else { // perfect information, exact amounts
-    const fullState = await K.page.evaluate(() => { const s = window.__eco.st; return { hungry: s.fish.filter(f => f.hunger > 0.45).length, fish: s.fish.length, food: s.food.length, w: s.water, det: s.detritus, load: window.__eco.ECO.load(s), guppies: s.fish.filter(f => f.sp === 'guppy').length, otos: s.fish.filter(f => f.sp === 'oto').length, shrimp: s.cleaners.filter(c => c.kind === 'shrimp').length, light: s.light }; });
+    const fullState = await K.page.evaluate(() => { const s = window.__eco.st; return { pinch: window.__eco.ECO.pinch ? window.__eco.ECO.pinch(s) : 8, hungry: s.fish.filter(f => f.hunger > 0.45).length, fish: s.fish.length, food: s.food.length, w: s.water, det: s.detritus, load: window.__eco.ECO.load(s), guppies: s.fish.filter(f => f.sp === 'guppy').length, otos: s.fish.filter(f => f.sp === 'oto').length, shrimp: s.cleaners.filter(c => c.kind === 'shrimp').length, light: s.light }; });
     const need = Math.max(0, fullState.hungry - fullState.food);
-    if (need > 0) await K.feed(Math.ceil(need / 8));
+    if (need > 0) await K.feed(Math.ceil(need / fullState.pinch));
     if (fullState.w.nitrate > 30 || fullState.w.ammonia > 0.15 || fullState.w.algae > 30) await K.water();
     await K.setLight(fullState.w.algae > 20 ? 1 : fullState.w.algae < 8 ? 3 : 2);
     if (fullState.load > 18 || fullState.fish > 24) await K.lifeAction(fullState.guppies > 4 ? 'guppy' : 'neon', 'fish', false);
@@ -193,15 +194,17 @@ async function main() {
   const srv = await serve(); const base = 'http://localhost:' + srv.address().port;
   const resFile = path.join(OUT, 'results.json');
   let results = fs.existsSync(resFile) ? JSON.parse(fs.readFileSync(resFile, 'utf8')) : { game: 'eco-aquarium', tiers: {}, findings: [] };
-  results.harness = { days: DAYS, frameMs: FRAME, speed: '4× (menu)', viewport: '390x844 @2x touch', date: new Date().toISOString().slice(0, 10) };
+  const AFTER = args.includes('--after');
+  results.harness = results.harness || { days: DAYS, frameMs: FRAME, speed: '4× (menu)', viewport: '390x844 @2x touch', date: new Date().toISOString().slice(0, 10) };
+  const dest = AFTER ? (results.afterFix = results.afterFix || { tiers: {} }).tiers : results.tiers;
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   for (const tierId of Object.keys(TIERS)) {
     if (onlyTiers.length && !onlyTiers.includes(tierId)) continue;
     const T = TIERS[tierId]; const t0 = Date.now();
     const run = await runTier(browser, base, tierId, T, 1000 + Object.keys(TIERS).indexOf(tierId) * 17);
     run.wallSeconds = Math.round((Date.now() - t0) / 1000);
-    results.tiers[tierId] = { name: T.name, runs: [run], summary: { fishStart: run.fishStart, fishEnd: run.fishEnd, born: run.born, died: run.died, deaths: run.deaths, avgQ: run.avgQ, minQ: run.minQ, dangerHours: run.dangerHours, maxFish: run.maxFish, maxSnails: run.maxSnails, actions: run.actions, missedTaps: run.missedTaps, errors: run.errors.length } };
-    console.log(tierId, JSON.stringify(results.tiers[tierId].summary), run.wallSeconds + 's');
+    dest[tierId] = { name: T.name, runs: [run], summary: { fishStart: run.fishStart, fishEnd: run.fishEnd, born: run.born, died: run.died, deaths: run.deaths, avgQ: run.avgQ, minQ: run.minQ, dangerHours: run.dangerHours, maxFish: run.maxFish, maxSnails: run.maxSnails, actions: run.actions, missedTaps: run.missedTaps, errors: run.errors.length } };
+    console.log(tierId, JSON.stringify(dest[tierId].summary), run.wallSeconds + 's');
     fs.writeFileSync(resFile, JSON.stringify(results, null, 1));
   }
   await Promise.race([browser.close(), new Promise(r => setTimeout(r, 5000))]); srv.close();

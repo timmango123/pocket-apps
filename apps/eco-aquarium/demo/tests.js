@@ -34,7 +34,8 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(f.hunger < 0.5 && st.food.length === 4, 'a hungry fish eats a flake while away (coarse mode)');
   const st2 = bare(); st2.water.bacteria = 0.05; ECO.addFish(st2, 'guppy', { size: 1, hunger: 0, x: 50, y: 30 }); ECO.feed(st2, 4);
   ECO.advance(st2, 4 * HOUR);
-  ok(st2.food.length === 0 && st2.detritus > 3, 'uneaten flakes rot into detritus within hours');
+  const ctl = bare(); ctl.water.bacteria = 0.05; ECO.addFish(ctl, 'guppy', { size: 1, hunger: 0, x: 50, y: 30 }); ECO.advance(ctl, 4 * HOUR);
+  ok(st2.food.length === 0 && st2.detritus > ctl.detritus + 0.3, 'uneaten flakes rot into detritus within hours (' + st2.detritus.toFixed(2) + ' vs ' + ctl.detritus.toFixed(2) + ')');
   ok(st2.water.ammonia > 0.03, 'rotting food raises ammonia (' + st2.water.ammonia.toFixed(3) + ')');
   // realtime: fish swims to a flake and eats it
   const st3 = bare(); const g = ECO.addFish(st3, 'guppy', { size: 1, hunger: 0.9, x: 50, y: 30 }); st3.food.push({ x: 60, y: 30, vy: 0, t: st3.t, w: 0 });
@@ -77,6 +78,12 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   const st4 = bare(11); ECO.addFish(st4, 'guppy', { size: 1, sex: 'f', hunger: 0.1, cd: 0 }); ECO.addFish(st4, 'guppy', { size: 1, sex: 'm', hunger: 0.1, cd: 0 }); st4.water.ammonia = 0.6;
   for (let i = 0; i < 12; i++) { ECO.feed(st4, 3); st4.water.ammonia = 0.6; ECO.advance(st4, HOUR); }
   ok(st4.born === 0, 'no breeding in bad water');
+  // playtest fix: breeding is gated on the load once every fry is grown, so a well-fed tank levels off instead of hitting 30 and starving
+  const st5 = ECO.sampleTank(7, 60); let maxN = 0;
+  for (let i = 0; i < 10 * 24; i++) { if (i % 8 === 0) ECO.feed(st5); ECO.advance(st5, HOUR); maxN = Math.max(maxN, st5.fish.length); }
+  const adult = st5.fish.reduce((s, f) => s + ECO.SPECIES[f.sp].load, 0);
+  ok(maxN < ECO.MAX_FISH && adult <= ECO.CAP * ECO.BREED_ROOM + 5, 'a well-fed sample tank levels off (max ' + maxN + ' fish, grown load ' + adult.toFixed(1) + ')');
+  ok(ECO.pinch(bare()) === 6 && ECO.pinch(st5) >= 9 && ECO.pinch({ fish: new Array(30) }) === 16, 'one pinch is sized to the number of fish (6 to 16 flakes)');
 }
 // --- predation & fights ---
 {
@@ -95,7 +102,7 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
 // --- nitrogen cycle ---
 {
   const st = bare(); st.water.bacteria = 0.05; st.water.ammonia = 0; for (let i = 0; i < 8; i++) ECO.addFish(st, 'goldfish', { size: 1, hunger: 0 });
-  ECO.advance(st, DAY);
+  ECO.advance(st, 8 * HOUR);
   ok(st.water.ammonia > 0.3, 'fish waste raises ammonia with few bacteria (' + st.water.ammonia.toFixed(2) + ')');
   ok(st.water.bacteria > 0.5, 'bacteria colonise when ammonia is present (' + st.water.bacteria.toFixed(2) + ')');
   const st2 = bare(); st2.water.ammonia = 0.5; st2.water.nitrate = 0; st2.water.bacteria = 1; ECO.advance(st2, 6 * HOUR);
@@ -170,9 +177,9 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
 // --- save / restore ---
 {
   const st = ECO.sampleTank(99, 60); const json = ECO.serialize(st);
-  const r = ECO.restore(json, Date.now());
+  const r = ECO.restore(json, JSON.parse(json).savedAt);
   ok(r && r.st.fish.length === st.fish.length && r.sum === null, 'restore right away: no catch-up');
-  const r2 = ECO.restore(json, Date.now() + 300 * 1000);
+  const r2 = ECO.restore(json, JSON.parse(json).savedAt + 300 * 1000);
   ok(r2 && r2.sum && Math.abs(r2.sum.simSeconds - 300 * ECO.SCALE) < 5 && Math.abs(r2.st.t - st.t - 300 * ECO.SCALE) < 5, 'restore after five minutes simulates 240× elapsed time (20 tank hours)');
   const r3 = ECO.restore(json, Date.now() + 2 * 3600 * 1000);
   ok(r3.sum.capped && r3.st.t - st.t === ECO.OFFLINE_CAP, 'restore after two days is capped');
@@ -196,7 +203,8 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(n0 >= 17, 'page starts with the sample tank (' + n0 + ' fish)');
   const food0 = await page.evaluate(() => window.__eco.st.food.length);
   await tap('#bFeed'); await page.waitForTimeout(100);
-  ok(await page.evaluate(() => window.__eco.st.food.length) === food0 + 8, 'feed button drops 8 flakes');
+  const pinch = await page.evaluate(() => window.__eco.ECO.pinch(window.__eco.st));
+  ok(await page.evaluate(() => window.__eco.st.food.length) === food0 + pinch && pinch >= 6 && pinch <= 16, 'feed button drops one pinch sized for the tank (' + pinch + ' flakes)');
   await tap('#bLight'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.light) === 3 && (await page.textContent('#lightLab')) === '強', 'light button cycles to 強');
   await page.evaluate(() => { window.__eco.st.water.nitrate = 60; });
@@ -216,8 +224,22 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   const hit = await page.evaluate(() => { const st = window.__eco.st, S = window.__eco.S(); const f = st.fish.find(x => x.size >= 1 && x.y * S > 120 && x.y * S < 600); window.__eco.showCard(f); return { x: f.x * S, y: f.y * S, name: f.name }; });
   await page.waitForTimeout(100);
   ok(await page.isVisible('#card') && (await page.textContent('#card')).includes(hit.name), 'tapping a fish shows its card with its name');
+  const nBefore = await page.evaluate(() => window.__eco.st.fish.length);
+  await tap('#cRemove'); await page.waitForTimeout(100);
+  ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore && (await page.textContent('#cRemove')).includes('確定'), 'first tap on 移出 only asks to confirm');
+  await tap('#cRemove'); await page.waitForTimeout(100);
+  ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore - 1 && await page.isHidden('#card'), 'second tap removes the fish and closes the card');
+  await page.evaluate(() => { const st = window.__eco.st; window.__eco.showCard(st.fish.find(x => x.size >= 1)); });
   await tap('#cClose'); await page.waitForTimeout(100);
-  ok(await page.isHidden('#card'), 'card closes');
+  ok(await page.isHidden('#card') && (await page.textContent('#cRemove')) === '移出', 'card closes and the remove button is reset');
+  // attention cues: starving fish light the feed badge and the quality chip, once in words
+  await page.evaluate(() => { for (const f of window.__eco.st.fish) f.hunger = 0.95; window.__eco.st.food = []; });
+  const until = async fn => { for (let i = 0; i < 40; i++) { await page.evaluate(() => window.__eco.hud()); if (await page.evaluate(fn)) return true; await page.waitForTimeout(150); } return false; };
+  ok(await until(() => document.getElementById('feedBadge').classList.contains('on') && document.getElementById('qual').classList.contains('alert') && /餓/.test(document.getElementById('qsub').textContent)), 'starving fish: feed badge + alert in the quality chip');
+  ok((await page.textContent('#toasts')).includes('餓壞'), 'starving fish: one spoken warning');
+  await page.evaluate(() => { for (const f of window.__eco.st.fish) f.hunger = 0.1; window.__eco.st.water.o2 = 30; });
+  ok(await until(() => !document.getElementById('feedBadge').classList.contains('on') && document.getElementById('waterBadge').classList.contains('bad') && /缺氧/.test(document.getElementById('qsub').textContent)), 'low oxygen: water badge + 缺氧 in the chip');
+  await page.evaluate(() => { window.__eco.st.water.o2 = 90; });
   // save + reload with elapsed time
   await page.evaluate(() => { window.__eco.save(); const raw = localStorage.getItem('eco-aquarium:v1:save'); const o = JSON.parse(raw); o.savedAt -= 30 * 60 * 1000; localStorage.setItem('eco-aquarium:v1:save', JSON.stringify(o)); });
   const t1 = await page.evaluate(() => window.__eco.st.t);

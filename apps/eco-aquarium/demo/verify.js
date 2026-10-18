@@ -32,7 +32,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // all bar buttons inside the viewport
     const boxes = await page.evaluate(() => [...document.querySelectorAll('.bar button, .top button')].map(b => { const r = b.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom, r.width, r.height]; }));
     ok(boxes.every(b => b[0] >= 0 && b[1] >= 0 && b[2] <= w + 0.5 && b[3] <= h + 0.5 && b[4] >= 44 && b[5] >= 44), `${w}x${h} ${scheme}: all controls on screen and at least 44px ${JSON.stringify(boxes.map(b => b.map(Math.round)))}`);
-    await tap('#bFeed'); const b = await st(); ok(b.food === a.food + 8, `${w}x${h} ${scheme}: feeding drops flakes`);
+    await tap('#bFeed'); const b = await st(); ok(b.food === a.food + await page.evaluate(() => window.__eco.ECO.pinch(window.__eco.st)) && b.food >= a.food + 6, `${w}x${h} ${scheme}: feeding drops a pinch sized for the tank`);
     await tap('#bLight'); ok((await st()).light === (a.light + 1) % 4 && (await page.evaluate(() => document.querySelectorAll('#lightDots i.on').length)) === (a.light + 1) % 4, `${w}x${h} ${scheme}: light cycles and the dots show the level`);
     await page.evaluate(() => { window.__eco.st.water.nitrate = 50; }); await tap('#bWater');
     ok(Math.abs((await st()).nitrate - 35) < 0.6, `${w}x${h} ${scheme}: water change dilutes`);
