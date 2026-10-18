@@ -42,11 +42,13 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
     if (s.name === '390x844') {
       const outText = () => page.evaluate(() => document.getElementById('out').textContent);
       ok(/頭髮/.test(await outText()) && /麵條/.test(await outText()) && /一隻貓/.test(await outText()), 'sample: 头发→頭髮, 面条→麵條, 一只→一隻');
-      ok(!/軟體/.test(await outText()), '台灣用語 off by default (软件 stays 軟件)');
-      // toggle 台灣用語
-      await page.click('label[for="opt-tw"], #opt-tw + .sw');
-      ok(/軟體/.test(await outText()) && /品質/.test(await outText()) && /計程車/.test(await outText()), '台灣用語 on: 軟體 / 品質 / 計程車');
+      // 台灣用語 is on by default (the title promises 台灣正體); the hint shows what the switch does right now
+      ok((await page.isChecked('#opt-tw')) && /軟體/.test(await outText()) && /品質/.test(await outText()) && /計程車/.test(await outText()), '台灣用語 on by default: 軟體 / 品質 / 計程車');
       ok((await page.locator('#out .m.tw').count()) >= 3, 'vocabulary marks use the tw style');
+      ok((await page.textContent('#tw-hint')) === '软件→軟體', '台灣用語 hint while on: ' + (await page.textContent('#tw-hint')));
+      await page.click('#opt-tw + .sw'); await page.waitForTimeout(100);
+      ok(!/軟體/.test(await outText()) && /軟件/.test(await outText()) && (await page.textContent('#tw-hint')) === '软件→軟件', '台灣用語 off: characters only (软件→軟件), hint follows');
+      await page.click('#opt-tw + .sw'); await page.waitForTimeout(100);
       // type own text: chip disappears, counts update
       await page.fill('#src', '他的头发很干净');
       await page.waitForTimeout(150);
@@ -199,6 +201,52 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok(/2 筆/.test(await page.textContent('#dict-n')) && /匯入 2 筆新詞，略過 1 行/.test(await page.textContent('#toast-msg')), 'dictionary import adds entries and reports bad lines: ' + (await page.textContent('#toast-msg')));
       await page.click('#toast-act'); await page.waitForTimeout(150);
       ok(/0 筆/.test(await page.textContent('#dict-n')), 'import can be undone');
+      // ---- third review fixes ----
+      // export → delete everything → import gives back exactly the same dictionary (commas, arrows, =>, 繁→簡, # at the start)
+      const tricky = [['軟體', '软件', 't2s'], ['A,B', 'C', 's2t'], ['甲→乙', '丙=>丁', 's2t'], ['x=>y', 'p,q→r', 't2s'], ['#井號', '#號', 's2t']];
+      for (const [f, t, d] of tricky) { await page.click('#dict-dir-' + d); await page.fill('#dict-from', f); await page.fill('#dict-to', t); await page.click('#dict-add'); await page.waitForTimeout(30); }
+      const dictBefore = await page.evaluate(() => localStorage.getItem('zh-convert:v1:dict'));
+      const [dx2] = await Promise.all([page.waitForEvent('download'), page.click('#dict-export')]);
+      const dtext2 = fs.readFileSync(await dx2.path(), 'utf8');
+      while (await page.locator('#dict-list .del').count()) { await page.click('#dict-list .del'); await page.waitForTimeout(20); }
+      ok(/0 筆/.test(await page.textContent('#dict-n')), 'dictionary emptied');
+      await page.setInputFiles('#dict-file', { name: 'back.txt', mimeType: 'text/plain', buffer: Buffer.from(dtext2, 'utf8') });
+      await page.waitForTimeout(250);
+      const dictAfter = await page.evaluate(() => localStorage.getItem('zh-convert:v1:dict'));
+      ok(dictAfter === dictBefore && JSON.parse(dictAfter).length === 5, 'export → delete all → import restores the dictionary exactly: ' + dictAfter);
+      while (await page.locator('#dict-list .del').count()) { await page.click('#dict-list .del'); await page.waitForTimeout(20); }
+      await page.click('#dict-dir-s2t');
+      // a choice belongs to one spot: an identical other line keeps the default, before and after reload
+      await page.click('#clear'); await page.waitForTimeout(100);
+      await page.fill('#src', '他的头发很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(200);
+      await page.locator('#out .m', { hasText: '頭髮' }).first().click(); await page.waitForTimeout(250);
+      await page.click('#sheet-alts button:has-text("頭發")'); await page.click('#sheet-close'); await page.waitForTimeout(150);
+      ok((await res2()) === '他的頭發很長\n今天天氣很好\n他的頭髮很長', 'choice changes only the tapped line');
+      await page.reload(); await page.waitForTimeout(300);
+      ok((await res2()) === '他的頭發很長\n今天天氣很好\n他的頭髮很長', 'after reload the identical other line still has the default: ' + JSON.stringify(await res2()));
+      // editing right before the spot (within 6 characters) keeps the choice on it
+      await page.fill('#src', '今天早上他的头发很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(200);
+      ok((await res2()) === '今天早上他的頭發很長\n今天天氣很好\n他的頭髮很長', 'choice kept after adding text just before it: ' + JSON.stringify(await res2()));
+      await page.fill('#src', '今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(200);
+      ok((await res2()) === '今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice kept after editing on both sides: ' + JSON.stringify(await res2()));
+      await page.fill('#src', '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(200);
+      ok((await res2()) === '新的一行\n今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice follows its line when a line is added above');
+      await page.reload(); await page.waitForTimeout(300);
+      ok((await res2()) === '新的一行\n今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice still on the right spot after edits and reload');
+      // deleting the word tells the person instead of dropping the choice silently; putting it back restores it
+      await page.fill('#src', '新的一行\n今天早上他说\n今天天气很好\n他的头发很长'); await page.waitForTimeout(250);
+      ok(/改選.*暫不套用/.test(await page.textContent('#toast-msg')) && (await res2()) === '新的一行\n今天早上他說\n今天天氣很好\n他的頭髮很長', 'removed spot is reported, the other line keeps the default: ' + (await page.textContent('#toast-msg')));
+      await page.fill('#src', '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(250);
+      ok((await res2()) === '新的一行\n今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice comes back when the text comes back');
+      // a long system paste (long-press → 貼上) switches to big-file mode
+      await page.click('#clear'); await page.waitForTimeout(100);
+      const longPaste = ('他的头发很长，公司的发展很快。这个软件的质量很高。\n').repeat(8000);
+      await page.evaluate(t => { const s = document.getElementById('src'); s.focus(); s.value = t; s.dispatchEvent(new InputEvent('input', { inputType: 'insertFromPaste', bubbles: true })); }, longPaste);
+      await page.waitForFunction(() => /處變更/.test(document.getElementById('out-meta').textContent), null, { timeout: 60000 });
+      const bm = await page.evaluate(() => ({ big: document.body.classList.contains('bigmode'), marks: document.querySelectorAll('#out .m').length, nodes: document.getElementById('out').getElementsByTagName('*').length, len: window.__zc.result().length }));
+      ok(bm.big && bm.marks === 0 && bm.nodes < 5000 && bm.len === longPaste.length, 'system paste of ' + longPaste.length + ' characters enters big-file mode: ' + JSON.stringify(bm));
+      await page.click('#clear'); await page.waitForTimeout(150);
+      await page.fill('#src', '他说头发很长，发现了问题。'); await page.waitForTimeout(150);
       // empty file keeps the text; too-large file explained; CRLF kept on download
       const keep = await page.inputValue('#src');
       await page.setInputFiles('#file', { name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('') });
@@ -221,7 +269,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       await page.evaluate(t => navigator.clipboard.writeText(t), huge);
       await page.evaluate(() => { window.__lf = 0; let last = performance.now(); (function f() { const n = performance.now(); window.__lf = Math.max(window.__lf, n - last); last = n; requestAnimationFrame(f); })(); });
       await page.click('#paste');
-      await page.waitForFunction(() => /處變更/.test(document.getElementById('out-meta').textContent), null, { timeout: 60000 });
+      await page.waitForFunction(() => document.body.classList.contains('bigmode') && /處變更/.test(document.getElementById('out-meta').textContent), null, { timeout: 60000 });
       const lf2 = await page.evaluate(() => window.__lf);
       ok(lf2 < 700 && (await page.evaluate(() => document.body.classList.contains('bigmode'))), `1M characters in big mode, longest frame ${Math.round(lf2)} ms`);
       ok(await page.evaluate(() => window.__zc.result().length) === huge.length && /\.\.\.|……/.test(await page.textContent('#out .more')), 'big mode result complete, display trimmed with a note');

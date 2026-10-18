@@ -249,6 +249,33 @@ eq(s2t, '\t头发\r\n发型\u0000', '\t頭髮\r\n髮型\u0000', 'tabs, CRLF and 
 eq(t2s, '   ', '   ', 'spaces only');
 eq(s2t, '０１２３ＡＢＣ', '０１２３ＡＢＣ', 'full-width ascii kept');
 
+// ---- custom dictionary file: export → clear → import gives back exactly the same entries ----
+{
+  const list = [
+    { from: '軟體', to: '软件', dir: 't2s' },        // 繁→簡 must stay 繁→簡
+    { from: 'A,B', to: 'C', dir: 's2t' },            // comma inside an entry
+    { from: '甲→乙', to: '丙=>丁', dir: 's2t' },      // arrows and => inside an entry
+    { from: 'x=>y', to: 'p,q→r', dir: 't2s' },
+    { from: '#井號開頭', to: '#號', dir: 's2t' },      // looks like a comment line
+    { from: '土豆', to: '', dir: 's2t' },            // empty "to" (deletes the word)
+    { from: '空 格', to: ' 前後 有空格 '.trim(), dir: 's2t' },
+    { from: '😀表情', to: '𠮷', dir: 't2s' },
+  ];
+  const text = ZC.dictText(list);
+  const back = ZC.parseDict(text);
+  ok(JSON.stringify(back.out) === JSON.stringify(list) && back.bad === 0, 'dictionary export/import round-trips exactly: ' + JSON.stringify(back));
+  ok(JSON.stringify(ZC.parseDict(text.replace(/\n/g, '\r\n')).out) === JSON.stringify(list), 'dictionary round-trip survives CRLF line breaks');
+  ok(JSON.stringify(ZC.parseDict('﻿' + text).out) === JSON.stringify(list), 'dictionary round-trip survives a BOM');
+  // files written by the previous version (same tab format, older header line) still import
+  const old = '# 簡繁轉換 自訂詞典：原文<Tab>轉成<Tab>方向（簡→繁 或 繁→簡）\n軟體\t软件\t繁→簡\n土豆\t洋芋\t簡→繁\n';
+  ok(JSON.stringify(ZC.parseDict(old).out) === JSON.stringify([{ from: '軟體', to: '软件', dir: 't2s' }, { from: '土豆', to: '洋芋', dir: 's2t' }]), 'older export imports with directions kept');
+  // hand-written lines and JSON
+  const hw = ZC.parseDict('面条,面線,簡→繁\n头发→頭髮\n软件=>軟體\n壞行\n# 註解\n軟體,软件,繁→簡\n');
+  ok(JSON.stringify(hw.out) === JSON.stringify([{ from: '面条', to: '面線', dir: 's2t' }, { from: '头发', to: '頭髮', dir: 's2t' }, { from: '软件', to: '軟體', dir: 's2t' }, { from: '軟體', to: '软件', dir: 't2s' }]) && hw.bad === 1, 'hand-written dictionary lines: ' + JSON.stringify(hw));
+  ok(JSON.stringify(ZC.parseDict(JSON.stringify(list)).out) === JSON.stringify(list), 'JSON dictionary imports');
+  ok(ZC.cleanEntry('a\tb\nc ') === 'a b c', 'tabs and line breaks never get into an entry');
+}
+
 // ---- performance ----
 {
   const big = '他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快。'.repeat(3000); // ~100k characters

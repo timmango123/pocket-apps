@@ -3,7 +3,7 @@
 # pruned subset (the CW list in index.html). Usage: python3 -I extract-jieba.py path/to/jieba/dict.txt
 import sys, re, os
 src = sys.argv[1] if len(sys.argv) > 1 else 'dict.txt'
-han = re.compile(r'^[㐀-鿿]{2,6}$')
+han = re.compile(r'^[㐀-鿿]{1,6}$')
 best = {}
 with open(src, encoding='utf-8') as f:
     for line in f:
