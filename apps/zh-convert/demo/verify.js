@@ -174,6 +174,12 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       await page.mouse.click(mb.x + mb.width + 5, mb.y + mb.height / 2); await page.waitForTimeout(250);
       ok(await page.locator('#sheet.on').isVisible(), 'tap 5px beside a one-character mark opens it');
       await page.click('#sheet-close'); await page.waitForTimeout(250);
+      await page.fill('#src', '他说了。'); await page.waitForTimeout(150);
+      { const b = await page.locator('#out .m', { hasText: '說' }).boundingBox();
+        await page.mouse.click(b.x + b.width + 18, b.y + b.height / 2); await page.waitForTimeout(250);
+        ok(await page.locator('#sheet.on').isVisible() && (await page.textContent('#sheet-from')) === '原文：说', 'tap 18px beside a lone one-character mark opens the nearest mark'); }
+      await page.click('#sheet-close'); await page.waitForTimeout(250);
+      await page.fill('#src', '他说头发很长，发现了问题。'); await page.waitForTimeout(150);
       // a choice is remembered after reload, after editing elsewhere in the line and after toggling 台灣用語
       await page.click('#out .m:has-text("頭髮")'); await page.waitForTimeout(250);
       await page.click('#sheet-alts button:has-text("頭發")'); await page.click('#sheet-close'); await page.waitForTimeout(200);
