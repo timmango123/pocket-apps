@@ -65,8 +65,11 @@ const col = (f, x, y0, y1) => { const o = []; for (let y = y0; y <= y1; y++) o.p
   const fp = ZS.footprint({ u: 0.5, v: 0.5, s: 40 }, 200, 100, 2);
   ok(fp.x === 50 && fp.y === 25 && Math.abs(fp.r - (40 * 0.72 + 7) / 2) < 1e-9, 'footprint converts to cells with a quiet margin');
   const g = ZS.makeField(60, 60); ZS.applyStroke(g, 5, [[0, 30], [60, 30]], [], null);
-  ZS.flattenUnder(g, 30, 30, 8);
-  ok(Math.abs(at(g, 30, 30)) < 0.01 && Math.abs(at(g, 32, 28)) < 0.2 && Math.abs(at(g, 30, 22)) > 0.2, 'flattenUnder settles sand under a placed stone with a soft edge');
+  const orig = new Float32Array(g.h); ZS.flattenUnder(g, 30, 30, 8, 5);
+  ok(Math.abs(at(g, 30, 30)) < 1e-6 && Math.abs(at(g, 33, 27)) < 1e-6 && Math.abs(at(g, 30, 23)) < Math.abs(orig[23 * 60 + 30]) && at(g, 30, 23) * orig[23 * 60 + 30] >= 0 && at(g, 30, 21) === orig[21 * 60 + 30] && at(g, 30, 38) === orig[38 * 60 + 30], 'flattenUnder is flat under the stone body, eases out, untouched beyond r');
+  const g3 = ZS.makeField(60, 60); ZS.applyStroke(g3, 5, [[0, 30], [60, 30]], [], null); ZS.flattenUnder(g3, 30, 30, 8);
+  ok(Math.abs(at(g3, 30, 30)) < 1e-6 && Math.abs(at(g3, 30, 34)) < 1e-6, 'default inner radius is 60% of r');
+  ok(ZS.hitItem([{ t: 'stone', u: 0.5, v: 0.5, s: 20 }], 100 + 28, 100, 200, 200) !== null, 'small items get a 30px touch radius');
 }
 // --- smoothing ---
 {

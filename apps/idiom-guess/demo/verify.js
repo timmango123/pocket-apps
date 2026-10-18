@@ -85,6 +85,19 @@ async function session(browser, vp, dark, full) {
   const prog2 = await page.evaluate(() => window.__ig.prog());
   ok(prog2.levels[1] === 3, tag + ' progress persists across reload');
   ok((await page.locator('#tLvMeta').textContent()).includes('第 2 關'), tag + ' title shows next level to play');
+  // rapid input: 8 taps per second alternating between far-apart keys must all register, and 刪除 clears them
+  {
+    await page.evaluate(() => window.__ig.start('level', { level: 50 })); await sleep(200);
+    const cdp = await ctx.newCDPSession(page); const s0 = await page.evaluate(() => window.__ig.get()); let got = 0;
+    for (let round = 0; round < 3; round++) {
+      for (const c of [s0.tray[0], s0.tray[11], s0.tray[5], s0.tray[7]]) { const b = await page.locator(`#tray .key[data-c="${c}"]`).boundingBox(); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + b.width / 2, y: b.y + b.height / 2 }] }); await sleep(40); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(85); }
+      got += (await page.evaluate(() => window.__ig.get().cur)).filter(Boolean).length;
+      for (let i = 0; i < 4; i++) { await tap(page, '#bDel'); await sleep(60); }
+    }
+    ok(got === 12, tag + ' 12 rapid touch taps (8/s) all registered (' + got + ')');
+    ok((await page.evaluate(() => window.__ig.get().cur)).filter(Boolean).length === 0, tag + ' rapid deletes clear the row');
+    await tap(page, '#bBack'); await sleep(200); await tap(page, '#sBack'); await sleep(200);
+  }
   // unlock-all switch: level 50 is locked by default, opens once the switch is on, and the choice persists
   await tap(page, '#tLevels'); await sleep(250);
   ok(await page.locator('#grid .lt:nth-child(50)').isDisabled(), tag + ' level 50 locked by default');
@@ -121,7 +134,7 @@ async function session(browser, vp, dark, full) {
     ok(fs.existsSync(path.join(__dirname, 'cover-390x520.png')), 'cover written');
     await ctx.close();
   }
-  for (const vp of [{ width: 375, height: 500 }, { width: 390, height: 610 }, { width: 430, height: 740 }]) {
+  for (const vp of [{ width: 375, height: 500 }, { width: 390, height: 610 }, { width: 430, height: 740 }, { width: 360, height: 640 }]) {
     await session(browser, vp, false, false);
     await session(browser, vp, true, false);
   }

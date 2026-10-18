@@ -12,7 +12,7 @@ const DZ = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\/
 const args = process.argv.slice(2);
 const TIER_LIST = args.filter(a => H.TIERS[a]).length ? args.filter(a => H.TIERS[a]) : H.TIER_IDS;
 const opt = (k, d) => { const a = args.find(x => x.startsWith('--' + k + '=')); return a ? a.slice(k.length + 3) : d; };
-const ROUNDS = +opt('rounds', 8), OUT = path.resolve(__dirname, opt('out', 'results.json')), TAG = opt('tag', ''), CAP_MS = 240000;
+const LEVEL = +opt('level', 1), ROUNDS = +opt('rounds', 8), OUT = path.resolve(__dirname, opt('out', 'results.json')), TAG = opt('tag', ''), CAP_MS = 240000;
 const SEEDS = []; for (let i = 0; i < ROUNDS; i++) SEEDS.push(4101 + i * 37);
 const HOOK = "window.__dzAll = function () { return G ? { hands: G.hands.map(function (h) { return h.slice(); }), bottom: G.bottom.slice(), passes: G.passes } : null; };\n";
 
@@ -193,6 +193,7 @@ async function playRound(P, seed, tierId, wantL, log) {
     // hint button check once per round (all tiers press it at least once, like a curious human)
     if (!hintChecked && inf.lead && rng() < 0.6) {
       hintChecked = true; await P.tapSelector('#bHint'); run.hintTaps++; await H.sleep(120);
+      if (!(await info()).sel.length) { run.missedButtonTaps = (run.missedButtonTaps || 0) + 1; await P.tapSelector('#bHint'); run.hintTaps++; await H.sleep(120); } // a noisy tap can miss the 48px button; a human taps again
       const s = (await info()).sel, legalN = DZ.hints(inf.view.hand, inf.lead.ev).length;
       if (legalN && !(s.length && DZ.evaluate(s) && DZ.beats(DZ.evaluate(s), inf.lead.ev))) { run.errors.push('hint selected an illegal play'); log('hint-illegal', { seed, sel: s }); }
       if (!legalN && s.length) { run.errors.push('hint selected cards although nothing beats the lead'); log('hint-nothing', { seed, sel: s }); }
@@ -243,7 +244,7 @@ async function playRound(P, seed, tierId, wantL, log) {
 
 async function runTier(browser, tierId, idx, log) {
   const srv = await serve(), url = `http://127.0.0.1:${srv.address().port}/`;
-  const init = "try{localStorage.setItem('dou-dizhu:v1:settings',JSON.stringify({speed:'fast',sound:false,vib:false,theme:'auto'}));localStorage.removeItem('dou-dizhu:v1:game');localStorage.removeItem('dou-dizhu:v1:stats');}catch(e){}";
+  const init = "try{localStorage.setItem('dou-dizhu:v1:settings',JSON.stringify({speed:'fast',sound:false,vib:false,theme:'auto',seenHelp:true,level:" + LEVEL + "}));localStorage.removeItem('dou-dizhu:v1:game');localStorage.removeItem('dou-dizhu:v1:stats');}catch(e){}";
   const sess = await H.newSession(browser, url, init);
   const P = new H.Player(sess, tierId, 7000 + idx * 101);
   await H.sleep(600);
@@ -276,9 +277,9 @@ if (opt('sim', '')) { // node-only policy check: no browser, the bot plays seat 
     const rng = H.makeRng(99); let w = [0, 0], n = [0, 0], coins = 0, plies = 0;
     for (let i = 0; i < N; i++) {
       let g = new DZ.Game({ seed: 5000 + i }); const wantL = i % 2 === 0; let k = 0;
-      while (g.phase === 'bid') { const p = g.turn; const all = { hands: g.hands, bottom: g.bottom }; let v = p === 0 ? policyBid(t, DZ.aiView(g, 0), rng, all, g.bid, wantL) : DZ.think(DZ.aiView(g, p), i * 7 + k).bid; if (v && v <= g.bid) v = 0; g.doBid(p, v); k++; }
+      while (g.phase === 'bid') { const p = g.turn; const all = { hands: g.hands, bottom: g.bottom }; let v = p === 0 ? policyBid(t, DZ.aiView(g, 0), rng, all, g.bid, wantL) : DZ.think(DZ.aiView(g, p), i * 7 + k, LEVEL).bid; if (v && v <= g.bid) v = 0; g.doBid(p, v); k++; }
       if (g.phase !== 'play') continue;
-      while (g.phase === 'play' && k < 500) { const p = g.turn, all = { hands: g.hands, bottom: g.bottom }; let c = p === 0 ? policyPlay(t, DZ.aiView(g, 0), rng, all).cards : DZ.think(DZ.aiView(g, p), i * 1000 + k).cards; if (c === null && !g.lead) c = DZ.hints(g.hands[p], null)[0].cards; const e = c ? g.play(p, c) : g.pass(p); if (e) { console.log('ILLEGAL', t, i, e); break; } k++; }
+      while (g.phase === 'play' && k < 500) { const p = g.turn, all = { hands: g.hands, bottom: g.bottom }; let c = p === 0 ? policyPlay(t, DZ.aiView(g, 0), rng, all).cards : DZ.think(DZ.aiView(g, p), i * 1000 + k, LEVEL).cards; if (c === null && !g.lead) c = DZ.hints(g.hands[p], null)[0].cards; const e = c ? g.play(p, c) : g.pass(p); if (e) { console.log('ILLEGAL', t, i, e); break; } k++; }
       if (g.phase !== 'end') continue; const r = g.result(), role = g.landlord === 0 ? 0 : 1; n[role]++; if (r.deltas[0] > 0) w[role]++; coins += r.deltas[0] * 100; plies += k;
     }
     console.log(t, 'landlord', w[0] + '/' + n[0], 'farmer', w[1] + '/' + n[1], 'coins', coins, 'plies/round', (plies / N).toFixed(1));
@@ -293,7 +294,8 @@ if (opt('sim', '')) { // node-only policy check: no browser, the bot plays seat 
     const t0 = Date.now();
     const r = await runTier(browser, t, i, log);
     r.wallMin = +((Date.now() - t0) / 60000).toFixed(1);
-    if (TAG) { out.afterFix = out.afterFix || { tiers: {} }; out.afterFix.tiers[t] = r; } else out.tiers[t] = r;
+    r.level = LEVEL;
+    if (TAG) { out.afterFix = out.afterFix || { tiers: {} }; out.afterFix.tiers[TAG === 'afterFix' ? t : t + '@' + TAG] = r; } else out.tiers[t] = r;
     fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
     console.log('TIER', t, JSON.stringify(r.summary));
   }

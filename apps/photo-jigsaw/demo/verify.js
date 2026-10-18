@@ -18,7 +18,7 @@ async function touchDrag(cdp, pts, stepMs = 16) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 async function tap(cdp, x, y) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(60); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); }
-async function tapSel(cdp, page, sel) { const b = await page.locator(sel).boundingBox(); await tap(cdp, b.x + b.width / 2, b.y + b.height / 2); await sleep(150); }
+async function tapSel(cdp, page, sel, wait = 150) { await page.locator(sel).scrollIntoViewIfNeeded(); const b = await page.locator(sel).boundingBox(); await tap(cdp, b.x + b.width / 2, b.y + b.height / 2); await sleep(wait); }
 function line(a, b, n) { const out = []; for (let i = 0; i <= n; i++) out.push([a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]); return out; }
 
 // Drag piece `id` out of the tray and drop its centre at target(tid) + (dx,dy) (page coordinates, read after the pull-out
@@ -85,6 +85,10 @@ async function fullPlay(browser) {
   await touchDrag(cdp, line([ps.x, ps.y], [t5.x + 3, t5.y + 3], 10)); await sleep(120);
   ps = await page.evaluate(() => window.__game.pieceScreen(5));
   check(ps && ps.locked, 'moved to its own cell it locks');
+  { const c0 = (await page.evaluate(() => window.__game.state())).cam; const p5 = await page.evaluate(() => window.__game.pieceScreen(5)); await touchDrag(cdp, line([p5.x, p5.y], [p5.x + 40, p5.y + 30], 8)); const c1 = (await page.evaluate(() => window.__game.state())).cam; const p5b = await page.evaluate(() => window.__game.pieceScreen(5)); check(p5b.locked && (Math.abs(c1.tx - c0.tx - 40) < 3 || Math.abs(c1.ty - c0.ty - 30) < 3) && Math.abs(p5b.x - p5.x - (c1.tx - c0.tx)) < 2, 'dragging on a locked piece pans the table instead of moving it (axis that has room)'); await touchDrag(cdp, line([p5b.x, p5b.y], [p5b.x - 40, p5b.y - 30], 8)); }
+  // rapid alternating taps (8/s) on two chips later on the title; here: 8 quick ghost toggles must all register
+  for (let i = 0; i < 8; i++) { await tapSel(cdp, page, i % 2 ? '#bEdge' : '#bGhost', 65); }
+  check((await page.getAttribute('#bGhost', 'aria-pressed')) === 'false' && (await page.getAttribute('#bEdge', 'aria-pressed')) === 'false', '8 rapid alternating taps on two HUD toggles all register (4+4 → both back off)');
   // toggle ghost + edge filter
   await tapSel(cdp, page, '#bGhost'); check((await page.getAttribute('#bGhost', 'aria-pressed')) === 'true', 'ghost preview toggles on');
   await tapSel(cdp, page, '#bEdge'); check((await page.getAttribute('#bEdge', 'aria-pressed')) === 'true' && (await page.evaluate(() => [...document.querySelectorAll('.tp')].filter(e => getComputedStyle(e).display !== 'none').every(e => e.classList.contains('edge')))), 'edge filter hides inner pieces in the tray');
@@ -128,7 +132,7 @@ async function fullPlay(browser) {
   let rp = await page.evaluate(id => window.__game.pieceScreen(id), rid);
   const rot0 = rp.rot; await tap(cdp2, rp.x, rp.y); await sleep(150);
   rp = await page.evaluate(id => window.__game.pieceScreen(id), rid);
-  check(rp.rot === (rot0 + 1) % 4, 'tapping a piece in rotation mode turns it 90°');
+  console.log('DBG rot', rot0, rp, await page.evaluate(() => window.__game.dbg())); check(rp.rot === (rot0 + 1) % 4, 'tapping a piece in rotation mode turns it 90°');
   while (rp.rot !== 0) { await tap(cdp2, rp.x, rp.y); await sleep(150); rp = await page.evaluate(id => window.__game.pieceScreen(id), rid); }
   const tr = await page.evaluate(id => window.__game.target(id), rid);
   await touchDrag(cdp2, line([rp.x, rp.y], [tr.x + 3, tr.y + 2], 10)); await sleep(150);
@@ -157,7 +161,7 @@ async function fullPlay(browser) {
 }
 
 async function sizes(browser) {
-  for (const [w, h] of [[375, 500], [390, 610], [430, 740]]) for (const dark of [false, true]) {
+  for (const [w, h] of [[375, 500], [390, 610], [430, 740], [360, 640], [844, 390], [430, 932]]) for (const dark of (w === 844 || w === 360 || w === 430 && h === 932) ? [false] : [false, true]) {
     const { ctx, page, cdp, errors } = await newPage(browser, w, h, dark);
     const tag = `${w}x${h}-${dark ? 'dark' : 'light'}`;
     await page.screenshot({ path: path.join(OUT, `title-${tag}.png`) });
@@ -168,8 +172,10 @@ async function sizes(browser) {
     await dragFromTray(page, cdp, ids[0], ids[0], 3, -2);
     const ps = await page.evaluate(id => window.__game.pieceScreen(id), ids[0]);
     check(st && st.count >= 26 && ps && ps.locked, `${tag}: puzzle starts (${st.count} pieces) and a tray drag locks a piece`);
-    const vis = await page.evaluate(() => ['bMenu', 'bGhost', 'bEdge', 'bZoomIn', 'bZoomOut', 'bScatter', 'trayScroll'].every(id => { const r = document.getElementById(id).getBoundingClientRect(); return r.width > 20 && r.height > 20 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; }));
-    check(vis, `${tag}: all controls on screen`);
+    const vis = await page.evaluate(() => ['bMenu', 'bGhost', 'bEdge', 'bZoomIn', 'bZoomOut', 'bScatter', 'trayScroll', 'hTime', 'hName'].every(id => { const r = document.getElementById(id).getBoundingClientRect(); return r.width > 20 && r.height > 10 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; }) && document.documentElement.scrollWidth <= innerWidth);
+    check(vis, `${tag}: all controls on screen, no horizontal overflow`);
+    const bb = await page.evaluate(() => { const v = window.__game.view(), z = document.getElementById('bZoomOut').getBoundingClientRect(); return v.boardTop + v.boardH <= z.top + 1 || v.boardLeft + v.boardW <= z.left - 1; });
+    check(bb, `${tag}: fitted board is not covered by the zoom buttons`);
     await page.evaluate(ids => ids.slice(1, 8).forEach(id => window.__game.place(id)), ids); await sleep(100);
     await page.screenshot({ path: path.join(OUT, `play-${tag}.png`) });
     check(errors.length === 0, `${tag}: no page errors` + (errors.length ? ': ' + errors.join(' | ') : ''));

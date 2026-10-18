@@ -108,6 +108,18 @@ const Z = (page, fn, arg) => page.evaluate(fn, arg);
         assert((await Z(page, () => __zen.items()[__zen.items().length - 1].t)) === t, `placed ${t}`);
       }
 
+      // rapid cross-region taps: 8 per second, every tap must place exactly one item (no swallowed or doubled touches)
+      await tapEl(cdp, page, '#mPlace', () => __zen.mode() === 'place'); await tapEl(cdp, page, '[data-item="leaf"]');
+      const n8 = await Z(page, () => __zen.items().length);
+      for (let i = 0; i < 8; i++) { const x = (i % 2 ? 330 : 60) + (i >> 2) * 40, y = i % 4 < 2 ? 300 : 560; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await sleep(40); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(85); }
+      await sleep(150);
+      assert((await Z(page, () => __zen.items().length)) === n8 + 8, '8 taps/s across regions place exactly 8 leaves');
+      await tapEl(cdp, page, '#mRake', () => __zen.mode() === 'rake'); await tapEl(cdp, page, '[data-rake="5"]', () => __zen.rake() === 5);
+      await Z(page, () => { __zen.perfReset && __zen.perfReset(); });
+      await drag(cdp, [[40, 640], [350, 640], [40, 600]], 20);
+      const perf = await Z(page, () => __zen.perf().slice().sort((a, b) => a - b));
+      assert(perf.length > 10 && perf[Math.floor(perf.length * 0.95)] < 12, `render cost while raking: p95 ${perf[Math.floor(perf.length * 0.95)].toFixed(1)} ms over ${perf.length} frames`);
+
       // multi-touch: two fingers rake two grooves at once
       await tapEl(cdp, page, '#mRake', () => __zen.mode() === 'rake'); await tapEl(cdp, page, '#mSmooth', () => __zen.smoothing()); await sleep(1200);
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 80, y: 250, id: 1 }, { x: 80, y: 350, id: 2 }] });
@@ -145,16 +157,16 @@ const Z = (page, fn, arg) => page.evaluate(fn, arg);
       await ctx.close();
     }
     // ---- 2. the three in-lobby iframe sizes, light and dark: a stroke works, controls fit ----
-    for (const vp of [[375, 500], [390, 610], [430, 740]]) for (const scheme of ['light', 'dark']) {
+    for (const vp of [[375, 500], [390, 610], [430, 740], [360, 640], [430, 932], [844, 390]]) for (const scheme of (vp[0] === 375 || vp[0] === 390 ? ['light', 'dark'] : ['light'])) {
       const { ctx, page, errors } = await open(browser, URL, { width: vp[0], height: vp[1] }, scheme);
       const cdp = await ctx.newCDPSession(page);
-      const fit = await Z(page, () => [...document.querySelectorAll('.tray button, .tr button')].filter(b => b.getClientRects().length).every(b => { const r = b.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && r.width >= 44 && r.height >= 44; }));
-      assert(fit, `${vp.join('x')} ${scheme}: every control on screen and >= 44px`);
+      const fit = await Z(page, () => { const bs = [...document.querySelectorAll('.tray button, .tr button, .brand')].filter(b => b.getClientRects().length).map(b => b.getBoundingClientRect()); const inside = bs.every(r => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight); const big = bs.slice(0, -1).every(r => r.width >= 44 && r.height >= 44); let overlap = false; for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i], c = bs[j]; if (Math.min(a.right, c.right) - Math.max(a.left, c.left) > 2 && Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top) > 2) overlap = true; } return inside && big && !overlap && document.documentElement.scrollWidth <= innerWidth; });
+      assert(fit, `${vp.join('x')} ${scheme}: every control on screen, >= 44px, none overlapping, no horizontal scroll`);
       await tapEl(cdp, page, '#mSmooth'); await sleep(1100);
       await drag(cdp, [[30, vp[1] * 0.6], [vp[0] - 30, vp[1] * 0.6]]); await sleep(80);
       assert((await Z(page, y => __zen.heightAt(innerWidth * 0.15, y), vp[1] * 0.6)) < -0.6, `${vp.join('x')} ${scheme}: stroke rakes`);
       assert((await Z(page, () => __zen.isDark())) === (scheme === 'dark'), `${vp.join('x')} ${scheme}: follows prefers-color-scheme`);
-      if (vp[0] === 375) await page.screenshot({ path: path.join(OUT, `${scheme}-375x500.png`) });
+      if (vp[0] === 375 || vp[0] === 360 || vp[0] === 844) await page.screenshot({ path: path.join(OUT, `${scheme}-${vp.join('x')}.png`) });
       assert(errors.length === 0, `${vp.join('x')} ${scheme}: no page errors ` + errors.join(' | '));
       await ctx.close();
     }

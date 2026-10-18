@@ -101,26 +101,28 @@ function decide(M, s, b, rng) {
   if (M.policy === 'plan') { b.skill = 2; return BM.cpuDecide(s, b); }
   return simpleDecide(M, s, b, rng);
 }
-function dirToward(b, cell, W) {
+function dirToward(b, cell, W, tol) {
+  // tol: how close to a cell centre counts as "there" (a human stops within the distance covered between two looks)
   const nx = (cell % W) + 0.5, ny = Math.floor(cell / W) + 0.5, dx = nx - b.x, dy = ny - b.y;
-  if (Math.abs(dx) < 0.07 && Math.abs(dy) < 0.07) return -1;
+  if (Math.abs(dx) < (tol || 0.07) && Math.abs(dy) < (tol || 0.07)) return -1;
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
 }
 
 class Finger {
   // one finger on the joystick (touch id 1), a second one for the bomb button (id 2); real CDP touch events
-  constructor(P, padBox, bombBox) { this.P = P; this.pad = padBox; this.bomb = bombBox; this.padPt = null; this.dir = -1; this.stats = { moves: 0, lifts: 0, bombTaps: 0, misdir: 0, dropped: 0 }; }
+  constructor(P, padBox, bombBox) { this.P = P; this.pad = padBox; this.bomb = bombBox; this.padPt = null; this.dir = -1; this.want = -1; this.stats = { moves: 0, lifts: 0, bombTaps: 0, misdir: 0, dropped: 0 }; }
   points(extra) { const pts = []; if (this.padPt) pts.push({ x: this.padPt.x, y: this.padPt.y, id: 1 }); if (extra) pts.push(extra); return pts; }
   async setDir(d) {
     const P = this.P;
-    if (d < 0) { if (this.padPt) { this.padPt = null; await P.touch('touchEnd', []); this.stats.lifts++; } this.dir = -1; return -1; }
+    if (d < 0) { if (this.padPt) { this.padPt = null; try { await P.touch('touchEnd', []); } catch (e) {} this.stats.lifts++; } this.dir = -1; this.want = -1; return -1; }
     const cx = this.pad.x + this.pad.width / 2, cy = this.pad.y + this.pad.height / 2;
-    const [x, y] = P.jitter(cx + DX[d] * PAD_PUSH, cy + DY[d] * PAD_PUSH);
+    // a thumb pushing a stick is steadier than a tap on a target: a third of the tier's positional sigma
+    const sg = P.t.pos / 3, x = cx + DX[d] * PAD_PUSH + (sg ? P.rng.gauss(0, sg) : 0), y = cy + DY[d] * PAD_PUSH + (sg ? P.rng.gauss(0, sg) : 0);
     const actual = Math.hypot(x - cx, y - cy) < 9 ? -1 : (Math.abs(x - cx) > Math.abs(y - cy) ? (x > cx ? 1 : 3) : (y > cy ? 2 : 0));
     if (actual !== d) this.stats.misdir++;
     const was = !!this.padPt; this.padPt = { x, y };
     await P.touch(was ? 'touchMove' : 'touchStart', this.points());
-    this.stats.moves++; this.dir = actual; return actual;
+    this.stats.moves++; this.dir = actual; this.want = d; return actual;
   }
   async tapBomb() {
     const P = this.P, b = this.bomb;
@@ -128,13 +130,15 @@ class Finger {
     const x = b.x + b.width / 2 + (s ? P.rng.gauss(0, s) : 0), y = b.y + b.height / 2 + (s ? P.rng.gauss(0, s) : 0);
     await P.touch('touchStart', this.points({ x, y, id: 2 }));
     this.stats.bombTaps++; P.stats.taps++;
-    return async () => { await P.touch('touchEnd', this.points()); };
+    // CDP's touchEnd ends the whole touch sequence (the joystick finger is dropped as well), so after the tap the
+    // thumb is treated as lifted and the next loop step re-grips the pad.
+    return async () => { try { await P.touch('touchEnd', []); } catch (e) {} this.padPt = null; this.dir = -1; this.want = -1; this.stats.lifts++; };
   }
 }
 
 async function playRun(P, M, kind, n, opts) {
   const page = P.page, rng = P.rng, FR = H.FRAME;
-  const stepN = M.every === 1 ? 1 : (M.every <= 3 ? 2 : 3);
+  const stepN = M.every <= 3 ? (M.every === 1 ? 2 : 3) : (M.every <= 5 ? 4 : 6);
   if (kind === 'stage') await page.evaluate(n => window.__game.startStage(n), n);
   else await page.evaluate(([c, s]) => window.__game.startBattle(c, s), [opts.cpus, opts.skill]);
   const padBox = await page.locator('#pad').boundingBox(), bombBox = await page.locator('#bombBtn').boundingBox();
@@ -143,11 +147,12 @@ async function playRun(P, M, kind, n, opts) {
   if (!o || o.st !== 'play') throw new Error('start failed ' + JSON.stringify(o && [o.st, o.mode]));
   const buf = [o]; let frame = 0, nextDec = 0, plan = null, pendingBomb = null, release = null, releaseAt = 0, decisions = 0, randoms = 0, mistakes = 0;
   let livesLost = 0, lastLives = o.lives, lastAlive = true; const deaths = []; const picks = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  let lastItems = o.items.slice(); let end = null, wrongDir = -1, wrongUntil = 0; const t0 = Date.now();
+  let lastItems = o.items.slice(); let end = null, wrongDir = -1, wrongUntil = 0; const t0 = Date.now(); const prof = { ev: 0, dec: 0 }; let lastDecCell = -1, lastBombKey = '', lastDecFrame = -999, mismatch = 0;
   const capFrames = Math.round(((kind === 'stage' ? o.limit + 5 : 200)) * 60);
   while (frame < capFrames && Date.now() - t0 < 240000) {
-    o = await page.evaluate(n => window.__step(n, true), stepN); frame += stepN;
+    const _te = Date.now(); o = await page.evaluate(n => window.__step(n, true), stepN); frame += stepN; prof.ev += Date.now() - _te;
     buf.push(o); if (buf.length > 80) buf.shift();
+    if (process.env.BM_DEBUG && frame % (+process.env.BM_DEBUG) === 0) console.log('  f', frame, 't', o.time.toFixed(1), 'pos', o.bombers[0].x.toFixed(2), o.bombers[0].y.toFixed(2), 'dir', F.dir, o.bombers[0].inDir, 'plan', plan && JSON.stringify(plan.path), plan && plan.flee ? 'FLEE' : '', plan && plan.bomb ? 'BOMB' : '', 'en', o.enemies.filter(e => e.alive).map(e => e.x.toFixed(1) + ',' + e.y.toFixed(1)).join(' '), 'bombs', o.bombs.map(b => b.x + ',' + b.y).join(' '), 'kills', o.kills, 'wall', Date.now() - t0, 'touches', F.stats.moves);
     const me = o.bombers[0];
     if (o.lives < lastLives) { livesLost += lastLives - o.lives; }
     if (lastAlive && !me.alive) { deaths.push({ t: +o.time.toFixed(1), near: o.enemies.filter(e => e.alive && Math.abs(e.x - me.x) + Math.abs(e.y - me.y) < 1).length ? 'contact' : 'fire' }); plan = null; }
@@ -157,15 +162,21 @@ async function playRun(P, M, kind, n, opts) {
     if (o.st !== 'play') { end = o.st; break; }
     if (release && frame >= releaseAt) { await release(); release = null; }
     if (o.hold > 0 || !me.alive) { if (F.dir >= 0) await F.setDir(-1); continue; }
-    // decide on delayed screen state (reaction time), own position known exactly (proprioception)
-    if (frame >= nextDec) {
-      nextDec = frame + M.every;
+    // decide on delayed screen state (reaction time), own position known exactly (proprioception).
+    // Like a human, re-plan at cell centres, when the bombs on screen change, when a monster is close, or after a while.
+    const cellNow = Math.floor(me.x) + Math.floor(me.y) * o.w;
+    const atC = Math.abs(me.x - Math.floor(me.x) - 0.5) < 0.08 && Math.abs(me.y - Math.floor(me.y) - 0.5) < 0.08;
+    const bombKey = o.bombs.map(b => b.x + ',' + b.y).join('|') + '/' + o.fire.filter(v => v > 0).length;
+    const monsterNear = o.enemies.some(e => e.alive && Math.abs(e.x - me.x) + Math.abs(e.y - me.y) < 2.2);
+    const need = !plan || (atC && cellNow !== lastDecCell) || bombKey !== lastBombKey || (!plan.path.length && atC) || frame - lastDecFrame > 60 || (monsterNear && frame - lastDecFrame > M.every * 2);
+    if (need && frame >= nextDec) {
+      nextDec = frame + M.every; lastDecCell = cellNow; lastBombKey = bombKey; lastDecFrame = frame;
       const d = Math.max(1, Math.round(P.reactMs() / FR / stepN));
       const ob = buf[Math.max(0, buf.length - d)];
       if (ob.st === 'play') {
         const s = mkSim(ob, rng); const b = Object.assign({}, ob.bombers[0], { x: me.x, y: me.y, placed: me.placed, onBomb: me.onBomb });
         if (b.alive) {
-          const dec = decide(M, s, b, rng); decisions++; if (dec.random) randoms++;
+          const _td = Date.now(); const dec = decide(M, s, b, rng); prof.dec += Date.now() - _td; decisions++; if (dec.random) randoms++;
           plan = dec;
           if (P.mistake()) { wrongDir = rng.int(4); wrongUntil = frame + M.every; mistakes++; }
           if (dec.bomb || (M.fat && rng() < M.fat)) { if (!dec.bomb) mistakes++; pendingBomb = frame + Math.round(Math.abs(P.timingErr()) / FR); }
@@ -177,13 +188,16 @@ async function playRun(P, M, kind, n, opts) {
     let want = -1;
     if (frame < wrongUntil) want = wrongDir;
     else if (plan && plan.path.length) {
-      while (plan.path.length && dirToward(me, plan.path[0], o.w) < 0) plan.path.shift();
-      if (plan.path.length) want = dirToward(me, plan.path[0], o.w);
+      const tol = Math.max(0.08, me.speed * stepN / 60 * 0.55);
+      while (plan.path.length && dirToward(me, plan.path[0], o.w, plan.path.length > 1 ? tol : tol * 0.8) < 0) plan.path.shift();
+      if (plan.path.length) want = dirToward(me, plan.path[0], o.w, 0.03);
     }
-    if (want !== F.dir || (want >= 0 && me.inDir !== F.dir && frame % 6 === 0)) {
-      if (want >= 0 && F.dir >= 0 && me.inDir !== F.dir && want === F.dir) F.stats.dropped++;
-      await F.setDir(want);
-    }
+    // the stick is held until the intended direction changes; a registered direction that differs from the finger's
+    // actual direction for two consecutive checks counts as a dropped input and is re-pushed
+    const held = F.padPt ? F.want : -1;
+    if (want !== held) await F.setDir(want);
+    else if (want >= 0 && me.inDir !== F.dir) { if (mismatch++ >= 1) { F.stats.dropped++; mismatch = 0; await F.setDir(want); } }
+    else mismatch = 0;
   }
   if (F.dir >= 0) await F.setDir(-1);
   if (release) await release();
@@ -211,6 +225,7 @@ async function runTier(browser, tierId, idx) {
       const r = await playRun(P, M, 'stage', n);
       run.attempts.push(r);
       if (r.cleared) { run.cleared = true; break; }
+      if (r.end === 'lost' && r.livesLost < 3) break;   // ran out of time, not lives: a retry replays the same stalemate
       if (Date.now() - t0 > WALL_CAP_MS / TIER_LIST.length) break;
     }
     const last = run.attempts[run.attempts.length - 1];

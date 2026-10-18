@@ -29,7 +29,7 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
 {
   const st = bare(); const f = ECO.addFish(st, 'guppy', { size: 1, hunger: 0.9, x: 50, y: 30 });
   ECO.feed(st, 5);
-  ok(st.food.length === 5 && st.food.every(k => k.y < 4), 'feed drops flakes at the surface');
+  ok(st.food.length === 5 && st.food.every(k => k.y < st.tp + 1.5), 'feed drops flakes at the surface');
   ECO.advance(st, 10 * 60);
   ok(f.hunger < 0.5 && st.food.length === 4, 'a hungry fish eats a flake while away (coarse mode)');
   const st2 = bare(); st2.water.bacteria = 0.05; ECO.addFish(st2, 'guppy', { size: 1, hunger: 0, x: 50, y: 30 }); ECO.feed(st2, 4);
@@ -202,14 +202,14 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   await page.evaluate(() => { window.__eco.st.water.nitrate = 60; });
   await tap('#bWater'); await page.waitForTimeout(100);
   ok(Math.abs(await page.evaluate(() => window.__eco.st.water.nitrate) - 42) < 0.5, 'water change button dilutes nitrate by 30%');
-  await tap('#bLife'); await page.waitForTimeout(200);
+  await tap('#bLife'); await page.waitForTimeout(500);
   ok(await page.isVisible('#sheetLife'), 'life sheet opens');
   await tap('button[data-add="fish:goldfish"]'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.fish.filter(f => f.sp === 'goldfish').length) === 1, 'adding a goldfish from the sheet');
   await tap('button[data-rem="fish:goldfish"]'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.fish.filter(f => f.sp === 'goldfish').length) === 0, 'removing it again');
-  await tap('#sheetLife [data-close]'); await page.waitForTimeout(100);
-  await tap('#bStats'); await page.waitForTimeout(300);
+  await tap('#sheetLife [data-close]'); await page.waitForTimeout(400);
+  await tap('#bStats'); await page.waitForTimeout(500);
   ok(await page.isVisible('#graph') && (await page.textContent('#statRows')).includes('氨'), 'stats sheet shows readings and graph');
   await tap('#sheetStats [data-close]');
   // tap a fish
