@@ -127,13 +127,16 @@ async function playAttempt(P, n, mem, finding) {
     if (process.env.IG_DEBUG) console.log(P.tierId, n, ((sim) / 1000).toFixed(1) + 's', 'guess', g, how, 'cur', st.cur.join(','), 'rows', st.guesses.join('/'));
     // type the guess left to right like a person: look at the row, delete back to the last correct character, tap the next one.
     // A mis-tap the player does not notice is accepted into the plan (they will submit it).
-    const plan = g.split('');
+    const plan = g.split(''), rev = st.revealed || {};
+    // a revealed (paid) character is locked in its slot: the player sees the red tile and plans around it
+    for (const i in rev) { const j = plan.indexOf(rev[i]); if (j >= 0 && j !== +i) plan[j] = plan[i]; plan[i] = rev[i]; }
     for (let guard = 0; guard < 40 && sim < TIME_CAP; guard++) {
       st = await getState(page);
       if (st.over) break;
       let k = 0; while (k < 4 && st.cur[k] && st.cur[k] === plan[k]) k++;
       if (k === 4) break;
-      if (st.cur.slice(k).some(Boolean)) { await w(P.reactMs()); await P.tapSelector('#bDel'); taps++; await r(60); continue; }
+      if (st.cur.some((c, i) => i >= k && c && !(st.revealed || {})[i])) { await w(P.reactMs()); await P.tapSelector('#bDel'); taps++; await r(60); continue; }
+      if ((st.revealed || {})[k]) continue;
       let want = plan[k];
       if (P.mistake()) want = P.rng.pick(st.tray.filter(c => !st.cur.includes(c)));
       const b = await keyBox(page, want); if (!b) break;
@@ -201,7 +204,7 @@ async function runTier(browser, tierId, idx, findings) {
       const r = await playAttempt(P, n, mem, (k, v) => findings.push({ k, v }));
       run.attempts.push(r);
       if (r.cleared) { run.cleared = true; break; }
-      if (!(await sess.page.isVisible('#lose'))) { await sess.page.evaluate(n => window.__ig.start('level', { level: n }), n); await H.sleep(400); run.attempts[run.attempts.length - 1].restartedByHook = true; }
+      if (!(await sess.page.isVisible('#lose'))) { await sess.page.evaluate(n => window.__ig.start('level', { level: n, fresh: true }), n); await H.sleep(400); run.attempts[run.attempts.length - 1].restartedByHook = true; }
     }
     const last = run.attempts[run.attempts.length - 1];
     Object.assign(run, { tries: run.attempts.length, guesses: last.tries, stars: last.stars, ms: run.attempts.reduce((a, b) => a + b.ms, 0) });

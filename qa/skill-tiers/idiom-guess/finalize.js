@@ -19,6 +19,17 @@ if (fs.existsSync(path.join(__dirname, 'raw-results-after.json'))) {
   if (fs.existsSync(path.join(__dirname, 'check-clumsy.json'))) { const c = rd('check-clumsy.json'); out.afterFix.clumsyRecheck = { note: 'clumsy L75/L99/L100 rerun with a page-side touch/click log to explain apparent drops', summary: c.tiers.clumsy.summary, runs: c.tiers.clumsy.runs.map(r => ({ level: r.level, cleared: r.cleared, tries: r.tries })), dropLog: c.dropLog }; }
   if (fs.existsSync(path.join(__dirname, 'sim-all-levels.json'))) out.afterFix.modelAllLevels = rd('sim-all-levels.json');
 }
+if (fs.existsSync(path.join(__dirname, 'raw-results-after2.json'))) {
+  const a2 = rd('raw-results-after2.json');
+  out.afterReview = { date: '2026-10-18', note: 'rerun after the independent review fixes (sha 5ffb5ddfa53c failed: 穩定 8.9)', changes: [
+    'unfinished rounds saved per slot (lv<n>/daily/free) in localStorage key rounds on every change and restored on open: refresh, a killed tab or playing another level no longer resets a round, so a loss cannot be dodged',
+    'free practice: a loss offers 再來一題 with a different idiom (never the one just revealed)',
+    '揭開一字 / 排除三字 cost one star each; star thresholds follow the chances (6: 2/4, 5 and 4: 2/3)',
+    'confusing trays (L26+) always contain a second real idiom sharing characters with the answer (450/450 level variants; was 33/600 overall)',
+    'toast on the level list sits at the bottom; help card text scrolls with the switches and 知道了 pinned; dark grey tiles contrast >= 4.5; landscape HUD on the right column with taller keys; full-row tap feedback; title/help/daily texts fixed',
+    'bot: reads revealed slots (a stray 揭開一字 purchase used to make it delete forever); restarts after the time cap start a fresh round'],
+    wallSeconds: Math.round(a2.wallMs / 1000), tiers: tiers(a2), probe: a2.probe, dropLog: a2.dropLog, hangs: a2.hangs };
+}
 fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(out, null, 1));
 const line = r => Object.entries(r).map(([t, v]) => t + ':' + v.summary.cleared).join(' ');
-console.log('before', line(out.tiers)); if (out.afterFix) console.log('after ', line(out.afterFix.tiers));
+console.log('before', line(out.tiers)); if (out.afterFix) console.log('after ', line(out.afterFix.tiers)); if (out.afterReview) console.log('review', line(out.afterReview.tiers));
