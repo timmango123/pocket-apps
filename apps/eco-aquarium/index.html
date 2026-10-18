@@ -1,0 +1,1103 @@
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<title>生態水族箱</title>
+<style>
+/* A living planted tank behind glass. UI = wet glass chips floating over the canvas; dark room by default, a sunlit room in light theme. */
+:root {
+  color-scheme: dark;
+  --ink: #eef8f6;
+  --ink-soft: #b9d6d2;
+  --chip: rgba(6, 28, 36, 0.62);
+  --chip-line: rgba(180, 235, 228, 0.22);
+  --chip-on: rgba(126, 222, 206, 0.92);
+  --chip-on-ink: #04282b;
+  --sheet: #0d2730;
+  --sheet-2: #123440;
+  --line: rgba(190, 230, 225, 0.14);
+  --accent: #7edecc;
+  --warn: #f2b84b;
+  --bad: #ff7a6b;
+  --focus: #ffe79a;
+  --font: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  color-scheme: light;
+  --ink: #0f2a30; --ink-soft: #3e5d63;
+  --chip: rgba(236, 250, 250, 0.78); --chip-line: rgba(20, 70, 80, 0.18);
+  --chip-on: #137a74; --chip-on-ink: #f2fffd;
+  --sheet: #f1fbfa; --sheet-2: #e0f2f0; --line: rgba(20, 70, 80, 0.14);
+  --accent: #137a74; --warn: #b7791f; --bad: #c9432f; --focus: #0b5b8a;
+} }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --ink: #0f2a30; --ink-soft: #3e5d63;
+  --chip: rgba(236, 250, 250, 0.78); --chip-line: rgba(20, 70, 80, 0.18);
+  --chip-on: #137a74; --chip-on-ink: #f2fffd;
+  --sheet: #f1fbfa; --sheet-2: #e0f2f0; --line: rgba(20, 70, 80, 0.14);
+  --accent: #137a74; --warn: #b7791f; --bad: #c9432f; --focus: #0b5b8a;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body {
+  background: #07202c; color: var(--ink); font: 15px/1.45 var(--font);
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#tank { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.top {
+  position: fixed; left: 0; right: 0; top: calc(var(--sat) + 10px);
+  padding: 0 calc(var(--sar) + 12px) 0 calc(var(--sal) + 12px);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; pointer-events: none;
+}
+.chip {
+  background: var(--chip); border: 1px solid var(--chip-line); border-radius: 14px;
+  box-shadow: 0 6px 22px rgba(0, 18, 26, 0.28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.brand { padding: 7px 12px 8px; pointer-events: auto; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.brand h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: 0.1em; line-height: 1.2; }
+.brand span { display: block; font-size: 12px; color: var(--ink-soft); letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.right { display: flex; gap: 8px; align-items: flex-start; pointer-events: auto; flex: none; }
+.qual { padding: 6px 10px 7px; min-height: 44px; display: flex; flex-direction: column; justify-content: center; cursor: pointer; }
+.qual b { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.qual i { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); flex: none; }
+.qual span { font-size: 11px; color: var(--ink-soft); white-space: nowrap; }
+.iconbtn { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; padding: 0; }
+.iconbtn svg { width: 22px; height: 22px; }
+
+.toasts { position: fixed; left: 50%; transform: translateX(-50%); top: calc(var(--sat) + 66px); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; max-width: calc(100% - 32px); z-index: 4; }
+.toast { background: var(--chip); border: 1px solid var(--chip-line); border-radius: 16px; padding: 6px 14px; font-size: 13px; line-height: 1.4; text-align: center; max-width: 100%; animation: tin .35s ease; }
+.toast.out { opacity: 0; transition: opacity .5s; }
+@keyframes tin { from { opacity: 0; transform: translateY(-6px); } }
+
+.bar {
+  position: fixed; left: 0; right: 0; bottom: calc(var(--sab) + 10px);
+  display: flex; justify-content: center; gap: 6px; padding: 0 calc(var(--sar) + 8px) 0 calc(var(--sal) + 8px); pointer-events: none; z-index: 3;
+}
+.bar button {
+  pointer-events: auto; flex: 0 1 72px; min-width: 56px; min-height: 54px; padding: 5px 4px 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 12px; letter-spacing: 0.04em; border-radius: 16px;
+  background: var(--chip); border: 1px solid var(--chip-line); color: var(--ink);
+  box-shadow: 0 6px 22px rgba(0, 18, 26, 0.28); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: transform .12s, background .2s, color .2s;
+}
+.bar button:active { transform: scale(0.95); }
+.bar button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); border-color: transparent; }
+.bar button svg { width: 22px; height: 22px; }
+.bar button small { font-size: 11px; opacity: .85; }
+
+.card {
+  position: fixed; z-index: 5; width: 196px; padding: 10px 12px; border-radius: 14px;
+  background: var(--chip); border: 1px solid var(--chip-line); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 12, 20, 0.35); font-size: 13px; line-height: 1.5;
+}
+.card h3 { margin: 0 0 2px; font-size: 16px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.card h3 em { font-style: normal; font-size: 12px; color: var(--ink-soft); font-weight: 400; }
+.card .row { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-soft); }
+.card .row b { color: var(--ink); font-weight: 500; }
+.card .acts { display: flex; gap: 6px; margin-top: 8px; }
+.card .acts button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--chip-line); background: transparent; font-size: 14px; }
+.card .acts button.danger { color: var(--bad); }
+
+.scrim { position: fixed; inset: 0; background: rgba(2, 12, 18, 0.45); z-index: 6; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; max-height: min(78%, 560px);
+  background: var(--sheet); color: var(--ink); border-radius: 20px 20px 0 0; box-shadow: 0 -10px 40px rgba(0, 10, 16, 0.4);
+  display: flex; flex-direction: column; padding-bottom: var(--sab);
+}
+.sheet header { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 6px 16px; border-bottom: 1px solid var(--line); flex: none; }
+.sheet header h2 { margin: 0; font-size: 16px; letter-spacing: 0.06em; }
+.sheet .body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 14px 14px; overscroll-behavior: contain; touch-action: pan-y; }
+.sheet .close { width: 44px; height: 44px; border-radius: 12px; border: 0; background: transparent; font-size: 20px; }
+.sec { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.12em; margin: 10px 0 4px; }
+.life { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.life canvas { width: 54px; height: 36px; flex: none; border-radius: 8px; background: var(--sheet-2); }
+.life .t { flex: 1; min-width: 0; }
+.life .t b { font-weight: 600; font-size: 15px; }
+.life .t small { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.35; }
+.life .n { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.life .pm { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--sheet-2); font-size: 20px; line-height: 1; }
+.life .pm:disabled { opacity: .35; cursor: default; }
+.stat { display: grid; grid-template-columns: 76px 1fr 72px; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
+.stat .lab { color: var(--ink-soft); }
+.stat .val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.stat .trk { height: 8px; border-radius: 4px; background: var(--sheet-2); overflow: hidden; }
+.stat .trk i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.stat .trk i.warn { background: var(--warn); } .stat .trk i.bad { background: var(--bad); }
+.pop { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-soft); margin: 8px 0 6px; }
+.pop b { color: var(--ink); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { min-height: 44px; min-width: 56px; padding: 0 12px; border: 0; background: transparent; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+.graphhead { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+#graph { width: 100%; height: 150px; display: block; border-radius: 10px; background: var(--sheet-2); margin-top: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-soft); margin: 6px 0 2px; }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.log { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
+.log li { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.log li span { color: var(--ink-soft); font-variant-numeric: tabular-nums; flex: none; font-size: 12px; }
+.menu { display: grid; gap: 8px; }
+.menu button { min-height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--sheet-2); display: flex; align-items: center; justify-content: space-between; padding: 0 14px; font-size: 15px; }
+.menu button span { color: var(--ink-soft); font-size: 13px; }
+.menu button[aria-pressed="true"] span { color: var(--accent); font-weight: 600; }
+.menu button.danger { color: var(--bad); }
+.help p { margin: 6px 0; color: var(--ink-soft); font-size: 14px; }
+.help p b { color: var(--ink); font-weight: 600; }
+
+.intro { position: fixed; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px; background: rgba(3, 16, 24, 0.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.intro .panel { width: min(100%, 360px); max-height: 100%; overflow-y: auto; background: var(--sheet); border-radius: 20px; padding: 18px 18px 16px; box-shadow: 0 20px 60px rgba(0, 10, 16, 0.5); }
+.intro h2 { margin: 0 0 2px; font-size: 22px; letter-spacing: 0.12em; }
+.intro .sub { margin: 0 0 10px; color: var(--ink-soft); font-size: 13px; }
+.intro ul { margin: 0 0 12px; padding-left: 18px; color: var(--ink-soft); font-size: 14px; line-height: 1.6; }
+.intro ul b { color: var(--ink); font-weight: 600; }
+.intro .go { width: 100%; min-height: 50px; border-radius: 14px; border: 0; background: var(--chip-on); color: var(--chip-on-ink); font-size: 17px; font-weight: 700; letter-spacing: 0.1em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+@media (max-width: 359px) { .bar button { min-width: 52px; font-size: 11px; } .brand h1 { font-size: 15px; } }
+@media (max-height: 520px) { .toasts { top: calc(var(--sat) + 60px); } .sheet { max-height: 86%; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } .bar button { transition: none; } }
+</style>
+
+<canvas id="tank" aria-label="水族箱：點一下魚看牠的狀態" role="img"></canvas>
+<header class="top">
+  <div class="chip brand"><h1>生態水族箱</h1><span id="clock">範例水族箱・第 1 天 08:00</span></div>
+  <div class="right">
+    <button class="chip qual" id="qual" type="button" aria-label="水質，打開數據"><b><i id="qdot"></i><span id="qlab">水質 清澈</span></b><span id="qsub">氨 0.02・氧 85%</span></button>
+    <button class="chip iconbtn" id="bMenu" type="button" aria-label="選單"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+  </div>
+</header>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="card" id="card" hidden></div>
+<nav class="bar" aria-label="照顧">
+  <button id="bFeed" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v7"/><path d="M8 7l4 3 4-3"/><path d="M5 14c2 0 2.5 1.5 4 1.5S11 14 13 14s2.5 1.5 4 1.5 2-1.5 4-1.5"/><path d="M5 19c2 0 2.5 1.5 4 1.5S11 19 13 19s2.5 1.5 4 1.5 2-1.5 4-1.5"/></svg>餵食</button>
+  <button id="bWater" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/><path d="M9 15a3 3 0 0 0 3 3"/></svg>換水</button>
+  <button id="bLight" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>燈光<small id="lightLab">中</small></button>
+  <button id="bLife" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c3-5 7-6 11-4l4-3-1 5 1 5-4-3c-4 2-8 1-11-4z"/><path d="M20 12h1"/><circle cx="9" cy="11" r=".8" fill="currentColor"/></svg>生物</button>
+  <button id="bStats" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/></svg>數據</button>
+</nav>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheetLife" hidden aria-label="生物">
+  <header><h2>生物與水草</h2><button class="close" type="button" data-close aria-label="關閉">✕</button></header>
+  <div class="body" id="lifeBody"></div>
+</section>
+<section class="sheet" id="sheetStats" hidden aria-label="數據">
+  <header><h2>水質數據</h2><button class="close" type="button" data-close aria-label="關閉">✕</button></header>
+  <div class="body">
+    <div id="statRows"></div>
+    <div class="pop" id="popRow"></div>
+    <div class="graphhead"><div class="sec" style="margin:0">歷史曲線</div><div class="seg" id="rangeSeg"><button type="button" data-r="1" aria-pressed="true">1 天</button><button type="button" data-r="3" aria-pressed="false">3 天</button></div></div>
+    <canvas id="graph" width="300" height="150" aria-label="水質歷史曲線"></canvas>
+    <div class="legend"><span><i style="background:#e9a93a"></i>氨（×100）</span><span><i style="background:#62bfe0"></i>氧氣 %</span><span><i style="background:#b48cf2"></i>硝酸鹽</span><span><i style="background:#86c95f"></i>藻類</span></div>
+    <div class="sec">事件紀錄</div>
+    <ul class="log" id="logList"></ul>
+  </div>
+</section>
+<section class="sheet" id="sheetMenu" hidden aria-label="選單">
+  <header><h2>選單</h2><button class="close" type="button" data-close aria-label="關閉">✕</button></header>
+  <div class="body">
+    <div class="menu">
+      <button type="button" id="mSound" aria-pressed="false">環境音<span>關</span></button>
+      <button type="button" id="mTheme">介面主題<span>跟隨系統</span></button>
+      <button type="button" id="mSpeed" aria-pressed="false">快轉 4×<span>關</span></button>
+      <button type="button" id="mHelp">怎麼照顧<span>說明</span></button>
+      <button type="button" id="mReset" class="danger">重設成範例水族箱<span></span></button>
+    </div>
+  </div>
+</section>
+<section class="sheet" id="sheetHelp" hidden aria-label="說明">
+  <header><h2>怎麼照顧</h2><button class="close" type="button" data-close aria-label="關閉">✕</button></header>
+  <div class="body help">
+    <p><b>餵食</b>：每按一次撒一撮飼料。魚餓了會來吃；吃不完的沉到底部腐爛，變成氨。</p>
+    <p><b>氮循環</b>：魚的排泄與腐爛產生「氨」（有毒），硝化菌把氨轉成「硝酸鹽」（較溫和），水草與藻類再吸收硝酸鹽。</p>
+    <p><b>換水</b>：換掉三成的水，氨、硝酸鹽、藻類都會下降，也會吸走底部的殘渣。</p>
+    <p><b>燈光</b>：光越強，水草長得越快、產氧越多，但藻類也跟著長。關燈時魚會休息。</p>
+    <p><b>清潔工</b>：小精靈、蘋果螺吃藻類；大和米蝦清理底部殘渣。殘渣太多時螺會大量繁殖。</p>
+    <p><b>繁殖</b>：吃飽、健康、水質好的成魚會生小魚。神仙魚和鬥魚會吃小魚；兩隻鬥魚會打架。</p>
+    <p><b>離開時</b>：關掉頁面水族箱仍會繼續過日子（最多補算 2 天），回來記得先餵食、看看水質。</p>
+    <p><b>點一下魚</b>可以看牠的名字、年齡與狀態；點空白處魚會受驚游開。</p>
+  </div>
+</section>
+
+<div class="intro" id="intro" hidden>
+  <div class="panel">
+    <h2>生態水族箱</h2>
+    <p class="sub">一缸會自己過日子的小生態</p>
+    <ul>
+      <li><b>餵食</b>要適量，吃不完會變成氨。</li>
+      <li>定期<b>換水</b>，把硝酸鹽和藻類壓下來。</li>
+      <li><b>燈光</b>讓水草產氧，太強藻類會爆。</li>
+      <li>用<b>生物</b>調整魚、清潔工與水草的平衡。</li>
+      <li>離開後水族箱照常運作，回來先看<b>數據</b>。</li>
+    </ul>
+    <button class="go" id="bStart" type="button">開始照顧</button>
+  </div>
+</div>
+
+<script>
+/*CORE-START*/
+const ECO = (function () {
+  'use strict';
+  const DAY = 86400, HOUR = 3600, SCALE = 240, CAP = 20, MAX_FISH = 30, MAX_PLANTS = 14, MAX_CLEAN = 16, OFFLINE_CAP = 2 * DAY;
+  const LIGHT = [0, 0.5, 1, 1.6], LIGHT_NAME = ['關', '弱', '中', '強'];
+  const SPECIES = {
+    guppy:    { name: '孔雀魚',   desc: '小型、好養、很會生',           len: 3.4, speed: 9,  school: 0.6, diet: 'omni', hungerH: 24, waste: 1,   load: 1,   o2: 1,   matureD: 3,  lifeD: 22, litter: 3, breedCd: 1.2 * DAY, breedP: 0.3, yp: 0.45 },
+    neon:     { name: '霓虹燈魚', desc: '成群游動，水質要好才會生',     len: 2.8, speed: 11, school: 1.3, diet: 'omni', hungerH: 26, waste: 0.7, load: 0.7, o2: 0.7, matureD: 4,  lifeD: 26, litter: 4, breedCd: 3 * DAY,   breedP: 0.08, yp: 0.5 },
+    goldfish: { name: '金魚',     desc: '大、吃得多、排泄多，會啃水草', len: 8.5, speed: 5,  school: 0.2, diet: 'omni', hungerH: 16, waste: 3.5, load: 4,   o2: 3,   matureD: 10, lifeD: 70, litter: 5, breedCd: 8 * DAY,   breedP: 0.04, nibble: true, yp: 0.5 },
+    betta:    { name: '鬥魚',     desc: '獨來獨往，會吃小魚；兩隻會打架', len: 5.2, speed: 6,  school: 0,   diet: 'carn', hungerH: 28, waste: 1.3, load: 1.8, o2: 1.2, matureD: 4,  lifeD: 16, litter: 0, breedCd: 0, breedP: 0, fryEater: true, fights: true, yp: 0.3 },
+    angel:    { name: '神仙魚',   desc: '優雅的大魚，餓了會吃小魚',     len: 7.2, speed: 6,  school: 0.3, diet: 'carn', hungerH: 26, waste: 2.2, load: 3,   o2: 2,   matureD: 8,  lifeD: 45, litter: 4, breedCd: 6 * DAY,   breedP: 0.06, fryEater: true, yp: 0.45 },
+    oto:      { name: '小精靈',   desc: '貼著葉子吃藻，沒藻會餓',       len: 2.9, speed: 7,  school: 0.4, diet: 'algae', hungerH: 18, waste: 0.5, load: 0.6, o2: 0.6, matureD: 4, lifeD: 16, litter: 0, breedCd: 0, breedP: 0, algaeEat: 0.55, yp: 0.82 }
+  };
+  const CLEANERS = {
+    snail:  { name: '蘋果螺',   desc: '吃藻也吃殘渣；殘渣多會暴增', algaeEat: 0.3, wasteEat: 0.1, lifeD: 40, breeds: true },
+    shrimp: { name: '大和米蝦', desc: '清理底部殘渣的好幫手',       algaeEat: 0.2, wasteEat: 0.16, lifeD: 30 }
+  };
+  const PLANTS = {
+    vallis:  { name: '水蘭', desc: '長得快、很會長新株，需要中等以上燈光', growH: 0.012, minL: 1,   uptake: 0.03, o2: 2.4, spread: true, maxN: 8 },
+    anubias: { name: '水榕', desc: '耐陰、慢慢長，很難養死',             growH: 0.005, minL: 0.5, uptake: 0.015, o2: 1.2 },
+    moss:    { name: '莫絲', desc: '蝦子最愛的綠絨毯',                   growH: 0.008, minL: 0.5, uptake: 0.02, o2: 1.5 }
+  };
+  const NAMES = ['小橘', '阿藍', '豆豆', '泡泡', '小花', '阿銀', '點點', '可可', '布丁', '芋圓', '珍珠', '小白', '阿金', '果凍', '綠豆', '麻糬', '小米', '波波', '糖糖', '阿紅', '月月', '大福', '小夜', '彩彩', '奶茶', '仙草', '小黑', '阿寶', '嘟嘟', '丸子', '米粒', '湯圓', '芝麻', '柚子', '小雨'];
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  function rand(st) { let a = (st.seed = (st.seed + 0x6D2B79F5) | 0); a = Math.imul(a ^ (a >>> 15), a | 1); a ^= a + Math.imul(a ^ (a >>> 7), a | 61); return ((a ^ (a >>> 14)) >>> 0) / 4294967296; }
+
+  function newTank(opts) {
+    opts = opts || {};
+    const st = { v: 1, seed: opts.seed || 12345, t: 8 * HOUR, w: opts.w || 68, h: opts.h || 60, fb: 4, light: 2, name: opts.name || '範例水族箱',
+      water: { ammonia: 0.02, nitrate: 14, o2: 86, algae: 10, bacteria: 0.92 }, detritus: 0.3,
+      fish: [], plants: [], cleaners: [], food: [], history: [], log: [], events: [], nextId: 1, hAcc: 0, born: 0, died: 0, lastFight: -1e9, started: 0 };
+    return st;
+  }
+  function pickName(st) { const used = new Set(st.fish.map(f => f.name)); const free = NAMES.filter(n => !used.has(n)); const pool = free.length ? free : NAMES; return pool[Math.floor(rand(st) * pool.length)]; }
+  function addFish(st, sp, o) {
+    o = o || {};
+    if (!SPECIES[sp] || st.fish.length >= MAX_FISH) return null;
+    const S = SPECIES[sp];
+    const f = { id: st.nextId++, sp, name: pickName(st), x: o.x != null ? o.x : 10 + rand(st) * (st.w - 20), y: o.y != null ? o.y : 6 + rand(st) * (st.h - 14),
+      vx: (rand(st) - 0.5) * 4, vy: 0, dir: 1, age: o.age != null ? o.age : 0, size: o.size != null ? o.size : 0.15, hunger: o.hunger != null ? o.hunger : 0.3, hp: 1,
+      cd: o.cd != null ? o.cd : S.breedCd, sex: o.sex || (rand(st) < 0.5 ? 'f' : 'm'), life: S.lifeD * DAY * (0.85 + rand(st) * 0.3), wa: rand(st) * 6.28, ph: rand(st) * 6.28, st: 0, sx: 0, sy: 0, hue: rand(st), yp: S.yp + (rand(st) - 0.5) * 0.2 };
+    if (f.dir = f.vx < 0 ? -1 : 1, st.fish.push(f), f.size >= 1) f.age = Math.max(f.age, S.matureD * DAY);
+    return f;
+  }
+  function addPlant(st, kind, o) {
+    o = o || {};
+    if (!PLANTS[kind] || st.plants.length >= MAX_PLANTS) return null;
+    const p = { id: st.nextId++, kind, x: o.x != null ? o.x : 8 + rand(st) * (st.w - 16), size: o.size != null ? o.size : 0.35, ph: rand(st) * 6.28, var: rand(st) };
+    st.plants.push(p); return p;
+  }
+  function addCleaner(st, kind, o) {
+    o = o || {};
+    if (!CLEANERS[kind] || st.cleaners.length >= MAX_CLEAN) return null;
+    const c = { id: st.nextId++, kind, x: o.x != null ? o.x : 6 + rand(st) * (st.w - 12), y: o.y != null ? o.y : st.h - st.fb - 0.5, dir: rand(st) < 0.5 ? -1 : 1, age: 0, life: CLEANERS[kind].lifeD * DAY * (0.8 + rand(st) * 0.4), ph: rand(st) * 6.28, wall: 0, hop: 0 };
+    st.cleaners.push(c); return c;
+  }
+  function removeLast(arr, pred) { for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return arr.splice(i, 1)[0]; return null; }
+  function removeFish(st, id) { const f = removeLast(st.fish, x => x.id === id); if (f) note(st, f.name + '（' + SPECIES[f.sp].name + '）送回水族店了'); return f; }
+  function removeSpecies(st, sp) { const f = removeLast(st.fish, x => x.sp === sp); if (f) note(st, f.name + '（' + SPECIES[sp].name + '）送回水族店了'); return f; }
+  function removePlant(st, kind) { return removeLast(st.plants, p => p.kind === kind); }
+  function removeCleaner(st, kind) { return removeLast(st.cleaners, c => c.kind === kind); }
+  function note(st, msg, quiet) { st.log.unshift({ t: st.t, msg }); if (st.log.length > 40) st.log.length = 40; if (!quiet) st.events.push(msg); }
+
+  function feed(st, n) {
+    n = n || 6;
+    for (let i = 0; i < n; i++) st.food.push({ x: st.w * (0.2 + rand(st) * 0.6) + (rand(st) - 0.5) * 6, y: 2 + rand(st), vy: 0.9 + rand(st) * 0.6, t: st.t, w: rand(st) * 6.28 });
+    return st.food.length;
+  }
+  function waterChange(st, frac) {
+    frac = frac || 0.3; const w = st.water;
+    w.ammonia *= 1 - frac; w.nitrate *= 1 - frac; w.algae *= 1 - frac * 0.7; st.detritus *= 0.4; w.o2 = Math.min(100, w.o2 + 10);
+    st.food = []; note(st, '換了 ' + Math.round(frac * 100) + '% 的水', true);
+  }
+  function setLight(st, lv) { st.light = clamp(lv | 0, 0, 3); return st.light; }
+  const load = st => st.fish.reduce((s, f) => s + f.size * SPECIES[f.sp].load, 0);
+  function quality(st) {
+    const w = st.water;
+    const score = clamp(100 - 80 * clamp(w.ammonia / 0.5, 0, 1) - 40 * clamp((w.nitrate - 20) / 60, 0, 1) - 50 * clamp((50 - w.o2) / 30, 0, 1) - 30 * clamp((w.algae - 30) / 50, 0, 1), 0, 100);
+    const label = score >= 80 ? '清澈' : score >= 55 ? '尚可' : score >= 30 ? '混濁' : '危險';
+    return { score: Math.round(score), label, level: score >= 80 ? 0 : score >= 55 ? 1 : score >= 30 ? 2 : 3 };
+  }
+  function stage(f) { const S = SPECIES[f.sp]; if (f.size < 0.35) return '幼魚'; if (f.size < 1) return '亞成魚'; return f.age > S.lifeD * DAY * 0.75 ? '老年' : '成魚'; }
+  function fishInfo(st, f) {
+    const S = SPECIES[f.sp], w = st.water;
+    const hungerLab = f.hunger < 0.3 ? '飽足' : f.hunger < 0.6 ? '有點餓' : f.hunger < 0.85 ? '很餓' : '快餓壞了';
+    let health = f.hp > 0.8 ? '健康' : f.hp > 0.45 ? '有些虛弱' : '生病';
+    let mood = '悠游中';
+    if (st.light === 0) mood = '休息中';
+    else if (f.hunger > 0.5 && st.food.length) mood = '覓食中';
+    else if (S.algaeEat) mood = w.algae > 3 ? '啃藻中' : '找不到藻';
+    else if (f.size >= 1 && f.cd <= 0 && f.hunger < 0.5 && f.hp > 0.7 && S.litter) mood = '準備繁殖';
+    else if (f.size < 0.35) mood = '躲在水草裡';
+    if (f.st > 0) mood = '受驚';
+    return { name: f.name, species: S.name, sex: f.sex === 'f' ? '♀' : '♂', days: Math.floor(f.age / DAY), stage: stage(f), hunger: hungerLab, health, mood, sizeCm: (S.len * (0.3 + 0.7 * f.size) * 1.1).toFixed(1) };
+  }
+
+  // Slow model: hunger, growth, breeding, deaths, water chemistry. h = sim hours.
+  function model(st, h, coarse) {
+    const w = st.water, L = LIGHT[st.light], night = st.light === 0, nowLoad = load(st);
+    let nh3 = 0, detr = 0, o2use = 0;
+    const fry = st.fish.filter(f => f.size < 0.35);
+    const counts = {};
+    st.fish.forEach(f => { counts[f.sp] = counts[f.sp] || { m: 0, f: 0 }; if (f.size >= 1) counts[f.sp][f.sex]++; });
+    const order = coarse ? st.fish.slice().sort((a, b) => b.hunger - a.hunger) : st.fish;
+    for (const f of order) {
+      const S = SPECIES[f.sp];
+      f.age += h * HOUR;
+      f.hunger = Math.min(1, f.hunger + h / S.hungerH * (night ? 0.6 : 1));
+      if (S.algaeEat) { const g = S.algaeEat * w.algae / (w.algae + 10) * h * (0.4 + 0.6 * f.size); w.algae = Math.max(0, w.algae - g); f.hunger = Math.max(0, f.hunger - g * 0.75); }
+      else if (w.algae > 4) f.hunger = Math.max(0, f.hunger - 0.02 * h * w.algae / (w.algae + 10));
+      if (coarse && f.hunger > 0.3 && st.food.length) { st.food.pop(); f.hunger = Math.max(0, f.hunger - 0.7 / Math.sqrt(S.load)); }
+      if (S.nibble && f.size > 0.5 && f.hunger > 0.4 && st.plants.length) { const p = st.plants[Math.floor(rand(st) * st.plants.length)]; p.size -= 0.01 * h; f.hunger = Math.max(0, f.hunger - 0.01 * h); }
+      nh3 += 0.012 * f.size * S.waste * h; detr += 0.012 * f.size * S.waste * h; o2use += f.size * S.o2 * 0.6 * h;
+      if (f.size < 1) f.size = Math.min(1, f.size + h / (S.matureD * 24) * (f.hunger < 0.75 ? 1 : 0.2) * (f.size < 0.35 ? 1.6 : 1));
+      if (f.cd > 0) f.cd -= h * HOUR;
+      let dmg = 0.08 * clamp((w.ammonia - 0.25) / 0.5, 0, 1) + 0.08 * clamp((35 - w.o2) / 25, 0, 1) + 0.015 * clamp((f.hunger - 0.85) / 0.15, 0, 1);
+      if (f.size < 0.35) dmg *= 1.6;
+      if (nowLoad > CAP * 1.2) dmg += 0.005;
+      if (S.fights && counts[f.sp] && f.size > 0.6 && (counts[f.sp].m + counts[f.sp].f) >= 2) { dmg += 0.03; if (st.t - st.lastFight > 6 * HOUR) { st.lastFight = st.t; note(st, '兩隻鬥魚打起來了'); } }
+      f.hp = dmg > 0 ? Math.max(0, f.hp - dmg * h) : Math.min(1, f.hp + 0.03 * h);
+      if (f.hp <= 0) f.dead = w.ammonia > 0.3 ? '因水質不佳死亡' : w.o2 < 35 ? '缺氧死亡' : f.hunger > 0.85 ? '餓死了' : '生病死了';
+      else if (f.age > f.life) f.dead = '安詳地老去了';
+      // predation
+      if (S.fryEater && f.size > 0.6 && f.hunger > 0.5 && fry.length) {
+        const victim = fry.find(g => !g.dead && g !== f);
+        if (victim && (coarse ? rand(st) < 0.12 * h * fry.length : f.bite)) { victim.dead = '被 ' + f.name + ' 吃掉了'; f.hunger = Math.max(0, f.hunger - 0.3); f.bite = 0; }
+      }
+      f.bite = 0;
+    }
+    // breeding
+    if (st.fish.length < MAX_FISH && nowLoad < CAP * 0.95 && w.ammonia < 0.2 && w.o2 > 50) {
+      for (const f of st.fish.slice()) {
+        const S = SPECIES[f.sp], c = counts[f.sp];
+        if (!S.litter || f.dead || f.sex !== 'f' || f.size < 1 || f.cd > 0 || f.hunger > 0.5 || f.hp < 0.7 || !c || c.m < 1) continue;
+        if (rand(st) < S.breedP * h) {
+          const n = Math.min(S.litter, MAX_FISH - st.fish.length); if (n <= 0) break;
+          for (let i = 0; i < n; i++) addFish(st, f.sp, { x: f.x + (rand(st) - 0.5) * 6, y: clamp(f.y + (rand(st) - 0.5) * 4, 4, st.h - 6), size: 0.15, hunger: 0.2, cd: S.breedCd });
+          f.cd = S.breedCd; st.born += n; note(st, f.name + ' 生了 ' + n + ' 隻小' + S.name);
+        }
+      }
+    }
+    const dead = st.fish.filter(f => f.dead);
+    if (dead.length) {
+      st.fish = st.fish.filter(f => !f.dead);
+      for (const f of dead) { st.died++; st.detritus += 1.5 * SPECIES[f.sp].load * (0.3 + 0.7 * f.size); note(st, f.name + '（' + SPECIES[f.sp].name + '）' + f.dead); }
+    }
+    // cleaners
+    let newSnails = 0;
+    for (const c of st.cleaners) {
+      const C = CLEANERS[c.kind]; c.age += h * HOUR;
+      w.algae = Math.max(0, w.algae - C.algaeEat * w.algae / (w.algae + 10) * h);
+      const eat = Math.min(st.detritus, C.wasteEat * h * (st.detritus / (st.detritus + 0.5))); st.detritus -= eat;
+      if (C.breeds && st.detritus > 1.5 && st.cleaners.length + newSnails < MAX_CLEAN && rand(st) < 0.05 * h) newSnails++;
+      if (c.age > c.life) c.dead = true;
+    }
+    if (st.cleaners.some(c => c.dead)) { st.cleaners = st.cleaners.filter(c => !c.dead); note(st, '一隻清潔工壽終正寢了', true); }
+    for (let i = 0; i < newSnails; i++) addCleaner(st, 'snail');
+    if (newSnails) note(st, '殘渣太多，蘋果螺又多了 ' + newSnails + ' 隻');
+    // plants
+    let plantO2 = 0, uptake = 0;
+    for (const p of st.plants.slice()) {
+      const P = PLANTS[p.kind];
+      const g = P.growH * (L >= P.minL ? L : L > 0 ? 0.15 : -0.25) * (w.nitrate > 1 ? 1 : 0.25) * (w.algae > 60 ? -0.6 : 1);
+      p.size = clamp(p.size + g * h, 0, 1);
+      plantO2 += p.size * P.o2 * (night ? -0.3 : L); uptake += p.size * P.uptake * L;
+      if (P.spread && p.size > 0.95 && st.plants.length < MAX_PLANTS && st.plants.filter(q => q.kind === p.kind).length < P.maxN && rand(st) < 0.03 * h) { addPlant(st, p.kind, { x: clamp(p.x + (rand(st) - 0.5) * 14, 5, st.w - 5), size: 0.2 }); note(st, P.name + '長出新的一株'); }
+      if (p.size <= 0.02) { st.plants.splice(st.plants.indexOf(p), 1); note(st, '一株' + P.name + '枯萎了'); }
+    }
+    // food decay
+    for (let i = st.food.length - 1; i >= 0; i--) if (st.t - st.food[i].t > 3 * HOUR) { st.food.splice(i, 1); st.detritus += 1; }
+    // chemistry
+    const rel = Math.min(st.detritus, st.detritus * 0.1 * h); st.detritus -= rel; nh3 += rel * 0.15; detr = detr; st.detritus += detr;
+    w.ammonia += nh3;
+    const conv = Math.min(w.ammonia, 0.6 * w.bacteria * w.ammonia / (w.ammonia + 0.15) * h);
+    w.ammonia -= conv; w.nitrate += conv * 3;
+    w.bacteria = clamp(w.bacteria + (0.12 * (1 - w.bacteria) * Math.min(1, w.ammonia / 0.1) - (w.ammonia < 0.01 ? 0.004 * w.bacteria : 0)) * h, 0.05, 1);
+    w.nitrate = Math.max(0, w.nitrate - uptake * h - 0.01 * w.algae * L * h);
+    w.algae = clamp(w.algae + (1.2 * L * (0.4 + w.nitrate / 30) * (1 - w.algae / 100) - 0.04 * w.algae) * h, 0, 100);
+    w.o2 = clamp(w.o2 + ((100 - w.o2) * 0.25 * h + plantO2 * h + 0.02 * w.algae * L * h - o2use - 0.3 * st.detritus * h), 0, 100);
+    // history every 10 sim minutes
+    st.hAcc += h * HOUR;
+    if (st.hAcc >= 600) { st.hAcc = 0; st.history.push({ t: Math.round(st.t), a: +w.ammonia.toFixed(3), n: +w.nitrate.toFixed(1), o: +w.o2.toFixed(1), g: +w.algae.toFixed(1), p: st.fish.length }); if (st.history.length > 450) st.history.splice(0, st.history.length - 450); }
+    st.t += h * HOUR;
+  }
+
+  // Fast motion (boids, food particles, cleaners). dt = real seconds.
+  function motion(st, dt) {
+    const night = st.light === 0, fs = st.fish, floor = st.h - st.fb, W = st.w;
+    for (const f of fs) {
+      const S = SPECIES[f.sp], len = S.len * (0.3 + 0.7 * f.size), spd = S.speed * (night ? 0.35 : 1) * (0.7 + 0.3 * f.size);
+      let boost = 1, ax = 0, ay = 0, cx = 0, cy = 0, avx = 0, n = 0, chase = null, cd = 1e9, flee = 0, fx = 0, fy = 0;
+      f.wa += (rand(st) - 0.5) * 3 * dt;
+      ax += Math.cos(f.wa) * 0.7; ay += Math.sin(f.wa) * 0.3;
+      ay += (f.yp * st.h - f.y) * 0.03;
+      for (const g of fs) {
+        if (g === f) continue;
+        const dx = g.x - f.x, dy = g.y - f.y, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) + 1e-6;
+        const sep = len * 0.9 + SPECIES[g.sp].len * (0.3 + 0.7 * g.size) * 0.5;
+        if (d < sep) { ax -= dx / d * (1 - d / sep) * 3; ay -= dy / d * (1 - d / sep) * 3; }
+        if (g.sp === f.sp && S.school > 0 && d < 24) { cx += g.x; cy += g.y; avx += g.vx; n++; }
+        if (S.fryEater && f.size > 0.6 && f.hunger > 0.5 && g.size < 0.35 && d < 18 && d < cd) { chase = g; cd = d; }
+        if (f.size < 0.35 && SPECIES[g.sp].fryEater && g.size > 0.6 && d < 12) { flee++; fx -= dx / d; fy -= dy / d; }
+        if (S.fights && g.sp === f.sp && g.size > 0.6 && f.size > 0.6 && d < 25) { ax += dx / d * 0.8; ay += dy / d * 0.4; }
+      }
+      if (n) { ax += (cx / n - f.x) * 0.12 * S.school; ay += (cy / n - f.y) * 0.12 * S.school; ax += (avx / n - f.vx) * 0.25 * S.school; }
+      if (chase) { ax += (chase.x - f.x) / cd * 2; ay += (chase.y - f.y) / cd * 2; boost = 1.6; if (cd < len * 0.6) f.bite = 1; }
+      if (flee) { ax += fx * 2.5; ay += fy * 2.5; }
+      if (f.hunger > 0.3 && st.food.length && !night) {
+        let best = null, bd = 45;
+        for (const k of st.food) { const d = Math.hypot(k.x - f.x, k.y - f.y); if (d < bd) { bd = d; best = k; } }
+        if (best) {
+          const d = bd + 1e-6; ax += (best.x - f.x) / d * (1.6 + f.hunger); ay += (best.y - f.y) / d * (1.6 + f.hunger); boost = 1.3;
+          if (bd < len * 0.55) { st.food.splice(st.food.index = st.food.indexOf(best), 1); f.hunger = Math.max(0, f.hunger - 0.7 / Math.sqrt(S.load)); f.chew = 0.6; }
+        }
+      }
+      const m = 6;
+      if (f.x < m) ax += (m - f.x) * 0.6; if (f.x > W - m) ax -= (f.x - W + m) * 0.6;
+      if (f.y < 4) ay += (4 - f.y) * 0.8; if (f.y > floor - 1.5) ay -= (f.y - floor + 1.5) * 0.8;
+      if (f.st > 0) { ax += f.sx * 5; ay += f.sy * 5; f.st -= dt; boost = 2; }
+      const al = Math.hypot(ax, ay) + 1e-6, want = spd * boost;
+      const dvx = ax / al * want, dvy = ay / al * want * 0.6, k = Math.min(1, 2.2 * dt);
+      f.vx += (dvx - f.vx) * k; f.vy += (dvy - f.vy) * k;
+      const v = Math.hypot(f.vx, f.vy), vmax = spd * 2; if (v > vmax) { f.vx *= vmax / v; f.vy *= vmax / v; }
+      f.x = clamp(f.x + f.vx * dt, 1.5, W - 1.5); f.y = clamp(f.y + f.vy * dt, 2.5, floor - 0.5);
+      f.ph += dt * (3 + v * 0.7);
+      if (f.vx > 0.4) f.dir = 1; else if (f.vx < -0.4) f.dir = -1;
+      if (f.chew > 0) f.chew -= dt;
+    }
+    if (fs.some(f => f.bite)) model(st, 0, false);
+    for (const k of st.food) { if (k.y < floor - 0.3) { k.w += dt * 3; k.x += Math.sin(k.w) * 0.6 * dt; k.y = Math.min(floor - 0.3, k.y + k.vy * dt); } }
+    for (const c of st.cleaners) {
+      c.ph += dt;
+      if (c.kind === 'snail') {
+        if (rand(st) < 0.02 * dt) c.dir = -c.dir;
+        if (c.wall) { c.y = clamp(c.y + c.dir * 0.35 * dt, 4, floor); if (c.y <= 4 || c.y >= floor) { c.wall = 0; c.y = floor; c.dir = c.x < 5 ? 1 : -1; } }
+        else { c.x = clamp(c.x + c.dir * 0.35 * dt, 2, W - 2); c.y = floor; if ((c.x <= 2 || c.x >= W - 2) && rand(st) < 0.5) { c.wall = 1; c.dir = -1; } else if (c.x <= 2) c.dir = 1; else if (c.x >= W - 2) c.dir = -1; }
+      } else {
+        if (c.hop > 0) { c.hop -= dt; c.x = clamp(c.x + c.dir * 7 * dt, 3, W - 3); c.y = Math.max(floor - 3, c.y - 2 * dt); }
+        else { c.y = Math.min(floor, c.y + 2 * dt); if (rand(st) < 0.25 * dt) { c.hop = 0.5; if (rand(st) < 0.4) c.dir = -c.dir; } }
+        if (c.x <= 3) c.dir = 1; if (c.x >= W - 3) c.dir = -1;
+      }
+    }
+  }
+  function step(st, realDt, speed) {
+    realDt = Math.min(realDt, 0.1);
+    motion(st, realDt);
+    model(st, realDt * SCALE * (speed || 1) / HOUR, false);
+    while (st.events.length > 6) st.events.shift();
+  }
+  // Catch-up while the page was closed. simSeconds capped; returns a summary.
+  function advance(st, simSeconds) {
+    const total = Math.min(simSeconds, OFFLINE_CAP), b0 = st.born, d0 = st.died, t0 = st.t;
+    let left = total;
+    while (left > 0) { const c = Math.min(left, 120); model(st, c / HOUR, true); left -= c; }
+    for (const k of st.food) k.y = st.h - st.fb - 0.3;
+    st.events.length = 0;
+    return { simSeconds: total, capped: simSeconds > OFFLINE_CAP, born: st.born - b0, died: st.died - d0, days: (st.t - t0) / DAY };
+  }
+  function startle(st, x, y, r) { for (const f of st.fish) { const dx = f.x - x, dy = f.y - y, d = Math.hypot(dx, dy); if (d < (r || 16)) { f.st = 0.7; f.sx = dx / (d + 0.01); f.sy = dy / (d + 0.01); } } }
+  function fishAt(st, x, y, r) { let best = null, bd = r || 6; for (const f of st.fish) { const d = Math.hypot(f.x - x, f.y - y) - SPECIES[f.sp].len * (0.3 + 0.7 * f.size) * 0.4; if (d < bd) { bd = d; best = f; } } return best; }
+  function resize(st, h, w, fb) {
+    const old = st.h, oldW = st.w; st.h = h; if (w) st.w = w; if (fb != null) st.fb = fb; const k = h / old, kx = st.w / oldW, fl = st.h - st.fb;
+    for (const f of st.fish) { f.y = clamp(f.y * k, 2.5, fl - 0.5); f.x = clamp(f.x * kx, 1.5, st.w - 1.5); }
+    for (const c of st.cleaners) { c.x = clamp(c.x * kx, 2, st.w - 2); c.y = c.wall ? clamp(c.y * k, 4, fl) : fl; }
+    for (const p of st.plants) p.x = clamp(p.x * kx, 3, st.w - 3);
+    for (const k2 of st.food) { k2.x *= kx; k2.y = Math.min(k2.y * k, fl - 0.3); }
+  }
+
+  function sampleTank(seed, h) {
+    const st = newTank({ seed: seed || 20240601, h: h || 60 });
+    [['guppy', 1, 'm', 5], ['guppy', 1, 'f', 6], ['guppy', 1, 'f', 4], ['guppy', 1, 'm', 7], ['guppy', 0.6, 'f', 2], ['guppy', 0.25, 'm', 0.5],
+      ['neon', 1, 'm', 8], ['neon', 1, 'f', 8], ['neon', 1, 'm', 9], ['neon', 1, 'f', 7], ['neon', 1, 'f', 8], ['neon', 0.9, 'm', 5], ['neon', 1, 'f', 10], ['neon', 1, 'm', 6],
+      ['angel', 0.7, 'f', 5], ['oto', 1, 'f', 6], ['oto', 1, 'm', 7]].forEach(([sp, size, sex, d]) => addFish(st, sp, { size, sex, age: d * DAY, hunger: 0.15 + rand(st) * 0.2, cd: 3 * DAY }));
+    [['vallis', 14, 0.95], ['vallis', 22, 0.8], ['vallis', 84, 1], ['vallis', 91, 0.7], ['anubias', 40, 0.9], ['anubias', 66, 0.75], ['moss', 54, 0.85]].forEach(([k, x, s]) => addPlant(st, k, { x, size: s }));
+    addCleaner(st, 'snail', { x: 30 }); addCleaner(st, 'snail', { x: 75 }); addCleaner(st, 'shrimp', { x: 52 }); addCleaner(st, 'shrimp', { x: 60 }); addCleaner(st, 'shrimp', { x: 44 });
+    // a day of history so the graph is not empty, with two feedings
+    feed(st, 10); advance(st, 12 * HOUR); feed(st, 10); advance(st, 12 * HOUR);
+    for (const f of st.fish) { f.hunger = Math.min(f.hunger, 0.55); if (f.size >= 1) f.cd = DAY * (0.2 + rand(st) * 0.8); }
+    st.log.length = 0; st.events.length = 0; st.born = st.died = 0;
+    note(st, '範例水族箱開張，今天要好好照顧', true);
+    return st;
+  }
+  function serialize(st) { return JSON.stringify({ st, savedAt: Date.now() }); }
+  function restore(json, now) {
+    let o; try { o = JSON.parse(json); } catch (e) { return null; }
+    if (!o || !o.st || !Array.isArray(o.st.fish) || !o.st.water || o.st.v !== 1) return null;
+    const st = o.st; st.events = []; st.food = st.food || []; st.fb = st.fb || 4;
+    const gap = Math.max(0, ((now || Date.now()) - (o.savedAt || 0)) / 1000);
+    const sum = gap > 20 ? advance(st, gap * SCALE) : null;
+    return { st, gap, sum };
+  }
+  return { DAY, HOUR, SCALE, CAP, MAX_FISH, MAX_PLANTS, MAX_CLEAN, OFFLINE_CAP, LIGHT, LIGHT_NAME, SPECIES, CLEANERS, PLANTS, NAMES, rand, newTank, sampleTank, addFish, addPlant, addCleaner, removeFish, removeSpecies, removePlant, removeCleaner, feed, waterChange, setLight, load, quality, stage, fishInfo, model, motion, step, advance, startle, fishAt, resize, serialize, restore, note };
+})();
+/*CORE-END*/
+
+(function () {
+'use strict';
+const $ = id => document.getElementById(id);
+const KEY = 'eco-aquarium:v1:';
+const store = { get(k, d) { try { const v = localStorage.getItem(KEY + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) {} }, raw(k) { try { return localStorage.getItem(KEY + k); } catch (e) { return null; } }, rawSet(k, v) { try { localStorage.setItem(KEY + k, v); } catch (e) {} } };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const { SPECIES, CLEANERS, PLANTS, DAY, HOUR } = ECO;
+const canvas = $('tank'), ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1, S = 1; // S = px per tank unit
+let st, speed = store.get('speed', false) ? 4 : 1, soundOn = false, selected = null, lastSave = 0, raf = 0, lastT = 0, time = 0;
+const fx = { bubbles: [], ripples: [], flash: 0, wc: 0, pops: [] };
+
+// ---------- theme ----------
+const themeBtn = $('mTheme');
+function applyTheme() {
+  const t = store.get('theme', 'auto');
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t);
+  themeBtn.querySelector('span').textContent = t === 'auto' ? '跟隨系統' : t === 'dark' ? '深色' : '淺色';
+}
+themeBtn.addEventListener('click', () => { const t = store.get('theme', 'auto'); store.set('theme', t === 'auto' ? 'dark' : t === 'dark' ? 'light' : 'auto'); applyTheme(); });
+applyTheme();
+
+// ---------- state ----------
+function load() {
+  const raw = store.raw('save');
+  if (raw) {
+    const r = ECO.restore(raw, Date.now());
+    if (r) {
+      st = r.st;
+      if (r.sum) {
+        const g = r.gap, gl = g < 3600 ? Math.round(g / 60) + ' 分鐘' : g < 86400 ? Math.round(g / 360) / 10 + ' 小時' : Math.round(g / 8640) / 10 + ' 天';
+        const d = r.sum.days, dl = d >= 1 ? d.toFixed(1) + ' 天' : Math.round(d * 24) + ' 小時';
+        toast('你離開了 ' + gl + '，水族箱過了 ' + dl + (r.sum.capped ? '（最多補算 2 天）' : ''), 6000);
+        if (r.sum.born) toast('這段時間出生了 ' + r.sum.born + ' 隻小魚', 5000);
+        if (r.sum.died) toast('有 ' + r.sum.died + ' 隻魚死掉了，快看看水質', 6000);
+      }
+      return;
+    }
+  }
+  st = ECO.sampleTank(Date.now() % 100000 | 0, 60);
+  st.started = 1;
+}
+function save() { store.rawSet('save', ECO.serialize(st)); lastSave = performance.now(); }
+
+// ---------- toasts ----------
+const toastsEl = $('toasts');
+function toast(msg, ms) {
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg; toastsEl.appendChild(el);
+  while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 600); }, ms || 3200);
+}
+
+// ---------- sound ----------
+let actx = null, amb = null;
+function ensureAudio() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; } } if (actx && actx.state === 'suspended') actx.resume().catch(() => {}); return actx; }
+function startAmbient() {
+  const ac = ensureAudio(); if (!ac || amb) return;
+  const len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  let b0 = 0, b1 = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b0 = 0.995 * b0 + 0.005 * w; b1 = 0.95 * b1 + 0.05 * w; d[i] = (b0 * 4 + b1 * 0.8) * 0.5; }
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.6;
+  const g = ac.createGain(); g.gain.value = 0; g.gain.linearRampToValueAtTime(0.35, ac.currentTime + 1.5);
+  src.connect(lp).connect(g).connect(ac.destination); src.start();
+  amb = { src, g, next: ac.currentTime + 1 };
+}
+function stopAmbient() { if (!amb || !actx) return; const a = amb; amb = null; a.g.gain.linearRampToValueAtTime(0, actx.currentTime + 0.6); setTimeout(() => { try { a.src.stop(); } catch (e) {} }, 700); }
+function blip(f0, f1, dur, vol) {
+  if (!soundOn || !actx) return;
+  const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+  o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.08, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur + 0.05);
+}
+function tickAmbient() { if (amb && actx && actx.currentTime > amb.next) { blip(500 + Math.random() * 500, 900 + Math.random() * 900, 0.08 + Math.random() * 0.08, 0.025); amb.next = actx.currentTime + 0.4 + Math.random() * 2.5; } }
+function setSound(on) {
+  soundOn = on; store.set('sound', on);
+  $('mSound').setAttribute('aria-pressed', on); $('mSound').querySelector('span').textContent = on ? '開' : '關';
+  if (on) startAmbient(); else stopAmbient();
+}
+
+// ---------- sheets ----------
+const scrim = $('scrim');
+let openSheet = null;
+function open(id) {
+  closeSheet(); hideCard();
+  const el = $(id); el.hidden = false; scrim.hidden = false; openSheet = el;
+  if (id === 'sheetLife') renderLife(); if (id === 'sheetStats') renderStats();
+}
+function closeSheet() { if (!openSheet) return; openSheet.hidden = true; openSheet = null; scrim.hidden = true; }
+scrim.addEventListener('click', closeSheet);
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheet));
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSheet(); hideCard(); } });
+
+// ---------- life sheet ----------
+const lifeBody = $('lifeBody');
+function thumb(cv, kind, type) {
+  const c = cv.getContext('2d'), w = cv.width = 108, h = cv.height = 72; c.clearRect(0, 0, w, h);
+  c.save(); c.translate(w / 2, h / 2);
+  if (type === 'fish') { const S = SPECIES[kind]; drawFish(c, { sp: kind, size: 1, dir: 1, ph: 1.2, hue: 0.3, vx: 1, vy: 0 }, S, Math.min(80, 9 * S.len + 20), 0.5); }
+  else if (type === 'cleaner') { c.scale(2.2, 2.2); drawCleaner(c, { kind, ph: 1, dir: 1, hop: 0 }, 1); }
+  else { c.translate(0, 30); drawPlant(c, { kind, size: 1, ph: 1, var: 0.5 }, 3.2, 0); }
+  c.restore();
+}
+function lifeRow(type, kind, def, count, canAdd, canRemove) {
+  const row = document.createElement('div'); row.className = 'life';
+  const cv = document.createElement('canvas'); thumb(cv, kind, type);
+  const t = document.createElement('div'); t.className = 't'; t.innerHTML = '<b></b><small></small>'; t.querySelector('b').textContent = def.name; t.querySelector('small').textContent = def.desc;
+  const minus = document.createElement('button'); minus.className = 'pm'; minus.type = 'button'; minus.textContent = '－'; minus.setAttribute('aria-label', '移出一隻' + def.name); minus.disabled = !canRemove;
+  const n = document.createElement('span'); n.className = 'n'; n.textContent = count;
+  const plus = document.createElement('button'); plus.className = 'pm'; plus.type = 'button'; plus.textContent = '＋'; plus.setAttribute('aria-label', '放入一隻' + def.name); plus.disabled = !canAdd;
+  plus.dataset.add = type + ':' + kind; minus.dataset.rem = type + ':' + kind;
+  row.append(cv, t, minus, n, plus); return row;
+}
+function renderLife() {
+  lifeBody.innerHTML = '';
+  const sec = (t) => { const d = document.createElement('div'); d.className = 'sec'; d.textContent = t; lifeBody.appendChild(d); };
+  sec('魚類（' + st.fish.length + ' / ' + ECO.MAX_FISH + '・負載 ' + ECO.load(st).toFixed(1) + ' / ' + ECO.CAP + '）');
+  for (const k in SPECIES) { const n = st.fish.filter(f => f.sp === k).length; lifeBody.appendChild(lifeRow('fish', k, SPECIES[k], n, st.fish.length < ECO.MAX_FISH, n > 0)); }
+  sec('清潔工（' + st.cleaners.length + ' / ' + ECO.MAX_CLEAN + '）');
+  for (const k in CLEANERS) { const n = st.cleaners.filter(c => c.kind === k).length; lifeBody.appendChild(lifeRow('cleaner', k, CLEANERS[k], n, st.cleaners.length < ECO.MAX_CLEAN, n > 0)); }
+  sec('水草（' + st.plants.length + ' / ' + ECO.MAX_PLANTS + '）');
+  for (const k in PLANTS) { const n = st.plants.filter(p => p.kind === k).length; lifeBody.appendChild(lifeRow('plant', k, PLANTS[k], n, st.plants.length < ECO.MAX_PLANTS, n > 0)); }
+}
+lifeBody.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const [type, kind] = (b.dataset.add || b.dataset.rem).split(':');
+  if (b.dataset.add) {
+    if (type === 'fish') { const f = ECO.addFish(st, kind, { size: 0.6, hunger: 0.3, x: st.w / 2, y: 5 }); if (f) { toast('放入了一隻' + SPECIES[kind].name + '，取名「' + f.name + '」'); ECO.note(st, '放入一隻' + SPECIES[kind].name + ' ' + f.name, true); splash(f.x, 4); } }
+    else if (type === 'cleaner') { if (ECO.addCleaner(st, kind)) toast('放入了一隻' + CLEANERS[kind].name); }
+    else { if (ECO.addPlant(st, kind, { size: 0.3 })) toast('種下了一株' + PLANTS[kind].name); }
+    blip(600, 900, 0.1);
+  } else {
+    if (type === 'fish') { const f = ECO.removeSpecies(st, kind); if (f && selected && selected.id === f.id) hideCard(); }
+    else if (type === 'cleaner') ECO.removeCleaner(st, kind); else ECO.removePlant(st, kind);
+    blip(700, 400, 0.1);
+  }
+  st.started = 1; renderLife(); save();
+});
+
+// ---------- stats sheet ----------
+let range = 1;
+$('rangeSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; range = +b.dataset.r; $('rangeSeg').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b)); drawGraph(); });
+function statRow(lab, val, frac, lvl) { return '<div class="stat"><span class="lab">' + lab + '</span><span class="trk"><i class="' + lvl + '" style="width:' + Math.round(Math.min(1, frac) * 100) + '%"></i></span><span class="val">' + val + '</span></div>'; }
+function renderStats() {
+  const w = st.water, q = ECO.quality(st), ld = ECO.load(st);
+  const lv = (v, warn, bad) => v >= bad ? 'bad' : v >= warn ? 'warn' : '';
+  $('statRows').innerHTML =
+    statRow('水質', q.label + ' ' + q.score, q.score / 100, q.level >= 2 ? 'bad' : q.level === 1 ? 'warn' : '') +
+    statRow('氨 NH₃', w.ammonia.toFixed(2) + ' ppm', w.ammonia / 1, lv(w.ammonia, 0.2, 0.4)) +
+    statRow('硝酸鹽', Math.round(w.nitrate) + ' ppm', w.nitrate / 100, lv(w.nitrate, 40, 70)) +
+    statRow('氧氣', Math.round(w.o2) + ' %', w.o2 / 100, w.o2 < 40 ? 'bad' : w.o2 < 60 ? 'warn' : '') +
+    statRow('藻類', Math.round(w.algae), w.algae / 100, lv(w.algae, 35, 60)) +
+    statRow('硝化菌', Math.round(w.bacteria * 100) + ' %', w.bacteria, w.bacteria < 0.4 ? 'warn' : '') +
+    statRow('殘渣', st.detritus.toFixed(1), st.detritus / 5, lv(st.detritus, 1.5, 3)) +
+    statRow('負載', ld.toFixed(1) + ' / ' + ECO.CAP, ld / ECO.CAP, ld > ECO.CAP ? 'bad' : ld > ECO.CAP * 0.85 ? 'warn' : '');
+  const cnt = {}; st.fish.forEach(f => cnt[f.sp] = (cnt[f.sp] || 0) + 1);
+  $('popRow').innerHTML = '<span>魚 <b>' + st.fish.length + '</b> 隻</span>' + Object.keys(cnt).map(k => '<span>' + SPECIES[k].name + ' <b>' + cnt[k] + '</b></span>').join('') + '<span>清潔工 <b>' + st.cleaners.length + '</b></span><span>水草 <b>' + st.plants.length + '</b></span><span>出生 <b>' + st.born + '</b>・死亡 <b>' + st.died + '</b></span>';
+  const ul = $('logList'); ul.innerHTML = '';
+  for (const e of st.log.slice(0, 14)) { const li = document.createElement('li'); const s = document.createElement('span'); s.textContent = '第 ' + (Math.floor(e.t / DAY) + 1) + ' 天 ' + clockStr(e.t); const m = document.createElement('div'); m.textContent = e.msg; li.append(s, m); ul.appendChild(li); }
+  if (!st.log.length) ul.innerHTML = '<li><div>還沒有事件</div></li>';
+  drawGraph();
+}
+function drawGraph() {
+  const g = $('graph'), r = g.getBoundingClientRect(); if (!r.width) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1); g.width = Math.round(r.width * dpr); g.height = Math.round(150 * dpr);
+  const c = g.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); const w = r.width, h = 150;
+  c.clearRect(0, 0, w, h);
+  const span = range * DAY, t1 = st.t, t0 = t1 - span, pts = st.history.filter(p => p.t >= t0);
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink-soft').trim() || '#9bb';
+  c.strokeStyle = ink; c.globalAlpha = 0.25; c.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = 8 + (h - 24) * i / 4; c.beginPath(); c.moveTo(34, y); c.lineTo(w - 6, y); c.stroke(); }
+  c.globalAlpha = 1; c.fillStyle = ink; c.font = '10px ' + getComputedStyle(document.body).fontFamily; c.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) c.fillText(String(100 - 25 * i), 30, 8 + (h - 24) * i / 4 + 3.5);
+  c.textAlign = 'center';
+  for (let d = 0; d <= range; d++) { const x = 34 + (w - 40) * d / range; c.fillText(d === range ? '現在' : '-' + (range - d) + ' 天', x, h - 3); }
+  if (pts.length < 2) { c.fillText('資料還不夠，再等一下', w / 2, h / 2); return; }
+  const series = [['a', '#e9a93a', 100], ['o', '#62bfe0', 1], ['n', '#b48cf2', 1], ['g', '#86c95f', 1]];
+  c.lineWidth = 2; c.lineJoin = 'round'; c.lineCap = 'round';
+  for (const [k, col, mul] of series) {
+    c.strokeStyle = col; c.beginPath();
+    pts.forEach((p, i) => { const x = 34 + (w - 40) * (p.t - t0) / span, y = 8 + (h - 24) * (1 - Math.min(1, p[k] * mul / 100)); i ? c.lineTo(x, y) : c.moveTo(x, y); });
+    c.stroke();
+  }
+}
+
+// ---------- fish card ----------
+const card = $('card');
+function showCard(f) { selected = f; card.hidden = false; fillCard(); placeCard(); if (navigator.vibrate) try { navigator.vibrate(8); } catch (e) {} }
+function hideCard() { selected = null; card.hidden = true; }
+let cardTick = 0;
+card.innerHTML = '<h3><span></span><em></em></h3><div class="row"><span>年齡</span><b></b></div><div class="row"><span>階段</span><b></b></div><div class="row"><span>肚子</span><b></b></div><div class="row"><span>健康</span><b></b></div><div class="row"><span>狀態</span><b></b></div><div class="acts"><button type="button" class="danger" id="cRemove">移出</button><button type="button" id="cClose">關閉</button></div>';
+$('cRemove').addEventListener('click', () => { if (selected) ECO.removeFish(st, selected.id); hideCard(); save(); blip(700, 400, 0.1); });
+$('cClose').addEventListener('click', hideCard);
+function fillCard() {
+  const f = selected, i = ECO.fishInfo(st, f);
+  card.querySelector('h3 span').textContent = i.name + ' ' + i.sex; card.querySelector('h3 em').textContent = i.species + '・' + i.sizeCm + ' cm';
+  const b = card.querySelectorAll('.row b'); b[0].textContent = i.days + ' 天'; b[1].textContent = i.stage; b[2].textContent = i.hunger; b[3].textContent = i.health; b[4].textContent = i.mood;
+}
+function placeCard() {
+  if (!selected) return;
+  const r = card.getBoundingClientRect(), px = selected.x * S, py = selected.y * S;
+  let x = px - r.width / 2, y = py - r.height - 18; if (y < 70) y = py + 18;
+  x = Math.max(8, Math.min(W - r.width - 8, x)); y = Math.max(8, Math.min(H - r.height - 76, y));
+  card.style.left = x + 'px'; card.style.top = y + 'px';
+}
+
+// ---------- actions ----------
+function splash(x, y) { fx.ripples.push({ x, y, r: 0, a: 1 }); }
+function doFeed() {
+  ECO.feed(st, 8); st.started = 1; fx.flash = 0.4;
+  for (let i = 0; i < 3; i++) splash(st.w * (0.3 + Math.random() * 0.4), 2.5);
+  blip(300, 900, 0.12, 0.06); toast('撒了一撮飼料');
+  if (st.food.length > 24) toast('飼料有點多了，吃不完會變成氨');
+  save();
+}
+function doWater() { ECO.waterChange(st, 0.3); st.started = 1; fx.wc = 1.6; blip(200, 700, 0.5, 0.05); toast('換了 30% 的水，殘渣也吸走了'); save(); }
+function cycleLight() { ECO.setLight(st, (st.light + 1) % 4); st.started = 1; $('lightLab').textContent = ECO.LIGHT_NAME[st.light]; blip(800, 1200, 0.06); toast('燈光：' + ECO.LIGHT_NAME[st.light]); save(); }
+$('bFeed').addEventListener('click', doFeed);
+$('bWater').addEventListener('click', doWater);
+$('bLight').addEventListener('click', cycleLight);
+$('bLife').addEventListener('click', () => open('sheetLife'));
+$('bStats').addEventListener('click', () => open('sheetStats'));
+$('qual').addEventListener('click', () => open('sheetStats'));
+$('bMenu').addEventListener('click', () => open('sheetMenu'));
+$('mHelp').addEventListener('click', () => open('sheetHelp'));
+$('mSound').addEventListener('click', () => { ensureAudio(); setSound(!soundOn); });
+$('mSpeed').addEventListener('click', () => { speed = speed === 1 ? 4 : 1; store.set('speed', speed === 4); $('mSpeed').setAttribute('aria-pressed', speed === 4); $('mSpeed').querySelector('span').textContent = speed === 4 ? '開' : '關'; });
+$('mReset').addEventListener('click', () => { if (!confirm('要把水族箱重設成範例嗎？目前的魚和紀錄都會消失。')) return; st = ECO.sampleTank(Date.now() % 100000 | 0, st.h); st.started = 1; hideCard(); closeSheet(); fitTank(); save(); toast('重設成範例水族箱'); });
+$('bStart').addEventListener('click', () => { $('intro').hidden = true; store.set('seen', true); ensureAudio(); });
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea') || e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') doFeed(); else if (k === 'w') doWater(); else if (k === 'l') cycleLight(); else if (k === 's') { ensureAudio(); setSound(!soundOn); } else if (k === 'b') open('sheetLife'); else if (k === 'd') open('sheetStats');
+});
+
+// canvas taps
+let pdown = null;
+canvas.addEventListener('pointerdown', e => { pdown = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+canvas.addEventListener('pointerup', e => {
+  if (!pdown) return; const dx = e.clientX - pdown.x, dy = e.clientY - pdown.y, dt = performance.now() - pdown.t; pdown = null;
+  if (dx * dx + dy * dy > 18 * 18 || dt > 600) return;
+  if (openSheet) { closeSheet(); return; }
+  const x = e.clientX / S, y = e.clientY / S;
+  const f = ECO.fishAt(st, x, y, 6);
+  if (f) { showCard(f); blip(900, 1400, 0.06, 0.04); }
+  else { hideCard(); ECO.startle(st, x, y, 16); splash(x, y); blip(400, 250, 0.1, 0.03); }
+});
+canvas.addEventListener('pointercancel', () => { pdown = null; });
+
+// ---------- rendering ----------
+function fitTank() {
+  W = innerWidth; H = innerHeight; DPR = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  const w = Math.max(68, W / 9); S = W / w; const h = H / S, fb = 4 + 88 / S;
+  if (Math.abs(h - st.h) > 0.01 || Math.abs(w - st.w) > 0.01 || Math.abs(fb - (st.fb || 4)) > 0.01) ECO.resize(st, h, w, fb);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  caustic = null;
+}
+window.addEventListener('resize', () => { fitTank(); if (openSheet === $('sheetStats')) drawGraph(); });
+
+let caustic = null;
+function makeCaustic() {
+  const c = document.createElement('canvas'); c.width = c.height = 220; const g = c.getContext('2d');
+  g.strokeStyle = '#fff'; g.lineCap = 'round';
+  let s = 7;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  for (let i = 0; i < 22; i++) {
+    const x = rnd() * 220, y = rnd() * 220, rx = 22 + rnd() * 34, ry = 16 + rnd() * 26, rot = rnd() * 3.14;
+    for (const [lw, al] of [[9, 0.05], [5, 0.09], [2.2, 0.22]]) {
+      g.lineWidth = lw; g.globalAlpha = al; g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, 6.283); g.stroke();
+      for (const [ox, oy] of [[-220, 0], [220, 0], [0, -220], [0, 220], [-220, -220], [220, 220], [-220, 220], [220, -220]]) { g.beginPath(); g.ellipse(x + ox, y + oy, rx, ry, rot, 0, 6.283); g.stroke(); }
+    }
+  }
+  return ctx.createPattern(c, 'repeat');
+}
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgb = a => 'rgb(' + a[0] + ',' + a[1] + ',' + a[2] + ')';
+function waterColors() {
+  const L = ECO.LIGHT[st.light], w = st.water;
+  const dark = [[5, 22, 36], [3, 12, 22]], bright = [[36, 150, 184], [10, 66, 92]];
+  const k = Math.min(1, L / 1.6);
+  let top = mix(dark[0], bright[0], Math.pow(k, 0.7)), bot = mix(dark[1], bright[1], Math.pow(k, 0.7));
+  const alg = Math.min(0.5, w.algae / 100 * 0.7), amm = Math.min(0.35, w.ammonia / 0.8 * 0.35), nit = Math.min(0.25, w.nitrate / 120 * 0.25);
+  top = mix(top, [60, 140, 70], alg); bot = mix(bot, [20, 70, 30], alg);
+  top = mix(top, [120, 110, 50], amm); bot = mix(bot, [70, 60, 25], amm);
+  top = mix(top, [70, 95, 80], nit); bot = mix(bot, [40, 55, 40], nit);
+  return { top, bot, L };
+}
+function drawPlant(c, p, s, t) {
+  // origin at base of plant (floor); s = px per unit; sway with t
+  const sway = reduceMotion ? 0 : Math.sin(t * 0.9 + p.ph) * 0.12 + Math.sin(t * 0.37 + p.ph * 2) * 0.06;
+  const hgt = (p.kind === 'vallis' ? 26 : p.kind === 'anubias' ? 10 : 6) * (0.25 + 0.75 * p.size) * s;
+  if (p.kind === 'vallis') {
+    const n = 5 + Math.round(p.var * 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / (n - 1) - 0.5), hh = hgt * (0.7 + 0.3 * Math.sin(i * 2.1 + p.var * 9)), wdt = Math.max(1.2, 0.9 * s);
+      const g = c.createLinearGradient(0, 0, 0, -hh); g.addColorStop(0, '#2d6b2a'); g.addColorStop(1, i % 2 ? '#7ccf5a' : '#5bb54b');
+      c.strokeStyle = g; c.lineWidth = wdt; c.lineCap = 'round'; c.beginPath(); c.moveTo(a * 2.2 * s, 0);
+      const bx = a * 5 * s + sway * hh * 0.9, tx = a * 7 * s + sway * hh * 1.8 + Math.sin(t * 1.3 + i) * (reduceMotion ? 0 : 0.6 * s);
+      c.bezierCurveTo(a * 2 * s, -hh * 0.4, bx, -hh * 0.75, tx, -hh); c.stroke();
+    }
+  } else if (p.kind === 'anubias') {
+    const n = 4 + Math.round(p.var * 3);
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (i / (n - 1) - 0.5) * 2.2 + sway * 0.6, len = hgt * (0.7 + 0.3 * Math.sin(i * 1.7 + p.var * 5));
+      c.strokeStyle = '#2f5d2a'; c.lineWidth = Math.max(1, 0.5 * s); c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(ang) * len * 0.5, Math.sin(ang) * len * 0.5); c.stroke();
+      c.save(); c.translate(Math.cos(ang) * len * 0.72, Math.sin(ang) * len * 0.72); c.rotate(ang);
+      const g = c.createRadialGradient(-len * 0.1, 0, 0, 0, 0, len * 0.5); g.addColorStop(0, '#3f8a3a'); g.addColorStop(1, '#1f4d20');
+      c.fillStyle = g; c.beginPath(); c.ellipse(0, 0, len * 0.42, len * 0.2, 0, 0, 6.283); c.fill();
+      c.strokeStyle = 'rgba(190,240,170,0.35)'; c.lineWidth = 1; c.beginPath(); c.moveTo(-len * 0.4, 0); c.lineTo(len * 0.38, 0); c.stroke(); c.restore();
+    }
+  } else {
+    c.fillStyle = '#5a5248'; c.beginPath(); c.ellipse(0, 0.2 * s, 4 * s, 1.6 * s, 0, Math.PI, 0); c.fill();
+    const n = 14 + Math.round(p.var * 6);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI + sway * 0.4, r = hgt * (0.6 + 0.4 * Math.sin(i * 3.3 + p.var * 7)), x = Math.cos(a) * 3.4 * s * (0.6 + 0.4 * Math.sin(i * 1.3)), y = -Math.abs(Math.sin(a)) * r;
+      c.fillStyle = i % 3 ? '#4f9a3c' : '#73b94f'; c.beginPath(); c.ellipse(x, y, 1.1 * s, 0.75 * s, a, 0, 6.283); c.fill();
+    }
+  }
+}
+function drawFish(c, f, Sp, lenPx, hp) {
+  const theta = Math.atan2(f.vy || 0, Math.abs(f.vx || 1)) * 0.35;
+  c.save(); c.rotate(f.dir * theta); c.scale(f.dir * lenPx, lenPx);
+  const wag = (reduceMotion ? 0.15 : Math.sin(f.ph)) * 0.28, pale = f.size < 0.35;
+  const sick = hp != null && hp < 0.5;
+  c.lineWidth = 0.02;
+  const sp = f.sp;
+  const ellipse = (x, y, rx, ry, rot) => { c.beginPath(); c.ellipse(x, y, rx, ry, rot || 0, 0, 6.283); c.fill(); };
+  if (pale) { // fry: tiny translucent body + big eye
+    c.fillStyle = 'rgba(220,230,220,0.75)'; ellipse(0, 0, 0.5, 0.16);
+    c.fillStyle = 'rgba(200,215,210,0.6)'; c.beginPath(); c.moveTo(-0.45, 0); c.lineTo(-0.75, -0.2 + wag * 0.3); c.lineTo(-0.75, 0.2 + wag * 0.3); c.fill();
+    c.fillStyle = '#111'; ellipse(0.28, -0.03, 0.09, 0.09); c.restore(); return;
+  }
+  if (sp === 'guppy') {
+    const hue = 20 + f.hue * 300, tail = 'hsl(' + hue + ',85%,55%)', tail2 = 'hsl(' + ((hue + 40) % 360) + ',90%,65%)';
+    c.save(); c.translate(-0.28, 0); c.rotate(wag);
+    const g = c.createRadialGradient(0, 0, 0.02, 0, 0, 0.42); g.addColorStop(0, tail2); g.addColorStop(1, tail);
+    c.fillStyle = g; c.beginPath(); c.moveTo(0, 0); c.arc(0, 0, 0.42, Math.PI - 0.95, Math.PI + 0.95); c.fill();
+    c.fillStyle = 'rgba(20,20,40,0.35)'; for (let i = 0; i < 5; i++) ellipse(-0.18 - (i % 3) * 0.08, -0.2 + i * 0.1, 0.025, 0.025);
+    c.restore();
+    c.fillStyle = tail; ellipse(0.02, -0.14, 0.14, 0.07, -0.3);
+    const bg = c.createLinearGradient(0, -0.12, 0, 0.12); bg.addColorStop(0, '#9fb3b8'); bg.addColorStop(0.55, '#d9e4e4'); bg.addColorStop(1, '#f2f6f4');
+    c.fillStyle = bg; ellipse(0.05, 0, 0.42, 0.12);
+    c.fillStyle = 'hsla(' + hue + ',80%,55%,0.45)'; ellipse(-0.12, 0.02, 0.14, 0.08);
+  } else if (sp === 'neon') {
+    c.fillStyle = 'rgba(200,220,230,0.6)'; c.beginPath(); c.moveTo(-0.42, 0); c.lineTo(-0.6, -0.14 + wag * 0.5); c.lineTo(-0.6, 0.14 + wag * 0.5); c.fill();
+    c.fillStyle = '#cfd9db'; ellipse(0, 0, 0.5, 0.1);
+    c.fillStyle = '#e8322f'; c.beginPath(); c.ellipse(-0.14, 0.03, 0.36, 0.075, 0, 0, Math.PI); c.fill();
+    c.fillStyle = '#39d6ff'; c.beginPath(); c.ellipse(0.04, -0.03, 0.42, 0.04, 0, 0, 6.283); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.5)'; ellipse(0.05, -0.05, 0.3, 0.015);
+  } else if (sp === 'goldfish') {
+    c.save(); c.translate(-0.33, 0); c.rotate(wag * 0.8);
+    c.fillStyle = 'rgba(255,150,40,0.85)';
+    c.beginPath(); c.moveTo(0, 0); c.bezierCurveTo(-0.2, -0.25, -0.45, -0.38, -0.5, -0.12); c.bezierCurveTo(-0.3, -0.05, -0.2, 0, 0, 0); c.fill();
+    c.beginPath(); c.moveTo(0, 0); c.bezierCurveTo(-0.2, 0.25, -0.45, 0.38, -0.5, 0.12); c.bezierCurveTo(-0.3, 0.05, -0.2, 0, 0, 0); c.fill();
+    c.restore();
+    c.fillStyle = 'rgba(255,170,60,0.9)'; c.beginPath(); c.moveTo(-0.1, -0.2); c.quadraticCurveTo(0.05, -0.42, 0.2, -0.2); c.fill();
+    const bg = c.createRadialGradient(0.1, -0.1, 0.02, 0, 0, 0.45); bg.addColorStop(0, '#ffd27a'); bg.addColorStop(0.5, '#ff9a2e'); bg.addColorStop(1, '#e8641c');
+    c.fillStyle = bg; ellipse(0.02, 0, 0.42, 0.24);
+    c.fillStyle = 'rgba(255,250,235,0.55)'; ellipse(0.08, 0.1, 0.28, 0.1);
+    c.fillStyle = 'rgba(255,150,40,0.7)'; ellipse(0.12, 0.16, 0.1, 0.06, 0.5);
+  } else if (sp === 'betta') {
+    const base = f.hue < 0.5 ? ['#b3123a', '#3b1a8a'] : ['#1a3fb8', '#b5123e'];
+    c.save(); c.translate(-0.25, 0); c.rotate(wag * 0.6);
+    const g = c.createRadialGradient(0, 0, 0.05, 0, 0, 0.5); g.addColorStop(0, base[0]); g.addColorStop(1, base[1]);
+    c.fillStyle = g; c.globalAlpha = 0.88; c.beginPath(); c.moveTo(0, 0);
+    for (let a = -1.25; a <= 1.25; a += 0.05) { const r = 0.5 + Math.sin(a * 9 + f.ph) * 0.025; c.lineTo(Math.cos(Math.PI + a) * r, Math.sin(Math.PI + a) * r); }
+    c.fill(); c.globalAlpha = 1; c.restore();
+    c.fillStyle = base[1]; c.globalAlpha = 0.8; c.beginPath(); c.moveTo(-0.25, -0.1); c.quadraticCurveTo(0, -0.45, 0.25, -0.1); c.fill();
+    c.beginPath(); c.moveTo(-0.2, 0.1); c.quadraticCurveTo(0.05, 0.5, 0.3, 0.1); c.fill(); c.globalAlpha = 1;
+    const bg = c.createLinearGradient(0, -0.15, 0, 0.15); bg.addColorStop(0, base[0]); bg.addColorStop(1, base[1]);
+    c.fillStyle = bg; ellipse(0.05, 0, 0.4, 0.15);
+    c.fillStyle = 'rgba(255,255,255,0.18)'; ellipse(0.1, -0.05, 0.25, 0.05);
+  } else if (sp === 'angel') {
+    c.fillStyle = 'rgba(230,235,240,0.7)'; c.beginPath(); c.moveTo(-0.3, 0); c.lineTo(-0.5, -0.18 + wag * 0.4); c.lineTo(-0.5, 0.18 + wag * 0.4); c.fill();
+    c.fillStyle = '#c7d0d6'; c.beginPath(); c.moveTo(-0.15, -0.1); c.quadraticCurveTo(-0.1, -0.8, 0.15, -0.3); c.lineTo(0.2, -0.05); c.fill();
+    c.beginPath(); c.moveTo(-0.15, 0.1); c.quadraticCurveTo(-0.1, 0.8, 0.15, 0.3); c.lineTo(0.2, 0.05); c.fill();
+    c.strokeStyle = '#c7d0d6'; c.lineWidth = 0.03; c.beginPath(); c.moveTo(0.1, 0.15); c.lineTo(-0.05 + wag * 0.2, 0.75); c.stroke();
+    const bg = c.createLinearGradient(0, -0.3, 0, 0.3); bg.addColorStop(0, '#dfe7ea'); bg.addColorStop(1, '#a9b6bd');
+    c.fillStyle = bg; c.beginPath(); c.moveTo(0.42, 0); c.quadraticCurveTo(0.2, -0.38, -0.15, -0.3); c.quadraticCurveTo(-0.3, 0, -0.15, 0.3); c.quadraticCurveTo(0.2, 0.38, 0.42, 0); c.fill();
+    c.fillStyle = 'rgba(20,24,30,0.75)';
+    for (const x of [0.2, -0.02, -0.2]) { c.beginPath(); c.moveTo(x - 0.04, -0.34); c.lineTo(x + 0.05, -0.34); c.lineTo(x + 0.05, 0.34); c.lineTo(x - 0.04, 0.34); c.fill(); }
+  } else if (sp === 'oto') {
+    c.fillStyle = 'rgba(190,170,130,0.75)'; c.beginPath(); c.moveTo(-0.4, 0); c.lineTo(-0.6, -0.14 + wag * 0.4); c.lineTo(-0.6, 0.14 + wag * 0.4); c.fill();
+    const bg = c.createLinearGradient(0, -0.1, 0, 0.1); bg.addColorStop(0, '#8d7a4b'); bg.addColorStop(0.6, '#d9ccab'); bg.addColorStop(1, '#f1ead6');
+    c.fillStyle = bg; ellipse(0, 0.01, 0.48, 0.11);
+    c.fillStyle = '#3a2d1b'; ellipse(-0.02, -0.01, 0.44, 0.03);
+  }
+  c.fillStyle = '#fff'; ellipse(sp === 'angel' ? 0.26 : 0.3, sp === 'goldfish' ? -0.06 : -0.03, 0.055, 0.055);
+  c.fillStyle = '#101418'; ellipse(sp === 'angel' ? 0.275 : 0.315, sp === 'goldfish' ? -0.06 : -0.03, 0.032, 0.032);
+  if (sick) { c.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < 4; i++) ellipse(-0.2 + i * 0.12, -0.05 + (i % 2) * 0.08, 0.02, 0.02); }
+  c.restore();
+}
+function drawCleaner(c, cl, s) {
+  if (cl.kind === 'snail') {
+    c.save(); c.scale(cl.dir, 1);
+    c.fillStyle = '#c9a36b'; c.beginPath(); c.ellipse(0, -0.4 * s, 2.2 * s, 0.7 * s, 0, 0, 6.283); c.fill();
+    const g = c.createRadialGradient(-0.3 * s, -2 * s, 0.2 * s, -0.3 * s, -1.8 * s, 1.8 * s); g.addColorStop(0, '#f0c070'); g.addColorStop(0.7, '#b86a2a'); g.addColorStop(1, '#6d3a14');
+    c.fillStyle = g; c.beginPath(); c.arc(-0.3 * s, -1.8 * s, 1.6 * s, 0, 6.283); c.fill();
+    c.strokeStyle = 'rgba(80,40,10,0.5)'; c.lineWidth = Math.max(0.6, 0.15 * s); c.beginPath();
+    for (let a = 0; a < 7; a += 0.2) { const r = 0.2 * s * a; c.lineTo(-0.3 * s + Math.cos(a) * r, -1.8 * s + Math.sin(a) * r); } c.stroke();
+    c.strokeStyle = '#c9a36b'; c.lineWidth = Math.max(0.6, 0.18 * s); c.beginPath(); c.moveTo(1.6 * s, -0.8 * s); c.lineTo(2.3 * s, -1.9 * s); c.moveTo(1.9 * s, -0.8 * s); c.lineTo(2.9 * s, -1.6 * s); c.stroke();
+    c.restore();
+  } else {
+    c.save(); c.scale(cl.dir, 1);
+    const bend = cl.hop > 0 ? 0.5 : 0.25;
+    c.strokeStyle = 'rgba(210,225,220,0.9)'; c.lineWidth = Math.max(0.8, 0.5 * s); c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-1.6 * s, -0.4 * s); c.quadraticCurveTo(0, -(1.2 + bend) * s, 1.6 * s, -0.5 * s); c.stroke();
+    c.strokeStyle = 'rgba(120,80,40,0.55)'; c.lineWidth = Math.max(0.5, 0.12 * s);
+    for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-1 * s + i * 0.6 * s, -0.5 * s); c.lineTo(-1.2 * s + i * 0.6 * s, 0.3 * s); c.stroke(); }
+    c.beginPath(); c.moveTo(-0.9 * s, -0.95 * s); c.lineTo(-0.2 * s, -1.25 * s); c.stroke();
+    c.strokeStyle = 'rgba(210,225,220,0.7)'; c.beginPath(); c.moveTo(1.5 * s, -0.6 * s); c.lineTo(3.2 * s, -1.6 * s); c.moveTo(1.5 * s, -0.6 * s); c.lineTo(3.4 * s, -0.5 * s); c.stroke();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(1.3 * s, -0.75 * s, Math.max(0.6, 0.18 * s), 0, 6.283); c.fill();
+    c.restore();
+  }
+}
+const pebbles = []; for (let i = 0; i < 26; i++) { const r = Math.sin(i * 12.9898) * 43758.5453; pebbles.push({ x: (r - Math.floor(r)), y: Math.sin(i * 5.1) * 0.5 + 0.5, s: 0.5 + ((i * 7) % 5) / 5 }); }
+const detritusDots = []; for (let i = 0; i < 70; i++) { const r = Math.sin(i * 78.233) * 12345.678; detritusDots.push({ x: r - Math.floor(r), y: ((i * 37) % 10) / 10 }); }
+const algaeSpots = []; for (let i = 0; i < 40; i++) { const r = Math.sin(i * 91.7) * 9876.5, r2 = Math.sin(i * 3.3) * 5432.1; algaeSpots.push({ x: r - Math.floor(r), y: r2 - Math.floor(r2), s: 0.5 + ((i * 3) % 4) / 4 }); }
+
+function render(dt) {
+  const w = st.water, { top, bot, L } = waterColors(), floor = (st.h - st.fb) * S;
+  // water
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, rgb(top)); g.addColorStop(1, rgb(bot));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // light rays
+  if (L > 0) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const x0 = W * (0.15 + i * 0.22) + Math.sin(time * 0.2 + i) * 20, a = (0.035 + 0.02 * Math.sin(time * 0.5 + i * 1.7)) * L;
+      const rg = ctx.createLinearGradient(0, 0, 0, floor); rg.addColorStop(0, 'rgba(255,245,200,' + a + ')'); rg.addColorStop(1, 'rgba(255,245,200,0)');
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(x0 - 8, 0); ctx.lineTo(x0 + 26, 0); ctx.lineTo(x0 + 120, floor); ctx.lineTo(x0 - 20, floor); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // sand
+  const sg = ctx.createLinearGradient(0, floor - 6, 0, H); sg.addColorStop(0, rgb(mix([150, 128, 92], [90, 80, 60], 1 - L / 1.6 * 0.9))); sg.addColorStop(1, rgb(mix([96, 80, 56], [50, 45, 35], 1 - L / 1.6 * 0.9)));
+  ctx.fillStyle = sg; ctx.beginPath(); ctx.moveTo(0, floor); for (let x = 0; x <= W; x += 24) ctx.lineTo(x, floor + Math.sin(x * 0.04) * 3); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+  ctx.fillStyle = 'rgba(60,50,40,0.35)'; for (const p of pebbles) { ctx.beginPath(); ctx.ellipse(p.x * W, floor + 4 + p.y * (H - floor - 8), 2.6 * p.s * S / 4, 1.6 * p.s * S / 4, 0, 0, 6.283); ctx.fill(); }
+  // detritus on the floor
+  const nd = Math.min(detritusDots.length, Math.round(st.detritus * 14));
+  ctx.fillStyle = 'rgba(40,30,18,0.6)'; for (let i = 0; i < nd; i++) { const d = detritusDots[i]; ctx.beginPath(); ctx.arc(d.x * W, floor + 2 + d.y * (H - floor - 6), 1.3 + (i % 3) * 0.5, 0, 6.283); ctx.fill(); }
+  // caustics
+  if (L > 0 && !reduceMotion) {
+    if (!caustic) caustic = makeCaustic();
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = caustic;
+    const sc = Math.max(0.9, W / 360);
+    for (const [ox, oy, k, al] of [[time * 9, Math.sin(time * 0.4) * 14, 1, 0.05], [-time * 6 + 80, Math.cos(time * 0.3) * 18 + 60, 1.5, 0.035]]) {
+      ctx.save(); ctx.globalAlpha = al * L; ctx.translate(ox % 220, oy); ctx.scale(sc * k, sc * k); ctx.fillRect(-W, -H, 3 * W / sc / k, 3 * H / sc / k); ctx.restore();
+    }
+    ctx.restore();
+  }
+  // algae film on glass
+  if (w.algae > 3) {
+    const a = Math.min(0.5, w.algae / 100);
+    ctx.fillStyle = 'rgba(70,150,60,' + a * 0.9 + ')';
+    const n = Math.round(algaeSpots.length * Math.min(1, w.algae / 70));
+    for (let i = 0; i < n; i++) { const s = algaeSpots[i]; ctx.beginPath(); ctx.ellipse(s.x * W, s.y * floor, (4 + s.s * 10) * S / 4, (3 + s.s * 6) * S / 4, s.x * 3, 0, 6.283); ctx.fill(); }
+    const eg = ctx.createLinearGradient(0, 0, 0, floor); eg.addColorStop(0, 'rgba(60,140,50,' + a * 0.5 + ')'); eg.addColorStop(0.5, 'rgba(60,140,50,0)');
+    ctx.fillStyle = eg; ctx.fillRect(0, 0, W, floor);
+  }
+  // plants (back) and cleaners
+  for (const p of st.plants) { ctx.save(); ctx.translate(p.x * S, floor + 1); drawPlant(ctx, p, S, time); ctx.restore(); }
+  for (const cl of st.cleaners) { ctx.save(); ctx.translate(cl.x * S, cl.y * S + (cl.kind === 'snail' && !cl.wall ? 1 : 0)); if (cl.wall) ctx.rotate(cl.x < 5 ? Math.PI / 2 : -Math.PI / 2); drawCleaner(ctx, cl, S * 0.55); ctx.restore(); }
+  // food
+  ctx.fillStyle = '#d9a54a'; for (const k of st.food) { ctx.beginPath(); ctx.ellipse(k.x * S, k.y * S, 0.45 * S, 0.3 * S, k.w, 0, 6.283); ctx.fill(); }
+  // fish (small first, so big ones draw in front)
+  const sorted = st.fish.slice().sort((a, b) => a.size * SPECIES[a.sp].len - b.size * SPECIES[b.sp].len);
+  for (const f of sorted) {
+    const Sp = SPECIES[f.sp], lenPx = Sp.len * (0.3 + 0.7 * f.size) * S;
+    ctx.save(); ctx.translate(f.x * S, f.y * S);
+    if (f === selected) { ctx.strokeStyle = 'rgba(255,240,170,0.9)'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(0, 0, lenPx * 0.65, 0, 6.283); ctx.stroke(); ctx.setLineDash([]); }
+    if (L < 0.5) ctx.globalAlpha = 0.8;
+    drawFish(ctx, f, Sp, lenPx, f.hp);
+    ctx.restore();
+  }
+  // bubbles
+  if (!reduceMotion) {
+    if (Math.random() < dt * 9) fx.bubbles.push({ x: st.w * 0.86 + (Math.random() - 0.5) * 1.5, y: st.h - st.fb - 0.2, r: 0.25 + Math.random() * 0.35, w: Math.random() * 6 });
+    ctx.strokeStyle = 'rgba(220,245,255,0.55)'; ctx.fillStyle = 'rgba(220,245,255,0.12)'; ctx.lineWidth = 1;
+    for (let i = fx.bubbles.length - 1; i >= 0; i--) { const b = fx.bubbles[i]; b.y -= (5 + b.r * 6) * dt; b.w += dt * 4; b.x += Math.sin(b.w) * 0.6 * dt; if (b.y < 2.4) { fx.bubbles.splice(i, 1); continue; } ctx.beginPath(); ctx.arc(b.x * S, b.y * S, b.r * S, 0, 6.283); ctx.fill(); ctx.stroke(); }
+    if (fx.bubbles.length > 40) fx.bubbles.splice(0, fx.bubbles.length - 40);
+  }
+  // ripples
+  for (let i = fx.ripples.length - 1; i >= 0; i--) { const r = fx.ripples[i]; r.r += dt * 14; r.a -= dt * 1.6; if (r.a <= 0) { fx.ripples.splice(i, 1); continue; } ctx.strokeStyle = 'rgba(255,255,255,' + r.a * 0.5 + ')'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(r.x * S, r.y * S, r.r * S * 0.6, r.r * S * 0.35, 0, 0, 6.283); ctx.stroke(); }
+  // surface
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const sy = 2 * S, sgr = ctx.createLinearGradient(0, 0, 0, sy + 10); sgr.addColorStop(0, 'rgba(255,255,255,' + (0.12 + 0.1 * L) + ')'); sgr.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sgr; ctx.fillRect(0, 0, W, sy + 10);
+  ctx.strokeStyle = 'rgba(255,255,255,' + (0.25 + 0.2 * L) + ')'; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let x = 0; x <= W; x += 6) ctx.lineTo(x, sy + Math.sin(x * 0.05 + time * 1.6) * 1.5 + Math.sin(x * 0.11 - time) * 0.8);
+  ctx.stroke(); ctx.restore();
+  // water change swirl
+  if (fx.wc > 0) { fx.wc -= dt; const a = Math.min(1, fx.wc) * 0.35; ctx.fillStyle = 'rgba(200,240,255,' + a + ')'; for (let i = 0; i < 6; i++) { const x = W * (i + 0.5) / 6 + Math.sin(time * 3 + i) * 10; ctx.fillRect(x, 0, 3, H * (1.6 - fx.wc) / 1.6); } }
+  if (fx.flash > 0) { fx.flash -= dt; ctx.fillStyle = 'rgba(255,235,180,' + fx.flash * 0.12 + ')'; ctx.fillRect(0, 0, W, sy + 20); }
+  // night vignette
+  if (L < 0.5) { const vg = ctx.createRadialGradient(W / 2, H * 0.4, H * 0.2, W / 2, H * 0.5, H); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,4,10,' + (0.45 - L * 0.5) + ')'); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- HUD ----------
+const clockEl = $('clock'), qdot = $('qdot'), qlab = $('qlab'), qsub = $('qsub');
+function clockStr(t) { const s = t % DAY, hh = Math.floor(s / HOUR), mm = Math.floor((s % HOUR) / 60); return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm; }
+let hudAcc = 1;
+function hud() {
+  clockEl.textContent = st.name + '・第 ' + (Math.floor(st.t / DAY) + 1) + ' 天 ' + clockStr(st.t) + (speed > 1 ? '・4×' : '');
+  const q = ECO.quality(st), col = ['#7edecc', '#f2d46b', '#f2a24b', '#ff6b5e'][q.level];
+  qdot.style.background = col; qdot.style.boxShadow = '0 0 8px ' + col; qlab.textContent = '水質 ' + q.label;
+  qsub.textContent = '氨 ' + st.water.ammonia.toFixed(2) + '・氧 ' + Math.round(st.water.o2) + '%';
+}
+
+// ---------- loop ----------
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  let dt = (now - lastT) / 1000; lastT = now; if (!(dt > 0)) dt = 0.016; dt = Math.min(dt, 0.1);
+  time += dt;
+  ECO.step(st, dt, speed);
+  if (st.events.length) { for (const m of st.events.splice(0)) toast(m, 4200); }
+  render(dt);
+  hudAcc += dt; if (hudAcc > 0.5) { hudAcc = 0; hud(); if (selected) { if (st.fish.includes(selected)) fillCard(); else hideCard(); } if (openSheet === $('sheetStats')) renderStats(); }
+  tickAmbient();
+  if (now - lastSave > 10000) save();
+}
+function start() { if (raf) return; lastT = performance.now(); raf = requestAnimationFrame(frame); }
+function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { stop(); save(); stopAmbient(); }
+  else {
+    const raw = store.raw('save'); const r = raw && ECO.restore(raw, Date.now());
+    if (r && r.sum && r.sum.simSeconds > 600) { st = r.st; fitTank(); const d = r.sum.days; toast('你離開了一下，水族箱過了 ' + (d >= 1 ? d.toFixed(1) + ' 天' : Math.round(d * 24) + ' 小時')); if (r.sum.died) toast('有 ' + r.sum.died + ' 隻魚死掉了'); hideCard(); }
+    if (soundOn) startAmbient();
+    start();
+  }
+});
+window.addEventListener('pagehide', save);
+
+// ---------- boot ----------
+load(); fitTank(); hud();
+$('lightLab').textContent = ECO.LIGHT_NAME[st.light];
+$('mSpeed').setAttribute('aria-pressed', speed === 4); $('mSpeed').querySelector('span').textContent = speed === 4 ? '開' : '關';
+if (store.get('sound', false)) { $('mSound').setAttribute('aria-pressed', 'true'); $('mSound').querySelector('span').textContent = '開'; soundOn = true; document.addEventListener('pointerdown', function once() { document.removeEventListener('pointerdown', once); ensureAudio(); startAmbient(); }, { once: true }); }
+if (!store.get('seen', false)) $('intro').hidden = false;
+start();
+window.__eco = { get st() { return st; }, ECO, feed: doFeed, water: doWater, light: cycleLight, open, closeSheet, showCard, save, load: () => { load(); fitTank(); }, toast, S: () => S };
+})();
+</script>
