@@ -92,25 +92,40 @@ function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } 
 {
   ok(LEVELS.length === 100, 'exactly 100 levels (got ' + LEVELS.length + ')');
   const seen = new Set(); let solvable = 0, prevTierPar = 0, curveOk = true, pushesTotal = 0;
-  const tierPar = [];
+  const ch = [];
+  const med = a => { const v = a.slice().sort((x, y) => x - y); return (v[(v.length - 1) >> 1] + v[v.length >> 1]) / 2; };
   for (let n = 1; n <= LEVELS.length; n++) {
     const e = LEVELS[n - 1], L = C.parseLevel(e.m);
     const r = C.replay(L, e.s);
     if (r.ok && r.won) solvable++; else console.log('FAIL level', n, 'solution does not replay', r);
     ok(L.nBoxes === L.nGoals && L.nBoxes >= 1, 'level ' + n + ': boxes = goals');
-    ok(L.w <= 10 && L.h <= 10 && L.w >= 3 && L.h >= 3, 'level ' + n + ': size within 10x10 (' + L.w + 'x' + L.h + ')');
+    ok(L.w <= 12 && L.h <= 12 && L.w >= 3 && L.h >= 3, 'level ' + n + ': size within 12x12 incl. walls (' + L.w + 'x' + L.h + ')');
     ok(/^[-#.$*@+|]+$/.test(e.m), 'level ' + n + ': only known characters');
     ok(!seen.has(e.m), 'level ' + n + ': distinct from earlier levels'); seen.add(e.m);
     ok(r.pushes >= 1, 'level ' + n + ': needs at least one push');
-    // boxes start off their goals except possibly a third of them
+    // every box starts off its goal (no free pre-solved crates)
     let onGoal = 0; for (let i = 0; i < L.n; i++) if (L.box0[i] && L.goal[i]) onGoal++;
-    ok(onGoal <= Math.floor(L.nBoxes / 3), 'level ' + n + ': at most a third of the boxes start on goals');
+    ok(onGoal === 0, 'level ' + n + ': no box starts on a goal');
+    ok(e.p === r.pushes, 'level ' + n + ': stored push count matches the replay (' + e.p + ' vs ' + r.pushes + ')');
+    ok(typeof e.d === 'number' && e.d > 0, 'level ' + n + ': has a difficulty metric');
     pushesTotal += r.pushes;
-    const t = Math.floor((n - 1) / 10); tierPar[t] = (tierPar[t] || 0) + r.pushes;
+    const t = Math.floor((n - 1) / 10); (ch[t] = ch[t] || { p: [], d: [], b: [], area: [] });
+    ch[t].p.push(r.pushes); ch[t].d.push(e.d); ch[t].b.push(L.nBoxes); ch[t].area.push(L.w * L.h);
   }
   ok(solvable === LEVELS.length, 'all ' + LEVELS.length + ' stored solutions replay to a win (' + solvable + ')');
-  for (let t = 1; t < tierPar.length; t++) if (tierPar[t] < tierPar[t - 1]) curveOk = false;
-  ok(curveOk, 'average pushes needed rise from chapter to chapter: ' + tierPar.map(x => (x / 10).toFixed(1)).join(' < '));
+  // difficulty curve: chapter medians of the metric strictly rise, each step by a clear margin; pushes and boxes trend up
+  const dm = ch.map(c => med(c.d)), pm = ch.map(c => med(c.p)), bm = ch.map(c => med(c.b));
+  for (let t = 1; t < ch.length; t++) if (!(dm[t] >= dm[t - 1] + 8)) curveOk = false;
+  ok(curveOk, 'chapter median difficulty rises by >= 8 each chapter: ' + dm.join(' < '));
+  let pOk = true; for (let t = 1; t < ch.length; t++) if (!(pm[t] > pm[t - 1])) pOk = false;
+  ok(pOk, 'chapter median pushes strictly rise: ' + pm.join(' < '));
+  let bOk = true; for (let t = 1; t < ch.length; t++) if (bm[t] < bm[t - 1]) bOk = false;
+  ok(bOk && bm[9] >= 7, 'chapter median box count never falls and reaches 7+: ' + bm.join(', '));
+  ok(pm[0] <= 4 && pm[9] >= 45 && med(ch[9].area) >= 2 * med(ch[0].area), 'quick start (<=4 pushes) and long late levels (>=45 pushes, rooms twice as big): ' + pm[0] + ' / ' + pm[9]);
+  ok(Math.max.apply(null, ch[9].d) === LEVELS[99].d, 'level 100 is the hardest level');
+  // breathers: inside a chapter not every level is harder than the one before
+  let breathers = 0; for (let n = 2; n <= 100; n++) if (LEVELS[n - 1].d < LEVELS[n - 2].d) breathers++;
+  ok(breathers >= 8 && breathers <= 30, 'some breather levels inside chapters (' + breathers + ')');
   const first = C.parseLevel(LEVELS[0].m), lastL = C.parseLevel(LEVELS[LEVELS.length - 1].m);
   ok(first.nBoxes <= 2 && first.w * first.h <= 49, 'level 1 is a small easy room');
   ok(lastL.nBoxes >= first.nBoxes + 2, 'last level has more boxes than the first');

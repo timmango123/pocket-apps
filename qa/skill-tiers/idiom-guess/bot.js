@@ -92,14 +92,22 @@ function decide(P, st, mem) {
   return { g: constraintGuess(P, st, true), how: 'constraint' };
 }
 
-const getState = page => page.evaluate(() => window.__ig.get());
+// evaluate with a watchdog: a page that stops answering for 20 s is a hang (reported as a finding, never waited on forever)
+const HANGS = [];
+const getState = page => Promise.race([page.evaluate(() => window.__ig.get()), new Promise((_, rej) => setTimeout(() => rej(new Error('HANG: page did not answer for 20 s')), 20000))])
+  .catch(e => { HANGS.push(String(e.message || e).slice(0, 200)); throw e; });
 async function keyBox(page, c) { return page.locator(`#tray .key[data-c="${c}"]`).boundingBox(); }
 
 async function playAttempt(P, n, mem, finding) {
   const page = P.page; const K = KNOW[P.tierId];
   let st = await getState(page);
-  const t0 = Date.now(); let taps = 0, misTaps = 0, unnoticed = 0, dropped = 0, hints = 0; const hows = [];
+  const t0 = Date.now(); let taps = 0, misTaps = 0, unnoticed = 0, dropped = 0, hints = 0, strays = 0; const hows = [];
   while (!st.over && Date.now() - t0 < TIME_CAP) {
+    // a stray tap may have opened help / hint / the level list: close it like a person would
+    if (await page.isVisible('#help')) { strays++; await P.tapSelector('#hOk'); await H.sleep(P.reactMs()); continue; }
+    if (await page.isVisible('#hintOv')) { strays++; await P.tapSelector('#hClose'); await H.sleep(P.reactMs()); continue; }
+    if (await page.isVisible('#title')) { strays++; await P.tapSelector('#tLevels'); await H.sleep(P.reactMs() + 300); continue; }
+    if (await page.isVisible('#select')) { strays++; await page.locator(`#grid .lt:nth-child(${n})`).tap(); await H.sleep(P.reactMs() + 300); st = await getState(page); continue; }
     await H.sleep(P.thinkMs(2.5));
     // weaker players buy the meaning when stuck after 2 guesses
     if (!st.clue && st.guesses.length >= 2 && K.hint && P.rng() < K.hint && st.coins >= IG.COST.clue && !mem.hinted) {
@@ -108,10 +116,15 @@ async function playAttempt(P, n, mem, finding) {
       if (await page.isVisible('#hintOv')) { await P.tapSelector('#h1'); hints++; await H.sleep(P.reactMs() + 200); if (await page.isVisible('#hintOv')) await P.tapSelector('#hClose'); }
       st = await getState(page);
     }
-    const { g, how } = decide(P, st, mem); hows.push(how);
+    // a player can see earlier rows, so never types a row already tried (the game refuses repeats since the fix)
+    let { g, how } = decide(P, st, mem); for (let k = 0; k < 12 && st.guesses.includes(g); k++) ({ g, how } = decide(P, st, mem));
+    if (st.guesses.includes(g)) { g = constraintGuess(P, st, true); how = 'constraint'; }
+    hows.push(how);
+    if (process.env.IG_DEBUG) console.log(P.tierId, n, ((Date.now() - t0) / 1000).toFixed(1) + 's', 'guess', g, how, 'cur', st.cur.join(','), 'rows', st.guesses.join('/'));
     // type the four characters, slot by slot, fixing mis-taps the player notices
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0, guard = 0; i < 4 && guard < 40 && Date.now() - t0 < TIME_CAP; i++, guard++) {
       st = await getState(page);
+      if (st.over) break;
       if (st.cur[i] && st.cur[i] === g[i]) continue;
       if (st.cur[i]) { await P.tapSelector('#bDel'); taps++; await H.sleep(P.reactMs()); i--; continue; }
       let want = g[i];
@@ -144,7 +157,7 @@ async function playAttempt(P, n, mem, finding) {
   await H.sleep(900);
   const overlay = won ? await page.isVisible('#win') : await page.isVisible('#lose');
   if (st.over && !overlay) finding('no-overlay', { level: n, tier: P.tierId, won });
-  return { cleared: won, tries: st.guesses.length, taps, misTaps, unnoticed, dropped, hints, hows, answer: st.answer, guesses: st.guesses, ms: Date.now() - t0, overlay,
+  return { cleared: won, tries: st.guesses.length, strays, taps, misTaps, unnoticed, dropped, hints, hows, answer: st.answer, guesses: st.guesses, ms: Date.now() - t0, overlay,
     stars: won ? IG.stars(st.guesses.length) : 0, clueShown: st.clue };
 }
 

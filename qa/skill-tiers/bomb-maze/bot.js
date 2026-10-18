@@ -4,10 +4,11 @@
 // lock-stepped (harness LOCKSTEP) so every run is deterministic for a given seed and faster than real time.
 const fs = require('fs'), path = require('path');
 const H = require('./harness');
-const APP = path.resolve(__dirname, '../../../apps/bomb-maze/index.html');
+const APP = process.env.BM_APP ? path.resolve(process.env.BM_APP) : path.resolve(__dirname, '../../../apps/bomb-maze/index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const BM = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return BM;')();
 const { DX, DY, EMPTY, SOFT, IT } = BM;
+const PL = require('./planner')(BM);
 
 const args = process.argv.slice(2);
 const TIER_LIST = args.filter(a => H.TIERS[a]).length ? args.filter(a => H.TIERS[a]) : H.TIER_IDS;
@@ -21,14 +22,15 @@ const WALL_CAP_MS = +(args.find(a => a.startsWith('--cap=')) || '--cap=1800000')
 
 // Per-tier decision model on top of the shared reaction / motor / mistake numbers.
 //  every: frames between decisions; policy: clumsy (half random, 1-step greedy, bombs without checking escape),
-//  casual (greedy, 15% random, checks only its own bomb's cross), skilled/world (the full planner with chain-aware
-//  danger map and escape check; world sees fresher state), superhuman (planner every frame, perfect information).
+//  casual (greedy, 15% random, checks only its own bomb's cross), skilled (the game's own CPU brain: chain-aware danger map
+//  and escape check), world / superhuman (planner.js: the brain plus a look-ahead that simulates a few futures of the
+//  monsters and vetoes moves that get the cat killed; world on screen state 180 ms old, superhuman on the live state).
 const MODEL = {
   clumsy: { every: 12, policy: 'clumsy', random: 0.5, margin: 0.1, fat: 0.03, attempts: 5 },
   casual: { every: 8, policy: 'casual', random: 0.15, margin: 0.25, fat: 0.01, attempts: 3 },
   skilled: { every: 5, policy: 'plan', random: 0, margin: 0.45, fat: 0, attempts: 3 },
-  world: { every: 3, policy: 'plan', random: 0, margin: 0.4, fat: 0, attempts: 3 },
-  superhuman: { every: 1, policy: 'plan', random: 0, margin: 0.3, fat: 0, attempts: 3 }
+  world: { every: 6, step: 3, policy: 'look', samples: 2, random: 0, margin: 0.4, fat: 0, attempts: 3 },
+  superhuman: { every: 4, step: 2, policy: 'look', samples: 3, random: 0, margin: 0.3, fat: 0, attempts: 3 }
 };
 const PAD_PUSH = 44; // px the thumb is pushed from the pad centre for a direction
 
@@ -37,13 +39,13 @@ const OBS = `window.__obs = () => { const g = window.__game, s = g && g.sim(); i
   return { st: s.status, mode: st.mode, playing: st.playing, paused: st.paused, time: s.time, limit: s.limit, lives: s.lives, kills: s.kills, doorOpen: s.doorOpen, doorCell: s.doorCell, w: s.w, h: s.h, hold: s.hold || 0,
     grid: Array.from(s.grid), items: Array.from(s.items), fire: Array.from(s.fire, v => +v.toFixed(3)),
     bombs: s.bombs.map(b => ({ x: b.x, y: b.y, t: +b.t.toFixed(3), range: b.range, slide: b.slide, p: b.p, owner: b.owner })),
-    bombers: s.bombers.map(b => ({ id: b.id, x: +b.x.toFixed(3), y: +b.y.toFixed(3), alive: b.alive, invul: b.invul, shield: b.shield, kick: b.kick, bombs: b.bombs, fire: b.fire, speed: b.speed, placed: b.placed, onBomb: b.onBomb, inDir: b.inDir })),
-    enemies: s.enemies.map(e => ({ t: e.t, x: +e.x.toFixed(3), y: +e.y.toFixed(3), tx: e.tx, ty: e.ty, dir: e.dir, alive: e.alive, hp: e.hp })),
+    bombers: s.bombers.map(b => ({ id: b.id, sx: b.sx, sy: b.sy, x: +b.x.toFixed(3), y: +b.y.toFixed(3), alive: b.alive, invul: b.invul, shield: b.shield, kick: b.kick, bombs: b.bombs, fire: b.fire, speed: b.speed, placed: b.placed, onBomb: b.onBomb, inDir: b.inDir })),
+    enemies: s.enemies.map(e => ({ t: e.t, x: +e.x.toFixed(3), y: +e.y.toFixed(3), tx: e.tx, ty: e.ty, dir: e.dir, alive: e.alive, hp: e.hp, speed: e.speed, hurt: e.hurt })), cpuSkill: s.skill,
     sudden: s.sudden ? { on: s.sudden.on, idx: s.sudden.idx, timer: s.sudden.timer, step: s.sudden.step } : null, winner: s.winner }; };`;
 
 // Node-side view of the snapshot that the game's own planner functions accept
 function mkSim(o, rng) {
-  const sim = { w: o.w, h: o.h, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
+  const sim = { w: o.w, h: o.h, time: o.time, limit: o.limit, kills: o.kills, cpuSkill: o.cpuSkill, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
   if (o.sudden) sim.sudden = Object.assign({ order: BM.spiralOrder(o.w, o.h) }, o.sudden);
   return sim;
 }
@@ -98,6 +100,9 @@ function simpleDecide(M, s, b, rng) {
   return { path: opts.length ? [rng.pick(opts)] : [], bomb: false };
 }
 function decide(M, s, b, rng) {
+  const c = Math.floor(b.y) * s.w + Math.floor(b.x);
+  if (s.mode === 'stage' && s.doorOpen && c === s.doorCell) return { path: [c], bomb: false };   // on the open door: step onto its middle
+  if (M.policy === 'look') { s.bombers = s.bombers.map(x => x.id === b.id ? b : x); return PL.decide(s, 0, { samples: M.samples, seed: Math.floor(rng() * 1e6) }); }
   if (M.policy === 'plan') { b.skill = 2; return BM.cpuDecide(s, b); }
   return simpleDecide(M, s, b, rng);
 }
@@ -138,7 +143,7 @@ class Finger {
 
 async function playRun(P, M, kind, n, opts) {
   const page = P.page, rng = P.rng, FR = H.FRAME;
-  const stepN = M.every <= 3 ? (M.every === 1 ? 2 : 3) : (M.every <= 5 ? 4 : 6);
+  const stepN = M.step || (M.every <= 3 ? (M.every === 1 ? 2 : 3) : (M.every <= 5 ? 4 : 6));
   if (kind === 'stage') await page.evaluate(n => window.__game.startStage(n), n);
   else await page.evaluate(([c, s]) => window.__game.startBattle(c, s), [opts.cpus, opts.skill]);
   const padBox = await page.locator('#pad').boundingBox(), bombBox = await page.locator('#bombBtn').boundingBox();
@@ -169,12 +174,14 @@ async function playRun(P, M, kind, n, opts) {
     const bombKey = o.bombs.map(b => b.x + ',' + b.y).join('|') + '/' + o.fire.filter(v => v > 0).length;
     const monsterNear = o.enemies.some(e => e.alive && Math.abs(e.x - me.x) + Math.abs(e.y - me.y) < 2.2);
     const need = !plan || (atC && cellNow !== lastDecCell) || bombKey !== lastBombKey || (!plan.path.length && atC) || frame - lastDecFrame > 60 || (monsterNear && frame - lastDecFrame > M.every * 2);
-    if (need && frame >= nextDec) {
+    if ((need || M.policy === 'look') && frame >= nextDec) {
       nextDec = frame + M.every; lastDecCell = cellNow; lastBombKey = bombKey; lastDecFrame = frame;
       const d = Math.max(1, Math.round(P.reactMs() / FR / stepN));
       const ob = buf[Math.max(0, buf.length - d)];
       if (ob.st === 'play') {
-        const s = mkSim(ob, rng); const b = Object.assign({}, ob.bombers[0], { x: me.x, y: me.y, placed: me.placed, onBomb: me.onBomb });
+        // the player knows where its own firecrackers are (it just planted them), like its own position
+        const s = mkSim(Object.assign({}, ob, { bombs: ob.bombs.filter(x => x.owner !== 0).concat(o.bombs.filter(x => x.owner === 0)) }), rng);
+        const b = Object.assign({}, ob.bombers[0], { x: me.x, y: me.y, placed: me.placed, onBomb: me.onBomb });
         if (b.alive) {
           const _td = Date.now(); const dec = decide(M, s, b, rng); prof.dec += Date.now() - _td; decisions++; if (dec.random) randoms++;
           plan = dec;
@@ -248,7 +255,8 @@ async function runTier(browser, tierId, idx) {
     misdirected: runs.reduce((a, r) => a + r.attempts.reduce((b, x) => b + x.input.misdir, 0), 0), droppedInputs: runs.reduce((a, r) => a + r.attempts.reduce((b, x) => b + x.input.dropped, 0), 0), pageErrors: errors.length } };
 }
 
-(async () => {
+module.exports = { BM, MODEL, decide, mkSim, dirToward };
+if (require.main === module) (async () => {
   const browser = await H.launch();
   const out = fs.existsSync(OUT) && outArg ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : { game: 'bomb-maze', testedLevels: TEST_LEVELS, battles: BATTLES + ' x 3 CPU (普通)', timeCap: 'the stage timer itself (150-190 s); battle 200 s', tiers: {}, findings: [] };
   const t0 = Date.now();

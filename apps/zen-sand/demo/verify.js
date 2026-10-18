@@ -120,6 +120,21 @@ const Z = (page, fn, arg) => page.evaluate(fn, arg);
       const perf = await Z(page, () => __zen.perf().slice().sort((a, b) => a - b));
       assert(perf.length > 10 && perf[Math.floor(perf.length * 0.95)] < 12, `render cost while raking: p95 ${perf[Math.floor(perf.length * 0.95)].toFixed(1)} ms over ${perf.length} frames`);
 
+      // a tool tap right after a rake stroke must land every time (Chromium used to drop ~1 in 7 of these clicks)
+      {
+        const box = async s => Z(page, s => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, s);
+        const pP = await box('#mPlace'), pR = await box('#mRake');
+        let landed = 0, handlerRuns = 0;
+        await Z(page, () => { window.__modeClicks = 0; ['mPlace', 'mRake'].forEach(id => document.getElementById(id).addEventListener('click', () => window.__modeClicks++)); });
+        for (let i = 0; i < 12; i++) {
+          await drag(cdp, [[40, 300 + i * 20], [340, 300 + i * 20]], 4);
+          await tap(cdp, pP[0], pP[1]); await sleep(120); if ((await Z(page, () => __zen.mode())) === 'place') landed++;
+          await tap(cdp, pR[0], pR[1]); await sleep(120); if ((await Z(page, () => __zen.mode())) === 'rake') landed++;
+        }
+        handlerRuns = await Z(page, () => window.__modeClicks);
+        assert(landed === 24 && handlerRuns === 24, `24 tool taps right after strokes: ${landed} landed, ${handlerRuns} activations (none dropped or doubled)`);
+      }
+
       // multi-touch: two fingers rake two grooves at once
       await tapEl(cdp, page, '#mRake', () => __zen.mode() === 'rake'); await tapEl(cdp, page, '#mSmooth', () => __zen.smoothing()); await sleep(1200);
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 80, y: 250, id: 1 }, { x: 80, y: 350, id: 2 }] });
@@ -153,6 +168,28 @@ const Z = (page, fn, arg) => page.evaluate(fn, arg);
       const after = await Z(page, () => ({ n: __zen.items().length, h: __zen.heightAt(200, 250), dark: __zen.isDark(), sample: __zen.sample() }));
       assert(!after.sample && after.n === before.n && Math.abs(after.h - before.h) < 0.03 && after.dark, `garden, items and theme restored after reload (${after.n} items, h ${after.h.toFixed(2)})`);
       await page.screenshot({ path: path.join(OUT, 'dark-390x844.png') });
+      // rotate with a stone right above the tray: in landscape it must move out from under the tray, and come back after
+      await tapEl(cdp, page, '#mPlace', () => __zen.mode() === 'place');
+      const tTop = await Z(page, () => document.querySelector('.tray').getBoundingClientRect().top);
+      await tap(cdp, 330, tTop - 14); await sleep(150);
+      const home = await Z(page, () => { const i = __zen.items()[__zen.items().length - 1]; return [i.u * innerWidth, i.v * innerHeight]; });
+      await page.setViewportSize({ width: 844, height: 390 }); await sleep(400);
+      const land = await Z(page, () => { const i = __zen.items()[__zen.items().length - 1], tr = document.querySelector('.tray').getBoundingClientRect(); return { y: i.v * innerHeight, trayTop: tr.top }; });
+      assert(land.y <= land.trayTop - 10, `landscape keeps the stone above the tray (${land.y.toFixed(0)} vs tray ${land.trayTop.toFixed(0)})`);
+      await page.setViewportSize({ width: 390, height: 844 }); await sleep(400);
+      const back = await Z(page, () => { const i = __zen.items()[__zen.items().length - 1]; return [i.u * innerWidth, i.v * innerHeight]; });
+      assert(Math.abs(back[0] - home[0]) < 1 && Math.abs(back[1] - home[1]) < 1, `back in portrait the stone returns to its spot (${back.map(Math.round)})`);
+      // two hands, two stones: both follow their own finger
+      await tap(cdp, 90, 160); await sleep(120); await tap(cdp, 300, 160); await sleep(120);
+      {
+        const a = { x: 90, y: 160, id: 41 }, b = { x: 300, y: 160, id: 42 };
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a] }); await sleep(30);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [a, b] });
+        for (let s = 1; s <= 16; s++) { a.y = b.y = 160 + 10 * s; await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [a, b] }); await sleep(16); }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(150);
+      }
+      const both = await Z(page, () => __zen.items().slice(-2).map(i => Math.round(i.v * innerHeight)));
+      assert(both.every(y => Math.abs(y - 320) < 4), `two fingers drag two stones at once (${both})`);
       assert(errors.length === 0, 'no page errors: ' + errors.join(' | '));
       await ctx.close();
     }

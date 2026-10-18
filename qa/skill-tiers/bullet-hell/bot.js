@@ -63,6 +63,10 @@ function decide(T, o, rnd, age, vmax) {
       if (r.score > bs) { bs = r.score; best = { vx: d1[0] * v * s1, vy: d1[1] * v * s1, kind: 'plan', pen: r.pen, first: r.first }; }
     }
   }
+  // what the player sees closing in on the crane right now (in the delayed, extrapolated picture): bullets about to touch
+  let close = 0;
+  for (const bl of o.near) { const bx = bl[0] + bl[2] * ext, by = bl[1] + bl[3] * ext, rr = bl[4] + HIT + 12; if ((bx - o.pl.x) ** 2 + (by - o.pl.y) ** 2 < rr * rr) close++; }
+  best.close = close;
   return best;
 }
 
@@ -93,7 +97,8 @@ async function runOnce(browser, URL, tierId, diff, seed, capSec, log) {
     const pat = o.boss && o.boss.name ? o.stage + ':' + o.boss.name : '';
     if (pat && pat !== lastPat) { lastPat = pat; patternLog.push({ t: +(frame / 60).toFixed(1), pattern: pat }); }
     if (o.lives < lastLives) { deaths += lastLives - o.lives; deathAt.push({ t: +(frame / 60).toFixed(1), stage: o.stage + 1, where: pat ? pat.slice(2) : (o.st === 'stage' ? '道中' : o.st) }); }
-    if (o.bombs < lastBombs) bombsUsed += lastBombs - o.bombs;
+    if (o.bombs < lastBombs && o.lives === lastLives) bombsUsed += lastBombs - o.bombs;   // a death refills (or trims) bombs: not a bomb
+    if (T.exact && o.pl.hitT > 0 && o.bombs > 0 && bombAt < 0) bombAt = frame;            // superhuman: frame-perfect deathbomb
     lastLives = o.lives; lastBombs = o.bombs;
     if (o.st === 'over') { end = 'over'; break; }
     const playing = o.st === 'stage' || o.st === 'boss' || o.st === 'bossdown';
@@ -114,7 +119,10 @@ async function runOnce(browser, URL, tierId, diff, seed, capSec, log) {
       const delay = Math.round(Math.abs(rnd.gauss() * T.timing) / H.FRAME);
       tgt = { at: frame + delay, x: fx + plan.vx * dur / k + rnd.gauss() * T.pos * 0.25, y: fy + plan.vy * dur / k + rnd.gauss() * T.pos * 0.25 };
       // bomb when the planner sees an unavoidable hit soon (tier threshold); the tap lands after a reaction delay
-      if (bombAt < 0 && o.bombs > 0 && plan.pen >= T.bombThr && plan.first < 0.35 && o.pl.invul <= 0) bombAt = frame + Math.round(rt / H.FRAME) ;
+      // panic bomb: even the best path the player can see runs into a bullet very soon. The observation is already
+      // reaction-delayed, so the tap only adds motor timing noise; lower tiers often forget to bomb (bombP).
+      if (bombAt < 0 && o.bombs > 0 && o.pl.invul <= 0.1 && (plan.kind === 'plan' && plan.first < 0.3 && plan.pen >= 1 || plan.close >= 2) && rnd() < T.bombP)
+        bombAt = frame + Math.round(Math.abs(rnd.gauss() * T.timing) / H.FRAME);
     }
     if (bombAt >= 0 && frame >= bombAt) { bombAt = -1; bombTaps++; await hands.tap(bombXY[0], bombXY[1]); }
     if (tgt && frame >= tgt.at) {
@@ -124,9 +132,12 @@ async function runOnce(browser, URL, tierId, diff, seed, capSec, log) {
         if (dd > maxStep) { dx *= maxStep / dd; dy *= maxStep / dd; }
         const nx = fx + dx, ny = fy + dy;
         if (nx < 10 || nx > 380 || ny < 70 || ny > 760) {   // finger at the screen edge: lift and re-grip mid-screen (relative drag)
+          // the game moves the crane with the earliest finger still down, so a re-grip while the focus finger is held
+          // lifts both and puts them back in order (as a player would), keeping the new drag finger in control
+          const hadFocus = !!hands.f2; if (hadFocus) await hands.up2();
           await hands.up1(); const ox = fx, oy = fy; fx = 195 + (rnd() - 0.5) * 30; fy = 480 + (rnd() - 0.5) * 30;
           tgt.x += fx - ox; tgt.y += fy - oy; reGrips++;
-          await hands.down1(fx, fy);
+          await hands.down1(fx, fy); if (hadFocus) await hands.down2(300, 300);
         } else { fx = nx; fy = ny; await hands.move1(fx, fy); }
       }
     }

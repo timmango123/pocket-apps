@@ -33,7 +33,10 @@ const INIT = seed => `(() => {
   window.requestAnimationFrame = cb => { q.set(++id, cb); return id; };
   window.cancelAnimationFrame = i => { q.delete(i); };
   performance.now = () => t;
-  window.__vt = { step(n) { for (let i = 0; i < n; i++) { t += ${FRAME}; const c = [...q.values()]; q = new Map(); for (const f of c) { try { f(t); } catch (e) { window.__errs.push(String(e && e.stack || e)); } } } return t; } };
+  // headless speed-up: canvas drawing is skipped on all but the last frame of each batch (the model still steps every frame)
+  const P = CanvasRenderingContext2D.prototype;
+  for (const k of ['fill', 'stroke', 'fillRect', 'strokeRect', 'clearRect', 'drawImage', 'fillText', 'strokeText', 'putImageData']) { const o = P[k]; P[k] = function () { if (window.__noDraw) return; return o.apply(this, arguments); }; }
+  window.__vt = { step(n) { for (let i = 0; i < n; i++) { window.__noDraw = i < n - 1; t += ${FRAME}; const c = [...q.values()]; q = new Map(); for (const f of c) { try { f(t); } catch (e) { window.__errs.push(String(e && e.stack || e)); } } } window.__noDraw = false; return t; } };
 })();`;
 const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style></head><body>';
 function serve() { return new Promise(res => { const srv = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(SKELETON + fs.readFileSync(SRC, 'utf8') + '</body></html>'); }); srv.listen(0, () => res(srv)); }); }

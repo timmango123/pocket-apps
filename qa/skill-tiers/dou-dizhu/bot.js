@@ -6,7 +6,7 @@
 // page's own seed hook (__dz.newGame(seed)) so all tiers get the same deals.
 const fs = require('fs'), path = require('path'), http = require('http');
 const H = require('./harness');
-const APP = path.resolve(__dirname, '../../../apps/dou-dizhu/index.html');
+const APP_ARG = process.argv.find(a => a.startsWith('--app=')), APP = APP_ARG ? path.resolve(APP_ARG.slice(6)) : path.resolve(__dirname, '../../../apps/dou-dizhu/index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const DZ = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return DZ;')();
 const args = process.argv.slice(2);
@@ -14,7 +14,7 @@ const TIER_LIST = args.filter(a => H.TIERS[a]).length ? args.filter(a => H.TIERS
 const opt = (k, d) => { const a = args.find(x => x.startsWith('--' + k + '=')); return a ? a.slice(k.length + 3) : d; };
 const LEVEL = +opt('level', 1), ROUNDS = +opt('rounds', 8), OUT = path.resolve(__dirname, opt('out', 'results.json')), TAG = opt('tag', ''), CAP_MS = 240000;
 const SEEDS = []; for (let i = 0; i < ROUNDS; i++) SEEDS.push(4101 + i * 37);
-const HOOK = "window.__dzAll = function () { return G ? { hands: G.hands.map(function (h) { return h.slice(); }), bottom: G.bottom.slice(), passes: G.passes } : null; };\n";
+const HOOK = "window.__dzAll = function () { return G ? { hands: G.hands.map(function (h) { return h.slice(); }), bottom: G.bottom.slice(), passes: G.passes, full: G.snapshot(), level: S.level } : null; };\n";
 
 function serve() {
   const marker = 'rafId = requestAnimationFrame(frame);\n})();';
@@ -25,6 +25,72 @@ function serve() {
 const sortIds = a => a.slice().sort((x, y) => x - y);
 const same = (a, b) => sortIds(a).join() === sortIds(b).join();
 const sum = a => a.reduce((x, y) => x + y, 0);
+
+
+// ---------- search (world: determinized, superhuman: exact) ----------
+// The page AI is deterministic: seat p plays DZ.think(aiView(G,p), G.seed ^ log.length*2654435761, level). Superhuman
+// knows every hand and that formula, so a playout from any position predicts the AIs exactly; it compares candidate
+// moves by playing each out with two of its own follow-up policies and keeps one that wins. World does the same on
+// sampled deals of the unseen cards (consistent with hand counts and the face-up bottom cards) and models the AIs as
+// players of the chosen difficulty with unknown seeds.
+const aiSeed = g => (g.seed ^ (g.log.length * 2654435761)) >>> 0;
+function polStrong(g, me) { return (DZ.thinkStrong || DZ.think)(DZ.aiView(g, me), aiSeed(g) ^ 77).cards; }
+function polEager(g, me) { const lead = g.lead ? g.lead.ev : null, legal = DZ.hints(g.hands[me], lead); if (!lead) return (DZ.thinkStrong || DZ.think)(DZ.aiView(g, me), 5).cards; const fin = legal.find(o => o.cards.length === g.hands[me].length); if (fin) return fin.cards; const farmer = me !== g.landlord; if (farmer && g.lead.by !== g.landlord) return null; const nb = legal.filter(o => !DZ.isBomb(o.ev)); return nb.length ? nb[0].cards : legal.length ? legal[0].cards : null; }
+function playout(g, me, myPol, oppMove, cap) {
+  let k = 0;
+  while (g.phase === 'play' && k++ < (cap || 300)) {
+    const p = g.turn; let c = p === me ? myPol(g, me) : oppMove(g, p);
+    if (c === null && !g.lead) c = DZ.hints(g.hands[p], null)[0].cards;
+    const e = c ? g.play(p, c) : g.pass(p); if (e) { if (c) { g.pass(p); } else return 0; }
+  }
+  if (g.phase !== 'end') return 0;
+  const r = g.result(); return r.deltas[me] > 0 ? 1 + 0.01 * r.mult : -1 - 0.01 * r.mult;
+}
+function candidates(hand, lead) {
+  let c = DZ.gen(hand, lead);
+  if (c.length > 36) { const seen = {}; c = c.filter(o => { const key = o.ev.t + o.ev.k + ':' + o.ev.n; if (seen[key] >= 2) return false; seen[key] = (seen[key] || 0) + 1; return true; }).slice(0, 36); }
+  return c;
+}
+function searchMove(full, me, oppMove, base) { // returns cards or null (pass)
+  const g0 = DZ.Game.restore(full), lead = g0.lead ? g0.lead.ev : null;
+  const opts = candidates(g0.hands[me], lead).map(o => o.cards); if (lead) opts.push(null);
+  if (base !== undefined) { const i = opts.findIndex(o => base === null ? o === null : o && same(o, base)); if (i > 0) opts.unshift(opts.splice(i, 1)[0]); }
+  let best = null, bestV = -9;
+  for (const mv of opts) {
+    let v = -9;
+    for (const pol of [polStrong, polEager]) {
+      const g = DZ.Game.restore(full); const e = mv ? g.play(me, mv) : g.pass(me); if (e) break;
+      v = Math.max(v, playout(g, me, pol, oppMove)); if (v > 0) break;
+    }
+    if (v > bestV) { bestV = v; best = mv; }
+    if (v > 0) break; // a winning line: take it
+  }
+  return { cards: best, value: bestV };
+}
+function exactOpp(level) { return (g, p) => DZ.think(DZ.aiView(g, p), aiSeed(g), DZ.aiLevel ? DZ.aiLevel(g, p, level) : level).cards; }
+function sampleDeal(full, me, rng) { // replace hidden hands with a random deal of the unseen cards
+  const g = JSON.parse(JSON.stringify(full)), known = {}; g.hands[me].forEach(c => { known[c] = 1; }); g.played.forEach(c => { known[c] = 1; });
+  const L = g.landlord, botLeft = me === L ? [] : g.bottom.filter(c => !known[c]); botLeft.forEach(c => { known[c] = 1; });
+  const pool = []; for (let c = 0; c < 54; c++) if (!known[c]) pool.push(c);
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  for (let p = 0; p < 3; p++) if (p !== me) { const n = g.hands[p].length, fixed = p === L ? botLeft.slice() : []; g.hands[p] = fixed.concat(pool.splice(0, n - fixed.length)).sort(DZ.byRank); }
+  return g;
+}
+function worldMove(full, me, rng, base, level) {
+  const g0 = DZ.Game.restore(full), lead = g0.lead ? g0.lead.ev : null;
+  const opts = candidates(g0.hands[me], lead).map(o => o.cards); if (lead) opts.push(null);
+  if (opts.length === 1) return opts[0];
+  const deals = []; for (let i = 0; i < 8; i++) deals.push(sampleDeal(full, me, rng));
+  const lv = level == null ? 2 : level, opp = (g, p) => DZ.think(DZ.aiView(g, p), aiSeed(g) ^ 991, DZ.aiLevel ? DZ.aiLevel(g, p, lv) : lv).cards;
+  let best = base, bestV = -1e9;
+  for (const mv of opts) {
+    let tot = 0;
+    for (const d of deals) { const g = DZ.Game.restore(d); const e = mv ? g.play(me, mv) : g.pass(me); if (e) { tot = -1e9; break; } const g2 = DZ.Game.restore(g); tot += Math.max(playout(g, me, polStrong, opp), playout(g2, me, polEager, opp)); }
+    tot += (base !== undefined && (mv === null ? base === null : base && same(mv, base))) ? 0.5 : 0; // ties go to the heuristic move
+    if (tot > bestV) { bestV = tot; best = mv; }
+  }
+  return best;
+}
 
 // ---------- policies ----------
 // unseen pool for world tier: every card not played and not in my hand
@@ -44,6 +110,7 @@ function policyPlay(tier, view, rng, all) { // returns {cards|null, hint:boolean
   }
   if (tier === 'casual') {
     if (!legal.length) return { cards: null };
+    if (lead && view.me !== view.landlord && view.lead.by !== view.landlord && rng() < 0.85) return { cards: null }; // usually lets the partner's play stand
     if (rng() < 0.15) return { cards: rng.pick(legal.filter(o => !DZ.isBomb(o.ev)).length ? legal.filter(o => !DZ.isBomb(o.ev)) : legal).cards, random: true };
     const nb = legal.filter(o => !DZ.isBomb(o.ev));
     if (lead && !nb.length) return { cards: null }; // never bombs on purpose
@@ -51,94 +118,9 @@ function policyPlay(tier, view, rng, all) { // returns {cards|null, hint:boolean
     return { cards: nb.length ? nb[0].cards : null };
   }
   if (tier === 'skilled') return { cards: DZ.think(view, Math.floor(rng() * 1e9)).cards };
-  if (tier === 'world') {
-    const base = DZ.think(view, Math.floor(rng() * 1e9)).cards;
-    const pool = unseen(view), combos = DZ.bestSplit(hand);
-    // endgame: if every combo of mine is unbeatable by any combination of unseen cards, cash them in highest first
-    if (combos.length <= 4 && combos.every(o => DZ.gen(pool, o.ev).length === 0 || DZ.isBomb(o.ev)) && (!lead || legal.length)) {
-      const cand = lead ? legal : combos.slice().sort((a, b) => b.ev.k - a.ev.k);
-      if (cand.length) return { cards: cand[0].cards };
-    }
-    if (!lead) { // lead a combo unseen cards cannot beat when the opponent is close to finishing
-      const safe = combos.filter(o => DZ.gen(pool, o.ev).length === 0 && !DZ.isBomb(o.ev));
-      const oppMin = view.me === view.landlord ? Math.min(view.counts[(view.me + 1) % 3], view.counts[(view.me + 2) % 3]) : view.counts[view.landlord];
-      if (safe.length && oppMin <= 4) return { cards: safe.sort((a, b) => a.ev.k - b.ev.k)[0].cards };
-    }
-    return { cards: base };
-  }
-  // superhuman: perfect information -> exact endgame solver, otherwise informed heuristics
-  const me = view.me, L = view.landlord, farmer = me !== L;
-  const oppIdx = farmer ? [L] : [(me + 1) % 3, (me + 2) % 3];
-  const opps = oppIdx.map(p => all.hands[p]);
-  const partner = farmer ? [0, 1, 2].find(p => p !== me && p !== L) : -1;
-  const total = sum(all.hands.map(h => h.length));
-  if (total <= 24) { const m = solveMove(all.hands, me, view.lead, all.passes || 0, L); if (m !== undefined) return { cards: m, solved: true }; }
-  const combos = DZ.bestSplit(hand), myHands = combos.length;
-  const oppMin = Math.min(...opps.map(h => h.length));
-  const after = o => DZ.handsNeeded(hand.filter(c => !o.cards.includes(c)));
-  if (!lead) {
-    if (combos.every(o => unbeatableBy(opps, o.ev))) return { cards: combos.slice().sort((a, b) => b.ev.k - a.ev.k)[0].cards };
-    const safe = combos.filter(o => unbeatableBy(opps, o.ev) && !DZ.isBomb(o.ev));
-    if (combos.length === 2 && safe.length === 1) { const other = combos.find(o => o !== safe[0]); if (unbeatableBy(opps, other.ev)) return { cards: other.cards }; }
-    if (farmer && all.hands[partner].length <= 2 && all.hands[partner].length < all.hands[L].length) {
-      const feed = DZ.gen(hand, null).filter(o => o.ev.n === all.hands[partner].length && DZ.gen(all.hands[partner], o.ev).length > 0 && DZ.gen(all.hands[L], o.ev).length === 0).sort((a, b) => a.ev.k - b.ev.k);
-      if (feed.length) return { cards: feed[0].cards };
-    }
-    if (safe.length && (oppMin <= 4 || myHands <= 3)) return { cards: safe.sort((a, b) => a.ev.k - b.ev.k)[0].cards };
-    // midgame: shed the weakest combo first (long ones before singles), keep control cards for later
-    const low = combos.filter(o => !DZ.isBomb(o.ev)).sort((a, b) => (a.ev.k - b.ev.k) || (b.ev.n - a.ev.n));
-    return { cards: low.length ? low[0].cards : combos[0].cards };
-  }
-  const byOpp = farmer ? view.lead.by === L : true;
-  if (!byOpp) { // partner led: take over only when the landlord can beat it and I have an answer the landlord cannot
-    if (DZ.gen(all.hands[L], lead).length === 0) return { cards: null };
-    const safe = legal.filter(o => unbeatableBy(opps, o.ev) && !DZ.isBomb(o.ev)).sort((a, b) => (after(a) - after(b)) || (a.ev.k - b.ev.k));
-    if (safe.length && after(safe[0]) <= myHands) return { cards: safe[0].cards };
-    return { cards: null };
-  }
-  const cand = legal.filter(o => !DZ.isBomb(o.ev)).map(o => { const a = after(o); return { o, a, safe: unbeatableBy(opps, o.ev), cost: (a - (myHands - 1)) * 2 + o.ev.k / 14 - (unbeatableBy(opps, o.ev) ? 1.5 : 0) }; }).sort((x, y) => x.cost - y.cost);
-  const bombs = legal.filter(o => DZ.isBomb(o.ev)).sort((a, b) => a.ev.k - b.ev.k);
-  // the leader could run out unopposed if we let this trick go: every remaining combo of theirs beats what we (and the partner) hold
-  const ldHand = all.hands[view.lead.by], teamHands = farmer ? [hand, all.hands[partner]] : [hand];
-  const ldRest = ldHand.length <= 12 && DZ.bestSplit(ldHand).every(o => unbeatableBy(teamHands, o.ev));
-  const urgent = oppMin <= 3 || myHands <= 3 || ldRest;
-  if (cand.length && (cand[0].cost <= 2.2 || urgent)) return { cards: cand[0].o.cards };
-  if (bombs.length && (oppMin <= 4 || lead.n >= 5 || lead.k >= 12 || DZ.isBomb(lead))) return { cards: bombs[0].cards };
+  if (tier === 'world') { const base = (DZ.thinkStrong || DZ.think)(view, Math.floor(rng() * 1e9)).cards; return { cards: worldMove(all.full, view.me, rng, base, all.level) }; }
+  if (tier === 'superhuman') { const base = DZ.think(view, 1, 2).cards; const m = searchMove(all.full, view.me, exactOpp(all.level), base); return { cards: m.cards }; }
   return { cards: null };
-}
-// exact solver for small endgames (perfect information, two teams). Returns the winning move for `me`, null to pass, undefined if unknown/none winning.
-function solveMove(hands, me, lead, passes, landlord) {
-  const memo = new Map(); let nodes = 0; const LIMIT = 150000;
-  const team = p => p === landlord ? 0 : 1;
-  function leader(lg) { return lg ? lg.by : -1; }
-  function rec(hs, turn, ld, ps) { // true if team(turn) wins
-    for (let p = 0; p < 3; p++) if (!hs[p].length) return team(p) === team(turn);
-    if (++nodes > LIMIT) throw 0;
-    const key = hs.map(h => h.join('.')).join('|') + '|' + turn + '|' + (ld ? ld.by + ':' + ld.ev.t + ld.ev.k + ld.ev.n : '') + '|' + ps;
-    if (memo.has(key)) return memo.get(key);
-    const moves = DZ.gen(hs[turn], ld ? ld.ev : null);
-    let res = false;
-    // try finishing moves first, then by size
-    moves.sort((a, b) => (b.cards.length === hs[turn].length) - (a.cards.length === hs[turn].length) || a.ev.k - b.ev.k);
-    for (const m of moves) {
-      const nh = hs.slice(); nh[turn] = hs[turn].filter(c => !m.cards.includes(c));
-      const nt = (turn + 1) % 3, child = rec(nh, nt, { by: turn, ev: m.ev }, 0);
-      if (team(nt) === team(turn) ? child : !child) { res = true; break; }
-    }
-    if (!res && ld) { // pass
-      let nt = (turn + 1) % 3, nl = ld, np = ps + 1;
-      if (np >= 2) { nt = ld.by; nl = null; np = 0; }
-      const child = rec(hs, nt, nl, np);
-      if (team(nt) === team(turn) ? child : !child) res = true;
-    }
-    memo.set(key, res); return res;
-  }
-  try {
-    const moves = DZ.gen(hands[me], lead ? lead.ev : null).sort((a, b) => (b.cards.length === hands[me].length) - (a.cards.length === hands[me].length) || b.cards.length - a.cards.length || a.ev.k - b.ev.k);
-    for (const m of moves) { const nh = hands.slice(); nh[me] = hands[me].filter(c => !m.cards.includes(c)); const nt = (me + 1) % 3; const child = rec(nh, nt, { by: me, ev: m.ev }, 0); if (team(nt) === team(me) ? child : !child) return m.cards; }
-    if (lead) { let nt = (me + 1) % 3, nl = lead, np = passes + 1; if (np >= 2) { nt = lead.by; nl = null; np = 0; } const child = rec(hands, nt, nl, np); if (team(nt) === team(me) ? child : !child) return null; }
-    return undefined; // losing position: fall back to heuristics
-  } catch (e) { return undefined; }
 }
 function policyBid(tier, view, rng, all, cur, wantL) {
   const s = DZ.strength(view.hand);
@@ -187,7 +169,7 @@ async function playRound(P, seed, tierId, wantL, log) {
     if (inf.gphase !== 'play') { await H.sleep(60); continue; }
     // ----- play decision -----
     await H.sleep(P.thinkMs(inf.lead ? 0.7 : 1) + P.reactMs());
-    const all = P.superhuman ? await allHands() : null;
+    const all = (P.superhuman || tierId === 'world') ? await allHands() : null;
     const dec = policyPlay(tierId, inf.view, rng, all);
     if (dec.random) run.randomPlays++;
     // hint button check once per round (all tiers press it at least once, like a curious human)
@@ -277,9 +259,9 @@ if (opt('sim', '')) { // node-only policy check: no browser, the bot plays seat 
     const rng = H.makeRng(99); let w = [0, 0], n = [0, 0], coins = 0, plies = 0;
     for (let i = 0; i < N; i++) {
       let g = new DZ.Game({ seed: 5000 + i }); const wantL = i % 2 === 0; let k = 0;
-      while (g.phase === 'bid') { const p = g.turn; const all = { hands: g.hands, bottom: g.bottom }; let v = p === 0 ? policyBid(t, DZ.aiView(g, 0), rng, all, g.bid, wantL) : DZ.think(DZ.aiView(g, p), i * 7 + k, LEVEL).bid; if (v && v <= g.bid) v = 0; g.doBid(p, v); k++; }
+      while (g.phase === 'bid') { const p = g.turn; const all = { hands: g.hands, bottom: g.bottom, full: g.snapshot(), level: LEVEL }; let v = p === 0 ? policyBid(t, DZ.aiView(g, 0), rng, all, g.bid, wantL) : DZ.think(DZ.aiView(g, p), aiSeed(g), LEVEL).bid; if (v && v <= g.bid) v = 0; g.doBid(p, v); k++; }
       if (g.phase !== 'play') continue;
-      while (g.phase === 'play' && k < 500) { const p = g.turn, all = { hands: g.hands, bottom: g.bottom }; let c = p === 0 ? policyPlay(t, DZ.aiView(g, 0), rng, all).cards : DZ.think(DZ.aiView(g, p), i * 1000 + k, LEVEL).cards; if (c === null && !g.lead) c = DZ.hints(g.hands[p], null)[0].cards; const e = c ? g.play(p, c) : g.pass(p); if (e) { console.log('ILLEGAL', t, i, e); break; } k++; }
+      while (g.phase === 'play' && k < 500) { const p = g.turn, all = p === 0 ? { hands: g.hands, bottom: g.bottom, passes: g.passes, full: g.snapshot(), level: LEVEL } : null; let c = p === 0 ? policyPlay(t, DZ.aiView(g, 0), rng, all).cards : DZ.think(DZ.aiView(g, p), aiSeed(g), DZ.aiLevel ? DZ.aiLevel(g, p, LEVEL) : LEVEL).cards; if (c === null && !g.lead) c = DZ.hints(g.hands[p], null)[0].cards; const e = c ? g.play(p, c) : g.pass(p); if (e) { console.log('ILLEGAL', t, i, e); break; } k++; }
       if (g.phase !== 'end') continue; const r = g.result(), role = g.landlord === 0 ? 0 : 1; n[role]++; if (r.deltas[0] > 0) w[role]++; coins += r.deltas[0] * 100; plies += k;
     }
     console.log(t, 'landlord', w[0] + '/' + n[0], 'farmer', w[1] + '/' + n[1], 'coins', coins, 'plies/round', (plies / N).toFixed(1));

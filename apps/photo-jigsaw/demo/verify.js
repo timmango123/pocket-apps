@@ -28,14 +28,16 @@ async function dragFromTray(page, cdp, id, tid, dx, dy) {
   if (!(await el.count())) return null;
   await el.scrollIntoViewIfNeeded(); await sleep(80);
   const b = await el.boundingBox(); const sx = b.x + b.width / 2, sy = b.y + b.height / 2;
+  const side = await page.evaluate(() => matchMedia('(orientation:landscape) and (max-height:560px)').matches);
+  const px = side ? sx - 60 : sx, py = side ? sy : sy - 60;
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
-  for (const p of line([sx, sy], [sx, sy - 60], 5)) { await sleep(16); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p[0], y: p[1] }] }); }
+  for (const p of line([sx, sy], [px, py], 5)) { await sleep(16); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p[0], y: p[1] }] }); }
   await sleep(30);
   const ps = await page.evaluate(id => window.__game.pieceScreen(id), id);
   if (!ps) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); return null; }
   const t = await page.evaluate(id => window.__game.target(id), tid), tx = t.x + dx, ty = t.y + dy;
-  const fx = sx + (tx - ps.x), fy = (sy - 60) + (ty - ps.y);
-  for (const p of line([sx, sy - 60], [fx, fy], 12)) { await sleep(16); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p[0], y: p[1] }] }); }
+  const fx = px + (tx - ps.x), fy = py + (ty - ps.y);
+  for (const p of line([px, py], [fx, fy], 12)) { await sleep(16); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: p[0], y: p[1] }] }); }
   await sleep(40);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await sleep(120);
@@ -56,6 +58,7 @@ async function fullPlay(browser) {
   const { ctx, page, cdp, errors } = await newPage(browser, 390, 844, false);
   await page.screenshot({ path: path.join(OUT, 'title-390x844.png') });
   check(await page.isVisible('#title') && (await page.locator('.gt').count()) === 6, 'title screen shows 5 built-in pictures + photo tile');
+  check((await page.textContent('#prevTag')).includes('= 30 片') && await page.evaluate(() => { const c = document.getElementById('prevCv'), d = c.getContext('2d').getImageData(320, 240, 1, 1).data; return d[3] > 0; }), 'title preview shows the picture with the real cut (6 × 5 = 30 片)');
   await tapSel(cdp, page, '.chip[data-n="12"]');
   await tapSel(cdp, page, '.gt[data-id="bay"]');
   await tapSel(cdp, page, '#bStart'); await sleep(500);
@@ -89,6 +92,40 @@ async function fullPlay(browser) {
   // rapid alternating taps (8/s) on two chips later on the title; here: 8 quick ghost toggles must all register
   for (let i = 0; i < 8; i++) { await tapSel(cdp, page, i % 2 ? '#bEdge' : '#bGhost', 65); }
   check((await page.getAttribute('#bGhost', 'aria-pressed')) === 'false' && (await page.getAttribute('#bEdge', 'aria-pressed')) === 'false', '8 rapid alternating taps on two HUD toggles all register (4+4 → both back off)');
+  // a diagonal pull (about 50° from horizontal) still brings the piece out, and no gesture is left hanging afterwards
+  {
+    const it = (await page.evaluate(() => window.__game.trayInfo())).find(t => t.box && !t.box.cut && t.box.x > 150);
+    const a = [it.box.x + it.box.w / 2, it.box.y + it.box.h / 2], e = [a[0] - 250, a[1] - 300];
+    await touchDrag(cdp, line(a, e, 12)); await sleep(150);
+    const q = await page.evaluate(id => window.__game.pieceScreen(id), it.id), d = await page.evaluate(() => window.__game.dbg());
+    check(q && !d.drag && !d.pan && d.pointers.length === 0, 'diagonal pull from the tray brings the piece out and ends cleanly');
+    // grab that lands just outside the piece still picks it up (forgiving touch); the table must not pan instead
+    const v = await page.evaluate(() => window.__game.view()), c0 = (await page.evaluate(() => window.__game.state())).cam;
+    const gx = q.x + v.cellW * 0.5 + 9, gy = q.y;
+    const hitBefore = await page.evaluate(a => window.__game.hitAt(a[0], a[1]), [gx, gy]);
+    await touchDrag(cdp, line([gx, gy], [gx - 30, gy + 20], 8)); await sleep(120);
+    const q2 = await page.evaluate(id => window.__game.pieceScreen(id), it.id), c1 = (await page.evaluate(() => window.__game.state())).cam;
+    check((hitBefore === null || hitBefore.id !== it.id) ? Math.abs(q2.x - q.x + 30) < 3 && Math.abs(c1.tx - c0.tx) < 0.5 : true, 'touch a few px outside a loose piece grabs that piece, the table stays put');
+    // drop it under the zoom buttons: it slides out so it can be picked up again
+    const zb = await page.locator('#bZoomOut').boundingBox();
+    await touchDrag(cdp, line([q2.x, q2.y], [zb.x + zb.width / 2, zb.y + zb.height / 2], 10)); await sleep(120);
+    const q3 = await page.evaluate(id => window.__game.pieceScreen(id), it.id);
+    const top = await page.evaluate(a => { const el = document.elementFromPoint(a[0], a[1]); return el && el.id; }, [q3.x, q3.y]);
+    check(q3 && top === 'cv', 'piece dropped under a floating button is moved clear of it (' + top + ')');
+    // drop it hanging off the left edge of the screen: it stays fully on screen
+    await touchDrag(cdp, line([q3.x, q3.y], [2, q3.y - 120], 10)); await sleep(120);
+    const q4 = await page.evaluate(id => window.__game.pieceScreen(id), it.id), v4 = await page.evaluate(() => window.__game.view());
+    check(q4 && q4.x - v4.cellW / 2 >= v4.left - 1, 'piece dropped off the screen edge is kept on screen');
+    // horizontal swipe that starts on a tray piece scrolls the tray (with momentum) and pulls nothing out
+    const n0 = (await page.evaluate(() => window.__game.trayIds())).length, it2 = (await page.evaluate(() => window.__game.trayInfo())).find(t => t.box && !t.box.cut && t.box.x > 200);
+    await touchDrag(cdp, line([it2.box.x + 40, it2.box.y + 40], [it2.box.x - 150, it2.box.y + 46], 8)); await sleep(400);
+    const sl = await page.evaluate(() => document.getElementById('trayScroll').scrollLeft), n1 = (await page.evaluate(() => window.__game.trayIds())).length;
+    check(sl > 120 && n1 === n0, 'sideways swipe on a tray piece scrolls the tray (' + Math.round(sl) + 'px) without pulling a piece');
+    await touchDrag(cdp, line([200, it2.box.y + 40], [380, it2.box.y + 40], 8)); await sleep(500);
+    // put it back where it belongs so the rest of the run is unchanged
+    const t4 = await page.evaluate(id => window.__game.target(id), it.id);
+    await touchDrag(cdp, line([q4.x, q4.y], [t4.x, t4.y], 12)); await sleep(150);
+  }
   // toggle ghost + edge filter
   await tapSel(cdp, page, '#bGhost'); check((await page.getAttribute('#bGhost', 'aria-pressed')) === 'true', 'ghost preview toggles on');
   await tapSel(cdp, page, '#bEdge'); check((await page.getAttribute('#bEdge', 'aria-pressed')) === 'true' && (await page.evaluate(() => [...document.querySelectorAll('.tp')].filter(e => getComputedStyle(e).display !== 'none').every(e => e.classList.contains('edge')))), 'edge filter hides inner pieces in the tray');
@@ -176,6 +213,7 @@ async function sizes(browser) {
     check(vis, `${tag}: all controls on screen, no horizontal overflow`);
     const bb = await page.evaluate(() => { const v = window.__game.view(), z = document.getElementById('bZoomOut').getBoundingClientRect(); return v.boardTop + v.boardH <= z.top + 1 || v.boardLeft + v.boardW <= z.left - 1; });
     check(bb, `${tag}: fitted board is not covered by the zoom buttons`);
+    if (w > h) check(await page.evaluate(() => { const t = document.getElementById('tray').getBoundingClientRect(), c = document.getElementById('cv').getBoundingClientRect(); return t.left >= c.right - 1 && t.height > innerHeight * 0.6; }), `${tag}: short landscape puts the tray on the right so the board keeps its height`);
     await page.evaluate(ids => ids.slice(1, 8).forEach(id => window.__game.place(id)), ids); await sleep(100);
     await page.screenshot({ path: path.join(OUT, `play-${tag}.png`) });
     check(errors.length === 0, `${tag}: no page errors` + (errors.length ? ': ' + errors.join(' | ') : ''));

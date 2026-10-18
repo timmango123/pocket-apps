@@ -92,6 +92,9 @@ async function play(page, until, maxSteps, log) {
     await page.evaluate(() => window.__game.start(1)); await sleep(300);
     await page.evaluate(() => window.__game.god(true));
     const cdp = await ctx.newCDPSession(page);
+    await page.evaluate(() => localStorage.removeItem('bullet-hell:v1:tut'));
+    await page.evaluate(() => window.__game.start(1)); await sleep(200); await page.evaluate(() => window.__game.god(true));
+    ok((await st(page)).tut === true, 'first play: the "slide anywhere to move" hint is up');
     const a = await st(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 120, y: 300, id: 1 }] });
     for (let i = 1; i <= 10; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 120 + i * 8, y: 300 - i * 4, id: 1 }] }); await sleep(16); }
@@ -100,6 +103,24 @@ async function play(page, until, maxSteps, log) {
     const dx = (b.pl.x - a.pl.x) * b.S, dy = (b.pl.y - a.pl.y) * b.S;
     ok(dx > 70 && dx < 110 && dy < -30 && dy > -55, `relative touch: finger moved (80,-40) px, crane moved (${dx.toFixed(0)},${dy.toFixed(0)}) px, away from the finger`);
     ok(b.focus === false, 'one finger: not focused');
+    ok(b.tut === false && await page.evaluate(() => localStorage.getItem('bullet-hell:v1:tut')) === 'true', 'the hint goes away after the first drag and is remembered');
+    // the action buttons must work while the other thumb is still on the field (no click is synthesised for that tap)
+    // (CDP: touchStart lists every finger down, touchEnd lists the finger that lifts)
+    const bbx = await page.locator('#bBomb').boundingBox(), fbx = await page.locator('#bFocus').boundingBox(), hold = { x: 200, y: 260, id: 1 };
+    const tapWhileHolding = async (x, y, id) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold, { x, y, id }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x, y, id }] }); };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold] });
+    const bm0 = (await st(page)).bombs;
+    await tapWhileHolding(bbx.x + bbx.width / 2, bbx.y + bbx.height / 2, 5); await sleep(150);
+    ok((await st(page)).bombs === bm0 - 1, 'bomb tapped while another finger drags: one bomb used');
+    await tapWhileHolding(fbx.x + fbx.width / 2, fbx.y + fbx.height / 2, 6); await sleep(100);
+    ok(await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed')) === 'true', '低速 tapped while another finger drags: toggles on');
+    let tg = 0;
+    for (let i = 0; i < 8; i++) { const before = await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed'));
+      await tapWhileHolding(fbx.x + 16 + (i % 2) * 30, fbx.y + 20 + (i % 3) * 10, 6); await sleep(125);
+      if (before !== await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed'))) tg++; }
+    ok(tg === 8, `8 taps a second on 低速 while dragging: ${tg}/8 toggles (no drops, no doubles)`);
+    await sleep(1100); await page.locator('#bFocus').focus(); await page.keyboard.press('Enter'); await sleep(50);
+    ok(await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed')) === 'false', 'keyboard Enter on 低速 still toggles it');
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(100);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 300, id: 1 }] }); await sleep(60);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 300, id: 1 }, { x: 300, y: 500, id: 2 }] }); await sleep(200);
@@ -137,6 +158,8 @@ async function play(page, until, maxSteps, log) {
     let s; for (let i = 0; i < 600; i++) { s = await page.evaluate(() => { window.__game.tick(10); return window.__game.state(); }); if (s.st === 'over') break; }
     await sleep(300);
     ok(s.st === 'over' && await page.locator('#over').isVisible() && await page.locator('#bContinue').isVisible(), 'standing still on the last life → game over screen with continue');
+    const cause = await page.locator('#oCause').textContent();
+    ok(/最後倒在 第二面 · /.test(cause), 'game over says where the run ended: ' + cause);
     await page.screenshot({ path: path.join(OUT, 'shot-over.png') });
     await page.locator('#bContinue').tap(); await sleep(300);
     s = await st(page);

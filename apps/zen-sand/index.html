@@ -795,7 +795,7 @@ function frame(now) {
 }
 
 /* ---------- pointer input (multi-touch: one stroke per pointer) ---------- */
-var strokes = {}, drag = null, pending = null, dirtyFlag = false;
+var strokes = {}, drags = {}, pendings = {}, dirtyFlag = false; // one entry per pointer, so two hands can move two items
 function pos(e) { var r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
 canvas.addEventListener('pointerdown', function (e) {
   if (e.button > 0) return;
@@ -805,8 +805,10 @@ canvas.addEventListener('pointerdown', function (e) {
   var p = pos(e);
   if (mode === 'place') {
     var hit = ZS.hitItem(items, p[0], p[1], W, H);
-    if (hit) drag = { id: e.pointerId, it: hit, dx: hit.u * W - p[0], dy: hit.v * H - p[1], x0: p[0], y0: p[1], moved: 0 };
-    else pending = { id: e.pointerId, x0: p[0], y0: p[1], moved: 0 };
+    var held = false; for (var k in drags) if (drags[k].it === hit) held = true;
+    if (held) return; // another finger already holds this item
+    if (hit) drags[e.pointerId] = { it: hit, dx: hit.u * W - p[0], dy: hit.v * H - p[1], x0: p[0], y0: p[1], moved: 0 };
+    else pendings[e.pointerId] = { x0: p[0], y0: p[1], moved: 0 };
     return;
   }
   strokes[e.pointerId] = { x: p[0], y: p[1], hx: 0, hy: 0, has: false, t: e.timeStamp, mouse: e.pointerType === 'mouse' };
@@ -831,26 +833,28 @@ canvas.addEventListener('pointermove', function (e) {
     else { var p = pos(e); moveStroke(st, p[0], p[1], e.timeStamp); }
     schedule(); return;
   }
-  if (drag && drag.id === e.pointerId) {
+  var drag = drags[e.pointerId], pending = pendings[e.pointerId];
+  if (drag) {
     var p2 = pos(e); drag.moved = Math.max(drag.moved, Math.abs(p2[0] - drag.x0) + Math.abs(p2[1] - drag.y0));
     var cl = clampToSand(p2[0] + drag.dx, p2[1] + drag.dy); drag.it.u = cl[0] / W; drag.it.v = cl[1] / H;
     viewDirty = true; schedule();
-  } else if (pending && pending.id === e.pointerId) { var p3 = pos(e); pending.moved = Math.max(pending.moved, Math.abs(p3[0] - pending.x0) + Math.abs(p3[1] - pending.y0)); }
+  } else if (pending) { var p3 = pos(e); pending.moved = Math.max(pending.moved, Math.abs(p3[0] - pending.x0) + Math.abs(p3[1] - pending.y0)); }
 });
 function endPointer(e) {
   if (strokes[e.pointerId]) { delete strokes[e.pointerId]; strokesActive = Math.max(0, strokesActive - 1); if (dirtyFlag) { dirtyFlag = false; saveSoon(); } schedule(); return; }
-  if (drag && drag.id === e.pointerId) {
-    var d = drag; drag = null;
+  if (drags[e.pointerId]) {
+    var d = drags[e.pointerId]; delete drags[e.pointerId];
+    if (items.indexOf(d.it) < 0) return; // the garden was cleared or undone while this finger held the item
     if (e.type !== 'pointercancel' && d.moved <= 8) {
       // a tap (no real movement) on an item lifts it off the sand
       var idx = items.indexOf(d.it); if (idx >= 0) items.splice(idx, 1);
       if (!reduceMotion) lifting.push({ it: d.it, t0: performance.now() });
       toast('已拿起' + ITEM_NAMES[d.it.t]); haptic(6); audio.click();
-    } else if (d.it.t === 'stone') settleStone(d.it);
+    } else { delete d.it.hu; delete d.it.hv; if (d.it.t === 'stone') settleStone(d.it); }
     viewDirty = true; schedule(); saveSoon(); return;
   }
-  if (pending && pending.id === e.pointerId) {
-    var pe = pending; pending = null;
+  if (pendings[e.pointerId]) {
+    var pe = pendings[e.pointerId]; delete pendings[e.pointerId];
     if (e.type === 'pointercancel' || pe.moved > 10) return;
     placeItem(itemType, pe.x0, pe.y0);
   }
@@ -892,6 +896,32 @@ function smoothAll(withItems) {
 }
 
 /* ---------- modes & tools ---------- */
+// Buttons fire from the finger itself. In the skill-tier run Chromium dropped the click of about one tap in seven that
+// came right after a rake stroke (pointerdown and pointerup reached the button, click never came), so a touch that
+// goes down and up on the same button activates it on pointerup, and the native click that may still follow is eaten.
+(function () {
+  var downs = {}, synth = false, ate = null, SEL = 'button, a[href]';
+  function btnAt(x, y) { var el = document.elementFromPoint(x, y); return el && el.closest ? el.closest(SEL) : null; }
+  document.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse') return;
+    var b = e.target.closest ? e.target.closest(SEL) : null;
+    if (b && !b.disabled) downs[e.pointerId] = { b: b, x: e.clientX, y: e.clientY };
+  }, true);
+  document.addEventListener('pointercancel', function (e) { delete downs[e.pointerId]; }, true);
+  document.addEventListener('pointerup', function (e) {
+    var d = downs[e.pointerId]; delete downs[e.pointerId];
+    if (!d || d.b.disabled || Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) > 16 || btnAt(e.clientX, e.clientY) !== d.b) return;
+    ate = { x: e.clientX, y: e.clientY, t: performance.now() };
+    synth = true; try { d.b.click(); } finally { synth = false; }
+  }, true);
+  document.addEventListener('click', function (e) {
+    if (synth || !ate) return;
+    // the native click of the same tap: same spot, moments later (whatever is under it now, e.g. a sheet that just opened)
+    var same = Math.abs(e.clientX - ate.x) + Math.abs(e.clientY - ate.y) < 24 && performance.now() - ate.t < 800;
+    ate = null;
+    if (same) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
 function setMode(m) {
   mode = m;
   $('mRake').setAttribute('aria-pressed', String(m === 'rake'));
@@ -1039,7 +1069,7 @@ function loadGarden() {
     field = ZS.resample(f, cols, rows);
     items = Array.isArray(o.items) ? o.items.filter(function (i) { return i && ITEM_NAMES[i.t] && isFinite(i.u) && isFinite(i.v) && isFinite(i.s); }).map(function (i) { delete i.born; return i; }) : [];
     if (o.W && o.H) { var k = Math.min(W, H) / Math.min(o.W, o.H); for (var i = 0; i < items.length; i++) items[i].s *= k; }
-    fullRedraw(); return true;
+    fitItems(); fullRedraw(); return true;
   } catch (e) { return false; }
 }
 function buildSample() {
@@ -1055,7 +1085,17 @@ function buildSample() {
 }
 
 /* ---------- lifecycle ---------- */
-function onResize() { if (layout(true)) { fullRedraw(); saveSoon(); } }
+// keep every item reachable after a rotate / resize: an item whose spot now sits under the tool tray or the top chips is
+// shown at the nearest open sand, and its own spot (hu, hv) is kept so it goes back there when the space returns
+function fitItems() {
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i], hu = it.hu != null ? it.hu : it.u, hv = it.hv != null ? it.hv : it.v;
+    var cl = clampToSand(hu * W, hv * H), u = cl[0] / W, v = cl[1] / H;
+    if (Math.abs(u - hu) > 1e-4 || Math.abs(v - hv) > 1e-4) { it.u = u; it.v = v; it.hu = hu; it.hv = hv; }
+    else { it.u = hu; it.v = hv; delete it.hu; delete it.hv; }
+  }
+}
+function onResize() { if (layout(true)) { fitItems(); fullRedraw(); saveSoon(); } }
 window.addEventListener('resize', onResize);
 document.addEventListener('visibilitychange', function () {
   if (document.hidden) { audio.suspend(); if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } saveNow(); }
