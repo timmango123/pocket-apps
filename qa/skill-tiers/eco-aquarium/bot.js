@@ -13,6 +13,7 @@ const FRAME = 100; // ms of virtual time per frame
 const DAY = 86400, HOUR = 3600;
 const args = process.argv.slice(2);
 const DAYS = +(args[args.indexOf('--days') + 1] || 14);
+const DBG = process.env.DBG ? (...a) => console.error('[dbg]', ...a) : () => {};
 const onlyTiers = args.filter(a => !a.startsWith('--') && !/^\d+$/.test(a)).join(',').split(',').filter(Boolean);
 
 const TIERS = {
@@ -49,7 +50,7 @@ class Keeper {
   }
   // human-like tap on a selector: reaction delay (virtual frames), position noise; returns whether the finger landed on the element
   async tap(sel) {
-    const T = this.T, r = this.rnd;
+    const T = this.T, r = this.rnd; DBG('tap', sel);
     const delay = Math.max(0, T.react[0] + gauss(r) * T.react[1] + Math.abs(gauss(r)) * T.tim);
     await this.step(Math.max(1, Math.round(delay / FRAME)));
     const b = await this.box(sel); if (!b) { this.log.missing.push(sel); return false; }
@@ -66,7 +67,7 @@ class Keeper {
   async closeSheet() { const open = await this.page.evaluate(() => [...document.querySelectorAll('.sheet')].find(s => !s.hidden)); if (!open) return; const id = await this.page.evaluate(() => [...document.querySelectorAll('.sheet')].find(s => !s.hidden).id); await this.tap('#' + id + ' [data-close]'); await this.real(380); await this.step(1); }
   // scroll the open sheet body by touch drag until the row is fully visible
   async bringIntoView(sel) {
-    for (let k = 0; k < 6; k++) {
+    for (let k = 0; k < 6; k++) { DBG('scroll for', sel, k);
       const b = await this.box(sel); if (!b) return false;
       const body = await this.box('.sheet:not([hidden]) .body'); if (!body) return false;
       if (b.top >= body.top && b.bottom <= body.bottom) return true;
@@ -128,7 +129,7 @@ async function runTier(browser, base, tierId, T, seed) {
     if (s.t - lastSample >= HOUR) { lastSample = s.t; qSum += s.q; qN++; qMin = Math.min(qMin, s.q); if (s.label === '危險') dangerH++; maxFish = Math.max(maxFish, s.fish); maxSnails = Math.max(maxSnails, s.snails); if (qN % 6 === 0) samples.push({ day: +((s.t - t0) / DAY).toFixed(2), fish: s.fish, q: s.q, a: +s.w.a.toFixed(3), n: +s.w.n.toFixed(1), o: +s.w.o.toFixed(0), g: +s.w.g.toFixed(1), det: +s.det.toFixed(2), snails: s.snails, plants: s.plants, light: s.light }); }
     for (const m of s.log) if (!lastLogs.has(m)) { lastLogs.add(m); log.events.push([+((s.t - t0) / DAY).toFixed(2), m]); }
     if (s.t >= nextCheck) {
-      log.checkins++;
+      log.checkins++; DBG('checkin day', ((s.t - t0) / DAY).toFixed(2), 'fish', s.fish);
       const [lo, hi] = T.every; nextCheck = s.t + (lo + rnd() * (hi - lo)) * HOUR;
       await act(K, T, rnd, s, log, read);
     }
