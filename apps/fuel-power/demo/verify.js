@@ -93,8 +93,28 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   await p.click('#car-add');
   await p.click('#car-list [data-del]'); // 刪第一台
   assert((await p.$$('#car-list .carrow')).length === 3, '刪除一台剩 3');
+  await p.click('#undo-btn');
+  assert((await p.$$('#car-list .carrow')).length === 4, '復原刪除的車');
+  await p.click('#car-list [data-del]');
   await p.keyboard.press('Escape');
   assert((await p.$$('.scrim')).length === 0, 'Esc 關閉表單');
+  // 寬鬆輸入與錯誤說明
+  await p.fill('#km', '１２０公里');
+  assert(await p.isHidden('#fuel-err') && (await txt('#trip-tag')) === '來回 240 km', '全形與單位「１２０公里」照算');
+  await p.locator('#km').blur();
+  assert((await p.inputValue('#km')) === '120', '離開欄位後整理成 120');
+  await p.fill('#km', 'abc');
+  assert((await txt('#fuel-err')).includes('看不懂') && (await txt('#total')) === '$—' && (await p.getAttribute('#km', 'aria-invalid')) === 'true', '看不懂的距離：說明、標紅、結果顯示 —');
+  await p.fill('#km', '-3');
+  assert((await txt('#fuel-err')).includes('負數'), '負數距離說明');
+  await p.fill('#km', '80');
+  assert(await p.isHidden('#fuel-err') && (await p.getAttribute('#km', 'aria-invalid')) === null, '改回正常數字');
+  // 複製明細
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+  await p.click('#fuel-copy'); await p.waitForTimeout(200);
+  assert((await txt('#toast-layer')).includes('複製'), '複製明細有提示 ' + await txt('#toast-layer'));
+  const clip = await p.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+  assert(!clip || (clip.includes('油錢試算') && clip.includes('總花費')), '剪貼簿內容是明細');
   // EV
   await p.fill('#ev-kwh', '16'); await p.fill('#ev-price', '5');
   assert((await txt('#ev-save')).includes('省'), '電動車比較顯示省多少');
@@ -116,6 +136,10 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   assert(mix > 1613 && mix < 1802, '跨季金額介於兩季之間 ' + mix);
   const rows = await p.$$eval('#tier-rows tr', trs => trs.map(t => t.className));
   assert(rows.join() === 'on,on,on,off,off,off', '760 度用到三段');
+  await p.fill('#kwh', 'abc');
+  assert((await txt('#power-err')).includes('看不懂') && (await txt('#bill')) === '$—', '度數看不懂：說明＋結果 —');
+  await p.fill('#kwh', '1,000');
+  assert((await txt('#bill')) === '$2,513', '千分位 1,000 度 5–6 月 = 2340.6 + 349.6 × 30/61 = $2,513 ' + await txt('#bill'));
   await p.fill('#kwh', '240');
   assert((await txt('#bill')) === '$403', '240 度 = $403');
   await p.fill('#kwh', '760');
@@ -128,6 +152,16 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   await p.fill('#apps .app:last-child input[data-k="h"]', '1');
   const kwhTxt = await txt('#apps .app:last-child .kwh');
   assert(kwhTxt.startsWith('120'), '2000W × 1 時 × 60 天 = 120 度 ' + kwhTxt);
+  await p.evaluate(() => { window.__row = document.querySelector('#apps .app:last-child input[data-k="name"]'); });
+  await p.type('#apps .app:last-child input[data-k="name"]', '浴室');
+  assert(await p.evaluate(() => window.__row === document.querySelector('#apps .app:last-child input[data-k="name"]')), '打電器名稱時不重畫（輸入法不中斷）');
+  await p.fill('#apps .app:last-child input[data-k="h"]', '30');
+  assert((await txt('#apps .app:last-child .aerr')).includes('最多 24'), '每天超過 24 小時有說明');
+  await p.fill('#apps .app:last-child input[data-k="h"]', '1');
+  await p.click('#apps .app:last-child [data-del]');
+  assert((await p.$$('#apps .app')).length === 3, '刪除後剩 3');
+  await p.click('#undo-btn');
+  assert((await p.$$('#apps .app')).length === 4, '復原刪除的電器');
   await p.click('#apps .app:last-child [data-del]');
   assert((await p.$$('#apps .app')).length === 3, '刪除後剩 3');
   await p.fill('#base-kwh', '620');
@@ -147,6 +181,16 @@ const assert = (c, m) => { if (!c) throw new Error('FAIL: ' + m); console.log('o
   assert((await txt('#rates-note')).includes('2026-01-01') && (await txt('#rates-note')).includes('已自訂'), '註記顯示自訂生效日');
   await p.reload(); await p.waitForTimeout(200);
   assert((await txt('#bill')) === '$1,879' && (await p.evaluate(() => document.body.dataset.tab)) === 'power', '重新整理後自訂費率與分頁仍在');
+  await p.click('#rates-btn');
+  assert((await txt('.sheet .src')).includes('2024 年') && (await txt('.sheet .src')).includes('8.46'), '費率表單寫明預設出處與年份');
+  await p.fill('#rt-rows input[data-i="1"][data-s="upTo"]', '50'); await p.click('#rt-save');
+  assert((await txt('#rt-err')).includes('第 2 段') && (await p.getAttribute('#rt-rows input[data-i="1"][data-s="upTo"]', 'aria-invalid')) === 'true', '門檻未遞增：指出哪一段');
+  await p.keyboard.press('Escape');
+  await p.click('#tab-power');
+  await p.click('#rates-btn'); await p.click('#rt-reset');
+  assert((await txt('#toast-layer')).includes('還原'), '還原預設可復原');
+  await p.click('#undo-btn');
+  assert((await txt('#bill')) === '$1,879', '復原自訂費率');
   await p.click('#rates-btn'); await p.click('#rt-reset');
   assert((await txt('#bill')) === '$1,802', '還原預設');
   await p.screenshot({ path: `${OUT}/flow-power.png`, fullPage: true });
