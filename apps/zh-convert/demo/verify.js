@@ -238,6 +238,19 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok(/改選.*暫不套用/.test(await page.textContent('#toast-msg')) && (await res2()) === '新的一行\n今天早上他說\n今天天氣很好\n他的頭髮很長', 'removed spot is reported, the other line keeps the default: ' + (await page.textContent('#toast-msg')));
       await page.fill('#src', '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(250);
       ok((await res2()) === '新的一行\n今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice comes back when the text comes back');
+      // 對調 twice (簡→繁→簡→繁) brings back the original text with its choice
+      const before2 = await res2();
+      await page.click('#swap'); await page.waitForTimeout(200);
+      await page.click('#swap'); await page.waitForTimeout(200);
+      ok((await res2()) === before2 && (await page.inputValue('#src')) === '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长' && (await page.locator('#out .m.picked').count()) === 1, 'swap twice keeps the original text and the choice: ' + JSON.stringify(await res2()));
+      // one-to-one marks are hidden until 一對一 is switched on in the legend
+      const oneStyle = () => page.evaluate(() => { const m = document.querySelector('#out .m.one'); const cs = m && getComputedStyle(m); return cs ? cs.textDecorationLine + '|' + cs.backgroundColor : 'none'; });
+      ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'false' && /^none\|rgba\(0, 0, 0, 0\)$/.test(await oneStyle()), 'one-to-one marks hidden by default: ' + (await oneStyle()));
+      await page.click('#lg-0'); await page.waitForTimeout(100);
+      ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'true' && /underline/.test(await oneStyle()), 'legend 一對一 shows them: ' + (await oneStyle()));
+      await page.reload(); await page.waitForTimeout(300);
+      ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'true', '一對一 choice remembered');
+      await page.click('#lg-0'); await page.waitForTimeout(100);
       // a long system paste (long-press → 貼上) switches to big-file mode
       await page.click('#clear'); await page.waitForTimeout(100);
       const longPaste = ('他的头发很长，公司的发展很快。这个软件的质量很高。\n').repeat(8000);
