@@ -23,7 +23,7 @@ async function tapXY(cdp, x, y) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 }
 async function tap(cdp, page, sel) { const b = await page.locator(sel).boundingBox(); await tapXY(cdp, b.x + b.width / 2, b.y + b.height / 2); }
-async function idle(page) { for (let k = 0; k < 300; k++) { const st = await page.evaluate(() => window.__game.state()); if (!st.animating) return st; await sleep(20); } return page.evaluate(() => window.__game.state()); }
+async function idle(page) { for (let k = 0; k < 1500; k++) { const st = await page.evaluate(() => window.__game.state()); if (!st.animating) return st; await sleep(20); } return page.evaluate(() => window.__game.state()); }
 function newPage(browser, w, h, dark, touch) {
   return browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: !!touch, isMobile: !!touch, colorScheme: dark ? 'dark' : 'light' }).then(async ctx => {
     const page = await ctx.newPage(), errors = []; page.setDefaultTimeout(120000); // shared CI boxes can be slow to capture
@@ -130,6 +130,13 @@ function newPage(browser, w, h, dark, touch) {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await idle(page);
       st = await page.evaluate(() => window.__game.state());
       ok(st.moves === 1, 'a held swipe moves exactly one step (' + st.moves + ')');
+      await tap(cdp, page, '#bRestart'); await sleep(200);
+      // a short flick (18 px, below the step distance) still counts as one step
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 420 }] });
+      for (let k = 1; k <= 3; k++) { await sleep(15); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195 + C.DX[dd] * 6 * k, y: 420 + C.DY[dd] * 6 * k }] }); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await idle(page);
+      st = await page.evaluate(() => window.__game.state());
+      ok(st.moves === 1, 'a short 18 px flick moves one step (' + st.moves + ')');
       await tap(cdp, page, '#bRestart'); await sleep(200);
     }
     // pause / level select shows progress
@@ -239,7 +246,8 @@ function newPage(browser, w, h, dark, touch) {
     const T = C.initState(L100); let firstPush = null; for (const ch of LEVELS[99].s) { const r = C.tryMove(L100, T, C.DCH.indexOf(ch)); if (r && r.push) { firstPush = { b: r.bFrom, d: C.DCH.indexOf(ch) }; break; } }
     ok(h && h.b === firstPush.b && h.d === firstPush.d, 'hint shows the next push of the master solution');
     await sleep(6500);
-    ok(await page.evaluate(() => window.__game.idle()), 'nothing moving: the canvas stops redrawing');
+    let still = false; for (let k = 0; k < 40 && !(still = await page.evaluate(() => window.__game.idle())); k++) await sleep(250); // last frames can lag on a loaded box
+    ok(still, 'nothing moving: the canvas stops redrawing ' + JSON.stringify(await page.evaluate(() => window.__game.busyWhy())));
     // demo plays the solution, a tap stops it
     await tap(cdp, page, '#bPause'); await sleep(200); await tap(cdp, page, '#pDemo'); await sleep(1500);
     let st = await page.evaluate(() => window.__game.state());

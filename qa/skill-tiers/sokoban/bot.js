@@ -88,19 +88,22 @@ function decide(P, L, S, visits, plan) {
     plan.list = null; return null;
   }
   const nov = mv => 4 * (visits.get(key(L, mv.b, mv.box)) || 0);
-  const live = legal.filter(x => !L.dead[x.to] && (L.goal[x.to] || !frozen(L, x.box, x.to)));
-  const pool = (tier === 'clumsy' ? legal : live).length ? (tier === 'clumsy' ? legal : live) : legal;
+  const live = legal.filter(x => !stuck(L, x.box)); // no crate dead or frozen after the push (also the neighbour it locks against)
+  if (tier !== 'clumsy' && !live.length) return { deadEnd: true }; // every push locks a crate: this position is lost, start the level over
+  const pool = tier === 'clumsy' ? legal : live;
   const s1 = x => hval(L, x.box) + nov(x) + 0.02 * x.walk + P.rng() * 0.6;
   if (tier === 'clumsy') { if (P.rng() < 0.5) return P.rng.pick(legal); return pool.reduce((a, b) => (s1(b) < s1(a) ? b : a)); }
   if (tier === 'casual') { if (P.rng() < 0.15) return P.rng.pick(pool); return pool.reduce((a, b) => (s1(b) < s1(a) ? b : a)); }
-  // skilled: 2-push lookahead, avoids dead squares and frozen crates
+  // skilled: plans small puzzles through (a bounded search, about what a practised player can see ahead), otherwise 2-push lookahead
+  if (plan.list && plan.i < plan.list.length) { const m = plan.list[plan.i]; const ok = live.find(x => x.b === m.b && x.d === m.d); if (ok) { plan.i++; return ok; } plan.list = null; }
+  { const sol = solve(L, S, 3000); if (sol && sol.length) { plan.list = sol; plan.i = 1; const f = live.find(x => x.b === sol[0].b && x.d === sol[0].d); if (f) return f; plan.list = null; } }
   let best = null, bs = 1e18;
   for (const x of pool) {
     let s = s1(x);
     const S2 = { p: x.b, box: x.box };
     if (!C.isWon(L, S2)) {
       let m2 = 1e18;
-      for (const y of legalPushes(L, S2)) { if (L.dead[y.to] || (!L.goal[y.to] && frozen(L, y.box, y.to))) continue; m2 = Math.min(m2, hval(L, y.box) + nov(y)); }
+      for (const y of legalPushes(L, S2)) { if (stuck(L, y.box)) continue; m2 = Math.min(m2, hval(L, y.box) + nov(y)); }
       s = Math.min(s, m2 + 0.5);
     } else s = -1e6;
     if (s < bs) { bs = s; best = x; }
@@ -129,14 +132,15 @@ async function playAttempt(P, n) {
   const cellPx = await page.evaluate(() => { const a = window.__game.cellCenter(0), b = window.__game.cellCenter(1); return b.x - a.x; });
   const visits = new Map(), plan = { n, list: null, i: 0 };
   const t0 = Date.now();
-  let actions = 0, pushes = 0, walkTaps = 0, missWalks = 0, undos = 0, stuckSeen = 0, dropped = 0, extra = 0, gaveUp = '';
+  let restarts = 0, lastMv = null, accidental = 0, sel = 0, actions = 0, pushes = 0, walkTaps = 0, missWalks = 0, undos = 0, stuckSeen = 0, dropped = 0, extra = 0, gaveUp = '';
   let st = await getState(page);
   while (Date.now() - t0 < TIME_CAP && actions < CAP_ACTIONS) {
     if (st.status === 'won') break;
-    let S = await snapS(page, L); S.moves = st.moves;
+    let S = await snapS(page, L); S.moves = st.moves; S.pushes0 = st.pushes;
     // a crate is stuck: the game paints it red and shows a toast; better players notice and undo
     if (stuck(L, S.box)) {
-      stuckSeen++;
+      stuckSeen++; if (process.env.DBG) console.log('stuck', n, S.p, [...S.box].map((v, i) => v ? i : -1).filter(i => i >= 0).join(','), 'last', JSON.stringify(lastMv));
+      { const kk = key(L, S.p, S.box); visits.set(kk, (visits.get(kk) || 0) + 3); } // remember the push that got a crate stuck, so the undo is not followed by the same push
       const notice = { clumsy: 0.45, casual: 0.85, skilled: 1, world: 1, superhuman: 1 }[P.tierId];
       if (P.rng() < notice) {
         await H.sleep(P.reactMs() + P.thinkMs(0.5));
@@ -147,8 +151,12 @@ async function playAttempt(P, n) {
     }
     { const kk = key(L, S.p, S.box); visits.set(kk, (visits.get(kk) || 0) + 1); }
     await H.sleep(P.reactMs() + P.thinkMs());
-    let mv = decide(P, L, S, visits, plan);
+    let mv = decide(P, L, S, visits, plan); lastMv = mv && !mv.deadEnd && { b: mv.b, d: mv.d, from: mv.from, to: mv.to, st: stuck(L, mv.box) };
     if (!mv) { gaveUp = 'no-plan'; break; }
+    if (mv.deadEnd) { // remember this position as a dead end, then press 重來 (a person sees there is no safe push left)
+      const kk = key(L, S.p, S.box); visits.set(kk, (visits.get(kk) || 0) + 5); restarts++;
+      await P.tapSelector('#bRestart'); actions++; plan.list = null; st = await waitIdle(page); await H.sleep(200); st = await getState(page); continue;
+    }
     let d = mv.d;
     // walk to the push position by tapping that floor cell
     if (S.p !== mv.from) {
@@ -156,6 +164,11 @@ async function playAttempt(P, n) {
       await P.tap(c.x, c.y); walkTaps++; actions++;
       if (cellPx < 36) { await H.sleep(Math.max(60, P.reactMs() * 0.5)); await P.tap(c.x, c.y); } // small cells: first tap aims (ring), second confirms
       st = await waitIdle(page); await H.sleep(30);
+      if (st.pushes > S.pushes0) accidental++; // a walk tap that pushed a crate (tap on a selected crate's dot)
+      if (await page.evaluate(() => !!window.__game.selected())) { // mis-tap landed on a crate: it lights up with its dots; a person taps it again to put it down
+        sel++; await H.sleep(P.reactMs()); const cb = await page.evaluate(() => window.__game.selected().b); const cc = await page.evaluate(k => window.__game.cellCenter(k), cb);
+        await P.tap(cc.x, cc.y); actions++; await H.sleep(60);
+      }
       const S2 = await snapS(page, L);
       if (S2.p !== mv.from) { missWalks++; plan.list = null; st = await getState(page); continue; } // mis-tap: re-plan from what is on screen
       await H.sleep(P.reactMs() * 0.6);
@@ -175,7 +188,7 @@ async function playAttempt(P, n) {
   if (cleared) await H.sleep(1300);
   const winVisible = cleared ? await page.isVisible('#win') : false;
   const stars = cleared ? await page.locator('#wStars .on').count() : 0;
-  return { cleared, moves: st.moves, pushes: st.pushes, par: L.par, optPushes: optP, actions, walkTaps, missWalks, undos, stuckSeen, dropped, doubleCounted: extra, gaveUp: cleared ? '' : (gaveUp || (actions >= CAP_ACTIONS ? 'action-cap' : 'time-cap')), ms: Date.now() - t0, winOverlay: winVisible, stars };
+  return { cleared, moves: st.moves, pushes: st.pushes, par: L.par, optPushes: optP, actions, walkTaps, missWalks, crateMisTaps: sel, accidentalPushes: accidental, deadEndRestarts: restarts, undos, stuckSeen, dropped, doubleCounted: extra, gaveUp: cleared ? '' : (gaveUp || (actions >= CAP_ACTIONS ? 'action-cap' : 'time-cap')), ms: Date.now() - t0, winOverlay: winVisible, stars };
 }
 
 async function runTier(browser, tierId, idx) {
