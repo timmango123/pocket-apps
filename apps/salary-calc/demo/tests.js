@@ -223,5 +223,45 @@ const R = Math.round;
   eq(big.year.supp, R((9999999 * 24 - 219500 * 4) * 0.0211), 'big bonus 補充保費');
   ok(Object.values(big).every(v => typeof v !== 'number' || Number.isFinite(v)), 'all finite');
 }
+// --- reviewer fixes (batch1) ---
+{
+  // decimal money is rounded and flagged so the UI can say so
+  const P = (x, o) => SC.parseNum(x, o);
+  ok(P('42000.6').rounded === true && P('42000.6').value === 42001, '42000.6 → 42,001 flagged rounded');
+  ok(!P('42000').rounded && !P('4.2萬').rounded && !P('1.1萬').rounded && !P('0.07萬').rounded, 'exact values (incl. float 萬) not flagged');
+  ok(P('1.23456萬').rounded && P('1.23456萬').value === 12346, '1.23456萬 → 12,346 flagged');
+  ok(!P('1.5', { months: true, max: 24 }).rounded, 'months never flagged');
+  // stored input: amounts capped 0–9,999,999, sample bookkeeping sanitized
+  const ci = SC.cleanInput;
+  eq(ci({ salary: 1e300 }).salary, 9999999, 'salary 1e300 capped to 9,999,999');
+  eq(ci({ salary: '1e300', allow: 5e12, insured: 1e99, insMode: 'custom' }).allow, 9999999, 'allow capped');
+  eq(ci({ insured: 1e99 }).insured, 9999999, 'insured capped');
+  eq(ci({ salary: -50 }).salary, 0, 'negative salary → 0'); eq(ci({ salary: 42000.6 }).salary, 42001, 'stored decimal rounded');
+  eq(ci({ salary: Infinity }).salary, 42000, 'Infinity ignored');
+  eq(ci({ bonusMonths: 1e300 }).bonusMonths, 24, 'bonus months capped');
+  ok(ci(null) === null && ci([1]) === null && ci('x') === null, 'non-objects rejected');
+  eq(ci({ sample: true, kept: ['dep', 'evil', 'salary'] }).kept.join(), 'dep', 'kept filtered to sample-only keys');
+  eq(ci({ sample: false, kept: ['dep'] }).kept.length, 0, 'kept dropped when not sample');
+  eq(SC.SAMPLE_ONLY.join(), 'allow,bonusMonths,dep,selfRate', 'sample-only values: 津貼 年終 眷屬 自提');
+  // the sample trap: same person with sample-only values reset gets 48,070, not 47,031
+  const trap = { ...SC.SAMPLE, salary: 50000 };
+  eq(calc(trap).net, 47031, 'sample extras kept → 47,031 (the old wrong number)');
+  const reset = { ...trap }; for (const k of SC.SAMPLE_ONLY) reset[k] = 0;
+  eq(calc(reset).net, 48070, 'sample extras reset → 48,070');
+  // export / import
+  const cfg = { ...SC.defaults(), liRate: 13, grades: [30000, 35000, 45800] };
+  const txt = SC.backup({ salary: 55000, dep: 2, selfRate: 3, sample: false }, cfg, 'dark', '2026-10-18');
+  const b = SC.readBackup(txt);
+  ok(b.ok && b.rates.liRate === 13 && b.rates.grades.join() === '30000,35000,45800', 'backup round-trips rates and grades');
+  ok(b.input.salary === 55000 && b.input.dep === 2 && b.input.selfRate === 3 && b.theme === 'dark', 'backup round-trips input and theme');
+  eq(JSON.parse(txt).app, 'salary-calc', 'backup tagged with app id');
+  ok(!SC.readBackup('').ok && /看不懂/.test(SC.readBackup('{oops').msg), 'bad JSON rejected with reason');
+  ok(!SC.readBackup('{"app":"other"}').ok && /不是/.test(SC.readBackup('[1]').msg), 'foreign JSON rejected');
+  ok(!SC.readBackup('{"app":"salary-calc"}').ok, 'empty backup rejected');
+  const g = SC.readBackup(JSON.stringify({ app: 'salary-calc', rates: { liRate: 'x', hiRate: 6, grades: [3, 2] }, input: { salary: 1e300 }, theme: 'neon' }));
+  ok(g.ok && g.rates.liRate === 11.5 && g.rates.hiRate === 6 && g.rates.grades.length === D.grades.length, 'garbage rate fields fall back to defaults');
+  ok(g.input.salary === 9999999 && g.theme === null, 'imported amounts capped, bad theme ignored');
+  ok(SC.readBackup(JSON.stringify({ app: 'salary-calc', rates: { hiRate: 6 } })).input === null, 'rates-only backup leaves input alone');
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

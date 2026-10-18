@@ -173,6 +173,111 @@ const num = async (page, sel) => { await sleep(330); return +((await page.locato
       await page.screenshot({ path: OUT + '/cover-390x520.png' });
       await ctx.close();
     }
+    // 4. reviewer fixes (batch1)
+    {
+      const { ctx, page, errors } = await open(browser, URL);
+      // 1. sample trap: typing only a salary resets the sample-only values, with undo
+      await page.tap('#salary'); await page.keyboard.type('50000');
+      assert(await num(page, '#netBig') === 48070, 'fresh open, type 50000 → 48,070 (sample extras reset)');
+      const st = await page.evaluate(() => __salaryCalc.state);
+      assert(st.allow === 0 && st.bonusMonths === 0 && st.dep === 0 && st.selfRate === 0 && !st.sample, 'allowance, bonus, dependents, self rate reset to 0');
+      assert(await page.locator('#allow').inputValue() === '' && await page.locator('#dep button[aria-pressed="true"]').textContent() === '0', 'reset values shown in the fields');
+      assert((await page.locator('#toastLayer').textContent()).includes('津貼、年終、眷屬、自提歸零'), 'toast says which sample values were reset');
+      await page.click('#toastAct');
+      const undone = await page.evaluate(() => __salaryCalc.state);
+      assert(undone.salary === 50000 && undone.allow === 3000 && undone.bonusMonths === 1.5 && undone.dep === 1 && undone.selfRate === 6, 'undo restores sample extras, keeps the typed salary');
+      assert(await num(page, '#netBig') === await page.evaluate(() => __salaryCalc.SC.calc({ salary: 50000, allow: 3000, dep: 1, selfRate: 6 }, {}).net), 'undo result matches');
+      // a value the user picked during the sample is kept
+      await page.evaluate(() => localStorage.clear()); await page.reload(); await sleep(200);
+      await page.click('#dep button[data-v="2"]');
+      assert(await page.locator('#sampleBar').isVisible() && (await page.locator('#inMeta').textContent()) === '範例', 'sample stays marked while other sample values remain');
+      assert((await page.locator('#sampleBar').textContent()).includes('自動歸零'), 'sample banner explains the reset');
+      await page.reload(); await sleep(200);
+      await page.fill('#salary', '50000');
+      const k2 = await page.evaluate(() => __salaryCalc.state);
+      assert(k2.dep === 2 && k2.allow === 0 && k2.selfRate === 0 && k2.bonusMonths === 0, 'user-picked dependents kept (even across reload), rest reset');
+      assert(await num(page, '#netBig') === 50000 - 1145 - 785 * 3, 'net with 2 dependents = 46,500');
+      // 3. hint is typeable on a decimal keypad
+      const hint = await page.locator('label[for="salary"] small').textContent();
+      assert(!/萬|k/i.test(hint) && /42000/.test(hint) && await page.locator('#salary').getAttribute('inputmode') === 'decimal', 'salary hint only uses digits: ' + hint);
+      // 5. decimal salary note
+      await page.fill('#salary', '42000.6');
+      assert(await page.locator('#note-salary').isVisible() && (await page.locator('#note-salary').textContent()).includes('42,001'), 'decimal salary shows rounding note');
+      await page.fill('#allow', '99.5');
+      assert((await page.locator('#note-allow').textContent()).includes('100'), 'decimal allowance shows rounding note');
+      await page.fill('#salary', '42000'); await page.fill('#allow', '');
+      assert(!(await page.locator('#note-salary').isVisible()) && !(await page.locator('#note-allow').isVisible()), 'note hides for whole numbers');
+      await page.fill('#salary', 'abc');
+      assert(!(await page.locator('#note-salary').isVisible()), 'note hidden while invalid');
+      // 6. lighter placeholder
+      const ph = await page.evaluate(() => { const e = document.getElementById('netBig'), s = getComputedStyle(e); return { ph: e.classList.contains('ph'), w: +s.fontWeight, o: +s.opacity, mono: /monospace/.test(s.fontFamily) }; });
+      assert(ph.ph && ph.w <= 400 && ph.o < 0.6 && !ph.mono, 'empty/error placeholder is light, not a solid mono bar ' + JSON.stringify(ph));
+      await page.fill('#salary', '50000');
+      assert(!(await page.evaluate(() => document.getElementById('netBig').classList.contains('ph'))), 'placeholder style removed with a number');
+      // 4. stored amounts capped on load
+      await page.evaluate(() => localStorage.setItem('salary-calc:v1:input', JSON.stringify({ salary: 1e300, allow: 1e300, insured: 1e300, insMode: 'custom' })));
+      await page.reload(); await sleep(250);
+      assert(await page.locator('#salary').inputValue() === '9,999,999' && await page.locator('#insured').inputValue() === '9,999,999', 'stored 1e300 capped to 9,999,999');
+      assert(!(await page.evaluate(() => /e\+|NaN|Infinity/.test(document.body.innerText))), 'no 1e+300 / NaN on screen');
+      await ctx.close();
+      if (errors.length) throw new Error('console errors: ' + errors.join(' | '));
+    }
+    // 2 + 7. 自提 buttons ≥ 44 px with a gap; long detail lines wrap
+    for (const w of [320, 360, 375, 390, 430]) {
+      const { ctx, page } = await open(browser, URL, { ...mobile, viewport: { width: w, height: 760 } });
+      const bs = await page.evaluate(() => [...document.querySelectorAll('#selfRate button')].map(b => { const r = b.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }));
+      assert(bs.every(([l, t, r, b]) => r - l >= 44 && b - t >= 44), `${w}: 自提 buttons ≥ 44×44 (${bs.map(([l, , r]) => Math.round((r - l) * 10) / 10).join(',')})`);
+      const apart = bs.every((a, i) => bs.every((b, j) => i === j || a[2] <= b[0] - 2 || b[2] <= a[0] - 2 || a[3] <= b[1] - 2 || b[3] <= a[1] - 2));
+      assert(apart, `${w}: 自提 buttons separated by a gap`);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${w}: no horizontal overflow`);
+      if (w <= 360) {
+        await page.fill('#salary', '1000000'); await page.fill('#bonusM', '12'); await page.locator('#bonusM').blur();
+        for (const t of ['#tabYear', '#tabEr']) {
+          await page.click(t); await sleep(50);
+          const cut = await page.evaluate(() => [...document.querySelectorAll('[role=tabpanel]:not([hidden]) .r .d')].filter(d => d.scrollWidth > d.clientWidth + 1 || getComputedStyle(d).textOverflow === 'ellipsis').map(d => d.textContent));
+          assert(cut.length === 0, `${w} ${t}: long detail lines wrap, none cut ` + JSON.stringify(cut));
+        }
+        assert((await page.locator('#panYear').textContent()).includes('1,000,000×12＋年終 12,000,000'), `${w}: full long year detail present`);
+      }
+      await ctx.close();
+    }
+    // 8. export / import of rates and settings
+    {
+      const a = await open(browser, URL);
+      await a.page.fill('#salary', '55000'); await a.page.click('#selfRate button[data-v="3"]');
+      await a.page.click('#setBtn'); await a.page.fill('#cfg-liRate', '13'); await a.page.fill('#cfg-grades', '30000, 35000, 45800, 60800');
+      await a.page.locator('#cfgExport').scrollIntoViewIfNeeded(); await a.page.click('#cfgExport'); await sleep(150);
+      const text = await a.page.locator('#expText').inputValue();
+      const o = JSON.parse(text);
+      assert(o.app === 'salary-calc' && o.rates.liRate === 13 && o.rates.grades.join() === '30000,35000,45800,60800' && o.input.salary === 55000, 'export holds custom rates, grades and input');
+      assert(await a.page.locator('#expText').isVisible() && (await a.page.locator('#toastLayer').textContent()).includes('設定文字'), 'export text shown and toast confirms');
+      const clip = await a.page.evaluate(() => navigator.clipboard.readText().catch(() => null));
+      if (clip) assert(clip === text, 'export copied to clipboard');
+      const net = await num(a.page, '#netBig');
+      await a.ctx.close();
+      const { ctx, page, errors } = await open(browser, URL);   // "other device": fresh storage
+      await page.click('#setBtn'); await page.locator('#cfgImport').scrollIntoViewIfNeeded(); await page.click('#cfgImport');
+      assert(await page.locator('#impText').isVisible() && await page.locator('#cfgImport').getAttribute('aria-expanded') === 'true', 'import box opens');
+      await page.fill('#impText', '{"app":"other"}'); await page.click('#impApply');
+      assert(await page.locator('#err-impText').isVisible() && (await page.locator('#err-impText').textContent()).includes('不是'), 'foreign text rejected with reason');
+      await page.fill('#impText', 'hello'); await page.click('#impApply');
+      assert((await page.locator('#err-impText').textContent()).includes('看不懂'), 'garbage text rejected with reason');
+      await page.fill('#impText', text); await page.click('#impApply');
+      assert(!(await page.locator('#err-impText').isVisible()) && await page.evaluate(() => __salaryCalc.cfg.liRate) === 13 && await page.locator('#cfg-liRate').inputValue() === '13', 'import applies rates and refreshes the sheet');
+      assert(await num(page, '#netBig') === net && await page.evaluate(() => __salaryCalc.state.salary) === 55000, 'import restores the same result on the new device');
+      assert(JSON.parse(await page.evaluate(() => localStorage.getItem('salary-calc:v1:rates'))).liRate === 13, 'imported rates saved under the same key');
+      await page.click('#toastAct');
+      assert(await page.evaluate(() => __salaryCalc.cfg.liRate) === 11.5 && await num(page, '#netBig') === 39687, 'import can be undone');
+      // file import
+      await page.click('#cfgImport');
+      await page.setInputFiles('#impFile', { name: 'salary.json', mimeType: 'application/json', buffer: Buffer.from(text) }); await sleep(150);
+      assert(await page.locator('#impText').inputValue() === text, 'choosing a file fills the import text');
+      await page.click('#impApply'); assert(await page.evaluate(() => __salaryCalc.cfg.liRate) === 13, 'file import applies');
+      await page.reload(); await sleep(200);
+      assert(await page.evaluate(() => __salaryCalc.cfg.liRate) === 13 && await num(page, '#netBig') === net, 'imported settings survive reload');
+      assert(errors.length === 0, 'export/import: no console errors ' + errors.join(' | '));
+      await ctx.close();
+    }
     console.log('all checks passed');
   } finally { await browser.close(); srv.close(); }
 })().catch(e => { console.error(e.message || e); process.exit(1); });

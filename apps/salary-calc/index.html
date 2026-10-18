@@ -84,6 +84,7 @@ svg{flex:none}
 .hero .big{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:38px;font-weight:800;line-height:1.1;margin:2px 0 0;letter-spacing:-.01em;white-space:nowrap}
 .hero .big small{font-size:15px;font-weight:700;margin-right:6px;opacity:.75;letter-spacing:.02em}
 .hero .big.pulse span{animation:pulse .35s var(--ease)}
+.hero .big span.ph{font-family:var(--sans);font-weight:300;font-size:.72em;opacity:.45;letter-spacing:.08em}
 .hero .sub{font-size:13px;color:var(--hero-dim);margin-top:2px;min-height:20px}
 .hero .sub b{color:var(--hero-ink);font-weight:700}
 .bar{display:flex;height:14px;border-radius:7px;overflow:hidden;margin-top:12px;background:rgba(0,0,0,.25);gap:2px}
@@ -129,6 +130,12 @@ svg{flex:none}
 .seg7{grid-template-columns:repeat(7,1fr)}
 .seg4{grid-template-columns:repeat(4,1fr)}
 .seg2{grid-template-columns:repeat(2,1fr)}
+/* 勞退自提：分開的按鈕，每顆至少 44px；寬度不夠時排成兩列（0% 佔兩列高） */
+.seg.seg7{border:0;background:transparent;overflow:visible;gap:3px}
+.seg7 button{border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);min-width:44px;padding:0 2px}
+.seg7 button:first-child,.seg7 button[aria-pressed="true"] + button{border-left-color:var(--line-strong)}
+.seg7 button[aria-pressed="true"]{border-color:var(--accent)}
+@media (max-width:389px){ .seg7{grid-template-columns:repeat(4,1fr)} .seg7 button:first-child{grid-row:span 2} }
 .hint{font-size:12px;color:var(--ink-3);margin:6px 2px 0}
 .hint.diff{display:flex;gap:8px;color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:10px;padding:8px 10px;margin-top:8px;line-height:1.5}
 .hint.diff svg{width:16px;height:16px;margin-top:2px}
@@ -148,7 +155,7 @@ svg{flex:none}
 .r .n{font-weight:600;display:flex;align-items:center;gap:8px;min-width:0}
 .r .n i{width:10px;height:10px;border-radius:3px;flex:none}
 .r .n .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.r .d{grid-column:1;font-size:12px;color:var(--ink-3);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .d{grid-column:1;font-size:12px;color:var(--ink-3);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:anywhere;line-height:1.45;min-width:0}
 .r .v{grid-column:2;grid-row:1/span 2;font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;text-align:right;white-space:nowrap}
 .r .v.minus{color:var(--bad)}
 .r .v.plus{color:var(--accent)}
@@ -246,7 +253,7 @@ svg{flex:none}
 
   <div class="sample" id="sampleBar" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-    <span>這是範例數字，改成你的薪資就好。</span>
+    <span>這是範例數字。輸入你的月薪後，範例的津貼、年終、眷屬、自提會自動歸零。</span>
     <button id="sampleClear" type="button">清空重填</button>
   </div>
 
@@ -272,15 +279,17 @@ svg{flex:none}
       <section class="card" aria-labelledby="hIn">
         <h2 id="hIn">薪資資料 <span class="meta" id="inMeta"></span></h2>
         <div class="field">
-          <label for="salary">月薪（本薪）<small>可打 42000、4.2萬、42k</small></label>
+          <label for="salary">月薪（本薪）<small>輸入數字，例如 42000</small></label>
           <div class="money main"><input class="txt main" id="salary" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="40,000" aria-describedby="err-salary"></div>
           <div class="err" id="err-salary" role="alert" hidden></div>
+          <div class="hint" id="note-salary" hidden></div>
         </div>
         <div class="row2">
           <div class="field">
             <label for="allow">津貼／加給<small>每月固定</small></label>
             <div class="money"><input class="txt" id="allow" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="0" aria-describedby="err-allow"></div>
             <div class="err" id="err-allow" role="alert" hidden></div>
+            <div class="hint" id="note-allow" hidden></div>
           </div>
           <div class="field">
             <label for="bonusM">年終<small>以本薪計</small></label>
@@ -321,6 +330,7 @@ svg{flex:none}
           <div id="insWrap" style="margin-top:8px" hidden>
             <div class="money"><input class="txt" id="insured" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="例如薪資單上的投保薪資" aria-label="自行輸入投保薪資" aria-describedby="err-insured"></div>
             <div class="err" id="err-insured" role="alert" hidden></div>
+            <div class="hint" id="note-insured" hidden></div>
           </div>
           <div class="gradechips" id="insHint"></div>
           <div class="hint diff" id="insDiff" hidden></div>
@@ -419,11 +429,11 @@ const SC = {
     const m = s.match(/^(\d*\.?\d+)(萬|w|W|千|k|K)?$/);
     if (!m) return { ok: false, msg: `看不懂「${String(v).trim().slice(0, 12)}」，請只輸入數字` + (opt.months ? '，例如 1.5' : '，例如 42000 或 4.2萬') };
     if (m[2]) { if (opt.months) return { ok: false, msg: '年終請輸入月數，例如 1.5' }; mult = /萬|w/i.test(m[2]) ? 10000 : 1000; }
-    let n = parseFloat(m[1]) * mult;
-    if (!opt.months) n = Math.round(n);
+    let n = parseFloat(m[1]) * mult, rounded = false;
+    if (!opt.months) { const r = Math.round(n); rounded = Math.abs(r - n) > 1e-6; n = r; }
     const max = opt.max == null ? 9999999 : opt.max;
     if (n > max) return { ok: false, msg: opt.months ? `年終月數請在 0～${max} 之間` : `金額太大（上限 ${SC.fmt(max)}）` };
-    return { ok: true, value: n };
+    return { ok: true, value: n, rounded };
   },
   // 某一險種的完整級距（由低到高）。kind: li 勞保、oi 職災、hi 健保、pen 勞退；part: 部分工時
   grades(kind, cfg, part) {
@@ -502,6 +512,42 @@ const SC = {
     L.push('※ 未含所得稅扣繳；費率與級距請以勞保局、健保署公告為準。');
     return L.join('\n');
   },
+  // 第一次打開的範例；SAMPLE_ONLY 是改月薪時會一起歸零的範例值（使用者自己改過的會留著，記在 kept）
+  SAMPLE: { salary: 42000, allow: 3000, bonusMonths: 1.5, dep: 1, selfRate: 6, insMode: 'auto', insured: '', part: false, hiIn: true, sample: true, kept: [] },
+  SAMPLE_ONLY: ['allow', 'bonusMonths', 'dep', 'selfRate'],
+  MAX: 9999999,
+  // 把存檔或匯入的輸入整理成合法狀態；金額限制在 0～9,999,999
+  cleanInput(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const S = { ...SC.SAMPLE, sample: false, kept: [] };
+    const money = v => Math.min(SC.MAX, Math.max(0, Math.round(+v)));
+    for (const k of ['salary', 'allow']) if (Number.isFinite(+raw[k])) S[k] = money(raw[k]);
+    if (Number.isFinite(+raw.bonusMonths)) S.bonusMonths = Math.min(24, Math.max(0, +raw.bonusMonths));
+    if ([0, 1, 2, 3].includes(raw.dep)) S.dep = raw.dep;
+    if (Number.isInteger(raw.selfRate) && raw.selfRate >= 0 && raw.selfRate <= 6) S.selfRate = raw.selfRate;
+    if (raw.insMode === 'custom') S.insMode = 'custom';
+    if (Number.isFinite(+raw.insured) && +raw.insured > 0) S.insured = money(raw.insured) || '';
+    // 舊版沒有工作型態：月薪低於基本工資的舊資料當作部分工時（舊版即以部分工時級距計算）
+    if (typeof raw.part === 'boolean') S.part = raw.part; else S.part = S.salary + S.allow > 0 && S.salary + S.allow < DATA.minWage;
+    if (typeof raw.hiIn === 'boolean') S.hiIn = raw.hiIn;
+    S.sample = !!raw.sample;
+    S.kept = S.sample && Array.isArray(raw.kept) ? SC.SAMPLE_ONLY.filter(k => raw.kept.includes(k)) : [];
+    return S;
+  },
+  // 匯出／匯入：費率與級距、輸入、主題
+  backup(input, rates, theme, date) {
+    return JSON.stringify({ app: 'salary-calc', version: 1, exported: date || '', rates: SC.clean(rates), input: SC.cleanInput(input), theme: ['auto', 'light', 'dark'].includes(theme) ? theme : 'auto' });
+  },
+  readBackup(text) {
+    let o;
+    try { o = JSON.parse(String(text == null ? '' : text).trim()); } catch (e) { return { ok: false, msg: '看不懂這段文字，請貼上「匯出設定」產生的完整內容' }; }
+    if (!o || typeof o !== 'object' || o.app !== 'salary-calc') return { ok: false, msg: '這不是薪資試算匯出的設定' };
+    const rates = o.rates && typeof o.rates === 'object' && !Array.isArray(o.rates) ? SC.clean(o.rates) : null;
+    const input = SC.cleanInput(o.input);
+    const theme = ['auto', 'light', 'dark'].includes(o.theme) ? o.theme : null;
+    if (!rates && !input && !theme) return { ok: false, msg: '設定裡沒有可匯入的內容' };
+    return { ok: true, rates, input, theme };
+  },
   isCustom(c) {
     const d = SC.defaults();
     return NUM_KEYS.some(([k]) => c[k] !== d[k]) || c.grades.join() !== d.grades.join() || c.penLow.join() !== d.penLow.join();
@@ -523,27 +569,12 @@ const ICO = {
 };
 
 /* ---------- state ---------- */
-const SAMPLE = { salary: 42000, allow: 3000, bonusMonths: 1.5, dep: 1, selfRate: 6, insMode: 'auto', insured: '', part: false, hiIn: true, sample: true };
-let S = { ...SAMPLE };
+const SAMPLE = SC.SAMPLE;
+let S = { ...SAMPLE, kept: [] };
 let cfg = SC.defaults();
 let tab = 'emp';
 const bad = {};   // 欄位 id → 錯誤訊息
-try {
-  const raw = JSON.parse(lsGet(KEY_IN) || 'null');
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    S = { ...SAMPLE, sample: false };
-    for (const k of ['salary', 'allow', 'bonusMonths']) if (Number.isFinite(+raw[k])) S[k] = Math.max(0, +raw[k]);
-    S.bonusMonths = Math.min(24, S.bonusMonths);
-    if ([0, 1, 2, 3].includes(raw.dep)) S.dep = raw.dep;
-    if (Number.isInteger(raw.selfRate) && raw.selfRate >= 0 && raw.selfRate <= 6) S.selfRate = raw.selfRate;
-    if (raw.insMode === 'custom') S.insMode = 'custom';
-    if (Number.isFinite(+raw.insured) && +raw.insured > 0) S.insured = +raw.insured;
-    // 舊版沒有工作型態：月薪低於基本工資的舊資料當作部分工時（舊版即以部分工時級距計算）
-    if (typeof raw.part === 'boolean') S.part = raw.part; else S.part = S.salary + S.allow > 0 && S.salary + S.allow < DATA.minWage;
-    if (typeof raw.hiIn === 'boolean') S.hiIn = raw.hiIn;
-    S.sample = !!raw.sample;
-  }
-} catch (e) {}
+try { const raw = SC.cleanInput(JSON.parse(lsGet(KEY_IN) || 'null')); if (raw) S = raw; } catch (e) {}
 try { cfg = SC.clean(JSON.parse(lsGet(KEY_CFG) || 'null')); } catch (e) { cfg = SC.defaults(); }
 let theme = lsGet(KEY_THEME); if (!['auto', 'light', 'dark'].includes(theme)) theme = 'auto';
 function save() { lsSet(KEY_IN, JSON.stringify(S)); }
@@ -577,14 +608,27 @@ function setErr(id, msg) {
   if (msg) { bad[id] = msg; el.setAttribute('aria-invalid', 'true'); box.innerHTML = ICO.warn + `<span>${esc(msg)}</span>`; box.hidden = false; }
   else { delete bad[id]; el.removeAttribute('aria-invalid'); box.hidden = true; box.textContent = ''; }
 }
+function setNote(id, msg) { const n = $('#note-' + id); if (n) { n.hidden = !msg; n.textContent = msg || ''; } }
+// 範例狀態下的修改：改月薪時，沒被使用者改過的範例值（津貼、年終、眷屬、自提）一起歸零，可復原
+const SAMPLE_LABEL = { allow: '津貼', bonusMonths: '年終', dep: '眷屬', selfRate: '自提' };
+function userEdit(key) {
+  if (!S.sample) return;
+  if (key !== 'salary') { if (SC.SAMPLE_ONLY.includes(key) && !S.kept.includes(key)) S.kept = [...S.kept, key]; return; }
+  const prev = {}, cleared = [];
+  for (const k of SC.SAMPLE_ONLY) if (!S.kept.includes(k)) { prev[k] = S[k]; if (S[k]) cleared.push(k); S[k] = 0; }
+  S.sample = false; S.kept = [];
+  fillInputs();
+  if (cleared.length) toast(`已把範例的${cleared.map(k => SAMPLE_LABEL[k]).join('、')}歸零`, '復原', () => { Object.assign(S, prev); save(); render(true); });
+}
 const NUMF = { salary: ['salary', {}], allow: ['allow', {}], bonusM: ['bonusMonths', { months: true, max: 24 }], insured: ['insured', {}] };
 function bindNum(id) {
   const el = $('#' + id), [key, opt] = NUMF[id];
   el.addEventListener('input', () => {
     const p = SC.parseNum(el.value, opt);
-    if (!p.ok) { setErr(id, p.msg); render(false); return; }
+    if (!p.ok) { setErr(id, p.msg); setNote(id, ''); render(false); return; }
     setErr(id, '');
-    S[key] = id === 'insured' && p.empty ? '' : p.value; S.sample = false; save(); render(false);
+    setNote(id, p.rounded ? `小數已四捨五入，以 ${SC.fmt(p.value)} 元計算` : '');
+    S[key] = id === 'insured' && p.empty ? '' : p.value; userEdit(key); save(); render(false);
   });
   el.addEventListener('blur', () => { if (!bad[id]) el.value = fmtIn(id, S[key]); });
   el.addEventListener('focus', () => { try { el.select(); } catch (e) {} });
@@ -596,7 +640,7 @@ function bindSeg(id, key, cast) {
   $('#' + id).addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const v = cast(b.dataset.v); if (S[key] === v) return;
-    S[key] = v; S.sample = false; save(); buzz(); render(true);
+    S[key] = v; userEdit(key); save(); buzz(); render(true);
     if (id === 'insMode' && v === 'custom') setTimeout(() => $('#insured').focus(), 30);
   });
 }
@@ -610,8 +654,8 @@ $('#tabs').addEventListener('keydown', e => {
 });
 $('#sampleClear').addEventListener('click', () => {
   const prev = { ...S };
-  S = { ...SAMPLE, salary: 0, allow: 0, bonusMonths: 0, dep: 0, selfRate: 0, sample: false };
-  for (const id of Object.keys(NUMF)) setErr(id, '');
+  S = { ...SAMPLE, salary: 0, allow: 0, bonusMonths: 0, dep: 0, selfRate: 0, sample: false, kept: [] };
+  for (const id of Object.keys(NUMF)) { setErr(id, ''); setNote(id, ''); }
   save(); render(true); $('#salary').focus();
   toast('已清空', '復原', () => { S = prev; save(); render(true); });
 });
@@ -634,6 +678,7 @@ let shown = null, raf = 0;
 function animateNet(to, text) {
   const el = $('#netBig');
   cancelAnimationFrame(raf);
+  el.classList.toggle('ph', text != null);
   if (text != null) { el.textContent = text; shown = null; return; }
   if (RM || shown == null || Math.abs(to - shown) < 2) { el.textContent = SC.fmt(to); shown = to; return; }
   const from = shown, t0 = performance.now(), dur = 220;
@@ -777,6 +822,15 @@ function openSettings() {
       <textarea class="ta" id="cfg-penLow" rows="2" spellcheck="false" style="min-height:56px" aria-describedby="err-cfg-penLow">${cfg.penLow.join(', ')}</textarea>
       <div class="err" id="err-cfg-penLow" hidden></div></div>
     <p class="note">基本工資本身一定是一級；低於基本工資的級距只套用在「部分工時」，健保最低以基本工資計。各險種從表中取到各自的最高級距為止。</p>
+    <div class="grp">備份與換裝置</div>
+    <p class="note" style="margin-top:4px">匯出費率、級距、輸入與主題成一段文字；在另一台裝置按「匯入設定」貼上即可。</p>
+    <div class="actions" style="margin-top:8px"><button class="btn" id="cfgExport" type="button" aria-controls="expBox">匯出設定</button><button class="btn" id="cfgImport" type="button" aria-expanded="false" aria-controls="impBox">匯入設定</button></div>
+    <div class="field" id="expBox" style="margin-top:10px" hidden><label for="expText"><span>匯出的設定文字</span></label>
+      <textarea class="ta" id="expText" rows="3" readonly spellcheck="false"></textarea><div class="hint" id="expHint"></div></div>
+    <div class="field" id="impBox" style="margin-top:10px" hidden><label for="impText"><span>貼上匯出的設定文字</span></label>
+      <textarea class="ta" id="impText" rows="3" spellcheck="false" placeholder='{"app":"salary-calc",…}' aria-describedby="err-impText"></textarea>
+      <div class="err" id="err-impText" hidden></div>
+      <div class="actions"><label class="btn" for="impFile">選擇檔案</label><input type="file" id="impFile" accept=".json,.txt,application/json,text/plain" hidden><button class="btn primary" id="impApply" type="button">套用匯入</button></div></div>
     <div class="sheetact"><button class="btn ghost" id="cfgReset" type="button">恢復預設</button><button class="btn primary" id="cfgDone" type="button">完成</button></div>
   </div></div>`;
   const ranges = Object.fromEntries(NUM_KEYS.map(([k, lo, hi]) => [k, [lo, hi]]));
@@ -811,6 +865,35 @@ function openSettings() {
     toast('已恢復預設費率', '復原', () => { cfg = SC.clean(prev); saveCfg(); if ($('#scrim')) fillCfg(); render(false); });
   });
   const fillCfg = () => { for (const [k] of NUM_KEYS) { $('#cfg-' + k).value = fmtCfg(k, cfg[k]); fieldErr(k, ''); } for (const k of ['grades', 'penLow']) { $('#cfg-' + k).value = cfg[k].join(', '); fieldErr(k, ''); } marks(); };
+  $('#cfgExport').addEventListener('click', async () => {
+    const text = SC.backup(S, cfg, theme, new Date().toISOString().slice(0, 10));
+    $('#expBox').hidden = false; $('#expText').value = text;
+    const ok = await copyText(text); buzz(10);
+    $('#expHint').textContent = ok ? '已複製到剪貼簿，可以貼到訊息或筆記保存。' : '無法自動複製，請長按上面的文字全選後複製。';
+    toast(ok ? '已複製設定文字' : '請手動複製設定文字');
+  });
+  $('#cfgImport').addEventListener('click', () => { const b = $('#impBox'); b.hidden = !b.hidden; $('#cfgImport').setAttribute('aria-expanded', String(!b.hidden)); if (!b.hidden) { $('#impText').focus({ preventScroll: true }); b.scrollIntoView({ block: 'center', behavior: RM ? 'auto' : 'smooth' }); } });
+  const impErr = msg => { const el = $('#impText'), b = $('#err-impText'); if (msg) { el.setAttribute('aria-invalid', 'true'); b.innerHTML = ICO.warn + `<span>${esc(msg)}</span>`; b.hidden = false; } else { el.removeAttribute('aria-invalid'); b.hidden = true; } };
+  $('#impFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (f.size > 200000) return impErr('檔案太大，請選擇「匯出設定」產生的文字檔');
+    const rd = new FileReader();
+    rd.onload = () => { $('#impText').value = String(rd.result || ''); impErr(''); };
+    rd.onerror = () => impErr('讀不到這個檔案');
+    rd.readAsText(f); e.target.value = '';
+  });
+  $('#impApply').addEventListener('click', () => {
+    const p = SC.readBackup($('#impText').value);
+    if (!p.ok) return impErr(p.msg);
+    impErr('');
+    const prev = { S: { ...S }, cfg: JSON.parse(JSON.stringify(cfg)), theme };
+    if (p.rates) cfg = p.rates;
+    if (p.input) { S = p.input; for (const id of Object.keys(NUMF)) { setErr(id, ''); setNote(id, ''); } }
+    if (p.theme) { theme = p.theme; lsSet(KEY_THEME, theme); applyTheme(); }
+    saveCfg(); save(); fillCfg(); render(true); buzz(12);
+    $('#impText').value = ''; $('#impBox').hidden = true; $('#cfgImport').setAttribute('aria-expanded', 'false');
+    toast('已匯入設定', '復原', () => { S = prev.S; cfg = SC.clean(prev.cfg); theme = prev.theme; lsSet(KEY_THEME, theme); applyTheme(); save(); saveCfg(); if ($('#scrim')) fillCfg(); render(true); });
+  });
   $('#cfgDone').addEventListener('click', closeSettings);
   $('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') closeSettings(); });
   marks();
