@@ -26,7 +26,8 @@ async function session(browser, vp, dark, full) {
   await tap(page, '#grid .lt.cur'); await sleep(250);
   let st = await page.evaluate(() => window.__ig.get());
   ok(st.mode === 'level' && st.level === 1 && st.tray.length === 8, tag + ' level 1 started with 8 keys');
-  if (full) { await sleep(500); ok(await page.locator('#toast').isVisible() && (await page.locator('#toast').textContent()).includes('字牌'), tag + ' first game shows the onboarding tip'); }
+  if (full) { await sleep(500); ok(await page.locator('#toast').isVisible() && (await page.locator('#toast').textContent()).includes('字牌'), tag + ' first game shows the onboarding tip');
+    ok(await page.evaluate(() => { const t = document.getElementById('toast').getBoundingClientRect(), r = document.querySelector('#board .row.cur').getBoundingClientRect(), c = document.getElementById('clue').getBoundingClientRect(); return t.top >= r.bottom && t.bottom <= c.top; }), tag + ' tip sits between the current row and the meaning bar'); }
   // tiles & keys fit the viewport
   const fits = await page.evaluate(() => [...document.querySelectorAll('#board .tile, #tray .key, #actions .abtn, .hud .ibtn')].every(e => { const b = e.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth + 0.5 && b.top >= 0 && b.bottom <= innerHeight + 0.5; }));
   ok(fits, tag + ' board, tray and buttons inside the viewport');
@@ -56,7 +57,7 @@ async function session(browser, vp, dark, full) {
     ok((await page.locator('#unlockSw').getAttribute('aria-checked')) === 'true' && (await page.locator('#grid .lt:disabled').count()) === 0, tag + ' unlock-all enables every tile');
     await page.locator('#grid .lt:nth-child(100)').tap(); await sleep(300);
     st = await page.evaluate(() => window.__ig.get());
-    ok(st.mode === 'level' && st.level === 100 && st.tray.length === 14, tag + ' tile 100 opens level 100');
+    ok(st.mode === 'level' && st.level === 100 && st.tray.length === 21 && (await page.locator('#board .row').count()) === 4, tag + ' tile 100 opens level 100 (21 keys, 4 rows)');
     const fits2 = await page.evaluate(() => [...document.querySelectorAll('#board .tile, #tray .key, #actions .abtn, .hud .ibtn, #clue')].every(e => { const b = e.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth + 0.5 && b.top >= 0 && b.bottom <= innerHeight + 0.5; }));
     ok(fits2, tag + ' level 100 (14 keys) fits the viewport');
     ok(await page.evaluate(() => document.getElementById('clue').getBoundingClientRect().height >= 44), tag + ' meaning bar is a 44px tap target');
@@ -69,12 +70,20 @@ async function session(browser, vp, dark, full) {
     for (let r = 0; r < 2; r++) { for (const c of w4) await tapChar(page, c); await tap(page, '#bGo'); await sleep(r ? 300 : 1300); }
     st = await page.evaluate(() => window.__ig.get());
     ok(st.guesses.length === 1 && (await page.locator('#toast').textContent()).includes('猜過'), tag + ' repeated guess is refused with a note');
+    for (let i = 0; i < 4; i++) { await tap(page, '#bDel'); await sleep(40); }
     // leaving with the back button keeps the round: the tile shows a dot and reopening it continues
     await tap(page, '#bBack'); await sleep(300);
     ok((await page.locator('#grid .lt:nth-child(100).wip').count()) === 1, tag + ' level in progress is marked in the grid');
     await page.locator('#grid .lt:nth-child(100)').tap(); await sleep(300);
     st = await page.evaluate(() => window.__ig.get());
     ok(st.level === 100 && st.guesses.length === 1 && st.clue, tag + ' reopening the level resumes the round');
+    // lose level 100 (4 guesses): the retry brings another rare idiom, not the answer just shown
+    const ans0 = st.answer, nn = st.tray.filter(c => ans0.indexOf(c) < 0);
+    for (let g = 1; g < 4; g++) { for (const c of nn.slice(g * 4, g * 4 + 4)) await tapChar(page, c); await tap(page, '#bGo'); await sleep(g < 3 ? 1300 : 1900); }
+    ok(await page.locator('#lose').isVisible() && (await page.locator('#lMsg').textContent()).includes('四次'), tag + ' level 100 lost after four guesses');
+    await tap(page, '#lRetry'); await sleep(300);
+    st = await page.evaluate(() => window.__ig.get());
+    ok(st.level === 100 && st.guesses.length === 0 && st.answer !== ans0 && st.tray.length === 21, tag + ' retry after a loss uses another idiom');
     await tap(page, '#bBack'); await sleep(250); await tap(page, '#unlockSw'); await sleep(200);
     ok(await page.locator('#grid .lt:nth-child(50)').isDisabled(), tag + ' switching off re-locks level 50');
     ok(errors.length === 0, tag + ' no page errors after unlock flow: ' + errors.join(' | '));
@@ -154,7 +163,7 @@ async function session(browser, vp, dark, full) {
   ok((await page.locator('#unlockSw').getAttribute('aria-checked')) === 'true' && (await page.locator('#grid .lt:disabled').count()) === 0, tag + ' unlock-all persists across reload');
   await page.locator('#grid .lt:nth-child(100)').tap(); await sleep(300);
   st = await page.evaluate(() => window.__ig.get());
-  ok(st.level === 100 && st.tray.length === 14, tag + ' level 100 opens with 14 keys');
+  ok(st.level === 100 && st.tray.length === 21, tag + ' level 100 opens with 21 keys');
   await tap(page, '#bBack'); await sleep(250); await tap(page, '#unlockSw'); await sleep(250);
   ok(await page.locator('#grid .lt:nth-child(50)').isDisabled(), tag + ' switching off re-locks level 50');
   ok(errors.length === 0, tag + ' no page errors after full flow: ' + errors.join(' | '));
@@ -167,6 +176,7 @@ async function session(browser, vp, dark, full) {
   // cover: a 390×520 viewport mid-game (level 65 sample: one judged guess, two characters placed)
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 520 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'light' });
+    await ctx.addInitScript(() => { try { localStorage.setItem('idiom-guess:v1:seen', 'true'); } catch (e) { } });
     const page = await ctx.newPage(); await page.goto(APP); await sleep(300);
     await page.evaluate(() => window.__ig.start('level', { level: 65 }));
     const st = await page.evaluate(() => window.__ig.get()), a = st.answer, not = st.tray.filter(c => a.indexOf(c) < 0);

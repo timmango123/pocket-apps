@@ -92,7 +92,8 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke
 #clue.reveal .txt{animation:cluein .45s ease both}
 @keyframes cluein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
-#tray{display:grid;gap:5px}
+#tray{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;--cols:4}
+#tray .key{flex:0 0 calc((100% - (var(--cols) - 1) * 5px) / var(--cols));min-width:0}
 .key{min-height:44px;height:44px;border-radius:10px;background:linear-gradient(180deg,var(--key),var(--key2));border:1.5px solid var(--keybd);font-family:var(--serif);font-weight:700;font-size:22px;display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 3px 0 var(--keybd),0 4px 8px rgba(60,40,10,.08);position:relative;transition:transform .08s,box-shadow .08s;transform:translateY(0)}
 .key:active,.key.pressed{transform:translateY(3px);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 0 var(--keybd)}
 .key.used{opacity:.35;border-style:dashed}
@@ -102,6 +103,7 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke
 .key.x{opacity:.25;text-decoration:line-through;box-shadow:none}
 .key .kn{position:absolute;left:4px;top:2px;font-family:var(--sans);font-size:9px;color:var(--ink2);font-weight:600;display:none}
 @media (hover:hover) and (pointer:fine){.key .kn{display:block}}
+@media (min-height: 700px){.key{height:52px;min-height:52px;font-size:24px}}
 
 #actions{display:flex;gap:8px}
 #actions .abtn{flex:1;height:48px;border-radius:14px;background:var(--card);box-shadow:var(--shadow);font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;gap:6px}
@@ -114,6 +116,10 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke
 /* overlays */
 .ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 12px) 14px calc(var(--sab) + 12px);background:var(--ovbg);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .2s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
+/* result cards animate (flip, stars, confetti) over the board: a plain scrim instead of a live blur keeps that moment at 60 fps */
+#win,#lose{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(40,28,12,.5)}
+:root[data-theme="dark"] #win,:root[data-theme="dark"] #lose{background:rgba(5,8,14,.72)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) #win,:root:not([data-theme="light"]) #lose{background:rgba(5,8,14,.72)}}
 .card{background:var(--paper);color:var(--ink);border-radius:22px;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:18px 18px 16px;width:min(380px,100%);max-height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;text-align:center;animation:pop .3s cubic-bezier(.2,.9,.3,1.2)}
 @keyframes pop{0%{transform:translateY(18px) scale(.96);opacity:0}100%{transform:translateY(0) scale(1);opacity:1}}
 .card h2::before{content:"";display:block;width:9px;height:9px;background:var(--seal);margin:0 auto 10px;border-radius:2px;transform:rotate(45deg);box-shadow:0 0 0 3px var(--paper),0 0 0 4px var(--seal)}
@@ -324,7 +330,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 
 <div class="ov hidden" id="lose"><div class="card">
   <h2>差一點</h2>
-  <p>六次機會用完了，答案是：</p>
+  <p id="lMsg">機會用完了，答案是：</p>
   <div class="ans" id="lAns"></div>
   <div class="mean" id="lMean"></div>
   <button class="btn" id="lRetry">再猜一次</button>
@@ -334,7 +340,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 <div class="ov hidden" id="help"><div class="card">
   <h2>玩法說明</h2>
   <div class="helpscroll">
-    <p>藏著一個四字成語。從下方的字牌裡挑四個字排成一句，按「確定」檢查，共有六次機會。</p>
+    <p>藏著一個四字成語。從下方的字牌裡挑四個字排成一句，按「確定」檢查。一般有六次機會，百關挑戰後段會減為五次、四次。</p>
     <div class="legend">
       <div><div class="tile h">風</div><span><b>紅印</b>：這個字在成語裡，而且位置正確。</span></div>
       <div><div class="tile n">雨</div><span><b>金底</b>：這個字在成語裡，但位置不對。</span></div>
@@ -342,7 +348,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     </div>
     <p>字牌會跟著變色，幫你記住試過的結果。猜對後會顯示成語的意思。</p>
     <p>「提示」要花墨珠：看釋義、排除三字、揭開一字。猜對就能賺回墨珠，剩下的機會越多，賺得越多。</p>
-    <p>百關挑戰越後面字牌越多、釋義越晚出現、成語也越少見。每日一題全球同一題，自由練習則無限隨機。</p>
+    <p>百關挑戰越後面字牌越多（8 → 21 張）、機會越少、釋義越晚出現、成語也越少見。某關沒猜中，再挑戰時會換成同難度的另一個成語。每日一題全球同一題，自由練習則無限隨機。</p>
     <p>電腦上可用數字鍵 1–9、0 選字，Backspace 刪除，Enter 確定。</p>
   </div>
   <div class="sw" id="swSound" role="switch" aria-checked="true" tabindex="0"><span>音效</span><span class="trk"></span></div>
@@ -365,17 +371,23 @@ var IG = (function () {
   function shuffle(arr, r) { var a = arr.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   // Fixed level order: a seeded shuffle of each tier, so level N is always the same idiom.
   var ORDER = (function () { var o = []; [1, 2, 3].forEach(function (t) { o = o.concat(shuffle(TIERS[t], rng(0x5EED + t)).map(function (x) { return x.w; })); }); return o; })();
+  // Difficulty ramps on four dials, each in small steps so no two neighbouring bands jump at once:
+  // more character keys (8 → 21), fewer guesses (6 → 5 → 4), the meaning shown later (then only for ink), rarer idioms.
   function levelConfig(n) {
-    var tray = n <= 20 ? 8 : n <= 40 ? 10 : n <= 60 ? 12 : 14;
-    var clueAfter = n <= 20 ? 0 : n <= 50 ? 1 : n <= 80 ? 2 : -1;        // -1: only by paying
+    var tray = n <= 15 ? 8 : n <= 35 ? 10 : n <= 55 ? 12 : n <= 70 ? 14 : n <= 85 ? 16 : n <= 95 ? 18 : 21;
+    var clueAfter = n <= 15 ? 0 : n <= 40 ? 1 : n <= 65 ? 2 : n <= 80 ? 3 : -1;        // -1: only by paying
+    var attempts = n <= 35 ? 6 : n <= 65 ? 5 : 4;
     var tier = n <= 40 ? 1 : n <= 80 ? 2 : 3;
-    return { tray: tray, clueAfter: clueAfter, tier: tier, confuse: n > 30 };
+    return { tray: tray, clueAfter: clueAfter, attempts: attempts, tier: tier, confuse: n > 25 };
   }
-  function levelIdiom(n) {
+  // variant k > 0: after k losses on a level the retry uses another idiom of the same rarity, so the answer just revealed
+  // on the loss card cannot simply be typed in again. Deterministic per (level, variant).
+  function levelIdiom(n, k) {
     var c = levelConfig(n), base = c.tier === 1 ? 0 : c.tier === 2 ? 40 : 80, i = n - 1 - base;
     var pool = TIERS[c.tier].length, start = c.tier === 1 ? 0 : c.tier === 2 ? TIERS[1].length : TIERS[1].length + TIERS[2].length;
-    return BY_WORD[ORDER[start + (i % pool)]];
+    return BY_WORD[ORDER[start + ((i + (k || 0) * 7) % pool)]];
   }
+  function levelSeed(n, k) { return hash('lv' + n + (k ? ':' + k : '')); }
   function dailyKey(d) { d = d || new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   function dailyIdiom(key) { var r = rng(hash('daily:' + key)); var pool = TIERS[1].concat(TIERS[2]); return pool[Math.floor(r() * pool.length)]; }
   function randomIdiom(r, tiers) { var pool = []; (tiers || [1, 2]).forEach(function (t) { pool = pool.concat(TIERS[t]); }); return pool[Math.floor(r() * pool.length)]; }
@@ -400,7 +412,7 @@ var IG = (function () {
     return res;
   }
   function stars(tries) { return tries <= 2 ? 3 : tries <= 4 ? 2 : 1; }
-  function reward(tries, daily) { return 10 + 5 * (ATTEMPTS - tries) + (daily ? 20 : 0); }
+  function reward(tries, daily, max) { return 10 + 5 * ((max || ATTEMPTS) - tries) + (daily ? 20 : 0); }
   var COST = { clue: 10, strike: 15, reveal: 25 };
   // Key state after several guesses: the best result seen for each character.
   function keyStates(guesses, results) {
@@ -408,12 +420,12 @@ var IG = (function () {
     guesses.forEach(function (g, gi) { for (var i = 0; i < 4; i++) { var c = g[i], v = results[gi][i]; if (!st[c] || rank[v] > rank[st[c]]) st[c] = v; } });
     return st;
   }
-  function shareText(label, results, won) {
+  function shareText(label, results, won, max) {
     var map = { h: '🟥', n: '🟨', m: '⬜' };
-    return '成語猜字 ' + label + ' ' + (won ? results.length : 'X') + '/' + ATTEMPTS + '\n' + results.map(function (r) { return r.map(function (v) { return map[v]; }).join(''); }).join('\n');
+    return '成語猜字 ' + label + ' ' + (won ? results.length : 'X') + '/' + (max || ATTEMPTS) + '\n' + results.map(function (r) { return r.map(function (v) { return map[v]; }).join(''); }).join('\n');
   }
   return { LIST: LIST, BY_WORD: BY_WORD, TIERS: TIERS, ORDER: ORDER, ATTEMPTS: ATTEMPTS, LEVELS: LEVELS, COST: COST, rng: rng, hash: hash, shuffle: shuffle,
-    levelConfig: levelConfig, levelIdiom: levelIdiom, dailyKey: dailyKey, dailyIdiom: dailyIdiom, randomIdiom: randomIdiom, buildTray: buildTray, judge: judge, stars: stars, reward: reward, keyStates: keyStates, shareText: shareText };
+    levelConfig: levelConfig, levelIdiom: levelIdiom, levelSeed: levelSeed, dailyKey: dailyKey, dailyIdiom: dailyIdiom, randomIdiom: randomIdiom, buildTray: buildTray, judge: judge, stars: stars, reward: reward, keyStates: keyStates, shareText: shareText };
 })();
 /*CORE-END*/
 </script>
@@ -467,7 +479,10 @@ var IG = (function () {
   /* ---------- state ---------- */
   var G = null;   // current game
   var toastT = null;
-  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; setTimeout(function () { t.classList.add('hidden'); }, 300); }, 1400); }
+  // In play the toast floats just above the meaning bar (over the empty lower rows; in landscape over the empty right column), so it never hides the row just judged.
+  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = 1; t.style.top = '';
+    var playing = ['title', 'select', 'hintOv', 'win', 'lose', 'help'].every(function (id) { return $(id).classList.contains('hidden'); });
+    if (playing) { var cr = $('clue').getBoundingClientRect(), br = $('board').getBoundingClientRect(); t.style.top = Math.max(br.top, cr.top - t.offsetHeight - 10) + 'px'; t.style.left = (cr.left + cr.width / 2) + 'px'; } else t.style.left = ''; clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; setTimeout(function () { t.classList.add('hidden'); }, 300); }, 1400); }
   function show(id) { $(id).classList.remove('hidden'); }
   function hide(id) { $(id).classList.add('hidden'); }
   function hideAll() { ['title', 'select', 'hintOv', 'win', 'lose', 'help'].forEach(hide); }
@@ -477,17 +492,17 @@ var IG = (function () {
     opt = opt || {};
     var item, cfg, label, seed;
     if (mode === 'level') {
-      var n = opt.level; cfg = IG.levelConfig(n); item = IG.levelIdiom(n); label = '第 ' + n + ' 關'; seed = IG.hash('lv' + n);
+      var n = opt.level, vk = (PROG.fails && PROG.fails[n]) || 0; cfg = IG.levelConfig(n); item = IG.levelIdiom(n, vk); label = '第 ' + n + ' 關'; seed = IG.levelSeed(n, vk);
     } else if (mode === 'daily') {
-      var k = IG.dailyKey(); item = IG.dailyIdiom(k); cfg = { tray: 12, clueAfter: 2, confuse: true }; label = k.slice(5).replace('-', '/'); seed = IG.hash('tray' + k);
+      var k = IG.dailyKey(); item = IG.dailyIdiom(k); cfg = { tray: 12, clueAfter: 2, attempts: 6, confuse: true }; label = k.slice(5).replace('-', '/'); seed = IG.hash('tray' + k);
     } else {
-      seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0; item = IG.randomIdiom(IG.rng(seed), [1, 2, 3]); cfg = { tray: 12, clueAfter: 1, confuse: true }; label = '隨機';
+      seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0; item = IG.randomIdiom(IG.rng(seed), [1, 2, 3]); cfg = { tray: 12, clueAfter: 1, attempts: 6, confuse: true }; label = '隨機';
     }
     G = { mode: mode, level: opt.level || 0, item: item, answer: item.w, cfg: cfg, label: label, tray: IG.buildTray(item.w, cfg.tray, seed, cfg.confuse),
-      guesses: [], results: [], cur: ['', '', '', ''], clue: cfg.clueAfter === 0, struck: {}, revealed: {}, over: false, hintsUsed: 0,
+      max: cfg.attempts || IG.ATTEMPTS, guesses: [], results: [], cur: ['', '', '', ''], clue: cfg.clueAfter === 0, struck: {}, revealed: {}, over: false, hintsUsed: 0,
       // replays (a level already cleared, today's daily already played) still count stars but pay only a token reward and leave the daily record alone
       replay: mode === 'level' ? !!PROG.levels[opt.level] : mode === 'daily' ? !!(PROG.daily && PROG.daily.key === IG.dailyKey()) : false };
-    $('hMode').textContent = mode === 'level' ? '百關挑戰・' + (cfg.tray) + ' 張字牌' : mode === 'daily' ? '每日一題・全球同一題' : '自由練習';
+    $('hMode').textContent = mode === 'level' ? cfg.tray + ' 張字牌・' + G.max + ' 次機會' : mode === 'daily' ? '每日一題・全球同一題' : '自由練習';
     $('hName').textContent = mode === 'level' ? label : mode === 'daily' ? '每日一題 ' + label : '自由練習';
     buildTray(); render(); hideAll();
     if (!reduced) { ['board', 'tray'].forEach(function (id) { var el = $(id); el.classList.remove('deal'); void el.offsetWidth; el.classList.add('deal'); }); clearTimeout(newGame.t); newGame.t = setTimeout(function () { $('board').classList.remove('deal'); $('tray').classList.remove('deal'); }, 700); }
@@ -498,13 +513,13 @@ var IG = (function () {
   /* ---------- rendering ---------- */
   function fitTiles() {
     var b = $('board'); var h = b.clientHeight, w = b.clientWidth; if (!h) return;
-    var rows = IG.ATTEMPTS, th = Math.floor((h - (rows - 1) * 6) / rows); th = Math.max(26, Math.min(62, th));
+    var rows = G ? G.max : IG.ATTEMPTS, th = Math.floor((h - (rows - 1) * 6) / rows); th = Math.max(26, Math.min(62, th));
     var tw = Math.min(Math.round(th * 1.15), 72, Math.floor((w - 18) / 4));
     root.style.setProperty('--tile-h', th + 'px'); root.style.setProperty('--tile-w', tw + 'px');
   }
   function render() {
     var b = $('board'); b.innerHTML = '';
-    for (var r = 0; r < IG.ATTEMPTS; r++) {
+    for (var r = 0; r < G.max; r++) {
       var row = document.createElement('div'); row.className = 'row';
       var isCur = r === G.guesses.length && !G.over;
       if (isCur) row.classList.add('cur');
@@ -529,8 +544,9 @@ var IG = (function () {
   }
   function buildTray() {
     var tr = $('tray'); tr.innerHTML = '';
-    var n = G.tray.length, cols = n <= 8 ? 4 : n <= 12 ? 6 : 7;
-    tr.style.gridTemplateColumns = 'repeat(' + cols + ',1fr)';
+    // columns keep every key at least 44 px wide on a 360 px phone; a short last row is centred
+    var n = G.tray.length, cols = n <= 8 ? 4 : n <= 10 ? 5 : n <= 12 ? 6 : n <= 14 ? 7 : n <= 18 ? 6 : 7;
+    tr.style.setProperty('--cols', cols);
     G.tray.forEach(function (c, i) { var k = document.createElement('button'); k.className = 'key'; k.dataset.c = c; k.setAttribute('aria-label', c);
       k.innerHTML = '<span class="kn">' + (i < 9 ? i + 1 : i === 9 ? 0 : '') + '</span>' + c; k.addEventListener('click', function () { tapChar(c); }); tr.appendChild(k); });
   }
@@ -552,7 +568,7 @@ var IG = (function () {
     if (G.guesses.indexOf(g) >= 0) { toast('這四個字已經猜過了'); SFX.bad(); vib(40); var cr = $('board').children[G.guesses.length]; if (cr && !reduced) { cr.classList.remove('shake'); void cr.offsetWidth; cr.classList.add('shake'); } return; }
     var res = IG.judge(g, G.answer);
     G.guesses.push(g); G.results.push(res); G.cur = freshCur();
-    var won = g === G.answer, lost = !won && G.guesses.length >= IG.ATTEMPTS;
+    var won = g === G.answer, lost = !won && G.guesses.length >= G.max;
     if (G.cfg.clueAfter >= 0 && G.guesses.length >= G.cfg.clueAfter) G.clue = true;
     G.over = won || lost;
     render();
@@ -565,7 +581,7 @@ var IG = (function () {
     else if (res.indexOf('h') < 0 && res.indexOf('n') < 0) { vib(40); }
   }
   function onWin() {
-    var tries = G.guesses.length, st = IG.stars(tries), gain = G.replay ? (G.mode === 'daily' ? 0 : 5) : IG.reward(tries, G.mode === 'daily');
+    var tries = G.guesses.length, st = IG.stars(tries), gain = G.replay ? (G.mode === 'daily' ? 0 : 5) : IG.reward(tries, G.mode === 'daily', G.max);
     PROG.coins += gain; PROG.plays++; PROG.wins++; PROG.streak++; if (PROG.streak > PROG.best) PROG.best = PROG.streak;
     if (G.mode === 'level') { var old = PROG.levels[G.level] || 0; PROG.levels[G.level] = Math.max(old, st); }
     if (G.mode === 'daily' && !G.replay) PROG.daily = { key: IG.dailyKey(), won: true, tries: tries };
@@ -588,10 +604,12 @@ var IG = (function () {
     setTimeout(function () { box.innerHTML = ''; }, 2600);
   }
   function onLose() {
-    PROG.plays++; PROG.streak = 0; if (G.mode === 'daily' && !G.replay) PROG.daily = { key: IG.dailyKey(), won: false, tries: IG.ATTEMPTS }; save('prog', PROG); SFX.lose();
+    PROG.plays++; PROG.streak = 0; if (G.mode === 'level') { PROG.fails = PROG.fails || {}; PROG.fails[G.level] = (PROG.fails[G.level] || 0) + 1; } if (G.mode === 'daily' && !G.replay) PROG.daily = { key: IG.dailyKey(), won: false, tries: G.max }; save('prog', PROG); SFX.lose();
     $('lAns').innerHTML = G.answer.split('').map(function (c) { return '<span class="c">' + c + '</span>'; }).join('');
     $('lMean').textContent = G.item.m;
     $('lNext').style.display = G.mode === 'daily' ? 'none' : '';
+    $('lMsg').textContent = ['', '一', '二', '三', '四', '五', '六'][G.max] + '次機會用完了，答案是：';
+    $('lRetry').textContent = G.mode === 'level' ? '換一個成語再挑戰' : '再猜一次';
     hideAll(); show('lose');
   }
   function spend(cost) { if (PROG.coins < cost) { toast('墨珠不夠，猜對幾題再回來'); SFX.bad(); return false; } PROG.coins -= cost; G.hintsUsed++; save('prog', PROG); SFX.coin(); return true; }
@@ -614,7 +632,7 @@ var IG = (function () {
   }
 
   /* ---------- navigation ---------- */
-  function openTitle() { hideAll(); show('title'); var dn = Object.keys(PROG.levels).length; $('tStats').textContent = dn ? '已完成 ' + dn + '／100 關・最佳連勝 ' + PROG.best + '・墨珠 ' + PROG.coins : '墨珠 ' + PROG.coins + '・猜對就能賺更多'; $('tLvMeta').textContent = '第 ' + curLevel() + ' 關'; var d = PROG.daily && PROG.daily.key === IG.dailyKey() ? PROG.daily : null; $('tDailyMeta').textContent = d ? (d.won ? '今天已解 ' + d.tries + '/6' : '今天沒猜中') : IG.dailyKey().slice(5).replace('-', '/'); }
+  function openTitle() { hideAll(); show('title'); var dn = Object.keys(PROG.levels).length; $('tStats').textContent = dn ? '已完成 ' + dn + '／100 關・最佳連勝 ' + PROG.best + '・墨珠 ' + PROG.coins : '墨珠 ' + PROG.coins + '・猜對就能賺更多'; $('tLvMeta').textContent = '第 ' + curLevel() + ' 關'; var d = PROG.daily && PROG.daily.key === IG.dailyKey() ? PROG.daily : null; $('tDailyMeta').textContent = d ? (d.won ? '今天已解 ' + d.tries + '/' + IG.ATTEMPTS : '今天沒猜中') : IG.dailyKey().slice(5).replace('-', '/'); }
   // Leaving a round (back button, menu) keeps it: opening the same level / daily / practice again continues where you were.
   function inProgress() { return G && !G.over && (G.guesses.length > 0 || G.hintsUsed > 0 || filledCount() > Object.keys(G.revealed).length); }
   function resume(mode, n) {
@@ -662,7 +680,7 @@ var IG = (function () {
   $('lRetry').addEventListener('click', function () { if (G.mode === 'level') newGame('level', { level: G.level }); else if (G.mode === 'daily') newGame('daily'); else { var it = G.item; newGame('free'); G.item = it; G.answer = it.w; G.tray = IG.buildTray(it.w, G.cfg.tray, IG.hash('retry' + it.w + Date.now()), true); buildTray(); render(); } });
   $('lNext').addEventListener('click', next);
   $('wShare').addEventListener('click', function () {
-    var txt = IG.shareText(G.mode === 'level' ? G.label : G.mode === 'daily' ? G.label : '練習', G.results, true);
+    var txt = IG.shareText(G.mode === 'level' ? G.label : G.mode === 'daily' ? G.label : '練習', G.results, true, G.max);
     var done = function () { toast('已複製結果'); }, fail = function () { toast('無法複製'); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fail); else fail();
   });
@@ -679,7 +697,7 @@ var IG = (function () {
   newGame('level', { level: curLevel(), silent: true });
   openTitle();
 
-  window.__ig = { get: function () { return { mode: G.mode, level: G.level, answer: G.answer, tray: G.tray.slice(), guesses: G.guesses.slice(), results: G.results.slice(), cur: G.cur.slice(), coins: PROG.coins, over: G.over, clue: G.clue }; },
+  window.__ig = { get: function () { return { mode: G.mode, level: G.level, answer: G.answer, tray: G.tray.slice(), guesses: G.guesses.slice(), results: G.results.slice(), cur: G.cur.slice(), coins: PROG.coins, over: G.over, clue: G.clue, max: G.max, struck: Object.keys(G.struck) }; },
     tap: tapChar, del: del, submit: submit, start: newGame, prog: function () { return PROG; } };
 })();
 </script>

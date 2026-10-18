@@ -23,9 +23,17 @@ ok(lv.every(x => x && x.w), 'all 100 levels resolve to an idiom');
 ok(new Set(lv.map(x => x.w)).size === 100, '100 different level idioms');
 ok(lv.slice(0, 40).every(x => x.t === 1) && lv.slice(40, 80).every(x => x.t === 2) && lv.slice(80).every(x => x.t === 3), 'tiers rise with level: 1–40 common, 41–80 medium, 81–100 rarer');
 ok(IG.levelIdiom(7).w === IG.levelIdiom(7).w && IG.ORDER.length === IG.LIST.length, 'level order is a fixed permutation of the list');
-ok(IG.levelConfig(1).tray === 8 && IG.levelConfig(21).tray === 10 && IG.levelConfig(41).tray === 12 && IG.levelConfig(61).tray === 14, 'tray grows 8→10→12→14');
-ok(IG.levelConfig(1).clueAfter === 0 && IG.levelConfig(21).clueAfter === 1 && IG.levelConfig(51).clueAfter === 2 && IG.levelConfig(81).clueAfter === -1, 'meaning hint comes later at higher levels');
-ok(!IG.levelConfig(30).confuse && IG.levelConfig(31).confuse, 'look-alike distractors from level 31');
+ok([1, 16, 36, 56, 71, 86, 96].map(n => IG.levelConfig(n).tray).join() === '8,10,12,14,16,18,21', 'tray grows 8→10→12→14→16→18→21');
+ok(IG.levelConfig(1).clueAfter === 0 && IG.levelConfig(16).clueAfter === 1 && IG.levelConfig(41).clueAfter === 2 && IG.levelConfig(66).clueAfter === 3 && IG.levelConfig(81).clueAfter === -1, 'meaning hint comes later at higher levels');
+ok(IG.levelConfig(35).attempts === 6 && IG.levelConfig(36).attempts === 5 && IG.levelConfig(65).attempts === 5 && IG.levelConfig(66).attempts === 4 && IG.levelConfig(100).attempts === 4, 'guesses 6 → 5 (from 36) → 4 (from 66)');
+{ // no two neighbouring levels change more than two dials at once (smooth curve)
+  let worst = 0; for (let n = 2; n <= 100; n++) { const a = IG.levelConfig(n - 1), b = IG.levelConfig(n); worst = Math.max(worst, ['tray', 'clueAfter', 'attempts', 'tier'].filter(k => a[k] !== b[k]).length); }
+  ok(worst <= 2, 'at most two difficulty dials step between neighbouring levels (' + worst + ')'); }
+ok(!IG.levelConfig(25).confuse && IG.levelConfig(26).confuse, 'look-alike distractors from level 26');
+{ // retry variants after a loss: another idiom of the same rarity, deterministic
+  let ok1 = true; for (let n = 1; n <= 100; n++) for (let k = 1; k <= 4; k++) { const a = IG.levelIdiom(n, 0), b = IG.levelIdiom(n, k); if (!b || b.w === a.w || b.t !== a.t || b.w !== IG.levelIdiom(n, k).w) ok1 = false; }
+  ok(ok1, 'retry variants 1–4 are different idioms of the same rarity for every level');
+  ok(IG.levelSeed(5, 0) === IG.hash('lv5') && IG.levelSeed(5, 1) !== IG.levelSeed(5, 0), 'variant 0 keeps the original tray seed'); }
 
 // --- daily / random ---
 ok(IG.dailyKey(new Date(2026, 9, 17)) === '2026-10-17', 'daily key is YYYY-MM-DD');
@@ -34,7 +42,7 @@ ok(IG.dailyIdiom('2026-10-17').w === IG.dailyIdiom('2026-10-17').w && IG.dailyId
 { const r1 = IG.rng(5), r2 = IG.rng(5); ok(r1() === r2() && r1() === r2(), 'seeded rng is reproducible'); ok(IG.hash('a') !== IG.hash('b'), 'hash separates strings'); }
 
 // --- tray ---
-for (const [n, size, confuse] of [[1, 8, false], [35, 10, true], [50, 12, true], [100, 14, true]]) {
+for (const [n, size, confuse] of [[1, 8, false], [35, 10, true], [50, 12, true], [70, 14, true], [80, 16, true], [90, 18, true], [100, 21, true]]) {
   const w = IG.levelIdiom(n).w, t = IG.buildTray(w, size, IG.hash('lv' + n), confuse);
   ok(t.length === size, 'level ' + n + ' tray has ' + size + ' keys');
   ok(new Set(t).size === size, 'level ' + n + ' tray keys are unique');
@@ -56,7 +64,7 @@ ok(IG.judge('目目目目', '一目了然').join('') === 'mhmm', 'repeated guess
 
 // --- scoring ---
 ok(IG.stars(1) === 3 && IG.stars(2) === 3 && IG.stars(3) === 2 && IG.stars(4) === 2 && IG.stars(5) === 1 && IG.stars(6) === 1, 'stars 3/2/1 by tries');
-ok(IG.reward(1, false) === 35 && IG.reward(6, false) === 10 && IG.reward(1, true) === 55, 'reward 10 + 5 per spare try, +20 for daily');
+ok(IG.reward(1, false) === 35 && IG.reward(6, false) === 10 && IG.reward(1, true) === 55 && IG.reward(4, false, 4) === 10 && IG.reward(1, false, 4) === 25, 'reward 10 + 5 per spare try, +20 for daily');
 ok(IG.COST.clue === 10 && IG.COST.strike === 15 && IG.COST.reveal === 25, 'hint costs 10/15/25');
 ok(IG.ATTEMPTS === 6 && IG.LEVELS === 100, 'six attempts, 100 levels');
 
@@ -65,7 +73,7 @@ ok(IG.ATTEMPTS === 6 && IG.LEVELS === 100, 'six attempts, 100 levels');
   ok(ks['一'] === 'h' && ks['見'] === 'm' && ks['然'] === 'n' && ks['目'] === 'n', 'key states keep the best result per character');
   const sh = IG.shareText('第 3 關', [['h', 'm', 'm', 'm'], ['h', 'h', 'h', 'h']], true);
   ok(sh.startsWith('成語猜字 第 3 關 2/6') && sh.includes('🟥⬜⬜⬜') && sh.includes('🟥🟥🟥🟥'), 'share text is a Wordle-style grid');
-  ok(IG.shareText('x', [], false).includes('X/6'), 'share text marks a loss with X'); }
+  ok(IG.shareText('x', [], false).includes('X/6') && IG.shareText('x', [], false, 4).includes('X/4'), 'share text marks a loss with X'); }
 
 // --- page conventions ---
 ok(/idiom-guess:v1:/.test(html), 'localStorage keys prefixed idiom-guess:v1:');

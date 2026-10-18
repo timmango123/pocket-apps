@@ -17,7 +17,9 @@ const lvArg = args.find(a => a.startsWith('--levels='));
 const TEST_LEVELS = lvArg ? lvArg.slice(9).split(',').map(Number) : [1, 10, 25, 50, 75, 99, 100];
 const outArg = args.find(a => a.startsWith('--out='));
 const OUT = path.join(__dirname, outArg ? outArg.slice(6) : 'raw-results.json');
-const TIME_CAP = 120000;
+// The game has no clock, so human thinking/reaction pauses are simulated: they count in full toward the reported time and the
+// per-attempt cap (5 simulated minutes) but are slept at IG_SCALE (default 0.3) of real time. Animations still get real time.
+const TIME_CAP = 300000, SCALE = +(process.env.IG_SCALE || 0.3);
 
 // knowledge: P(recognise an idiom of rarity tier t) and P(the meaning jogs the memory of an idiom not recognised)
 const KNOW = {
@@ -93,7 +95,7 @@ function decide(P, st, mem) {
 }
 
 // evaluate with a watchdog: a page that stops answering for 20 s is a hang (reported as a finding, never waited on forever)
-const HANGS = [];
+const HANGS = [], dropLog = [];
 const getState = page => Promise.race([page.evaluate(() => window.__ig.get()), new Promise((_, rej) => setTimeout(() => rej(new Error('HANG: page did not answer for 20 s')), 20000))])
   .catch(e => { HANGS.push(String(e.message || e).slice(0, 200)); throw e; });
 async function keyBox(page, c) { return page.locator(`#tray .key[data-c="${c}"]`).boundingBox(); }
@@ -101,68 +103,90 @@ async function keyBox(page, c) { return page.locator(`#tray .key[data-c="${c}"]`
 async function playAttempt(P, n, mem, finding) {
   const page = P.page; const K = KNOW[P.tierId];
   let st = await getState(page);
-  const t0 = Date.now(); let taps = 0, misTaps = 0, unnoticed = 0, dropped = 0, hints = 0, strays = 0; const hows = [];
-  while (!st.over && Date.now() - t0 < TIME_CAP) {
+  let sim = 0; const w = ms => { sim += ms; return H.sleep(ms * SCALE); }, r = ms => { sim += ms; return H.sleep(ms); };
+  let taps = 0, misTaps = 0, unnoticed = 0, dropped = 0, struckTaps = 0, repeats = 0, late = 0, offKey = 0, hints = 0, strays = 0; const hows = [];
+  while (!st.over && sim < TIME_CAP) {
     // a stray tap may have opened help / hint / the level list: close it like a person would
-    if (await page.isVisible('#help')) { strays++; await P.tapSelector('#hOk'); await H.sleep(P.reactMs()); continue; }
-    if (await page.isVisible('#hintOv')) { strays++; await P.tapSelector('#hClose'); await H.sleep(P.reactMs()); continue; }
-    if (await page.isVisible('#title')) { strays++; await P.tapSelector('#tLevels'); await H.sleep(P.reactMs() + 300); continue; }
-    if (await page.isVisible('#select')) { strays++; await page.locator(`#grid .lt:nth-child(${n})`).tap(); await H.sleep(P.reactMs() + 300); st = await getState(page); continue; }
-    await H.sleep(P.thinkMs(2.5));
+    if (await page.isVisible('#help')) { strays++; await P.tapSelector('#hOk'); await w(P.reactMs()); continue; }
+    if (await page.isVisible('#hintOv')) { strays++; await P.tapSelector('#hClose'); await w(P.reactMs()); continue; }
+    if (await page.isVisible('#title')) { strays++; await P.tapSelector('#tLevels'); await w(P.reactMs() + 300); continue; }
+    if (await page.isVisible('#select')) { strays++; await page.locator(`#grid .lt:nth-child(${n})`).tap(); await w(P.reactMs() + 300); st = await getState(page); continue; }
+    await w(P.thinkMs(2.5));
     // weaker players buy the meaning when stuck after 2 guesses
     if (!st.clue && st.guesses.length >= 2 && K.hint && P.rng() < K.hint && st.coins >= IG.COST.clue && !mem.hinted) {
       mem.hinted = true;
-      await P.tapSelector('#bHint'); await H.sleep(P.reactMs() + 250);
-      if (await page.isVisible('#hintOv')) { await P.tapSelector('#h1'); hints++; await H.sleep(P.reactMs() + 200); if (await page.isVisible('#hintOv')) await P.tapSelector('#hClose'); }
+      await P.tapSelector('#bHint'); await w(P.reactMs() + 250);
+      if (await page.isVisible('#hintOv')) { await P.tapSelector('#h1'); hints++; await w(P.reactMs() + 200); if (await page.isVisible('#hintOv')) await P.tapSelector('#hClose'); }
       st = await getState(page);
     }
     // a player can see earlier rows, so never types a row already tried (the game refuses repeats since the fix)
     let { g, how } = decide(P, st, mem); for (let k = 0; k < 12 && st.guesses.includes(g); k++) ({ g, how } = decide(P, st, mem));
     if (st.guesses.includes(g)) { g = constraintGuess(P, st, true); how = 'constraint'; }
+    if ((st.struck || []).some(c => g.includes(c))) { const free = st.tray.filter(c => !(st.struck || []).includes(c) && !g.includes(c)); g = g.split('').map(c => (st.struck || []).includes(c) ? free.shift() : c).join(''); }
     hows.push(how);
-    if (process.env.IG_DEBUG) console.log(P.tierId, n, ((Date.now() - t0) / 1000).toFixed(1) + 's', 'guess', g, how, 'cur', st.cur.join(','), 'rows', st.guesses.join('/'));
-    // type the four characters, slot by slot, fixing mis-taps the player notices
-    for (let i = 0, guard = 0; i < 4 && guard < 40 && Date.now() - t0 < TIME_CAP; i++, guard++) {
+    if (process.env.IG_DEBUG) console.log(P.tierId, n, ((sim) / 1000).toFixed(1) + 's', 'guess', g, how, 'cur', st.cur.join(','), 'rows', st.guesses.join('/'));
+    // type the guess left to right like a person: look at the row, delete back to the last correct character, tap the next one.
+    // A mis-tap the player does not notice is accepted into the plan (they will submit it).
+    const plan = g.split('');
+    for (let guard = 0; guard < 40 && sim < TIME_CAP; guard++) {
       st = await getState(page);
       if (st.over) break;
-      if (st.cur[i] && st.cur[i] === g[i]) continue;
-      if (st.cur[i]) { await P.tapSelector('#bDel'); taps++; await H.sleep(P.reactMs()); i--; continue; }
-      let want = g[i];
+      let k = 0; while (k < 4 && st.cur[k] && st.cur[k] === plan[k]) k++;
+      if (k === 4) break;
+      if (st.cur.slice(k).some(Boolean)) { await w(P.reactMs()); await P.tapSelector('#bDel'); taps++; await r(60); continue; }
+      let want = plan[k];
       if (P.mistake()) want = P.rng.pick(st.tray.filter(c => !st.cur.includes(c)));
       const b = await keyBox(page, want); if (!b) break;
-      await H.sleep(P.reactMs());
-      await P.tap(b.x + b.width / 2, b.y + b.height / 2); taps++;
-      await H.sleep(40);
-      const st2 = await getState(page);
-      const got = st2.cur[i];
-      if (!got) { if (st2.cur.join('') === st.cur.join('')) dropped++; continue; }
-      if (got !== g[i]) { misTaps++; if (P.rng() < K.notice) { await H.sleep(P.reactMs()); await P.tapSelector('#bDel'); taps++; await H.sleep(60); i--; } else unnoticed++; }
+      await w(P.reactMs());
+      const [tx, ty] = await P.tap(b.x + b.width / 2, b.y + b.height / 2); taps++;
+      await r(40);
+      let st2 = await getState(page);
+      if (!st2.cur[k]) { await H.sleep(250); st2 = await getState(page); if (st2.cur[k]) late++; } // click delivered late under machine load
+      const got = st2.cur[k];
+      if (!got) {
+        // nothing typed: either the finger landed off the keys (a miss) or on a free key that ignored it (a dropped touch)
+        const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); const k = e && e.closest('#tray .key'); return k ? k.dataset.c : null; }, [tx, ty]);
+        if (hit && (st.struck || []).includes(hit)) { struckTaps++; continue; } // a struck-out key: the game says 這個字已經被排除了
+        if (hit && !st.cur.includes(hit)) { dropped++; dropLog.push({ level: n, x: Math.round(tx), y: Math.round(ty), hit, want, curBefore: st.cur.join(','), curAfter: st2.cur.join(','), overlays: await page.evaluate(() => ['title', 'select', 'hintOv', 'win', 'lose', 'help'].filter(id => !document.getElementById(id).classList.contains('hidden'))), events: await page.evaluate(() => (window.__evlog || []).slice(-12)), cur2: (await getState(page)).cur.join(',') }); } else offKey++;
+        continue;
+      }
+      if (got !== plan[k]) { misTaps++; if (P.rng() < K.notice) { /* seen: next loop deletes it */ } else { unnoticed++; plan[k] = got; const r = plan.indexOf(got, k + 1); if (r > k) plan[r] = st.tray.find(c => !plan.includes(c)); } }
     }
     st = await getState(page);
     if (st.cur.filter(Boolean).length < 4) { // could not fill the row (dropped taps): clear and retry
-      for (let k = 0; k < 4; k++) { await P.tapSelector('#bDel'); await H.sleep(50); }
+      for (let k = 0; k < 4; k++) { await P.tapSelector('#bDel'); await r(50); }
       continue;
     }
-    await H.sleep(P.reactMs());
+    await w(P.reactMs());
     const before = st.guesses.length;
-    await P.tapSelector('#bGo'); taps++;
-    await H.sleep(100);
+    const gb = await page.locator('#bGo').boundingBox(), gs = Math.min(P.t.pos, Math.min(gb.width, gb.height) / 3);
+    const gx = gb.x + gb.width / 2 + (gs ? P.rng.gauss(0, gs) : 0), gy = gb.y + gb.height / 2 + (gs ? P.rng.gauss(0, gs) : 0);
+    await P.tap(gx, gy, { exact: true }); taps++;
+    const onGo = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return !!(e && e.closest('#bGo')); }, [gx, gy]);
+    await r(100);
     st = await getState(page);
-    if (st.guesses.length === before) { dropped++; await H.sleep(300); st = await getState(page); if (st.guesses.length === before) continue; }
+    if (st.guesses.length === before) {
+      const row = st.cur.join('');
+      if (st.guesses.includes(row)) { repeats++; continue; } // the game refused a row already tried (its toast says so); the player retypes
+      await r(300); st = await getState(page); if (st.guesses.length === before) { if (onGo) { dropped++; dropLog.push({ level: n, submit: true, row }); } else offKey++; continue; }
+    }
     // watch the tiles flip
-    await H.sleep(1300);
+    await r(1300);
     st = await getState(page);
   }
   const won = st.over && st.guesses[st.guesses.length - 1] === st.answer;
-  await H.sleep(900);
+  await r(900);
   const overlay = won ? await page.isVisible('#win') : await page.isVisible('#lose');
   if (st.over && !overlay) finding('no-overlay', { level: n, tier: P.tierId, won });
-  return { cleared: won, tries: st.guesses.length, strays, taps, misTaps, unnoticed, dropped, hints, hows, answer: st.answer, guesses: st.guesses, ms: Date.now() - t0, overlay,
+  return { cleared: won, tries: st.guesses.length, strays, offKey, late, repeats, struckTaps, taps, misTaps, unnoticed, dropped, hints, hows, answer: st.answer, guesses: st.guesses, ms: Math.round(sim + taps * 80), overlay,
     stars: won ? IG.stars(st.guesses.length) : 0, clueShown: st.clue };
 }
 
+// passive page-side log of the last input events (for explaining any tap that seems to vanish)
+const EVLOG = () => { window.__evlog = []; const rec = (k, e) => { const t = e.target && e.target.closest ? e.target.closest('button,[id]') : null; window.__evlog.push({ k, t: Math.round(performance.now()), el: t ? (t.id || t.dataset.c || t.className) : '', x: Math.round(e.clientX || (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientX) || 0), y: Math.round(e.clientY || (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientY) || 0) }); if (window.__evlog.length > 40) window.__evlog.shift(); };
+  ['touchstart', 'touchend', 'click'].forEach(k => document.addEventListener(k, e => rec(k, e), { capture: true, passive: true })); };
 async function runTier(browser, tierId, idx, findings) {
-  const sess = await H.newSession(browser, 'file://' + APP);
+  const sess = await H.newSession(browser, 'file://' + APP, EVLOG);
   const P = new H.Player(sess, tierId, 1000 + idx * 7919);
   await H.sleep(800);
   const runs = [];
@@ -191,7 +215,7 @@ async function runTier(browser, tierId, idx, findings) {
   const cl = runs.filter(r => r.cleared), allA = runs.flatMap(r => r.attempts);
   return { runs, errors, stats: P.stats, summary: { cleared: cl.length + '/' + runs.length, clearedLevels: cl.map(r => r.level), totalAttempts: runs.reduce((a, r) => a + r.tries, 0),
     avgGuessesCleared: cl.length ? +(cl.reduce((a, r) => a + r.guesses, 0) / cl.length).toFixed(2) : 0, avgStarsCleared: cl.length ? +(cl.reduce((a, r) => a + r.stars, 0) / cl.length).toFixed(2) : 0,
-    taps: allA.reduce((a, x) => a + x.taps, 0), misTaps: allA.reduce((a, x) => a + x.misTaps, 0), unnoticed: allA.reduce((a, x) => a + x.unnoticed, 0), dropped: allA.reduce((a, x) => a + x.dropped, 0), hints: allA.reduce((a, x) => a + x.hints, 0) } };
+    taps: allA.reduce((a, x) => a + x.taps, 0), misTaps: allA.reduce((a, x) => a + x.misTaps, 0), unnoticed: allA.reduce((a, x) => a + x.unnoticed, 0), dropped: allA.reduce((a, x) => a + x.dropped, 0), offKey: allA.reduce((a, x) => a + (x.offKey || 0), 0), late: allA.reduce((a, x) => a + (x.late || 0), 0), repeats: allA.reduce((a, x) => a + (x.repeats || 0), 0), struckTaps: allA.reduce((a, x) => a + (x.struckTaps || 0), 0), strays: allA.reduce((a, x) => a + (x.strays || 0), 0), hints: allA.reduce((a, x) => a + x.hints, 0) } };
 }
 
 // Probe: four key taps and 確定 in quick succession (one frame apart) must all register.
@@ -208,7 +232,8 @@ async function rapidInputProbe(browser) {
   return { level: 50, tapsSent: 5, guessRegistered: st2.guesses.length === 1 && st2.guesses[0] === st.answer, won: st2.over };
 }
 
-(async () => {
+module.exports = { decide, constraintGuess, solverGuess, KNOW, IG };
+if (require.main === module) (async () => {
   const browser = await H.launch();
   const findings = [];
   const out = { game: 'idiom-guess', testedLevels: TEST_LEVELS, timeCap: '120 s per attempt; attempts: clumsy 5, others 3', knowledge: KNOW, tiers: {}, findings: [] };
@@ -217,7 +242,7 @@ async function rapidInputProbe(browser) {
   TIER_LIST.forEach((t, i) => { out.tiers[t] = res[i]; });
   out.probe = await rapidInputProbe(browser);
   out.wallMs = Date.now() - t0;
-  out.rawFindings = findings;
+  out.rawFindings = findings; out.dropLog = dropLog; out.hangs = HANGS;
   await browser.close();
   fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
   console.log('probe', JSON.stringify(out.probe), 'wall', (out.wallMs / 1000).toFixed(0) + 's');
