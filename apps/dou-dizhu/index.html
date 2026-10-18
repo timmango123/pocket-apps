@@ -703,7 +703,7 @@ function sfx(k) {
 }
 function buzz(ms) { if (S.vib && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
 // ---------- layout ----------
-var W = 0, H = 0, DPR = 1, SA = { t: 0, r: 0, b: 0, l: 0 }, LAY = {}, bgDirty = true, bgCanvas = document.createElement('canvas');
+var W = 0, H = 0, DPR = 1, SA = { t: 0, r: 0, b: 0, l: 0 }, LAY = {}, bgDirty = true, bgMode = null, bgCanvas = document.createElement('canvas');
 function layout() {
   W = innerWidth; H = innerHeight; DPR = Math.min(2, window.devicePixelRatio || 1);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
@@ -861,8 +861,8 @@ function drawBg() {
   for (var i = 0; i < 9; i++) { var y = H * 0.1 + i * H * 0.1; g.strokeStyle = dark ? '#e3b341' : '#9c7a2a'; g.lineWidth = 1; g.beginPath(); for (var x = 0; x <= W; x += 6) g.lineTo(x, y + Math.sin(x * 0.05 + i) * 2.5); g.stroke(); }
   g.restore();
   // felt table: an oval in landscape, a rounded table in portrait (it spans both rows of played cards)
-  var L = LAY, tx = L.cx, ty = L.cy, rx, ry, T = L.table;
-  if (T) { rx = T.w / 2; ry = T.h / 2; ty = T.y + ry; } else { rx = W * 0.34; ry = Math.max(40, (L.myY - L.oppY) * 0.5 + L.tH); }
+  var L = LAY, tx = L.cx, ty = L.cy, rx, ry, T = demo ? null : L.table; // the title screen keeps a small oval under the sample play
+  if (T) { rx = T.w / 2; ry = T.h / 2; ty = T.y + ry; } else if (L.land) { rx = W * 0.34; ry = Math.max(40, (L.myY - L.oppY) * 0.5 + L.tH); } else { rx = Math.min(W * 0.47, 260); ry = Math.min(rx * 0.8, (L.myY - L.oppY) * 0.52 + L.tH * 0.6); }
   var cr = T ? Math.min(46, rx * 0.3, ry * 0.4) : 0;
   function shape(ins, dy) { g.beginPath(); if (T) rr(g, -rx + ins, -ry + ins + (dy || 0), (rx - ins) * 2, (ry - ins) * 2, Math.max(4, cr - ins)); else g.ellipse(0, dy || 0, rx - ins, ry - ins, 0, 0, 7); }
   g.save(); g.translate(tx, ty);
@@ -945,7 +945,7 @@ function dealAnim(done) {
 // ---------- flow ----------
 function newGame(seed) {
   if (seed == null) { seed = ((Date.now() ^ (Math.random() * 1e9)) >>> 0); var q = new URLSearchParams(location.search); if (q.get('seed')) seed = +q.get('seed'); }
-  if (ST.coins <= 0) { ST.coins += 1000; ST.bailouts = (ST.bailouts || 0) + 1; saveST(); setTimeout(function () { toast('金幣見底，補發 1,000 救濟金'); }, 400); }
+  if (ST.coins <= 0) { var aid = 1000 - ST.coins; ST.coins = 1000; ST.bailouts = (ST.bailouts || 0) + 1; saveST(); setTimeout(function () { toast('金幣見底，補發 ' + fmtCoin(aid) + ' 救濟金，從 1,000 重新開始'); }, 400); }
   demo = false; G = new DZ.Game({ seed: seed });
   flying = []; emote = [null, null, null]; hand = []; sel = {}; disp = {}; hintList = null; bottomShown = false; lastRes = null; centerMsg = ''; thinking = -1; busy = false; turnToken++; plays = [null, null, null]; trickNo = 0; sweepT = 0; multT = 0; lastMult = 1;
   phase = 'deal'; showHud(true); updateInfo(); setBar(); updateButtons();
@@ -1314,6 +1314,7 @@ function frame() {
   if (!running) return;
   rafId = requestAnimationFrame(frame);
   var t = now(), dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+  if (bgMode !== demo) { bgMode = demo; bgDirty = true; }
   if (bgDirty) drawBg();
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(bgCanvas, 0, 0);
   var sx = 0, sy = 0; if (shake > 0) { sx = (Math.random() - 0.5) * shake; sy = (Math.random() - 0.5) * shake; shake = Math.max(0, shake - dt * 30); }

@@ -183,6 +183,21 @@ ok(DZ.suggestBid(cs('x X 2 2 2 A A A K K K Q Q J 10 9 8'), 3, 1) === 0, 'cannot 
   // leading with 2 hands where one is unbeatable: play the unbeatable one first? either order wins; must not pass
   g.hands[f2] = cs('x X 3 4 5 6 7'); g.lead = null; g.turn = f2; r = DZ.think(DZ.aiView(g, f2), 2); ok(r.cards && (r.cards.length === 5 || r.cards.length === 2), 'two hands left: leads one of them');
 }
+// --- difficulty levels: only the opponents get weaker; levels are ordered ---
+{
+  const g = new DZ.Game({ seed: 21 }); ok(DZ.aiLevel(g, 1, 0) === 0, 'bidding uses the chosen level');
+  while (g.phase === 'bid') g.doBid(g.turn, g.turn === 1 ? 3 : 0);
+  ok(g.landlord === 1 && DZ.aiLevel(g, 1, 0) === 0 && DZ.aiLevel(g, 2, 0) === 2, 'human farmer: landlord AI at the chosen level, partner AI at full strength');
+  const h = new DZ.Game({ seed: 22 }); while (h.phase === 'bid') h.doBid(h.turn, h.turn === 0 ? 3 : 0);
+  ok(h.landlord === 0 && DZ.aiLevel(h, 1, 1) === 1 && DZ.aiLevel(h, 2, 1) === 1, 'human landlord: both AIs at the chosen level');
+  // AI (strong, seat 0 stand-in) vs AIs of each level: the weaker the opponents, the more seat 0 wins
+  const wins = [0, 1, 2].map(lv => { let w = 0, n = 0; for (let i = 0; i < 150; i++) { const q = new DZ.Game({ seed: 7000 + i }); let k = 0;
+    while (q.phase === 'bid') { const p = q.turn; q.doBid(p, p === 0 ? 0 : DZ.think(DZ.aiView(q, p), k++, lv).bid); }
+    if (q.phase !== 'play') continue;
+    while (q.phase === 'play' && k < 600) { const p = q.turn; let c = DZ.think(DZ.aiView(q, p), (q.seed ^ (q.log.length * 2654435761)) >>> 0, p === 0 ? 2 : DZ.aiLevel(q, p, lv)).cards; if (!c && !q.lead) c = DZ.hints(q.hands[p], null)[0].cards; const e = c ? q.play(p, c) : q.pass(p); if (e) { ok(false, 'level ' + lv + ' illegal move: ' + e); break; } k++; }
+    if (q.phase === 'end') { n++; if (q.result().deltas[0] > 0) w++; } } return w / n; });
+  ok(wins[0] > wins[1] && wins[1] > wins[2], 'levels are ordered: seat 0 wins ' + wins.map(x => (x * 100).toFixed(0) + '%').join(' > '));
+}
 // --- snapshot round trip ---
 { const g = new DZ.Game({ seed: 11 }); g.doBid(g.turn, 2); g.doBid(g.turn, 0); g.doBid(g.turn, 0); const h = DZ.Game.restore(g.snapshot()); ok(h.phase === 'play' && h.landlord === g.landlord && h.hands[h.landlord].length === 20 && typeof h.play === 'function', 'snapshot/restore keeps state and methods'); }
 console.log(`${pass} passed, ${fail} failed`);

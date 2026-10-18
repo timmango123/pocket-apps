@@ -57,6 +57,7 @@ async function playRound(page, cdp, opts) { // returns the round result; takes t
     for (const c of r.cards) { const p = await page.evaluate(c => window.__dz.cardCenter(c), c); await touch(cdp, p.x, p.y); await sleep(70); }
     const s = (await info(page)).sel;
     if (s.slice().sort((a, b) => a - b).join() !== r.cards.slice().sort((a, b) => a - b).join()) { for (const c of s) { const p = await page.evaluate(c => window.__dz.cardCenter(c), c); await touch(cdp, p.x, p.y); await sleep(60); } continue; }
+    if (!opts.tagChecked) { const tg = await page.textContent('#myTag'); assert(tg.includes(inf.landlord === 0 ? '地主' : '農民') && tg.includes(String(inf.hand.length)), 'role and card count shown in the action bar: ' + tg); opts.tagChecked = true; }
     if (opts.cover && !shot && inf.hand.length <= 14 && inf.hand.length >= 8) {
       await page.setViewportSize({ width: 390, height: 520 }); await sleep(500);
       await page.screenshot({ path: path.join(OUT, 'cover-390x520.png') }); shot = true; opts.onShot && opts.onShot();
@@ -82,6 +83,10 @@ async function playRound(page, cdp, opts) { // returns the round result; takes t
     assert(small.length === 0, `${vp.width}x${vp.height}: tap targets >= 44px ${JSON.stringify(small)}`);
     const lay = await page.evaluate(() => { const L = window.__dz.layout(); const a = document.getElementById('act').getBoundingClientRect(); return { actBottom: a.bottom, handY: L.handY, oppBottom: L.oppY + L.tH / 2, myTop: L.myY - L.tH / 2, actTop: a.top }; });
     assert(lay.actBottom <= lay.handY + 1 && lay.oppBottom < lay.myTop && lay.myTop < lay.actTop, `${vp.width}x${vp.height}: table rows do not overlap (opp ${Math.round(lay.oppBottom)} < mine ${Math.round(lay.myTop)} < bar ${Math.round(lay.actTop)})`);
+    if (vp.height > vp.width) { // portrait: both rows of played cards sit on the felt table
+      const t = await page.evaluate(() => { const L = window.__dz.layout(); return { T: L.table, opp: [L.oppY - L.tH / 2, L.oppY + L.tH / 2], my: [L.myY - L.tH / 2, L.myY + L.tH / 2] }; });
+      assert(t.T && t.opp[0] >= t.T.y && t.my[1] <= t.T.y + t.T.h, `${vp.width}x${vp.height}: played cards land on the table (${Math.round(t.T.y)}..${Math.round(t.T.y + t.T.h)})`);
+    }
     await page.screenshot({ path: path.join(OUT, `${vp.width}x${vp.height}-${scheme}.png`) });
     assert(ow <= 1 && errors.length === 0, `${vp.width}x${vp.height} ${scheme}: no overflow (${ow}px), no errors ${errors.join(' | ')}`);
     await ctx.close();
@@ -120,6 +125,10 @@ async function playRound(page, cdp, opts) { // returns the round result; takes t
   await tapSel(cdp, page, '#bMenu'); await sleep(200); assert((await info(page)).paused && (await info(page)).overlay === 'menu', 'menu pauses the game');
   await tapSel(cdp, page, '#mResume'); await sleep(200); assert(!(await info(page)).paused, 'resume');
   await page.screenshot({ path: path.join(OUT, '390x844.png') });
+  // broke: a new round tops the coins back up to 1,000
+  await page.evaluate(() => localStorage.setItem('dou-dizhu:v1:stats', JSON.stringify({ coins: -500, rounds: 3 })));
+  await page.reload(); await sleep(800); await tapSel(cdp, page, '#tNew'); await sleep(600);
+  assert((await info(page)).coins === 1000, 'out of coins: the next round starts again from 1,000 (' + (await info(page)).coins + ')');
   assert(errors.length === 0, 'no console errors during play: ' + errors.join(' | '));
   await ctx.close(); await browser.close(); srv.close();
   console.log(`${passed} passed, ${failed} failed`);

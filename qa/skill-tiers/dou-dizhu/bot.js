@@ -175,7 +175,7 @@ async function playRound(P, seed, tierId, wantL, log) {
     // hint button check once per round (all tiers press it at least once, like a curious human)
     if (!hintChecked && inf.lead && rng() < 0.6) {
       hintChecked = true; await P.tapSelector('#bHint'); run.hintTaps++; await H.sleep(120);
-      if (!(await info()).sel.length) { run.missedButtonTaps = (run.missedButtonTaps || 0) + 1; await P.tapSelector('#bHint'); run.hintTaps++; await H.sleep(120); } // a noisy tap can miss the 48px button; a human taps again
+      for (let k = 0; k < 2 && !(await info()).sel.length; k++) { run.missedButtonTaps = (run.missedButtonTaps || 0) + 1; if (k) { const b = await page.locator('#bHint').boundingBox(); await P.tap(b.x + b.width / 2, b.y + b.height / 2, { exact: true }); } else await P.tapSelector('#bHint'); run.hintTaps++; await H.sleep(120); } // a noisy tap can miss the 48px button; a human taps again, then aims
       const s = (await info()).sel, legalN = DZ.hints(inf.view.hand, inf.lead.ev).length;
       if (legalN && !(s.length && DZ.evaluate(s) && DZ.beats(DZ.evaluate(s), inf.lead.ev))) { run.errors.push('hint selected an illegal play'); log('hint-illegal', { seed, sel: s }); }
       if (!legalN && s.length) { run.errors.push('hint selected cards although nothing beats the lead'); log('hint-nothing', { seed, sel: s }); }
@@ -210,6 +210,7 @@ async function playRound(P, seed, tierId, wantL, log) {
       for (const c of sel) { const p = await page.evaluate(c => window.__dz.cardCenter(c), c); if (!p) continue; await P.tap(p.x, p.y, { exact: true }); await H.sleep(30); }
       if (inf.lead && DZ.hints(inf.view.hand, inf.lead.ev).length === 0) { await P.tapSelector('#bPass'); run.passes++; await H.sleep(120); continue; }
       await P.tapSelector('#bHint'); run.hintTaps++; run.hintFallbacks++; await H.sleep(100);
+      if (!(await info()).sel.length) { const b = await page.locator('#bHint').boundingBox(); await P.tap(b.x + b.width / 2, b.y + b.height / 2, { exact: true }); run.missedButtonTaps = (run.missedButtonTaps || 0) + 1; await H.sleep(100); } // missed the button: aim and tap again
       if (await page.locator('#bPlay').isDisabled()) { if (inf.lead) { await P.tapSelector('#bPass'); run.passes++; } else { run.errors.push('no legal play offered while leading'); log('lead-stuck', { seed, hand: inf.view.hand }); } await H.sleep(120); continue; }
     }
     const played = (await info()).sel; const pe = DZ.evaluate(played); if (pe && DZ.isBomb(pe)) run.bombsMine++;
