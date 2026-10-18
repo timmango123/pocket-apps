@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
-  ';return {mulberry32, chooseGrid, makeEdges, edgePts, piecePath, isEdgePiece, rotV, groupToWorld, worldToGroup, rotateGroupAbout, cellsOf, adjacentCells, canMerge, nearBoard, groupCenter, formatTime, serializeState, validSave};')();
+  ';return {mulberry32, chooseGrid, makeEdges, edgePts, piecePath, isEdgePiece, rotV, groupToWorld, worldToGroup, rotateGroupAbout, cellsOf, adjacentCells, canMerge, nearBoard, groupCenter, formatTime, serializeState, validSave, starK, starsFor, STAR3, STAR2};')();
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } }
 const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
@@ -117,6 +117,19 @@ const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
   const oob = JSON.parse(JSON.stringify(d)); oob.groups[0].pcs = [0, 12]; ok(!C.validSave(oob), 'out of range id rejected');
   const nan = JSON.parse(JSON.stringify(d)); nan.groups[0].x = 'x'; ok(!C.validSave(nan), 'non-numeric position rejected');
   const tray = JSON.parse(JSON.stringify(d)); tray.groups[0].tray = true; delete tray.groups[0].x; ok(C.validSave(tray), 'tray groups need no position');
+}
+// --- stars: the five skill tiers of qa/skill-tiers/photo-jigsaw land on 1★ / 2★ / 3★ (modelled seconds per piece ÷ k) ---
+{
+  ok(C.starK(12, false) === 1 && near(C.starK(24, false), 1.25) && near(C.starK(12, true), 1.3), 'star allowance k grows with piece count and rotation');
+  const tiers = { clumsy: [96, 275, 709, 1225, 109, 372, 954, 1509], casual: [43, 133, 327, 531, 66, 179, 423, 695], skilled: [22, 79, 169, 292, 34, 87, 226, 359], world: [17, 48, 110, 177, 24, 64, 142, 237], superhuman: [6, 14, 30, 46, 7, 17, 35, 58] };
+  const want = { clumsy: 1, casual: 2, skilled: 3, world: 3, superhuman: 3 }, sizes = [12, 30, 63, 99];
+  for (const [t, secs] of Object.entries(tiers)) secs.forEach((sec, i) => { const n = sizes[i % 4], rot = i >= 4; ok(C.starsFor(sec * 1000, n, rot) === want[t], `${t} ${n}${rot ? 'r' : ''} (${sec}s) gets ${want[t]}★`); });
+  ok(C.starsFor(12 * C.STAR3 * 1000 - 1, 12, false) === 3 && C.starsFor(12 * C.STAR3 * 1000 + 1, 12, false) === 2 && C.starsFor(12 * C.STAR2 * 1000 + 1, 12, false) === 1, 'star thresholds at the boundaries');
+}
+// --- save carries the picture size so a save is never applied to a different picture ---
+{
+  const d = C.serializeState({ img: { kind: 'photo', pid: 'p1' }, W: 512, H: 1280, cols: 2, rows: 3, seed: 1, groups: [{ pcs: [0, 1, 2, 3, 4, 5], x: 0, y: 0, rot: 0, locked: true }], trayOrder: [] });
+  ok(d.W === 512 && d.H === 1280 && d.img.pid === 'p1' && C.validSave(d), 'save records the photo id and the picture size');
 }
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

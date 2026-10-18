@@ -188,7 +188,12 @@ async function playRun(P, n, rot, seed) {
     // a human fixes the piece they just dropped before taking a new one
     if (loose.length) {
       const q = loose.find(x => x.bad) || loose[0];
-      if (q.bad) { await panToward(R, [q.x, q.y]); continue; }
+      if (q.bad) {
+        // zoomed in and a piece is off screen: a person zooms back out (two far-apart pieces may not fit one zoomed view)
+        const cm = (await G.state(page)).cam;
+        if (q.bad === 'off' && cm.s > cm.fit * 1.05) { const zo = (await G.buttons(page)).find(b => b.id === 'bZoomOut'); R.think(0.3); R.ev.zoomOuts = (R.ev.zoomOuts || 0) + 1; await R.act(() => tapAt(R, zo.x + zo.w / 2, zo.y + zo.h / 2)); await sleep(120); continue; }
+        await panToward(R, [q.x, q.y]); continue;
+      }
       // a piece placed on a wrong cell: notice it after a moment (the cell is wrong, it did not lock)
       R.think(0.3 * R.searchScale());
       pending.set(q.id, (pending.get(q.id) || 0) + 1);
@@ -215,10 +220,10 @@ async function playRun(P, n, rot, seed) {
   const winShown = st.won ? await page.isVisible('#win') : false;
   const spm = R.model / N / 1000;
   return Object.assign({ pieces: N, rot: !!rot, seed, cleared: st.won, locked: st.locked, winOverlay: winShown, modelSec: +(R.model / 1000).toFixed(1), gameSec: +(st.elapsed / 1000).toFixed(1), wallSec: +((Date.now() - t0) / 1000).toFixed(1),
-    stars: st.won ? (spm < 6 * starK(N, rot) ? 3 : spm < 14 * starK(N, rot) ? 2 : 1) : 0, gameStars: st.won ? await ev(page, () => document.querySelectorAll('#winStars .on').length) : 0, dragsPerPiece: +((R.ev.pulls + R.ev.corrections) / N).toFixed(2) }, R.ev, { notes: R.notes.slice(0, 12) });
+    stars: st.won ? (spm < 2.5 * starK(N, rot) ? 3 : spm < 5 * starK(N, rot) ? 2 : 1) : 0, gameStars: st.won ? await ev(page, () => document.querySelectorAll('#winStars .on').length) : 0, dragsPerPiece: +((R.ev.pulls + R.ev.corrections) / N).toFixed(2) }, R.ev, { notes: R.notes.slice(0, 12) });
 }
 
-// star thresholds as in the fixed game (s per piece < 6k = 3★, < 14k = 2★, k grows with piece count and rotation)
+// star thresholds as in the fixed game (s per piece < 2.5k = 3★, < 5k = 2★, k grows with piece count and rotation)
 const starK = (n, rot) => (1 + 0.25 * Math.log2(Math.max(1, n / 12))) * (rot ? 1.3 : 1);
 
 async function runTier(browser, tierId, idx) {
@@ -349,7 +354,7 @@ async function probes(browser) {
 
 (async () => {
   const browser = await H.launch();
-  const out = { game: 'photo-jigsaw', app: path.relative(path.resolve(__dirname, '../../..'), APP), sizes: SIZES, rotation: ROTS, pictures: PICS, model: 'modelled time = reaction + search/think time per action (virtual) + real duration of every touch gesture; stars from the fixed game formula (s per piece < 6k = 3★, < 14k = 2★, k = (1 + 0.25·log2(n/12))·(1.3 if rotation)) on modelled time', tiers: {} };
+  const out = { game: 'photo-jigsaw', app: path.relative(path.resolve(__dirname, '../../..'), APP), sizes: SIZES, rotation: ROTS, pictures: PICS, model: 'modelled time = reaction + search/think time per action (virtual) + real duration of every touch gesture; stars from the fixed game formula (s per piece < 2.5k = 3★, < 5k = 2★, k = (1 + 0.25·log2(n/12))·(1.3 if rotation)) on modelled time', tiers: {} };
   const t0 = Date.now();
   if (!args.includes('--probes-only')) for (let i = 0; i < TIER_LIST.length; i++) out.tiers[TIER_LIST[i]] = await runTier(browser, TIER_LIST[i], i);
   if (!args.includes('--no-probes')) out.probes = await probes(browser);

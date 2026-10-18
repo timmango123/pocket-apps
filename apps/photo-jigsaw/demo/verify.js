@@ -57,7 +57,7 @@ async function fullPlay(browser) {
   console.log('--- full play at 390x844 (light) ---');
   const { ctx, page, cdp, errors } = await newPage(browser, 390, 844, false);
   await page.screenshot({ path: path.join(OUT, 'title-390x844.png') });
-  check(await page.isVisible('#title') && (await page.locator('.gt').count()) === 6, 'title screen shows 5 built-in pictures + photo tile');
+  check(await page.isVisible('#title') && (await page.locator('.gt').count()) === 11 && (await page.locator('.gt[data-id="daily"] .day').count()) === 1, 'title screen shows 9 built-in pictures + the daily picture + photo tile');
   check((await page.textContent('#prevTag')).includes('= 30 片') && await page.evaluate(() => { const c = document.getElementById('prevCv'), d = c.getContext('2d').getImageData(320, 240, 1, 1).data; return d[3] > 0; }), 'title preview shows the picture with the real cut (6 × 5 = 30 片)');
   await tapSel(cdp, page, '.chip[data-n="12"]');
   await tapSel(cdp, page, '.gt[data-id="bay"]');
@@ -203,6 +203,146 @@ async function fullPlay(browser) {
   await ctx.close();
 }
 
+// release-review fixes: overlapping two-thumb taps, tray tap while a table piece is held, long press on the tray,
+// pause mid-drag, turning the phone, coach bubble vs buttons, hint toast vs board, photo swap vs save, long panoramas, daily picture
+async function fixes(browser) {
+  console.log('--- review fixes ---');
+  const { ctx, page, cdp, errors } = await newPage(browser, 390, 844, false);
+  // count every 90° turn (the game vibrates 6 ms once per turn) and log each touch's down/up time and travel, so the test
+  // can tell what the game should have done even when a loaded machine stretches the touches
+  await page.evaluate(() => { window.__rot = 0; navigator.vibrate = p => { if (p === 6) window.__rot++; return true; }; window.__pt = {};
+    addEventListener('pointerdown', e => { window.__pt[e.pointerId] = { t0: performance.now(), x: e.clientX, y: e.clientY, mv: 0 }; }, true);
+    addEventListener('pointermove', e => { const q = window.__pt[e.pointerId]; if (q) q.mv = Math.max(q.mv, Math.hypot(e.clientX - q.x, e.clientY - q.y)); }, true);
+    addEventListener('pointerup', e => { const q = window.__pt[e.pointerId]; if (q) q.t1 = performance.now(); }, true); });
+  const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+  await page.evaluate(() => window.__game.start('bay', 30, true, 7)); await sleep(500);
+  await page.evaluate(() => window.__game.scatter()); await sleep(250);
+  const loose = await page.evaluate(() => { const o = []; for (let id = 0; id < 30; id++) { const q = window.__game.pieceScreen(id); if (q && !q.locked) o.push(Object.assign({ id }, q)); } return o; });
+  const A = loose[0], B = loose.find(q => Math.hypot(q.x - A.x, q.y - A.y) > 120);
+  // two thumbs alternating at 8/s, the next one landing 30 ms before the previous lifts (CDP touchEnd lists the lifted point)
+  {
+    await page.evaluate(() => { window.__rot = 0; window.__pt = {}; });
+    const f = [{ x: A.x, y: A.y, id: 1 }, { x: B.x, y: B.y, id: 2 }];
+    await T('touchStart', [f[0]]); await sleep(95);
+    for (let i = 1; i < 12; i++) { const cur = f[i % 2], prev = f[(i + 1) % 2]; await T('touchStart', [prev, cur]); await sleep(30); await T('touchEnd', [prev]); await sleep(95); }
+    await T('touchEnd', [f[1]]); await sleep(300);
+    const n = await page.evaluate(() => window.__rot), d = await page.evaluate(() => window.__game.dbg()), cam = await page.evaluate(() => window.__game.state().cam);
+    // every one of these touches overlapped the other thumb, so each is a tap if it lasted < 700 ms (what a loaded machine may stretch)
+    const exp = await page.evaluate(() => Object.values(window.__pt).filter(q => q.t1 && q.t1 - q.t0 < 700 && q.mv <= 8).length);
+    check(n === exp && exp >= 8 && !d.drag && !d.pan && !d.pinch && d.pointers.length === 0, 'overlapping two-thumb taps (30 ms overlap): ' + n + ' turns for ' + exp + ' taps' + (exp < 12 ? ' (' + (12 - exp) + ' held > 700 ms by machine load)' : '') + ', no pinch, nothing left hanging');
+    check(Math.abs(cam.s - cam.fit) < 1e-6, 'overlapping taps never zoom the table');
+  }
+  // a real pinch still zooms: second finger lands, both move apart
+  {
+    const c0 = (await page.evaluate(() => window.__game.state())).cam.s;
+    await T('touchStart', [{ x: 150, y: 330, id: 1 }]); await sleep(40); await T('touchStart', [{ x: 150, y: 330, id: 1 }, { x: 240, y: 330, id: 2 }]);
+    for (let i = 1; i <= 8; i++) { await sleep(16); await T('touchMove', [{ x: 150 - i * 8, y: 330, id: 1 }, { x: 240 + i * 8, y: 330, id: 2 }]); }
+    await T('touchEnd', [{ x: 240 + 64, y: 330, id: 2 }]); await sleep(30); await T('touchEnd', [{ x: 150 - 64, y: 330, id: 1 }]); await sleep(150);
+    const c1 = (await page.evaluate(() => window.__game.state())).cam.s;
+    check(c1 > c0 * 1.3, 'two fingers moving apart still pinch-zoom (' + (c1 / c0).toFixed(2) + 'x)');
+    await tapSel(cdp, page, '#bZoomOut'); await tapSel(cdp, page, '#bZoomOut'); await tapSel(cdp, page, '#bZoomOut');
+  }
+  // tray tap with the other thumb while a table piece is held
+  {
+    const q = await page.evaluate(id => window.__game.pieceScreen(id), A.id);
+    const tr = (await page.evaluate(() => window.__game.trayInfo())).find(t => t.box && !t.box.cut);
+    await T('touchStart', [{ x: q.x, y: q.y, id: 1 }]); await sleep(80);
+    await T('touchStart', [{ x: q.x, y: q.y, id: 1 }, { x: tr.box.x + 40, y: tr.box.y + 40, id: 2 }]); await sleep(70);
+    await T('touchEnd', [{ x: tr.box.x + 40, y: tr.box.y + 40, id: 2 }]); await sleep(900);
+    await T('touchEnd', [{ x: q.x, y: q.y, id: 1 }]); await sleep(150);
+    const r1 = (await page.evaluate(id => window.__game.trayInfo().find(t => t.id === id), tr.id)).rot, q1 = await page.evaluate(id => window.__game.pieceScreen(id), A.id);
+    check(r1 === (tr.rot + 1) % 4, 'tray tap registers while the other thumb holds a table piece');
+    check(q1.rot === q.rot, 'the table piece held for ~1 s is not turned');
+  }
+  // long press on a tray piece (1 s, no movement) turns nothing, like on the table
+  {
+    const tr = (await page.evaluate(() => window.__game.trayInfo())).find(t => t.box && !t.box.cut);
+    await T('touchStart', [{ x: tr.box.x + 40, y: tr.box.y + 40 }]); await sleep(1000); await T('touchEnd', []); await sleep(150);
+    const r1 = (await page.evaluate(id => window.__game.trayInfo().find(t => t.id === id), tr.id)).rot;
+    check(r1 === tr.rot, 'long press on a tray piece does not turn it');
+    let ok2 = false;
+    for (let k = 0; k < 3 && !ok2; k++) { // retried only when machine load stretched the tap past 400 ms
+      await page.evaluate(() => { window.__pt = {}; }); const r0 = (await page.evaluate(id => window.__game.trayInfo().find(t => t.id === id), tr.id)).rot;
+      await tap(cdp, tr.box.x + 40, tr.box.y + 40); await sleep(200);
+      const held = await page.evaluate(() => Object.values(window.__pt).map(q => q.t1 - q.t0)[0]);
+      ok2 = (await page.evaluate(id => window.__game.trayInfo().find(t => t.id === id), tr.id)).rot === (r0 + 1) % 4;
+      if (!ok2 && held < 400) break;
+    }
+    check(ok2, 'a short tap on a tray piece still turns it');
+  }
+  // opening the menu mid-drag ends the drag: the piece no longer follows the finger
+  {
+    const q = await page.evaluate(id => window.__game.pieceScreen(id), B.id);
+    await T('touchStart', [{ x: q.x, y: q.y }]); for (let i = 1; i <= 4; i++) { await sleep(16); await T('touchMove', [{ x: q.x + i * 5, y: q.y }]); }
+    await page.keyboard.press('Escape'); await sleep(100);
+    const during = await page.evaluate(id => window.__game.pieceScreen(id), B.id);
+    for (let i = 1; i <= 6; i++) { await sleep(16); await T('touchMove', [{ x: q.x + 20 + i * 15, y: q.y }]); } await T('touchEnd', []); await sleep(100);
+    const after = await page.evaluate(id => window.__game.pieceScreen(id), B.id), d = await page.evaluate(() => window.__game.dbg());
+    check(await page.isVisible('#pause') && Math.abs(after.x - during.x) < 1 && !d.drag, 'menu opened mid-drag ends the drag (piece stays put)');
+    await tapSel(cdp, page, '#pResume');
+  }
+  // turning the phone: a loose piece parked above the board stays on screen
+  {
+    const v = await page.evaluate(() => window.__game.view()), q = await page.evaluate(id => window.__game.pieceScreen(id), A.id);
+    await touchDrag(cdp, line([q.x, q.y], [v.left + v.width / 2, v.top + 40], 10)); await sleep(150);
+    const fit0 = (await page.evaluate(() => window.__game.state())).cam.fit;
+    await page.setViewportSize({ width: 844, height: 390 });
+    for (let k = 0; k < 40 && (await page.evaluate(() => window.__game.state())).cam.fit === fit0; k++) await sleep(100); // wait for the resize event
+    await sleep(200);
+    const bad = await page.evaluate(() => { const v = window.__game.view(), s = window.__game.state(), out = []; for (let id = 0; id < s.count; id++) { const q = window.__game.pieceScreen(id); if (q && !q.locked && (q.x < v.left || q.x > v.left + v.width || q.y < v.top || q.y > v.top + v.height)) out.push(id); } return out; });
+    check(bad.length === 0, 'after turning to 844x390 every loose piece is on screen' + (bad.length ? ' (off: ' + bad.join(',') + ')' : ''));
+    await page.setViewportSize({ width: 390, height: 844 }); await sleep(300);
+  }
+  // first-ever game: the coach bubble clears the zoom buttons; the zoom hint sits over the HUD timer, not the board
+  for (const [w, h] of [[360, 640], [390, 844]]) {
+    const c2 = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    const p2 = await c2.newPage(); await p2.goto(APP); await sleep(400);
+    await p2.evaluate(() => window.__game.start('garden', 99, false, 3)); await sleep(900);
+    const r = await p2.evaluate(() => { const box = id => document.getElementById(id).getBoundingClientRect(), ov = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const c = box('coach'), t = box('toast'), v = window.__game.view(), hm = document.querySelector('.hmid').getBoundingClientRect();
+      return { coachShown: c.width > 0, coachClear: ['bZoomIn', 'bZoomOut', 'bScatter'].every(id => !ov(c, box(id))), toastShown: !document.getElementById('toast').classList.contains('hidden'), toastInHud: t.top >= hm.top - 1 && t.bottom <= hm.bottom + 1, toastOffBoard: t.bottom <= v.top + 1 }; });
+    check(r.coachShown && r.coachClear, `${w}x${h}: first-game coach bubble does not cover the zoom or scatter buttons`);
+    check(r.toastShown && r.toastInHud && r.toastOffBoard, `${w}x${h}: zoom hint shows over the HUD timer, not over the board`);
+    await c2.close();
+  }
+  // photo puzzle in progress, then another photo is picked: 繼續 still resumes the first photo with its own cut
+  {
+    const mk = (w, h, col) => page.evaluate(a => { const c = document.createElement('canvas'); c.width = a[0]; c.height = a[1]; const g = c.getContext('2d'); g.fillStyle = a[2]; g.fillRect(0, 0, a[0], a[1]); g.fillStyle = '#fff'; for (let i = 0; i < 40; i++) g.fillRect(i * 37 % a[0], i * 53 % a[1], 20, 20); return c.toDataURL('image/png'); }, [w, h, col]);
+    const tall = path.join(OUT, 'tmp-tall.png'), wide = path.join(OUT, 'tmp-wide.png');
+    fs.writeFileSync(tall, Buffer.from((await mk(300, 2400, '#2a9d8f')).split(',')[1], 'base64'));
+    fs.writeFileSync(wide, Buffer.from((await mk(1200, 900, '#e76f51')).split(',')[1], 'base64'));
+    await tapSel(cdp, page, '#bMenu'); await tapSel(cdp, page, '#pQuit');
+    await page.setInputFiles('#fileInput', tall); await sleep(1200);
+    const tile = await page.evaluate(() => { const c = document.querySelector('#gtPhoto canvas'); return !!c; });
+    await tapSel(cdp, page, '.chip[data-n="99"]'); await tapSel(cdp, page, '#bStart'); await sleep(600);
+    const st0 = await page.evaluate(() => window.__game.state()), v0 = await page.evaluate(() => window.__game.view());
+    check(tile && st0.cols * 2.5 >= st0.rows * 0.9 && v0.cellW >= 24, '1:8 photo is cropped to the middle: 99 pieces are ' + st0.cols + 'x' + st0.rows + ', cells ' + v0.cellW.toFixed(0) + 'px');
+    await page.evaluate(() => { for (let i = 0; i < 5; i++) window.__game.place(i); window.__game.save(); });
+    await tapSel(cdp, page, '#bMenu'); await tapSel(cdp, page, '#pQuit');
+    await page.setInputFiles('#fileInput', wide); await sleep(1200);
+    const cont = await page.evaluate(() => !document.getElementById('contSec').classList.contains('hidden') && document.getElementById('contName').textContent);
+    check(cont && cont.startsWith('上一張照片'), '繼續 after picking a new photo names the earlier photo (' + cont + ')');
+    await page.reload(); await sleep(1200);
+    const cdp3 = await ctx.newCDPSession(page);
+    await tapSel(cdp3, page, '#bContinue'); await sleep(600);
+    const st1 = await page.evaluate(() => window.__game.state()), v1 = await page.evaluate(() => window.__game.view());
+    check(st1 && st1.cols === st0.cols && st1.rows === st0.rows && st1.locked === 5 && Math.abs(v1.boardW / v1.boardH - v0.boardW / v0.boardH) < 0.01, 'after reload 繼續 restores the first photo puzzle with its own picture and 5 placed pieces');
+    await tapSel(cdp3, page, '#bMenu'); await tapSel(cdp3, page, '#pQuit');
+    await tapSel(cdp3, page, '.chip[data-n="12"]'); await tapSel(cdp3, page, '#gtPhoto'); await sleep(300);
+    await tapSel(cdp3, page, '#bStart'); await sleep(500);
+    const st2 = await page.evaluate(() => window.__game.state());
+    check(st2 && st2.cols > st2.rows, 'starting a puzzle now uses the new (landscape) photo');
+    fs.unlinkSync(tall); fs.unlinkSync(wide);
+    // daily picture: selectable and playable
+    await tapSel(cdp3, page, '#bMenu'); await tapSel(cdp3, page, '#pQuit');
+    await tapSel(cdp3, page, '.gt[data-id="daily"]'); await tapSel(cdp3, page, '#bStart'); await sleep(500);
+    const hn = await page.textContent('#hName');
+    check(/今日風景 \d+\/\d+/.test(hn), 'daily picture starts a puzzle named with today\'s date (' + hn + ')');
+  }
+  check(errors.length === 0, 'no page errors in the fix checks' + (errors.length ? ': ' + errors.join(' | ') : ''));
+  await ctx.close();
+}
+
 async function sizes(browser) {
   for (const [w, h] of [[375, 500], [390, 610], [430, 740], [360, 640], [844, 390], [430, 932]]) for (const dark of (w === 844 || w === 360 || w === 430 && h === 932) ? [false] : [false, true]) {
     const { ctx, page, cdp, errors } = await newPage(browser, w, h, dark);
@@ -247,7 +387,7 @@ async function cover(browser) {
 
 (async () => {
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  try { await fullPlay(browser); await sizes(browser); await cover(browser); }
+  try { await fullPlay(browser); await fixes(browser); await sizes(browser); await cover(browser); }
   catch (e) { fails++; console.log('FAIL exception', e); }
   await browser.close();
   console.log(fails ? `VERIFY FAILED (${fails})` : 'VERIFY OK');
