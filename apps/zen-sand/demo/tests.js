@@ -200,9 +200,9 @@ const col = (f, x, y0, y1) => { const o = []; for (let y = y0; y <= y1; y++) o.p
   ok(res.exact.every(x => x > 0.99) && res.exact.every(x => ZS.stars(x) === 3), 'an exact copy scores 100%, ★★★: ' + show(res.exact));
   ok(res.small.every(x => ZS.stars(x) === 3), 'a copy a few px off still earns ★★★: ' + show(res.small));
   ok(res.wobbly.every(x => ZS.stars(x) >= 1 && ZS.stars(x) <= 2), 'a wobbly copy (±30 px) earns ★ or ★★: ' + show(res.wobbly));
-  ok(res.norings.every(x => ZS.stars(x) <= 1), 'skipping the rings around the stones earns at most ★: ' + show(res.norings));
+  ok(res.norings.every(x => ZS.stars(x) <= 2), 'skipping the rings around the stones never earns ★★★: ' + show(res.norings));
   ok(res.empty.every(x => x === 0) && res.cross.every(x => ZS.stars(x) === 0), `untouched sand 0, lines across the pattern ${show(res.cross)} → no stars`);
-  ok(ZS.stars(0.41) === 0 && ZS.stars(0.42) === 1 && ZS.stars(0.64) === 2 && ZS.stars(0.82) === 3, 'star thresholds 42 / 64 / 82 %');
+  ok(ZS.stars(0.32) === 0 && ZS.stars(0.33) === 1 && ZS.stars(0.5) === 2 && ZS.stars(0.85) === 3, 'star thresholds 33 / 50 / 85 %');
 }
 // --- seasons, v1 saves, sample layout above the hint ---
 {

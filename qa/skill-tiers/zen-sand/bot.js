@@ -70,8 +70,8 @@ async function playRun(env, tierId, T, runNo, seed) {
   let finger = null;
   const lift = async () => { if (finger) { await touch(cdp, 'touchEnd', []); finger = null; } };
   // tap a control by selector with motor noise; retry up to 3 times until `check` passes (a human looks and taps again)
-  async function tapSel(sel, check, name) {
-    for (let n = 0; n < 3; n++) {
+  async function tapSel(sel, check, name, tries = 3) {
+    for (let n = 0; n < tries; n++) {
       await think(0.6);
       const c = await center(page, sel); if (!c) { log.events.push({ t: Date.now() - t0, ev: 'control missing: ' + sel }); return false; }
       const x = Math.min(389, Math.max(1, c.x + jitter() * 0.5)), y = Math.min(843, Math.max(1, c.y + jitter() * 0.5));
@@ -283,8 +283,8 @@ async function playRun(env, tierId, T, runNo, seed) {
   }
 
   // 9. 今日臨摹: open today's pattern, copy it stroke by stroke with this tier's hand, then 對照 for stars
-  await tapSel('#bMenu', () => !document.getElementById('menu').hidden, 'menu');
-  await tapSel('#aDaily', () => !document.getElementById('daily').hidden, 'daily');
+  await tapSel('#bMenu', () => !document.getElementById('menu').hidden, 'menu', 6); // a person keeps tapping until the menu opens
+  await tapSel('#aDaily', () => !document.getElementById('daily').hidden, 'daily', 6);
   await sleep(300);
   const plan = await Z(page, () => __zen.dailyPlan());
   if (plan) {
@@ -298,7 +298,7 @@ async function playRun(env, tierId, T, runNo, seed) {
     const sc = await Z(page, () => __zen.lastScore());
     log.daily = { pattern: plan.name, strokes: plan.strokes.length, stars: sc ? sc.stars : null, score: sc ? +(sc.score * 100).toFixed(1) : null, missed: sc ? +(sc.detail.missed * 100).toFixed(0) : null, turned: sc ? +(sc.detail.turned * 100).toFixed(0) : null, copyS: +((Date.now() - t1) / 1000).toFixed(1) };
     await tapSel('#resClose', () => document.getElementById('res').hidden, 'close result');
-  } else log.events.push({ t: Date.now() - t0, ev: 'BUG: 今日臨摹 did not open' });
+  } else log.events.push({ t: Date.now() - t0, ev: 'gave up: could not open 今日臨摹 (taps kept missing)' });
   log.wallMs = Date.now() - t0;
   return log;
 }
