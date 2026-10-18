@@ -24,7 +24,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const tap = sel => page.evaluate(s => document.querySelector(s).click(), sel);
     const st = () => page.evaluate(() => { const s = window.__eco.st; return { fish: s.fish.length, food: s.food.length, light: s.light, nitrate: s.water.nitrate, plants: s.plants.length, cleaners: s.cleaners.length, t: s.t }; });
     ok(await page.isVisible('#intro'), `${w}x${h} ${scheme}: intro shown on first open`);
+    const ib = await page.evaluate(() => { const r = document.getElementById('bStart').getBoundingClientRect(), s = document.getElementById('bIntroSound').getBoundingClientRect(); return [r.top, r.bottom, s.bottom, s.height]; });
+    ok(ib[0] >= 0 && ib[1] <= h + 0.5 && ib[2] <= h + 0.5 && ib[3] >= 44, `${w}x${h} ${scheme}: 開始照顧 and the sound button are fully visible without scrolling ${JSON.stringify(ib.map(Math.round))}`);
     await tap('#bStart');
+    const clk = await page.evaluate(() => { const c = document.getElementById('clock'); return { full: c.scrollWidth <= c.clientWidth + 1, text: c.innerText }; });
+    ok(clk.full && /第 \d+ 天 \d\d:\d\d/.test(clk.text), `${w}x${h} ${scheme}: clock shown in full (${clk.text})`);
     const a = await st();
     ok(a.fish >= 17 && a.plants >= 7 && a.cleaners >= 5, `${w}x${h} ${scheme}: sample tank populated (${a.fish} fish)`);
     const ow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
@@ -60,6 +64,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (pt) {
       ok(shown && (await page.textContent('#card')).includes(pt.name), `${w}x${h} ${scheme}: touching a fish opens its card`);
       if (shown) { const cb = await page.evaluate(() => { const r = document.querySelector('#card').getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }); ok(cb[0] >= 0 && cb[1] >= 0 && cb[2] <= w + 0.5 && cb[3] <= h + 0.5, `${w}x${h} ${scheme}: card inside the viewport`); }
+      // the card never sits on the fish it describes: put that fish mid-tank, where there is least room, and reopen
+      const under = await page.evaluate(() => { const s = window.__eco.st, S = window.__eco.S(); const f = s.fish.find(x => x.size >= 1) || s.fish[0]; f.x = s.w / 2; f.y = (s.tp + s.h - s.fb) / 2; f.vx = f.vy = 0; window.__eco.showCard(f); const r = document.getElementById('card').getBoundingClientRect(), px = f.x * S, py = f.y * S; return px > r.left - 4 && px < r.right + 4 && py > r.top - 4 && py < r.bottom + 4; });
+      ok(!under, `${w}x${h} ${scheme}: card opens beside the fish, not on top of it`);
       if (w === 375 && scheme === 'dark') await page.screenshot({ path: path.join(OUT, 'shot-card-375.png') });
       if (w === 430 && scheme === 'light') await page.screenshot({ path: path.join(OUT, 'shot-card-430-light.png') });
       await tap('#cClose');

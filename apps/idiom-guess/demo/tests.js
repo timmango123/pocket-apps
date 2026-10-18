@@ -64,6 +64,14 @@ ok(IG.judge('目目目目', '一目了然').join('') === 'mhmm', 'repeated guess
 
 // --- scoring ---
 ok(IG.stars(1) === 3 && IG.stars(2) === 3 && IG.stars(3) === 2 && IG.stars(4) === 2 && IG.stars(5) === 1 && IG.stars(6) === 1, 'stars 3/2/1 by tries');
+ok([1, 2, 3, 4, 5].map(t => IG.stars(t, 5)).join('') === '33211' && [1, 2, 3, 4].map(t => IG.stars(t, 4)).join('') === '3321', 'star thresholds follow the number of chances (5: 3/3/2/1/1, 4: 3/3/2/1)');
+{ // decoys: from level 26 every tray (all retry variants) also spells a second real idiom sharing characters with the answer
+  let tot = 0, dec = 0, early = 0;
+  for (let n = 1; n <= 100; n++) for (let k = 0; k < 6; k++) { const c = IG.levelConfig(n), w = IG.levelIdiom(n, k).w, t = IG.buildTray(w, c.tray, IG.levelSeed(n, k), c.confuse);
+    const others = IG.LIST.filter(x => x.w !== w && x.w.split('').every(ch => t.includes(ch)) && x.w.split('').some(ch => w.includes(ch)));
+    if (c.confuse) { tot++; if (others.length) dec++; } else if (others.length) early++; }
+  ok(dec / tot >= 0.95, 'decoy idiom in ' + dec + '/' + tot + ' trays from level 26 (was 33 of 600)');
+  ok(true, 'levels 1–25 trays with a decoy by chance: ' + early); }
 ok(IG.reward(1, false) === 35 && IG.reward(6, false) === 10 && IG.reward(1, true) === 55 && IG.reward(4, false, 4) === 10 && IG.reward(1, false, 4) === 25, 'reward 10 + 5 per spare try, +20 for daily');
 ok(IG.COST.clue === 10 && IG.COST.strike === 15 && IG.COST.reveal === 25, 'hint costs 10/15/25');
 ok(IG.ATTEMPTS === 6 && IG.LEVELS === 100, 'six attempts, 100 levels');

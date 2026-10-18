@@ -91,6 +91,15 @@ class Keeper {
     if (ok) this.log.actions[add ? 'add' : 'remove']++;
     return ok;
   }
+  // the 繁殖 開/關 switch at the top of the 生物 sheet
+  async setBreed(off) {
+    if (!await this.openLife()) return false;
+    const sel = 'button[data-breed="' + (off ? 'off' : 'on') + '"]';
+    let ok = false;
+    if (await this.bringIntoView(sel)) { const on = await this.page.evaluate(s => document.querySelector(s).getAttribute('aria-pressed') === 'true', sel); ok = on || await this.tap(sel); }
+    await this.closeSheet(); if (ok) this.log.actions.breed = (this.log.actions.breed || 0) + 1;
+    return ok;
+  }
   // what a human reads
   async hud() { return this.page.evaluate(() => { const b = id => { const e = document.getElementById(id); return e ? (e.classList.contains('bad') ? 2 : e.classList.contains('on') ? 1 : 0) : 0; }; return { q: document.getElementById('qlab').textContent, sub: document.getElementById('qsub').textContent, light: document.querySelectorAll('#lightDots i.on').length, clock: document.getElementById('clockT').textContent, feedBadge: b('feedBadge'), waterBadge: b('waterBadge') }; }); }
   async stats() {
@@ -174,7 +183,9 @@ async function act(K, T, rnd, s, log, read) {
     if (pinches) await K.feed(Math.min(pinches, 4));
     if (st.nitrate > (W ? 30 : 40) || st.ammonia > (W ? 0.15 : 0.2) || st.algae > (W ? 35 : 45)) await K.water();
     const lightTarget = st.algae > 30 ? 1 : st.algae < 6 ? 3 : 2; await K.setLight(lightTarget);
-    if (st.load > (W ? 18 : 20)) await K.lifeAction('guppy', 'fish', false);
+    const breedOff = await K.page.evaluate(() => { const b = document.querySelector('button[data-breed="off"]'); return b ? b.getAttribute('aria-pressed') === 'true' : false; });
+    if (W && st.load > 19 && !breedOff) await K.setBreed(true); else if (W && st.load < 15 && breedOff) await K.setBreed(false);
+    if (st.load > (W ? 21 : 20)) await K.lifeAction('guppy', 'fish', false);
     if (W && st.fish > 24) await K.lifeAction('guppy', 'fish', false);
     if (st.algae > 30 && rnd() < 0.5) await K.lifeAction('oto', 'fish', true);
     if (W && st.detritus > 1.2) await K.lifeAction('shrimp', 'cleaner', true);
@@ -184,7 +195,9 @@ async function act(K, T, rnd, s, log, read) {
     if (need > 0) await K.feed(Math.ceil(need / fullState.pinch));
     if (fullState.w.nitrate > 30 || fullState.w.ammonia > 0.15 || fullState.w.algae > 30) await K.water();
     await K.setLight(fullState.w.algae > 20 ? 1 : fullState.w.algae < 8 ? 3 : 2);
-    if (fullState.load > 18 || fullState.fish > 24) await K.lifeAction(fullState.guppies > 4 ? 'guppy' : 'neon', 'fish', false);
+    const off = await K.page.evaluate(() => !!window.__eco.st.breedOff);
+    if (fullState.load > 18 && !off) await K.setBreed(true); else if (fullState.load < 15 && off) await K.setBreed(false);
+    if (fullState.load > 21 || fullState.fish > 26) await K.lifeAction(fullState.guppies > 4 ? 'guppy' : 'neon', 'fish', false);
     if (fullState.w.algae > 25 && fullState.otos < 3) await K.lifeAction('oto', 'fish', true);
     if (fullState.det > 1 && fullState.shrimp < 6) await K.lifeAction('shrimp', 'cleaner', true);
   }
@@ -196,7 +209,8 @@ async function main() {
   let results = fs.existsSync(resFile) ? JSON.parse(fs.readFileSync(resFile, 'utf8')) : { game: 'eco-aquarium', tiers: {}, findings: [] };
   const AFTER = args.includes('--after');
   results.harness = results.harness || { days: DAYS, frameMs: FRAME, speed: '4× (menu)', viewport: '390x844 @2x touch', date: new Date().toISOString().slice(0, 10) };
-  const dest = AFTER ? (results.afterFix = results.afterFix || { tiers: {} }).tiers : results.tiers;
+  const TAG = (args.find(a => a.startsWith('--tag=')) || '').slice(6) || (AFTER ? 'afterFix' : '');
+  const dest = TAG ? (results[TAG] = results[TAG] || { tiers: {} }).tiers : results.tiers;
   const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   for (const tierId of Object.keys(TIERS)) {
     if (onlyTiers.length && !onlyTiers.includes(tierId)) continue;

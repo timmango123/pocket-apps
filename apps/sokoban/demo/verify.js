@@ -6,7 +6,7 @@ const fs = require('fs'), path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const APP = path.resolve(__dirname, '..', 'index.html'), OUT = __dirname;
 const html = fs.readFileSync(APP, 'utf8');
-const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return {DX,DY,DCH,parseLevel,initState,tryMove,replay,pathTo,nb};')();
+const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return {DX,DY,DCH,parseLevel,initState,tryMove,replay,pathTo,nb,reach};')();
 const LEVELS = new Function(html.match(/\/\*LEVELS-START\*\/([\s\S]*?)\/\*LEVELS-END\*\//)[1] + ';return LEVELS;')();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
@@ -26,7 +26,7 @@ async function tap(cdp, page, sel) { const b = await page.locator(sel).boundingB
 async function idle(page) { for (let k = 0; k < 300; k++) { const st = await page.evaluate(() => window.__game.state()); if (!st.animating) return st; await sleep(20); } return page.evaluate(() => window.__game.state()); }
 function newPage(browser, w, h, dark, touch) {
   return browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: !!touch, isMobile: !!touch, colorScheme: dark ? 'dark' : 'light' }).then(async ctx => {
-    const page = await ctx.newPage(), errors = [];
+    const page = await ctx.newPage(), errors = []; page.setDefaultTimeout(120000); // shared CI boxes can be slow to capture
     page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     await page.goto('file://' + APP); await sleep(400);
     return { ctx, page, errors };
@@ -192,6 +192,82 @@ function newPage(browser, w, h, dark, touch) {
     await page.screenshot({ path: path.join(OUT, 'shot-desktop-level100.png') });
     ok(errors.length === 0, 'desktop: no page errors ' + errors.join(' | '));
     await ctx.close();
+  }
+  // 3b) touch helpers for long levels: crate select + auto push, aim/confirm ring on small cells, hint, demo,
+  //     idle redraw stop, resume after reload, single button on the last win card, level-set update notice
+  {
+    const { ctx, page, errors } = await newPage(browser, 390, 844, false, true);
+    const cdp = await ctx.newCDPSession(page);
+    await page.evaluate(() => localStorage.setItem('sokoban:v1:help', 'true'));
+    await page.click('#tPlay'); await sleep(300);
+    // auto push: pick a crate that has a destination dot 2+ cells away
+    let done = false;
+    for (const n of [30, 40, 45, 50, 60]) {
+      await page.evaluate(n => window.__game.go(n), n); await sleep(300);
+      const L = C.parseLevel(LEVELS[n - 1].m); const boxes = []; for (let k = 0; k < L.n; k++) if (L.box0[k]) boxes.push(k);
+      for (const b of boxes) {
+        const c = await page.evaluate(k => window.__game.cellCenter(k), b); await tapXY(cdp, c.x, c.y); await sleep(150);
+        const selI = await page.evaluate(() => window.__game.selected());
+        if (!selI) continue;
+        const far = selI.dests.find(t => Math.abs(t % L.w - b % L.w) + Math.abs(((t / L.w) | 0) - ((b / L.w) | 0)) >= 2);
+        if (far == null) { await tapXY(cdp, c.x, c.y); await sleep(100); continue; }
+        const t = await page.evaluate(k => window.__game.cellCenter(k), far); await tapXY(cdp, t.x, t.y); await sleep(100); await idle(page);
+        const snap = await page.evaluate(() => window.__game.snap()), st = await page.evaluate(() => window.__game.state());
+        ok(snap.box.includes(far) && !snap.box.includes(b) && st.moves > 1, `level ${n}: tap crate, tap a dot -> crate pushed there (${st.moves} moves, ${st.pushes} pushes)`);
+        await tap(cdp, page, '#bUndo'); await sleep(100); await idle(page);
+        ok((await page.evaluate(() => window.__game.state())).moves === 0, 'one undo takes back the whole auto push');
+        done = true; break;
+      }
+      if (done) break;
+    }
+    ok(done, 'found a crate to auto-push');
+    // small cells (level 100 at 390 wide): first tap aims, second tap goes
+    await page.evaluate(() => window.__game.go(100)); await sleep(300);
+    const rect = await page.evaluate(() => window.__game.boardRect());
+    ok(rect.s < 36, 'level 100 cells are small at 390 wide (' + rect.s + ' px)');
+    const L100 = C.parseLevel(LEVELS[99].m), S100 = C.initState(L100), R = C.reach(L100, S100);
+    let far = -1; for (let k = 0; k < L100.n; k++) if (R.dist[k] >= 4 && (far < 0 || R.dist[k] > R.dist[far])) far = k;
+    const fc = await page.evaluate(k => window.__game.cellCenter(k), far);
+    await tapXY(cdp, fc.x, fc.y); await sleep(150);
+    ok((await page.evaluate(() => window.__game.pending())) === far && (await page.evaluate(() => window.__game.state())).moves === 0, 'first tap on a small cell only aims (ring shown)');
+    await tapXY(cdp, fc.x + rect.s * 0.6, fc.y); await sleep(100); await idle(page);
+    ok((await page.evaluate(() => window.__game.snap())).p === far, 'second tap near the ring walks there');
+    // hint = next push of the reference solution
+    await tap(cdp, page, '#bRestart'); await sleep(200);
+    await tap(cdp, page, '#bHint'); await sleep(150);
+    const h = await page.evaluate(() => window.__game.hint());
+    const T = C.initState(L100); let firstPush = null; for (const ch of LEVELS[99].s) { const r = C.tryMove(L100, T, C.DCH.indexOf(ch)); if (r && r.push) { firstPush = { b: r.bFrom, d: C.DCH.indexOf(ch) }; break; } }
+    ok(h && h.b === firstPush.b && h.d === firstPush.d, 'hint shows the next push of the master solution');
+    await sleep(6500);
+    ok(await page.evaluate(() => window.__game.idle()), 'nothing moving: the canvas stops redrawing');
+    // demo plays the solution, a tap stops it
+    await tap(cdp, page, '#bPause'); await sleep(200); await tap(cdp, page, '#pDemo'); await sleep(1500);
+    let st = await page.evaluate(() => window.__game.state());
+    for (let k = 0; k < 40 && st.moves <= 3; k++) { await sleep(250); st = await page.evaluate(() => window.__game.state()); } // slow shared machines draw few frames
+    ok(st.status === 'demo' && st.moves > 3, 'master demo plays (' + st.moves + ' moves)');
+    await tapXY(cdp, 195, 420); await sleep(300);
+    st = await page.evaluate(() => window.__game.state());
+    ok(st.status === 'play' && st.moves === 0, 'a tap stops the demo and gives the level back');
+    // resume after reload
+    for (const ch of LEVELS[99].s.slice(0, 5)) { await page.evaluate(d => window.__game.move(d), C.DCH.indexOf(ch)); await idle(page); }
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await page.reload(); await sleep(500);
+    ok(/繼續第 100 關/.test(await page.textContent('#tPlay')), 'title offers to continue level 100');
+    await tap(cdp, page, '#tPlay'); await sleep(300);
+    st = await page.evaluate(() => window.__game.state());
+    ok(st.level === 100 && st.moves === 5, 'level in progress resumed after reload (' + st.moves + ' moves)');
+    // last level win card has one way back to the level list
+    for (const ch of LEVELS[99].s.slice(5)) await page.evaluate(d => window.__game.move(d), C.DCH.indexOf(ch));
+    for (let k = 0; k < 60 && !(await page.isVisible('#win')); k++) await sleep(100);
+    ok(await page.isVisible('#win') && !(await page.isVisible('#wSelect')) && /回關卡選擇/.test(await page.textContent('#wNext')), 'L100 win card: a single 回關卡選擇 button');
+    ok(errors.length === 0, 'helpers: no page errors ' + errors.join(' | '));
+    await ctx.close();
+    // returning player from the old level set is told their stars were reset
+    const c2 = await browser.newContext({ viewport: { width: 390, height: 844 } }); const p2 = await c2.newPage();
+    await p2.addInitScript(() => { if (!sessionStorage.getItem('x')) { sessionStorage.setItem('x', 1); localStorage.setItem('sokoban:v1:lvver', '2'); localStorage.setItem('sokoban:v1:prog', JSON.stringify({ 1: { m: 5, p: 2, s: 3 } })); } });
+    await p2.goto('file://' + APP); await sleep(1200);
+    ok(/重新設計/.test(await p2.textContent('#toast')) && await p2.isVisible('#toast'), 'level-set update notice for returning players');
+    await c2.close();
   }
   // 4) cover: 390x520, a mid-game position on a mid-level room
   {

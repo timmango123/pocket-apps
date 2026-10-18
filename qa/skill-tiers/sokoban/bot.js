@@ -154,6 +154,7 @@ async function playAttempt(P, n) {
     if (S.p !== mv.from) {
       const c = await page.evaluate(k => window.__game.cellCenter(k), mv.from);
       await P.tap(c.x, c.y); walkTaps++; actions++;
+      if (cellPx < 36) { await H.sleep(Math.max(60, P.reactMs() * 0.5)); await P.tap(c.x, c.y); } // small cells: first tap aims (ring), second confirms
       st = await waitIdle(page); await H.sleep(30);
       const S2 = await snapS(page, L);
       if (S2.p !== mv.from) { missWalks++; plan.list = null; st = await getState(page); continue; } // mis-tap: re-plan from what is on screen

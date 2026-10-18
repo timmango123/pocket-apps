@@ -3,11 +3,11 @@
 const fs = require('fs'), path = require('path');
 const which = process.argv[2] || 'before';
 const tiers = ['clumsy', 'casual', 'skilled', 'world', 'superhuman'];
-const TEST = [1, 10, 25, 50, 75, 99, 100];
+const TEST = process.env.TEST ? process.env.TEST.split(',').map(Number) : [1, 10, 25, 50, 75, 99, 100];
 let src = {};
 if (process.argv[3]) src = JSON.parse(fs.readFileSync(path.join(__dirname, process.argv[3]), 'utf8')).tiers;
 else for (const t of tiers) { const f = path.join(__dirname, 'partial-' + t + '.json'); if (fs.existsSync(f)) src[t] = JSON.parse(fs.readFileSync(f, 'utf8')); }
-const star3 = p => Math.max(p + 2, Math.ceil(p * 11 / 10)), star2 = p => Math.max(p + 6, Math.ceil(p * 16 / 10));
+const star3 = p => Math.max(p + 2, Math.ceil(p * 11 / 10)), star2 = p => Math.max(p + 6, p * 2);
 const starsNow = (m, p) => m <= star3(p) ? 3 : m <= star2(p) ? 2 : 1;
 if (which !== 'before') for (const t of Object.keys(src)) for (const r of src[t].runs) if (r.cleared) { r.starsAtRun = r.stars; r.stars = starsNow(r.moves, r.par); }
 const out = {};

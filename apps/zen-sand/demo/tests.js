@@ -126,5 +126,92 @@ const col = (f, x, y0, y1) => { const o = []; for (let y = y0; y <= y1; y++) o.p
   const g2 = ZS.sampleGarden(390, 844, 52);
   ok(JSON.stringify(g2) === JSON.stringify(g), 'sample garden is deterministic');
 }
+// --- view: the tray is turned and scaled for the screen, never resampled ---
+{
+  const v = ZS.fitView(390, 844, 390, 844);
+  ok(v.rot === 0 && v.s === 1 && v.ox === 0 && v.oy === 0, 'same screen: shown as is');
+  const l = ZS.fitView(390, 844, 844, 390);
+  ok(l.rot === 1 && l.s === 1 && l.ox === 0 && l.oy === 0 && l.w === 844 && l.h === 390, 'portrait tray on a landscape screen: a quarter turn at full size');
+  const lb = ZS.fitView(390, 610, 390, 844);
+  ok(lb.rot === 0 && lb.s === 1 && lb.oy === (844 - 610) / 2, 'lobby-sized tray on a taller screen: centred, not stretched');
+  const sq = ZS.fitView(500, 500, 390, 844);
+  ok(sq.rot === 0 && Math.abs(sq.s - 0.78) < 1e-9, 'a square tray is never turned');
+  let worst = 0;
+  for (const vv of [v, l, lb, ZS.fitView(844, 390, 375, 500)]) for (const [x, y] of [[0, 0], [100, 37], [389, 843], [200, 500]]) { const sp = ZS.toScreen(vv, 390, 844, x, y), g = ZS.toGarden(vv, 390, 844, sp[0], sp[1]); worst = Math.max(worst, Math.abs(g[0] - x), Math.abs(g[1] - y)); }
+  ok(worst < 1e-9, 'toScreen / toGarden round trip');
+  const tl = ZS.toScreen(l, 390, 844, 0, 0), tr = ZS.toScreen(l, 390, 844, 390, 0);
+  ok(tl[0] === 844 && tl[1] === 0 && tr[0] === 844 && tr[1] === 390, 'turned a quarter clockwise: the tray\'s top edge runs down the right of the screen');
+  // lighting: a turned tray shaded with lightFor() looks exactly like the same sand laid out on screen and lit normally
+  const f = ZS.makeField(40, 30); ZS.applyStroke(f, 3, [[2, 10], [38, 22]], [], null);
+  const g = ZS.makeField(30, 40); for (let cy = 0; cy < 30; cy++) for (let cx = 0; cx < 40; cx++) g.h[cx * 30 + (29 - cy)] = f.h[cy * 40 + cx];
+  const pal = { base: [200, 190, 170], amb: 0.6, dif: 0.5, spec: 0.1, tint: 0.1, tone: 0.1, L: [-0.55, -0.62, 0.56] };
+  const pf = new Uint8ClampedArray(40 * 30 * 4), pg = new Uint8ClampedArray(30 * 40 * 4);
+  ZS.shade(f, pf, Object.assign({}, pal, { L: ZS.lightFor(pal.L, 1) }), 0, 0, 39, 29); ZS.shade(g, pg, pal, 0, 0, 29, 39);
+  let dl = 0; for (let cy = 1; cy < 29; cy++) for (let cx = 1; cx < 39; cx++) for (let k = 0; k < 3; k++) dl = Math.max(dl, Math.abs(pf[(cy * 40 + cx) * 4 + k] - pg[(cx * 30 + 29 - cy) * 4 + k]));
+  ok(dl <= 1, 'light stays at the screen\'s top-left when the tray is turned (max channel diff ' + dl + ')');
+  // rotating = changing the view only: the height map is never touched, however many round trips
+  const h0 = new Float32Array(f.h); for (let i = 0; i < 3; i++) { ZS.fitView(40, 30, 30, 40); ZS.fitView(40, 30, 40, 30); }
+  ok(f.h.every((x, i) => x === h0[i]), 'view changes leave the height map alone');
+}
+// --- smoothing band: only rows near the board change each frame ---
+{
+  const f = ZS.makeField(20, 100); f.h.fill(1);
+  const r1 = ZS.smoothBand(f, 30, 10, 0);
+  ok(r1[0] === 0 && r1[1] === 39 && f.h[0] === 0 && f.h[19 * 20] === 0 && f.h[25 * 20] < 1 && f.h[25 * 20] > 0 && f.h[45 * 20] === 1, 'board at row 30: rows above 20 flat, 20–39 settling, below untouched');
+  const r2 = ZS.smoothBand(f, 40, 10, 20);
+  ok(r2[0] === 20 && r2[1] === 49 && f.h[25 * 20] === 0 && f.h[60 * 20] === 1, 'next frame only touches rows 20–49');
+  const r3 = ZS.smoothBand(f, 200, 10, 30);
+  ok(r3[0] === 30 && r3[1] === 99 && ZS.maxAbs(f) === 0, 'past the end everything is flat');
+}
+// --- daily pattern and the similarity stars ---
+{
+  const W = 390, H = 844, cp = Math.sqrt(W * H / 110000), cols = Math.round(W / cp), rows = Math.round(H / cp), c = W / cols, rakeW = ZS.SPACING * 5 * c;
+  const rect = { x0: 14, y0: 150, x1: 376, y1: 690 };
+  const p1 = ZS.dailyPattern('2026-10-18', W, H, rakeW, rect), p2 = ZS.dailyPattern('2026-10-18', W, H, rakeW, rect), p3 = ZS.dailyPattern('2026-10-19', W, H, rakeW, rect);
+  ok(JSON.stringify(p1) === JSON.stringify(p2) && JSON.stringify(p1) !== JSON.stringify(p3), 'the same date gives the same pattern; the next day another');
+  const kinds = new Set(), counts = new Set(); let inside = true;
+  for (let d = 1; d <= 60; d++) {
+    const key = '2026-' + String(1 + (d >> 5)).padStart(2, '0') + '-' + String(1 + (d % 28)).padStart(2, '0'), p = ZS.dailyPattern(key, W, H, rakeW, rect);
+    kinds.add(p.kind); counts.add(p.items.length);
+    if (!p.items.length || p.zones.length !== p.items.length || !p.strokes.length) inside = false;
+    for (const it of p.items) if (it.u * W < rect.x0 || it.u * W > rect.x1 || it.v * H < rect.y0 || it.v * H > rect.y1 || it.t !== 'stone') inside = false;
+  }
+  ok(inside && kinds.size === 4 && counts.size === 3, `60 days: all ${kinds.size} kinds (流水 波紋 漣漪 縱流), 1–3 stones, stones always on the open sand`);
+  const build = (p, noise, seed, skipRings) => {
+    const f = ZS.makeField(cols, rows), st = p.items.map(i => ZS.footprint(i, W, H, c)), R = ZS.mulberry(seed);
+    for (const s of p.strokes) {
+      if (skipRings && s.pts.length === 73) continue;
+      const o = [(R() - 0.5) * 2 * noise, (R() - 0.5) * 2 * noise]; let nx = 0, ny = 0;
+      ZS.applyStroke(f, s.rake, s.pts.map(q => { nx = nx * 0.9 + (R() - 0.5) * noise * 0.4; ny = ny * 0.9 + (R() - 0.5) * noise * 0.4; return [(q[0] + o[0] + nx) / c, (q[1] + o[1] + ny) / c]; }), st, null);
+    }
+    for (const s of st) ZS.flattenUnder(f, s.x, s.y, s.r, s.body);
+    return f;
+  };
+  const days = ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-22'], res = { exact: [], small: [], wobbly: [], norings: [], empty: [], cross: [] };
+  for (const day of days) {
+    const p = ZS.dailyPattern(day, W, H, rakeW, rect), T = build(p, 0, 1), st = p.items.map(i => ZS.footprint(i, W, H, c));
+    const rc = { x0: rect.x0 / c, y0: rect.y0 / c, x1: rect.x1 / c, y1: rect.y1 / c }, zones = p.zones.map(z => ({ x: z.x / c, y: z.y / c, r0: z.r0 / c, r1: z.r1 / c }));
+    const sc = f => ZS.similarity(T, f, rc, st, zones).score;
+    res.exact.push(sc(build(p, 0, 7))); res.small.push(sc(build(p, 8, 7))); res.wobbly.push(sc(build(p, 30, 7))); res.norings.push(sc(build(p, 4, 7, true))); res.empty.push(sc(ZS.makeField(cols, rows)));
+    const X = ZS.makeField(cols, rows); for (let k = 0; k < 40; k++) { const t = k / 40; ZS.applyStroke(X, 5, p.kind === 'column' ? [[0, rect.y0 / c + t * (rect.y1 - rect.y0) / c], [cols, rect.y0 / c + t * (rect.y1 - rect.y0) / c]] : [[rect.x0 / c + t * (rect.x1 - rect.x0) / c, 0], [rect.x0 / c + t * (rect.x1 - rect.x0) / c, rows]], st, null); }
+    res.cross.push(sc(X));
+  }
+  const show = a => a.map(x => x.toFixed(2)).join('/');
+  ok(res.exact.every(x => x > 0.99) && res.exact.every(x => ZS.stars(x) === 3), 'an exact copy scores 100%, ★★★: ' + show(res.exact));
+  ok(res.small.every(x => ZS.stars(x) === 3), 'a copy a few px off still earns ★★★: ' + show(res.small));
+  ok(res.wobbly.every(x => ZS.stars(x) >= 1 && ZS.stars(x) <= 2), 'a wobbly copy (±30 px) earns ★ or ★★: ' + show(res.wobbly));
+  ok(res.norings.every(x => ZS.stars(x) <= 1), 'skipping the rings around the stones earns at most ★: ' + show(res.norings));
+  ok(res.empty.every(x => x === 0) && res.cross.every(x => ZS.stars(x) === 0), `untouched sand 0, lines across the pattern ${show(res.cross)} → no stars`);
+  ok(ZS.stars(0.41) === 0 && ZS.stars(0.42) === 1 && ZS.stars(0.64) === 2 && ZS.stars(0.82) === 3, 'star thresholds 42 / 64 / 82 %');
+}
+// --- seasons, v1 saves, sample layout above the hint ---
+{
+  ok(ZS.seasonOf(2) === 'spring' && ZS.seasonOf(6) === 'summer' && ZS.seasonOf(9) === 'autumn' && ZS.seasonOf(11) === 'winter' && ZS.seasonOf(0) === 'winter', 'month → season');
+  const v1 = { cols: 180, rows: 320, h: 'AAAA', W: 360, H: 640, items: [{ t: 'stone', u: 0.5, v: 0.5, s: 20 }] }, m = ZS.migrate(v1);
+  ok(m.v === 2 && m.GW === 360 && m.GH === 640 && m.cols === 180 && m.h === 'AAAA' && m.items.length === 1 && m.daily === null, 'a v1 save migrates: its W×H becomes the tray, heights untouched');
+  ok(ZS.migrate({ cols: 10, rows: 8, h: 'x' }).GW === 20 && ZS.migrate(null) === null, 'a save without W/H still gets a tray size; junk is rejected');
+  const g = ZS.sampleGarden(360, 640, 52, [0.12, 0.7]);
+  ok(g.items.every(i => i.v >= 0.12 && i.v <= 0.7), 'sample garden fits the open band it is given: ' + g.items.map(i => i.v.toFixed(2)).join(','));
+}
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

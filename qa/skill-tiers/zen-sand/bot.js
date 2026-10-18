@@ -7,7 +7,8 @@
 // how many of the game's features they trigger without breaking anything. Each run is a scripted session:
 //   1 clear the sample garden (menu)      2 rake N parallel 5-tine lines     3 place three stones on targets, drag one
 //   4 rake a ring around a stone          5 two-finger raking               6 smooth-all then undo
-//   7 wait for autosave, reload, compare  (clumsy also: second finger, rapid taps, rotate, background)
+//   7 wait for autosave, reload, compare  8 undo the last stroke (↶)          9 今日臨摹: copy the day's pattern, 對照 → stars
+//   (clumsy also: second finger, rapid taps, rotate (sand must stay bit-for-bit the same), background)
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs'), path = require('path');
 const OUT = __dirname;
@@ -95,7 +96,12 @@ async function playRun(env, tierId, T, runNo, seed) {
         const x = Math.min(389, Math.max(1, ax + (bx - ax) * t + nx)), y = Math.min(843, Math.max(1, ay + (by - ay) * t + ny));
         await touch(cdp, 'touchMove', [{ x, y, id: opts.id ?? 0 }]); finger = { x, y };
         await sleep(16);
-        if (!opts.noSlip && T.mistake && r() < T.mistake / 40) { slipped = true; log.events.push({ t: Date.now() - t0, ev: 'mistake: finger slipped off mid-stroke' }); await lift(); await think(); await touch(cdp, 'touchStart', [{ x, y }]); finger = { x, y }; }
+        if (!opts.noSlip && T.mistake && r() < T.mistake / 40) {
+          slipped = true; log.events.push({ t: Date.now() - t0, ev: 'mistake: finger slipped off mid-stroke' }); await lift(); await think();
+          // the hand comes back down where it lifted, unless that spot is a button (then the stroke just ends there)
+          if (!(await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.id === 'c'; }, [x, y]))) return slipped;
+          await touch(cdp, 'touchStart', [{ x, y }]); finger = { x, y };
+        }
       }
     }
     await lift();
@@ -113,11 +119,15 @@ async function playRun(env, tierId, T, runNo, seed) {
       log.chaos.push({ t: Date.now() - t0, ev: 'rapid taps x6' });
     } else if (kind === 2) {
       const before = await Z(page, () => ({ n: __zen.items().length, m: __zen.maxAbs() }));
+      const sig = () => Z(page, () => { const h = __zen.field().h; let s = 0; for (let i = 0; i < h.length; i++) s = (s * 31 + Math.round(h[i] * 1e5)) % 2147483647; return s; });
+      const h0 = await sig();
       await page.setViewportSize({ width: 844, height: 390 }); await sleep(400);
       const mid = await Z(page, () => ({ n: __zen.items().length, m: __zen.maxAbs(), W: __zen.size().W, onSand: __zen.items().every(i => i.u > 0 && i.u < 1 && i.v > 0 && i.v < 1) }));
       await page.setViewportSize({ width: 390, height: 844 }); await sleep(400);
       const after = await Z(page, () => ({ n: __zen.items().length, m: __zen.maxAbs(), W: __zen.size().W }));
+      after.sandUnchanged = (await sig()) === h0;
       log.chaos.push({ t: Date.now() - t0, ev: 'rotate to 844x390 and back', before, mid, after });
+      if (!after.sandUnchanged) log.events.push({ t: Date.now() - t0, ev: 'BUG: rotation changed the sand' });
       if (mid.W !== 844 || after.W !== 390 || after.n !== before.n || !mid.onSand) log.events.push({ t: Date.now() - t0, ev: 'BUG: rotation lost state ' + JSON.stringify({ before, mid, after }) });
     } else {
       await Z(page, () => __setHidden(true)); await sleep(800); await Z(page, () => __setHidden(false)); await sleep(200);
@@ -182,7 +192,7 @@ async function playRun(env, tierId, T, runNo, seed) {
     await touch(cdp, 'touchStart', [{ x, y }]); await sleep(60 + Math.abs(gauss(r)) * T.tim); await touch(cdp, 'touchEnd', []); await sleep(150);
     const st = await Z(page, () => { const it = __zen.items(); const l = it[it.length - 1]; return { n: it.length, x: l ? l.u * innerWidth : 0, y: l ? l.v * innerHeight : 0 }; });
     if (st.n === before + 1) placeErr.push(+Math.hypot(st.x - tx, st.y - ty).toFixed(1));
-    else log.events.push({ t: Date.now() - t0, ev: 'stone not placed (tap landed on an item -> lifted it?) items ' + before + ' -> ' + st.n });
+    else log.events.push({ t: Date.now() - t0, ev: 'stone not placed (tap landed on an item -> selected it) items ' + before + ' -> ' + st.n });
   }
   log.place = { placed: await Z(page, () => __zen.items().filter(i => i.t === 'stone').length), meanErrPx: placeErr.length ? +(placeErr.reduce((a, b) => a + b, 0) / placeErr.length).toFixed(1) : null, errs: placeErr };
   // drag the stone nearest the first target to a new spot
@@ -256,6 +266,39 @@ async function playRun(env, tierId, T, runNo, seed) {
   const hOk = snap.h.every((v, i) => Math.abs(v - back.h[i]) < 0.03);
   log.save = { ok: !back.sample && back.n === snap.n && hOk && JSON.stringify(snap.items) === JSON.stringify(back.items), before: snap, after: back };
   if (!log.save.ok) log.events.push({ t: Date.now() - t0, ev: 'BUG: save/restore mismatch' });
+
+  // 8. undo the last stroke: one line too many, take it back with ↶
+  await tapSel('#mRake', () => __zen.mode() === 'rake');
+  await tapSel('[data-rake="5"]', () => __zen.rake() === 5);
+  {
+    const y = sandTop + 60, probe = () => Z(page, y => { let m = 0; for (let x = 120; x <= 270; x += 6) for (let d = -14; d <= 14; d += 2) m = Math.min(m, __zen.heightAt(x, y + d)); return m; }, y);
+    const before = await Z(page, () => __zen.field().h.slice(0)), undos = await Z(page, () => __zen.undoCount());
+    await think(); await drag([[30, y], [360, y]], { noSlip: true }); await sleep(120);
+    const raked = await probe();
+    await tapSel('#mUndo', null, 'undo');
+    await sleep(150);
+    const same = await Z(page, b => { const h = __zen.field().h; let m = 0; for (let i = 0; i < h.length; i++) m = Math.max(m, Math.abs(h[i] - b[i])); return m; }, Array.from(before));
+    log.undoStroke = { raked: +raked.toFixed(2), restoredMaxDiff: +same.toFixed(4), ok: raked < -0.5 && same < 1e-6 };
+    if (!log.undoStroke.ok) log.events.push({ t: Date.now() - t0, ev: 'BUG: undo of the last stroke did not restore ' + JSON.stringify(log.undoStroke) });
+  }
+
+  // 9. 今日臨摹: open today's pattern, copy it stroke by stroke with this tier's hand, then 對照 for stars
+  await tapSel('#bMenu', () => !document.getElementById('menu').hidden, 'menu');
+  await tapSel('#aDaily', () => !document.getElementById('daily').hidden, 'daily');
+  await sleep(300);
+  const plan = await Z(page, () => __zen.dailyPlan());
+  if (plan) {
+    await tapSel('#dRef', () => __zen.ghost(), 'show pattern'); // look at the pattern over the sand while copying
+    await tapSel('#mRake', () => __zen.mode() === 'rake');
+    await tapSel('[data-rake="5"]', () => __zen.rake() === 5);
+    const t1 = Date.now();
+    for (const st of plan.strokes) { await think(0.6); await drag(st.pts.map(p => [Math.min(388, Math.max(2, p[0])), p[1]])); }
+    await tapSel('#dCheck', () => !document.getElementById('res').hidden, 'check');
+    await sleep(200);
+    const sc = await Z(page, () => __zen.lastScore());
+    log.daily = { pattern: plan.name, strokes: plan.strokes.length, stars: sc ? sc.stars : null, score: sc ? +(sc.score * 100).toFixed(1) : null, missed: sc ? +(sc.detail.missed * 100).toFixed(0) : null, turned: sc ? +(sc.detail.turned * 100).toFixed(0) : null, copyS: +((Date.now() - t1) / 1000).toFixed(1) };
+    await tapSel('#resClose', () => document.getElementById('res').hidden, 'close result');
+  } else log.events.push({ t: Date.now() - t0, ev: 'BUG: 今日臨摹 did not open' });
   log.wallMs = Date.now() - t0;
   return log;
 }
@@ -276,7 +319,7 @@ async function main() {
       catch (e) { log = { run: n, crashed: String(e).slice(0, 300) }; }
       log.errors = env.errors.slice(0, 5); if (!log.errors.length) delete log.errors;
       await env.ctx.close();
-      console.log(tierId, 'run', n, 'lines', log.lines && log.lines.coverage + '%', 'wobble', log.wobble, 'place', log.place && log.place.meanErrPx, 'ring', log.ring && log.ring.coverage + '%', 'two', log.twoFingers && JSON.stringify(log.twoFingers), 'save', log.save && log.save.ok, 'frames', log.frames && JSON.stringify(log.frames), 'wall', log.wallMs, log.events && log.events.length ? 'events ' + log.events.length : '', log.errors ? 'ERRORS ' + log.errors[0] : '');
+      console.log(tierId, 'run', n, 'lines', log.lines && log.lines.coverage + '%', 'wobble', log.wobble, 'place', log.place && log.place.meanErrPx, 'ring', log.ring && log.ring.coverage + '%', 'two', log.twoFingers && JSON.stringify(log.twoFingers), 'save', log.save && log.save.ok, 'undo', log.undoStroke && log.undoStroke.ok, 'daily', log.daily && (log.daily.stars + '★ ' + log.daily.score + '%'), 'frames', log.frames && JSON.stringify(log.frames), 'wall', log.wallMs, log.events && log.events.length ? 'events ' + log.events.length : '', log.errors ? 'ERRORS ' + log.errors[0] : '');
       runs.push(log);
     }
     const ok = runs.filter(x => !x.crashed);
@@ -285,6 +328,8 @@ async function main() {
       lineCoverage: avg(x => x.lines && x.lines.coverage), wobblePx: avg(x => x.wobble), placeErrPx: avg(x => x.place && x.place.meanErrPx), stonesPlaced: avg(x => x.place && x.place.placed),
       moveErrPx: avg(x => x.move && x.move.errPx), ringCoverage: avg(x => x.ring && x.ring.coverage), underStoneDisturbed: avg(x => x.ring && x.ring.disturbedUnderStone),
       twoFingerMin: avg(x => x.twoFingers && Math.min(x.twoFingers.line1, x.twoFingers.line2)), undoRestored: ok.every(x => x.smooth && x.smooth.restored), saveRestored: ok.every(x => x.save && x.save.ok),
+      undoStrokeOk: ok.every(x => x.undoStroke && x.undoStroke.ok), dailyStars: avg(x => x.daily && x.daily.stars), dailyScore: avg(x => x.daily && x.daily.score), dailyStarsEach: ok.map(x => x.daily ? x.daily.stars : null),
+      rotationsSandUnchanged: ok.reduce((a, x) => a.concat((x.chaos || []).filter(c => c.after && 'sandUnchanged' in c.after).map(c => c.after.sandUnchanged)), []),
       frameMeanMs: avg(x => x.frames && x.frames.mean), frameP95Ms: avg(x => x.frames && x.frames.p95), frameMaxMs: avg(x => x.frames && x.frames.max), loadMs: avg(x => x.loadMs),
       events: ok.reduce((a, x) => a + (x.events ? x.events.length : 0), 0), bugs: ok.reduce((a, x) => a.concat((x.events || []).filter(e => /BUG|lost|dropped|mismatch/.test(e.ev)).map(e => e.ev)), []), errors: runs.reduce((a, x) => a.concat(x.errors || []), []), crashed: runs.filter(x => x.crashed).length, wallS: avg(x => x.wallMs / 1000) } };
     fs.writeFileSync(resPath, JSON.stringify(results, null, 1));

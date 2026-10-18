@@ -174,6 +174,37 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   const info = ECO.fishInfo(st3, g);
   ok(info.name === g.name && info.species === '孔雀魚' && /[♀♂]/.test(info.sex) && typeof info.stage === 'string' && typeof info.mood === 'string', 'fishInfo describes a fish');
 }
+// --- breeding switch, records, milestones, new species (review round) ---
+{
+  const pair = (seed, off) => { const st = bare(seed); st.breedOff = off; ECO.addFish(st, 'guppy', { size: 1, sex: 'f', hunger: 0.1, cd: 0 }); ECO.addFish(st, 'guppy', { size: 1, sex: 'm', hunger: 0.1, cd: 0 }); for (let i = 0; i < 48; i++) { ECO.feed(st, 3); ECO.advance(st, HOUR); } return st; };
+  ok(pair(11, false).born > 0 && pair(11, true).born === 0, 'the breeding switch stops births');
+  // near the load limit births slow down: same pair, once in an empty tank and once next to a crowd of adult otos (no litters of their own)
+  let lo = 0, hi = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    for (const crowd of [0, 1]) { const st = bare(seed); if (crowd) for (let i = 0; i < 26; i++) ECO.addFish(st, 'oto', { size: 1, hunger: 0 }); ECO.addFish(st, 'guppy', { size: 1, sex: 'f', hunger: 0.1, cd: 0 }); ECO.addFish(st, 'guppy', { size: 1, sex: 'm', hunger: 0.1, cd: 0 }); st.water.algae = 60;
+      let t = 0; while (!st.born && t < 72) { for (const f of st.fish) f.hunger = 0.1; ECO.advance(st, HOUR); t++; } if (crowd) hi += t; else lo += t; }
+  }
+  ok(hi > lo * 1.5, 'births come slower near the load limit (mean hours to first litter ' + (lo / 12).toFixed(1) + ' vs ' + (hi / 12).toFixed(1) + ')');
+  const st = pair(11, false), r = ECO.records(st);
+  ok(r.gen === 2 && st.fish.some(f => f.gen === 2), 'fry are the next generation (' + r.gen + ')');
+  ok(r.oldest.days >= 2 && r.school.sp === 'guppy' && r.school.n >= 2, 'records: oldest fish and biggest school');
+  ok(r.ms.first && st.log.some(l => /里程碑：第一窩小魚/.test(l.msg)), 'first litter milestone is reached and logged');
+  const s2 = ECO.sampleTank(5, 60); for (let d = 0; d < 4; d++) { ECO.feed(s2); ECO.advance(s2, 12 * HOUR); ECO.feed(s2); ECO.waterChange(s2, 0.3); ECO.advance(s2, 12 * HOUR); }
+  const r2 = ECO.records(s2);
+  ok(r2.best >= 3 && r2.ms.clear3, 'a well-kept sample tank counts clear-water days (' + r2.streak + ', best ' + r2.best + ')');
+  ok(ECO.MILESTONES.length === 8 && !r2.ms.clear7, 'eight milestones, the long ones still ahead');
+  const s3 = ECO.sampleTank(5, 60); s3.water.ammonia = 0.6; s3.rec.dayMin = 100; ECO.advance(s3, DAY);
+  ok(ECO.records(s3).streak === 0, 'a murky day resets the clear-water streak');
+  // new species
+  const s4 = bare(); const z = ECO.addFish(s4, 'zebra', { size: 1 }), c = ECO.addFish(s4, 'cory', { size: 1, hunger: 0.9, x: 30, y: s4.h - s4.fb - 1 });
+  ok(z && c && ECO.SPECIES.zebra.yp < 0.3 && ECO.SPECIES.cory.yp > 0.9, 'zebra danio (top) and cory (bottom) can be added');
+  s4.food.push({ x: 33, y: s4.h - s4.fb - 0.3, vy: 0, t: s4.t, w: 0 });
+  for (let i = 0; i < 40 && s4.food.length; i++) ECO.motion(s4, 0.1);
+  ok(!s4.food.length && c.hunger < 0.9, 'a cory picks up a flake from the sand');
+  const s5 = bare(); for (let i = 0; i < 6; i++) ECO.addFish(s5, 'zebra', { size: 1, y: s5.h - 10 }); for (let i = 0; i < 300; i++) ECO.motion(s5, 0.1);
+  const zy = s5.fish.reduce((a, f) => a + f.y, 0) / 6, col = (zy - s5.tp) / (s5.h - s5.fb - s5.tp);
+  ok(col < 0.4, 'zebras swim up into the top of the water column (' + col.toFixed(2) + ')');
+}
 // --- save / restore ---
 {
   const st = ECO.sampleTank(99, 60); const json = ECO.serialize(st);
@@ -221,7 +252,7 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(await page.isVisible('#graph') && (await page.textContent('#statRows')).includes('氨'), 'stats sheet shows readings and graph');
   await tap('#sheetStats [data-close]');
   // tap a fish
-  const hit = await page.evaluate(() => { const st = window.__eco.st, S = window.__eco.S(); const f = st.fish.find(x => x.size >= 1 && x.y * S > 120 && x.y * S < 600); window.__eco.showCard(f); return { x: f.x * S, y: f.y * S, name: f.name }; });
+  const hit = await page.evaluate(() => { const st = window.__eco.st, S = window.__eco.S(); const f = st.fish.find(x => x.size >= 1) || st.fish[0]; f.x = st.w / 2; f.y = (st.tp + st.h - st.fb) / 2; window.__eco.showCard(f); return { x: f.x * S, y: f.y * S, name: f.name }; });
   await page.waitForTimeout(100);
   ok(await page.isVisible('#card') && (await page.textContent('#card')).includes(hit.name), 'tapping a fish shows its card with its name');
   const nBefore = await page.evaluate(() => window.__eco.st.fish.length);
@@ -229,7 +260,7 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore && (await page.textContent('#cRemove')).includes('確定'), 'first tap on 移出 only asks to confirm');
   await tap('#cRemove'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore - 1 && await page.isHidden('#card'), 'second tap removes the fish and closes the card');
-  await page.evaluate(() => { const st = window.__eco.st; window.__eco.showCard(st.fish.find(x => x.size >= 1)); });
+  await page.evaluate(() => { const st = window.__eco.st; window.__eco.showCard(st.fish.find(x => x.size >= 1) || st.fish[0]); });
   await tap('#cClose'); await page.waitForTimeout(100);
   ok(await page.isHidden('#card') && (await page.textContent('#cRemove')) === '移出', 'card closes and the remove button is reset');
   // attention cues: starving fish light the feed badge and the quality chip, once in words
@@ -250,6 +281,22 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(await page.isHidden('#intro') && (await page.evaluate(() => window.__eco.st.fish.length)) > 0, 'reload restores the saved tank without the intro');
   await page.keyboard.press('f'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.food.length) >= 8, 'keyboard F feeds');
+  // review round: breeding switch, records panel, intro sound button, new species rows
+  await page.evaluate(() => window.__eco.open('sheetLife')); await page.waitForTimeout(500);
+  await tap('button[data-breed="off"]'); await page.waitForTimeout(100);
+  ok(await page.evaluate(() => window.__eco.st.breedOff === true && document.querySelector('button[data-breed="off"]').getAttribute('aria-pressed') === 'true'), 'breeding switch turns breeding off');
+  await tap('button[data-breed="on"]'); await page.waitForTimeout(100);
+  ok(await page.evaluate(() => !window.__eco.st.breedOff), 'and back on');
+  ok(await page.evaluate(() => !!document.querySelector('button[data-add="fish:zebra"]') && !!document.querySelector('button[data-add="fish:cory"]')), 'zebra danio and cory rows in the life sheet');
+  await tap('button[data-add="fish:cory"]'); await page.waitForTimeout(100);
+  ok(await page.evaluate(() => window.__eco.st.fish.some(f => f.sp === 'cory')), 'adding a cory');
+  await page.evaluate(() => window.__eco.open('sheetStats')); await page.waitForTimeout(500);
+  ok(await page.evaluate(() => document.querySelectorAll('#recRows > div').length === 4 && document.querySelectorAll('#msRow span').length === 8 && /最長壽/.test(document.getElementById('recRows').textContent)), 'stats sheet shows 4 records and 8 milestones');
+  await page.evaluate(() => window.__eco.closeSheet());
+  ok(await page.evaluate(() => /負載/.test(document.getElementById('sheetHelp').textContent) && /6 分鐘/.test(document.getElementById('sheetHelp').textContent)), 'help explains 負載 and the length of a tank day');
+  await page.evaluate(() => document.getElementById('bIntroSound').click());
+  ok(await page.evaluate(() => localStorage.getItem('eco-aquarium:v1:sound') === 'true' && document.getElementById('mSound').getAttribute('aria-pressed') === 'true'), 'intro sound button turns sound on and the menu agrees');
+  await page.evaluate(() => document.getElementById('bIntroSound').click());
   ok(errors.length === 0, 'no page errors: ' + errors.join(' | '));
   await Promise.race([browser.close(), new Promise(r => setTimeout(r, 5000))]);
   console.log(pass + ' passed, ' + fail + ' failed');

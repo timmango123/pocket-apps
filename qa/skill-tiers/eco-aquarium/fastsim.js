@@ -6,7 +6,7 @@ const file=process.argv[2], DAYS=+(process.argv[3]||10), E=load(file), {DAY,HOUR
 const T={clumsy:{every:[4,20],mis:0.15},casual:{every:[6,12],mis:0.06},skilled:{every:[5,7],mis:0.02}};
 const tiers=(process.argv[4]||'clumsy,casual,skilled').split(',');
 for(const tier of tiers){const rows=[];for(const seed of [1,2,3,4,5]){
- const r=mul(seed*7919+tier.length*31);const st=E.sampleTank(1000+seed,60);E.resize(st,112.5,52,3+84/7.5,76/7.5);
+ const r=mul(seed*7919+tier.length*31);const st=E.sampleTank(1000+seed,60);E.resize(st,844/9.2,390/9.2,3+84/9.2,76/9.2);
  const end=st.t+DAYS*DAY;let next=st.t,feeds=0,min=99;const d0=st.died,b0=st.born;let starveD=0;
  const feed=n=>{for(let i=0;i<n;i++){E.feed(st);feeds++;}};
  while(st.t<end){
@@ -16,7 +16,7 @@ for(const tier of tiers){const rows=[];for(const seed of [1,2,3,4,5]){
    const mis=r()<T[tier].mis;
    if(tier==='clumsy'){const x=r(); if(x<0.5){const k=1+Math.floor(r()*3); if(mis)E.waterChange(st,0.3); else feed(k);} else if(x<0.62){ if(mis)feed(2); else E.waterChange(st,0.3);} else if(x<0.72)E.setLight(st,(st.light+1)%4); else if(x<0.84&&q.label==='危險')E.waterChange(st,0.3);}
    else if(tier==='casual'){ if(mis){E.setLight(st,(st.light+1)%4);} else { if(hungry||starving)feed(1+(r()<0.3?1:0)); else if(r()<0.35)feed(1); if((q.label!=='清澈'||dirty)&&r()<0.85)E.waterChange(st,0.3);} }
-   else { const p=starving?2:hungry?1:(r()<0.5?1:0); feed(p); if(w.nitrate>40||w.ammonia>0.2||w.algae>45)E.waterChange(st,0.3); if(st.light!==2)E.setLight(st,2); }
+   else { const p=starving?2:hungry?1:(r()<0.5?1:0); feed(p); if(E.load(st)>E.CAP)st.breedOff=true; else if(E.load(st)<E.CAP*0.75)st.breedOff=false; if(w.nitrate>40||w.ammonia>0.2||w.algae>45)E.waterChange(st,0.3); if(st.light!==2)E.setLight(st,2); }
   }
   E.step(st,0.1,4); for(let i=0;i<7;i++)E.step(st,0.1,4);
   min=Math.min(min,st.fish.length);
