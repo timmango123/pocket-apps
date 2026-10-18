@@ -15,3 +15,6 @@ Audit tooling for the s2t phrase table (run from this folder; not loaded by the 
   every entry with jieba freq >= 200, e.g. 方面+条件, 回头+发给) into cross_ok.tsv and prints pairs that convert
   differently; after checking those by hand, the header line of cross-boundary.tsv plus cross_ok.tsv is the new file.
 eng.js (a 3-line loader of the CORE block) must sit next to the scripts.
+
+cross-tw.js: after editing TW_CTX in index.html, regenerate simp.txt (extract-jieba.py) and run `node cross-tw.js` to rebuild TW_CROSS
+(jieba words that cut a phrase's changed part and reach outside it, e.g. 推导|出 for 导出PDF); delete simp.txt afterwards.
