@@ -25,6 +25,8 @@ const out = {
 };
 if (fs.existsSync(path.join(__dirname, 'after-world99.json'))) out.afterFix.worldL99Retry = strip(summarize(rd('after-world99.json').tiers.world));
 out.afterFix.note = 'skilled/world/superhuman ran before the last fix (bigger joystick hit area; they never missed the stick), clumsy/casual and the extra runs after it. world L99 timed out once with 6/7 monsters (one attempt: a time-out ends the level, as in the before run); a second run cleared it (worldL99Retry). extra = clumsy on stages 2, 3, 5.';
+const prev = fs.existsSync(path.join(__dirname, 'results.json')) ? rd('results.json') : {};
+if (prev.round2) out.round2 = prev.round2;   // kept: written by finalize2.js
 fs.writeFileSync(path.join(__dirname, 'results.json'), JSON.stringify(out, null, 1));
 const row = (v, lv) => lv.map(n => { const r = v.runs.find(x => x.level === n); return r ? (r.cleared ? '✔' + (r.tries > 1 ? '(' + r.tries + ')' : '') : '✘×' + r.tries) : '-'; }).join(' | ');
 for (const [name, T] of [['before', B.tiers], ['after', A.tiers]]) { console.log(name); for (const t of Object.keys(T)) console.log(t, row(T[t], B.testedLevels), T[t].summary.cleared, 'battles', T[t].summary.battlesWon, 'err', T[t].summary.pageErrors); }

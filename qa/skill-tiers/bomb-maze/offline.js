@@ -15,7 +15,7 @@ function play(n, seed) {
       const view = react ? hist[Math.max(0, hist.length - 1 - react)] : s;
       const v = react ? Object.assign(view, {}) : s;
       if (react) { v.bombers[0].x = b.x; v.bombers[0].y = b.y; v.bombers[0].placed = b.placed; v.bombers[0].onBomb = b.onBomb; }
-      plan = PL.decide(v, 0, { samples, seed: f + seed }); dec++;
+      plan = PL.decide(v, 0, { samples, seed: f + seed, prev: plan }); dec++;
     }
     let dir = -1, bomb = false;
     if (plan && b.alive) {

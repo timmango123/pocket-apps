@@ -40,12 +40,12 @@ const OBS = `window.__obs = () => { const g = window.__game, s = g && g.sim(); i
     grid: Array.from(s.grid), items: Array.from(s.items), fire: Array.from(s.fire, v => +v.toFixed(3)),
     bombs: s.bombs.map(b => ({ x: b.x, y: b.y, t: +b.t.toFixed(3), range: b.range, slide: b.slide, p: b.p, owner: b.owner })),
     bombers: s.bombers.map(b => ({ id: b.id, sx: b.sx, sy: b.sy, x: +b.x.toFixed(3), y: +b.y.toFixed(3), alive: b.alive, invul: b.invul, shield: b.shield, kick: b.kick, bombs: b.bombs, fire: b.fire, speed: b.speed, placed: b.placed, onBomb: b.onBomb, inDir: b.inDir })),
-    enemies: s.enemies.map(e => ({ t: e.t, x: +e.x.toFixed(3), y: +e.y.toFixed(3), tx: e.tx, ty: e.ty, dir: e.dir, alive: e.alive, hp: e.hp, speed: e.speed, hurt: e.hurt })), cpuSkill: s.skill,
+    enemies: s.enemies.map(e => ({ t: e.t, x: +e.x.toFixed(3), y: +e.y.toFixed(3), tx: e.tx, ty: e.ty, dir: e.dir, alive: e.alive, hp: e.hp, maxHp: e.maxHp, speed: e.speed, hurt: e.hurt, tele: e.tele, chg: e.chg, chgN: e.chgN, rest: e.rest, roarT: e.roarT, dazed: e.dazed, baby: e.baby })), cpuSkill: s.skill, speedMul: s.speedMul,
     sudden: s.sudden ? { on: s.sudden.on, idx: s.sudden.idx, timer: s.sudden.timer, step: s.sudden.step } : null, winner: s.winner }; };`;
 
 // Node-side view of the snapshot that the game's own planner functions accept
 function mkSim(o, rng) {
-  const sim = { w: o.w, h: o.h, time: o.time, limit: o.limit, fuse: o.fuse, kills: o.kills, cpuSkill: o.cpuSkill, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
+  const sim = { w: o.w, h: o.h, time: o.time, limit: o.limit, fuse: o.fuse, kills: o.kills, cpuSkill: o.cpuSkill, speedMul: o.speedMul, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
   if (o.sudden) sim.sudden = Object.assign({ order: BM.spiralOrder(o.w, o.h) }, o.sudden);
   return sim;
 }
@@ -100,10 +100,11 @@ function simpleDecide(M, s, b, rng) {
   const opts = []; for (let d = 0; d < 4; d++) if (safeIsh(cx + DX[d], cy + DY[d], 1)) opts.push((cy + DY[d]) * W + cx + DX[d]);
   return { path: opts.length ? [rng.pick(opts)] : [], bomb: false };
 }
+let lookPrev = null;   // the look-ahead bots keep heading for their last target while it stays safe (planner.js)
 function decide(M, s, b, rng) {
   const c = Math.floor(b.y) * s.w + Math.floor(b.x);
   if (s.mode === 'stage' && s.doorOpen && c === s.doorCell) return { path: [c], bomb: false };   // on the open door: step onto its middle
-  if (M.policy === 'look') { s.bombers = s.bombers.map(x => x.id === b.id ? b : x); return PL.decide(s, 0, { samples: M.samples, seed: Math.floor(rng() * 1e6) }); }
+  if (M.policy === 'look') { s.bombers = s.bombers.map(x => x.id === b.id ? b : x); return (lookPrev = PL.decide(s, 0, { samples: M.samples, seed: Math.floor(rng() * 1e6), prev: lookPrev })); }
   if (M.policy === 'plan') { b.skill = 2; return BM.cpuDecide(s, b); }
   return simpleDecide(M, s, b, rng);
 }
@@ -145,7 +146,8 @@ class Finger {
 async function playRun(P, M, kind, n, opts) {
   const page = P.page, rng = P.rng, FR = H.FRAME;
   const stepN = M.step || (M.every <= 3 ? (M.every === 1 ? 2 : 3) : (M.every <= 5 ? 4 : 6));
-  if (kind === 'stage') await page.evaluate(n => window.__game.startStage(n), n);
+  lookPrev = null;
+  if (kind === 'stage') await page.evaluate(n => { if (window.__game.resetRun) window.__game.resetRun(); window.__game.startStage(n); }, n);   // every tested stage starts with the basic kit (no power-ups carried from the stage before)
   else await page.evaluate(([c, s]) => window.__game.startBattle(c, s), [opts.cpus, opts.skill]);
   const padBox = await page.locator('#pad').boundingBox(), bombBox = await page.locator('#bombBtn').boundingBox();
   const F = new Finger(P, padBox, bombBox);
@@ -161,7 +163,7 @@ async function playRun(P, M, kind, n, opts) {
     if (process.env.BM_DEBUG && frame % (+process.env.BM_DEBUG) === 0) console.log('  f', frame, 't', o.time.toFixed(1), 'pos', o.bombers[0].x.toFixed(2), o.bombers[0].y.toFixed(2), 'dir', F.dir, o.bombers[0].inDir, 'plan', plan && JSON.stringify(plan.path), plan && plan.flee ? 'FLEE' : '', plan && plan.bomb ? 'BOMB' : '', 'en', o.enemies.filter(e => e.alive).map(e => e.x.toFixed(1) + ',' + e.y.toFixed(1)).join(' '), 'bombs', o.bombs.map(b => b.x + ',' + b.y).join(' '), 'kills', o.kills, 'wall', Date.now() - t0, 'touches', F.stats.moves);
     const me = o.bombers[0];
     if (o.lives < lastLives) { livesLost += lastLives - o.lives; }
-    if (lastAlive && !me.alive) { deaths.push({ t: +o.time.toFixed(1), near: o.enemies.filter(e => e.alive && Math.abs(e.x - me.x) + Math.abs(e.y - me.y) < 1).length ? 'contact' : 'fire' }); plan = null; }
+    if (lastAlive && !me.alive) { deaths.push({ t: +o.time.toFixed(1), near: o.enemies.filter(e => e.alive && Math.abs(e.x - me.x) + Math.abs(e.y - me.y) < 1).length ? 'contact' : 'fire' }); plan = null; lookPrev = null; }
     lastAlive = me.alive; lastLives = o.lives;
     for (let i = 0; i < o.items.length; i++) if (lastItems[i] > 0 && lastItems[i] !== IT.DOOR && o.items[i] === 0 && Math.floor(me.x) + Math.floor(me.y) * o.w === i) picks[lastItems[i]]++;
     lastItems = o.items;

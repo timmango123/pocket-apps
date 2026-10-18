@@ -17,7 +17,8 @@ module.exports = function makePlanner(BM) {
       bombers: o.bombers.map(b => ({ id: b.id, x: b.x, y: b.y, sx: b.sx != null ? b.sx : 1, sy: b.sy != null ? b.sy : 1, dir: 2, moving: false, alive: b.alive, cpu: false,
         bombs: b.bombs, fire: b.fire, speed: b.speed, kick: b.kick, shield: b.shield, invul: b.invul, placed: b.placed, onBomb: b.onBomb,
         inDir: -1, inBomb: false, bombHeld: false, deadT: 0, anim: 0, plan: null, wait: 0, lastCell: -1, lastVer: -1, kills: 0, skill: 2 })),
-      enemies: o.enemies.map(e => ({ t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed || BM.ENEMY[e.t].speed, hp: e.hp, alive: e.alive, hurt: e.hurt || 0, anim: 0, deadT: 0 })),
+      enemies: o.enemies.map(e => ({ t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed || BM.ENEMY[e.t].speed, hp: e.hp, maxHp: e.maxHp, alive: e.alive, hurt: e.hurt || 0, anim: 0, deadT: 0,
+        tele: e.tele || 0, chg: !!e.chg, chgN: e.chgN || 0, rest: e.rest || 0, roarT: e.roarT, dazed: e.dazed || 0, baby: !!e.baby })), speedMul: o.speedMul || 1,
       events: [], time: o.time, limit: o.limit || 999, fuse: o.fuse, status: 'play', winner: -1, doorOpen: o.doorOpen, doorCell: o.doorCell,
       rng: BM.mulberry(seed), bombVer: 0, lives: 1, sudden: o.sudden ? Object.assign({}, o.sudden, { order: o.sudden.order || BM.spiralOrder(o.w, o.h) }) : null,
       distP: null, distT: 0, endT: 0, started: true, skill: 1, deaths: 0, kills: o.kills || 0
@@ -90,6 +91,15 @@ module.exports = function makePlanner(BM) {
     const K = opts.samples || 3, H = opts.horizon || 2.8, maxD = opts.maxD || 3;
     const b = sim.bombers[me], W = sim.w, cx = Math.floor(b.x), cy = Math.floor(b.y), c = cy * W + cx;
     if (sim.mode === 'stage' && sim.doorOpen && c === sim.doorCell) return { path: [c], bomb: false, score: 1e6, n: 0 };   // step onto the centre of the open door
+    const seed0 = (opts.seed || 1) * 7919;
+    const evalC = m => { let tot = 0, dead = 0; for (let k = 0; k < K; k++) { const v = rollout(sim, m, seed0 + k * 104729, H, me); if (v < -5e5) dead++; tot += v; } return { dead, v: tot / K }; };
+    // keep walking to the previous target while that stays safe: re-planning every few frames otherwise flips between
+    // two equally good targets on either side and the cat stands still (seen as time-outs with one monster left)
+    const pv = opts.prev;
+    if (pv && pv.to != null && pv.to !== c && !pv.bomb && pv.keep !== false) {
+      const rr = reach(sim, b, 30), pp = rr.dist[pv.to] > 0 ? pathTo(rr, c, pv.to) : null;
+      if (pp) { const m = { path: pp, bomb: false, to: pv.to }, e = evalC(m); if (e.dead === 0) return { path: pp, bomb: false, to: pv.to, score: e.v, n: 1, kept: true }; }
+    }
     const r = reach(sim, b, maxD);
     const canBomb = b.placed < b.bombs && !BM.bombAt(sim, cx, cy) && sim.fire[c] <= 0 && sim.grid[c] === EMPTY;
     const cands = [];
@@ -102,8 +112,6 @@ module.exports = function makePlanner(BM) {
     if (useful) cands.push({ path: [], bomb: true, to: c });
     cands.push({ path: [], bomb: false, to: c, hold: 0.4 });
     { const cl = cloneSim(sim, 1), cb = cl.bombers[me]; cb.skill = 2; const d = BM.cpuDecide(cl, cb); cands.push({ path: d.path.slice(), bomb: !!d.bomb && canBomb, to: d.path.length ? d.path[d.path.length - 1] : c, brain: true }); }
-    const seed0 = (opts.seed || 1) * 7919;
-    const evalC = m => { let tot = 0, dead = 0; for (let k = 0; k < K; k++) { const v = rollout(sim, m, seed0 + k * 104729, H, me); if (v < -5e5) dead++; tot += v; } return { dead, v: tot / K }; };
     // the built-in brain's choice stands unless a look-ahead shows it can get the cat killed
     const brain = cands[cands.length - 1], be = evalC(brain);
     let best = brain, bs = be.v, bd = be.dead;
@@ -113,7 +121,7 @@ module.exports = function makePlanner(BM) {
       if (e.dead < bd || (e.dead === bd && v > bs)) { best = m; bs = v; bd = e.dead; }
       if (bd === 0 && opts.firstSafe) break;
     }
-    return { path: best ? best.path : [], bomb: !!(best && best.bomb), score: bs, n: cands.length };
+    return { path: best ? best.path : [], bomb: !!(best && best.bomb), to: best ? best.to : c, score: bs, n: cands.length };
   }
   return { decide, cloneSim, dirTo };
 };
