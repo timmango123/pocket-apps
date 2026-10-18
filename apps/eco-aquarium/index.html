@@ -206,7 +206,7 @@ button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @media (max-width: 400px) { .brand #clock .nm { display: none; } }
 @media (max-height: 520px) { .toasts { top: calc(var(--sat) + 60px); } .sheet { max-height: 88%; } .bar button { min-height: 52px; }
   .intro { padding: 10px; } .intro canvas { height: 64px; } .intro .in { padding: 8px 16px 12px; } .intro h2 { font-size: 18px; } .intro .sub { margin: 0 0 6px; font-size: 12px; }
-  .intro ul { gap: 3px; font-size: 13px; margin-bottom: 8px; line-height: 1.4; } .intro li svg { width: 17px; height: 17px; } .intro .go { min-height: 44px; font-size: 16px; } .intro .snd { min-height: 44px; } }
+  .intro ul { gap: 3px; font-size: 13px; margin-bottom: 8px; line-height: 1.4; } .intro li svg { width: 17px; height: 17px; } .intro .go { min-height: 46px; font-size: 16px; } .intro .snd { min-height: 46px; } }
 @media (max-height: 520px) and (min-width: 600px) { .intro .panel { width: min(100%, 640px); } .intro ul { grid-template-columns: 1fr 1fr; column-gap: 16px; } }
 @media (prefers-reduced-motion: reduce) { .toast, .card, .intro, .intro .panel, .bar button.pulse, .bar button .badge.bad { animation: none; } .sheet, .scrim, .bar button, .stat .trk i { transition: none; } }
 </style>
@@ -664,7 +664,7 @@ function load() {
       if (r.sum) {
         const g = r.gap, gl = g < 3600 ? Math.round(g / 60) + ' 分鐘' : g < 86400 ? Math.round(g / 360) / 10 + ' 小時' : Math.round(g / 8640) / 10 + ' 天';
         const d = r.sum.days, dl = d >= 1 ? d.toFixed(1) + ' 天' : Math.round(d * 24) + ' 小時';
-        toast('離開 ' + gl + '・水族箱過了 ' + dl + (r.sum.capped ? '（上限）' : ''), 6000);
+        toast('離開 ' + gl + '・水族箱過了 ' + dl + (r.sum.capped ? '（上限）' : ''), 6000, true);
         if (r.sum.born) toast('這段時間出生了 ' + r.sum.born + ' 隻小魚', 5000);
         if (r.sum.died) toast('有 ' + r.sum.died + ' 隻魚死掉了，快看看水質', 6000);
       }
@@ -679,9 +679,10 @@ function save() { store.rawSet('save', ECO.serialize(st)); lastSave = performanc
 
 // ---------- toasts ----------
 const toastsEl = $('toasts');
-function toast(msg, ms) {
-  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg; toastsEl.appendChild(el);
-  while (toastsEl.children.length > 3) toastsEl.firstChild.remove();
+function toast(msg, ms, keep) {
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg; if (keep) el.dataset.keep = 1; toastsEl.appendChild(el);
+  // at most three at once; the "while you were away" summary is never the one pushed out
+  while (toastsEl.children.length > 3) { const old = [...toastsEl.children].find(c => !c.dataset.keep) || toastsEl.firstChild; old.remove(); }
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 600); }, ms || 3200);
 }
 function buzz(ms) { if (navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
@@ -872,7 +873,7 @@ $('cRemove').addEventListener('click', () => {
   disarm(); if (selected) { splash(selected.x, selected.y, 1); toast(selected.name + ' 送回水族店了'); ECO.removeFish(st, selected.id); } hideCard(); save(); blip(700, 400, 0.1); buzz(10);
 });
 $('cClose').addEventListener('click', hideCard);
-function showCard(f) { const same = selected === f && !card.hidden; selected = f; card.hidden = false; fillCard(true); if (!same) { disarm(); placeCard(); } buzz(8); }
+function showCard(f) { const same = selected === f && !card.hidden; selected = f; card.hidden = false; fillCard(true); if (!same) disarm(); placeCard(); buzz(8); }
 function hideCard() { selected = null; card.hidden = true; disarm(); }
 // re-place the card only when its fish swims underneath it, so it never hides the fish it describes
 function keepCardClear() {
@@ -1475,7 +1476,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { stop(); save(); stopAmbient(); }
   else {
     const raw = store.raw('save'); const r = raw && ECO.restore(raw, Date.now());
-    if (r && r.sum && r.sum.simSeconds > 600) { st = r.st; fitTank(); syncVis(); syncLight(); const d = r.sum.days; toast('你不在時，水族箱過了 ' + (d >= 1 ? d.toFixed(1) + ' 天' : Math.round(d * 24) + ' 小時')); if (r.sum.died) toast('有 ' + r.sum.died + ' 隻魚死掉了'); hideCard(); }
+    if (r && r.sum && r.sum.simSeconds > 600) { st = r.st; fitTank(); syncVis(); syncLight(); const d = r.sum.days; toast('你不在時，水族箱過了 ' + (d >= 1 ? d.toFixed(1) + ' 天' : Math.round(d * 24) + ' 小時'), 6000, true); if (r.sum.died) toast('有 ' + r.sum.died + ' 隻魚死掉了'); hideCard(); }
     if (soundOn) startAmbient();
     start();
   }
