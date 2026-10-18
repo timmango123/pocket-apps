@@ -92,7 +92,7 @@ async function panToward(R, pt) {
   const P = R.P, page = P.page, v = await G.view(page);
   const mid = [v.left + v.width / 2, v.top + v.height * 0.45];
   let sp = null;
-  for (let k = 0; k < 30 && !sp; k++) { const c = [v.left + 20 + P.rng() * (v.width - 40), v.top + 20 + P.rng() * (v.height - 90)]; const h = await G.hit(page, c[0], c[1]); if (!h) sp = c; }
+  for (let k = 0; k < 30 && !sp; k++) { const c = [v.left + 20 + P.rng() * (v.width - 40), v.top + 20 + P.rng() * (v.height - 90)]; let free = true; for (const [ox, oy] of [[0, 0], [22, 0], [-22, 0], [0, 22], [0, -22]]) { const h = await G.hit(page, c[0] + ox, c[1] + oy); if (h && !h.locked) { free = false; break; } } if (free) sp = c; }
   if (!sp) return false;
   const dx = Math.max(-v.width * 0.6, Math.min(v.width * 0.6, mid[0] - pt[0])), dy = Math.max(-v.height * 0.6, Math.min(v.height * 0.6, mid[1] - pt[1]));
   R.think(0.3); R.ev.pans = (R.ev.pans || 0) + 1;
@@ -121,7 +121,8 @@ async function pullFromTray(R, item) {
   // pick target: right cell, or a wrong one when the player misidentifies the piece
   let tid = item.id;
   if (P.rng() < R.wrongRate()) { tid = P.rng.int(R.n); if (tid !== item.id) { R.ev.wrongTargets++; P.stats.mistakes++; } }
-  const t = await G.target(page, tid);
+  const t = await G.target(page, tid), v0 = await G.view(page);
+  if (t.x < v0.left + 8 || t.x > v0.left + v0.width - 8 || t.y < v0.top + 8 || t.y > v0.top + v0.height - 8) { await panToward(R, [t.x, t.y]); return { panned: true }; }
   const s = Math.min(P.t.pos, b.w / 3);
   const a = [b.x + b.w / 2 + R.gauss(s), b.y + b.h / 2 + R.gauss(s)];
   const onItem = a[0] >= b.x && a[0] <= b.x + b.w && a[1] >= b.y && a[1] <= b.y + b.h;
@@ -155,8 +156,13 @@ async function correct(R, q) {
     }
     q = await G.ps(page, q.id); if (!q || q.locked) return; q.id = q.id === undefined ? 0 : q.id;
   }
-  const cur = await G.ps(page, q.id); if (!cur || cur.locked) return;
-  const t = await G.target(page, q.id);
+  let cur = await G.ps(page, q.id); if (!cur || cur.locked) return;
+  // a human grabs the piece that is on top at that spot (another loose piece may cover this one)
+  const top = await G.hit(page, cur.x, cur.y);
+  if (top && !top.locked && top.id !== q.id) { const c2 = await G.ps(page, top.id); if (c2 && !c2.locked) { q = Object.assign({ id: top.id }, c2); cur = c2; } }
+  let t = await G.target(page, q.id);
+  // the spot it belongs to is off screen (table was panned): pan it back into view first, like a person would
+  if (t.x < v.left + 8 || t.x > v.left + v.width - 8 || t.y < v.top + 8 || t.y > v.top + v.height - 8) { await panToward(R, [t.x, t.y]); return; }
   const s = Math.min(P.t.pos, v.cellW * 0.3);
   const a = [cur.x + R.gauss(s), cur.y + R.gauss(s)];
   const h = await G.hit(page, a[0], a[1]);
@@ -177,7 +183,7 @@ async function playRun(P, n, rot, seed) {
     const st = await G.state(page); if (st.won) break;
     loops++;
     if (st.locked === lastLocked) stuck++; else { stuck = 0; lastLocked = st.locked; }
-    if (stuck > 60) { R.notes.push('no progress for 60 actions'); break; }
+    if (stuck > 60) { const l = await G.loose(page); const det = []; for (const q of l.slice(0, 4)) { const t = await G.target(page, q.id); det.push(`#${q.id} n${q.n} at ${q.x.toFixed(0)},${q.y.toFixed(0)} rot${q.rot} -> ${t.x.toFixed(0)},${t.y.toFixed(0)}`); } R.notes.push('no progress for 60 actions; loose: ' + det.join(' | ') + ' cam ' + JSON.stringify(st.cam)); break; }
     const loose = await checkPlacement(R);
     // a human fixes the piece they just dropped before taking a new one
     if (loose.length) {
@@ -209,8 +215,11 @@ async function playRun(P, n, rot, seed) {
   const winShown = st.won ? await page.isVisible('#win') : false;
   const spm = R.model / N / 1000;
   return Object.assign({ pieces: N, rot: !!rot, seed, cleared: st.won, locked: st.locked, winOverlay: winShown, modelSec: +(R.model / 1000).toFixed(1), gameSec: +(st.elapsed / 1000).toFixed(1), wallSec: +((Date.now() - t0) / 1000).toFixed(1),
-    stars: st.won ? (spm < 6 ? 3 : spm < 14 ? 2 : 1) : 0, gameStars: st.won ? await ev(page, () => document.querySelectorAll('#winStars .on').length) : 0, dragsPerPiece: +((R.ev.pulls + R.ev.corrections) / N).toFixed(2) }, R.ev, { notes: R.notes.slice(0, 12) });
+    stars: st.won ? (spm < 6 * starK(N, rot) ? 3 : spm < 14 * starK(N, rot) ? 2 : 1) : 0, gameStars: st.won ? await ev(page, () => document.querySelectorAll('#winStars .on').length) : 0, dragsPerPiece: +((R.ev.pulls + R.ev.corrections) / N).toFixed(2) }, R.ev, { notes: R.notes.slice(0, 12) });
 }
+
+// star thresholds as in the fixed game (s per piece < 6k = 3★, < 14k = 2★, k grows with piece count and rotation)
+const starK = (n, rot) => (1 + 0.25 * Math.log2(Math.max(1, n / 12))) * (rot ? 1.3 : 1);
 
 async function runTier(browser, tierId, idx) {
   const sess = await H.newSession(browser, 'file://' + APP, () => { try { localStorage.setItem('photo-jigsaw:v1:settings', JSON.stringify({ sound: false, vib: false, coached: true, rotHint: true, zoomHint: true })); } catch (e) {} });
@@ -307,7 +316,7 @@ async function probes(browser) {
       const onScreenTop = q ? await ev(page, a => { const el = document.elementFromPoint(a[0], a[1]); return el ? (el.id || el.closest('button') && el.closest('button').id || el.tagName) : null; }, [q.x, q.y]) : null;
       underBtn = { pieceAt: q && [Math.round(q.x), Math.round(q.y)], topElementAtPieceCentre: onScreenTop, buttonBox: [zo.x, zo.y, zo.w, zo.h] };
     }
-    out['screen_' + w + 'x' + h] = { cellPx: +v.cellW.toFixed(1), snapPx: +v.snapPx.toFixed(1), boardCoveredBy: boardCovered, trayThumbsVisible: trayVisible, fitPlaced: placed, fitDrags: drags, fitPullsDropped: dropped, zoomCellPx: +vz.cellW.toFixed(1), zoomPlaced: zPlaced, zoomDrags: zDrags, pans, unreachableTargets: unreachable, dropUnderButton: underBtn, offscreen: R.ev.offscreen, underButtons: R.ev.underButtons, errors };
+    out['screen_' + w + 'x' + h] = { cellPx: +v.cellW.toFixed(1), snapPx: +v.snapPx.toFixed(1), boardCoveredBy: boardCovered, trayThumbsVisible: trayVisible, fitPlaced: placed, fitDrags: drags, fitPullsDropped: dropped, zoomCellPx: +vz.cellW.toFixed(1), zoomPlaced: zPlaced, zoomDrags: zDrags, pans, unreachableTargets: unreachable, dropUnderButton: underBtn, offscreen: R.ev.offscreen, underButtons: R.ev.underButtons, notes: R.notes.slice(0, 8), errors };
     console.log('probe', w + 'x' + h, JSON.stringify(out['screen_' + w + 'x' + h]));
     await ctx.close();
   }
@@ -340,7 +349,7 @@ async function probes(browser) {
 
 (async () => {
   const browser = await H.launch();
-  const out = { game: 'photo-jigsaw', app: path.relative(path.resolve(__dirname, '../../..'), APP), sizes: SIZES, rotation: ROTS, pictures: PICS, model: 'modelled time = reaction + search/think time per action (virtual) + real duration of every touch gesture; stars from the game formula (s per piece <6 = 3★, <14 = 2★) on modelled time', tiers: {} };
+  const out = { game: 'photo-jigsaw', app: path.relative(path.resolve(__dirname, '../../..'), APP), sizes: SIZES, rotation: ROTS, pictures: PICS, model: 'modelled time = reaction + search/think time per action (virtual) + real duration of every touch gesture; stars from the fixed game formula (s per piece < 6k = 3★, < 14k = 2★, k = (1 + 0.25·log2(n/12))·(1.3 if rotation)) on modelled time', tiers: {} };
   const t0 = Date.now();
   if (!args.includes('--probes-only')) for (let i = 0; i < TIER_LIST.length; i++) out.tiers[TIER_LIST[i]] = await runTier(browser, TIER_LIST[i], i);
   if (!args.includes('--no-probes')) out.probes = await probes(browser);

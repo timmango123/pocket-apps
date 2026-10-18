@@ -65,12 +65,12 @@ async function fullPlay(browser) {
   let st = await page.evaluate(() => window.__game.state());
   check(st && st.count === 12 && st.tray === 12 && !st.rotMode, '12-piece puzzle starts with all pieces in the tray');
   // drop piece 0 roughly next to the board but not on it: should stay loose
-  const far = await dragFromTray(page, cdp, 0, 0, -40, 20);
+  const far = await dragFromTray(page, cdp, 0, 0, 10, -80);
   check(far, 'piece 0 pulled out of the tray');
   let ps = await page.evaluate(() => window.__game.pieceScreen(0));
   check(ps && !ps.locked && Math.abs(ps.x - far.x) < 6 && Math.abs(ps.y - far.y) < 6, 'piece dropped away from its slot stays loose where dropped');
   // piece 1 dropped near piece 0 at the right relative offset: joins into a group of 2
-  await dragFromTray(page, cdp, 1, 1, -35, 24);
+  await dragFromTray(page, cdp, 1, 1, 15, -76);
   ps = await page.evaluate(() => window.__game.pieceScreen(1));
   check(ps && ps.n === 2 && !ps.locked, 'neighbour dropped close by snaps into a 2-piece group');
   // drag the group (by piece 0) onto the board: both lock
@@ -103,9 +103,9 @@ async function fullPlay(browser) {
     const v = await page.evaluate(() => window.__game.view()), c0 = (await page.evaluate(() => window.__game.state())).cam;
     const gx = q.x + v.cellW * 0.5 + 9, gy = q.y;
     const hitBefore = await page.evaluate(a => window.__game.hitAt(a[0], a[1]), [gx, gy]);
-    await touchDrag(cdp, line([gx, gy], [gx - 30, gy + 20], 8)); await sleep(120);
+    await touchDrag(cdp, line([gx, gy], [gx + 30, gy + 20], 8)); await sleep(120);
     const q2 = await page.evaluate(id => window.__game.pieceScreen(id), it.id), c1 = (await page.evaluate(() => window.__game.state())).cam;
-    check((hitBefore === null || hitBefore.id !== it.id) ? Math.abs(q2.x - q.x + 30) < 3 && Math.abs(c1.tx - c0.tx) < 0.5 : true, 'touch a few px outside a loose piece grabs that piece, the table stays put');
+    check((hitBefore === null || hitBefore.id !== it.id) ? Math.abs(q2.x - q.x - 30) < 3 && Math.abs(c1.tx - c0.tx) < 0.5 : true, 'touch a few px outside a loose piece grabs that piece, the table stays put');
     // drop it under the zoom buttons: it slides out so it can be picked up again
     const zb = await page.locator('#bZoomOut').boundingBox();
     await touchDrag(cdp, line([q2.x, q2.y], [zb.x + zb.width / 2, zb.y + zb.height / 2], 10)); await sleep(120);
@@ -122,6 +122,12 @@ async function fullPlay(browser) {
     const sl = await page.evaluate(() => document.getElementById('trayScroll').scrollLeft), n1 = (await page.evaluate(() => window.__game.trayIds())).length;
     check(sl > 120 && n1 === n0, 'sideways swipe on a tray piece scrolls the tray (' + Math.round(sl) + 'px) without pulling a piece');
     await touchDrag(cdp, line([200, it2.box.y + 40], [380, it2.box.y + 40], 8)); await sleep(500);
+    // a shallow pull (about 22° above horizontal) still takes the piece out once the finger leaves the tray
+    { const it3 = (await page.evaluate(() => window.__game.trayInfo())).find(t => t.box && !t.box.cut && t.box.x > 200); const a3 = [it3.box.x + it3.box.w / 2, it3.box.y + it3.box.h / 2];
+      await touchDrag(cdp, line(a3, [a3[0] - 260, a3[1] - 105], 14)); await sleep(150);
+      const q5 = await page.evaluate(id => window.__game.pieceScreen(id), it3.id);
+      check(!!q5, 'shallow 22° pull from the tray still brings the piece out');
+      if (q5 && !q5.locked) { const t5 = await page.evaluate(id => window.__game.target(id), it3.id); await touchDrag(cdp, line([q5.x, q5.y], [t5.x, t5.y], 12)); await sleep(150); } }
     // put it back where it belongs so the rest of the run is unchanged
     const t4 = await page.evaluate(id => window.__game.target(id), it.id);
     await touchDrag(cdp, line([q4.x, q4.y], [t4.x, t4.y], 12)); await sleep(150);
@@ -155,7 +161,7 @@ async function fullPlay(browser) {
   st = await page.evaluate(() => window.__game.state());
   check(st.won && st.locked === 12 && await page.isVisible('#win'), 'all 12 pieces placed: puzzle completes and the win card shows');
   check(await page.evaluate(() => !localStorage.getItem('photo-jigsaw:v1:save') && !!localStorage.getItem('photo-jigsaw:v1:best')), 'finished puzzle clears the save and records a best time');
-  await page.screenshot({ path: path.join(OUT, 'win-390x844.png') });
+  await page.screenshot({ path: path.join(OUT, 'win-390x844.png'), timeout: 120000 });
   // play again from the win card
   await tapSel(cdp2, page, '#wAgain'); await sleep(300);
   st = await page.evaluate(() => window.__game.state());
