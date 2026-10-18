@@ -26,6 +26,7 @@ async function session(browser, vp, dark, full) {
   await tap(page, '#grid .lt.cur'); await sleep(250);
   let st = await page.evaluate(() => window.__ig.get());
   ok(st.mode === 'level' && st.level === 1 && st.tray.length === 8, tag + ' level 1 started with 8 keys');
+  if (full) { await sleep(500); ok(await page.locator('#toast').isVisible() && (await page.locator('#toast').textContent()).includes('字牌'), tag + ' first game shows the onboarding tip'); }
   // tiles & keys fit the viewport
   const fits = await page.evaluate(() => [...document.querySelectorAll('#board .tile, #tray .key, #actions .abtn, .hud .ibtn')].every(e => { const b = e.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth + 0.5 && b.top >= 0 && b.bottom <= innerHeight + 0.5; }));
   ok(fits, tag + ' board, tray and buttons inside the viewport');
@@ -84,6 +85,23 @@ async function session(browser, vp, dark, full) {
   const prog2 = await page.evaluate(() => window.__ig.prog());
   ok(prog2.levels[1] === 3, tag + ' progress persists across reload');
   ok((await page.locator('#tLvMeta').textContent()).includes('第 2 關'), tag + ' title shows next level to play');
+  // unlock-all switch: level 50 is locked by default, opens once the switch is on, and the choice persists
+  await tap(page, '#tLevels'); await sleep(250);
+  ok(await page.locator('#grid .lt:nth-child(50)').isDisabled(), tag + ' level 50 locked by default');
+  ok(!(await page.locator('#grid .lt:nth-child(2)').isDisabled()), tag + ' level 2 unlocked after finishing level 1');
+  await tap(page, '#unlockSw'); await sleep(250);
+  ok((await page.locator('#unlockSw').getAttribute('aria-checked')) === 'true', tag + ' unlock switch turns on');
+  ok((await page.locator('#grid .lt:disabled').count()) === 0, tag + ' all 100 tiles enabled with unlock-all');
+  await page.locator('#grid .lt:nth-child(50)').tap(); await sleep(300);
+  st = await page.evaluate(() => window.__ig.get());
+  ok(st.mode === 'level' && st.level === 50 && st.tray.length === 12, tag + ' tapping tile 50 opens level 50');
+  await page.reload(); await sleep(400); await tap(page, '#tLevels'); await sleep(250);
+  ok((await page.locator('#unlockSw').getAttribute('aria-checked')) === 'true' && (await page.locator('#grid .lt:disabled').count()) === 0, tag + ' unlock-all persists across reload');
+  await page.locator('#grid .lt:nth-child(100)').tap(); await sleep(300);
+  st = await page.evaluate(() => window.__ig.get());
+  ok(st.level === 100 && st.tray.length === 14, tag + ' level 100 opens with 14 keys');
+  await tap(page, '#bBack'); await sleep(250); await tap(page, '#unlockSw'); await sleep(250);
+  ok(await page.locator('#grid .lt:nth-child(50)').isDisabled(), tag + ' switching off re-locks level 50');
   ok(errors.length === 0, tag + ' no page errors after full flow: ' + errors.join(' | '));
   await ctx.close();
 }

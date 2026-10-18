@@ -71,6 +71,7 @@ ok(IG.ATTEMPTS === 6 && IG.LEVELS === 100, 'six attempts, 100 levels');
 ok(/idiom-guess:v1:/.test(html), 'localStorage keys prefixed idiom-guess:v1:');
 ok(/prefers-color-scheme/.test(html) && /data-theme="dark"/.test(html), 'dark mode via media query and manual theme');
 ok(/prefers-reduced-motion/.test(html), 'respects reduced motion');
+ok(/id="unlockSw" role="switch"/.test(html) && /'unlockAll'/.test(html), 'level select has a saved 解鎖全部關卡 switch');
 ok(!/https?:\/\/[^"']+\.(js|css)/.test(html), 'no external scripts or stylesheets');
 
 console.log(`${pass} passed, ${fail} failed`);
