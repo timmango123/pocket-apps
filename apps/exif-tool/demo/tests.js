@@ -174,6 +174,77 @@ const fullTiff = (ori, le) => EX.buildTiff({
   ok(woi.vp8x && woi.summary.orientation === 6 && (await decode(wori.bytes)) !== null, 'webp strip: simple file gains VP8X + EXIF orientation and still decodes');
   ok(fval(EX.parse(EX.webpWithMeta(WEBP, { exif: fullTiff(1, false) })), 'camera') === 'Canon EOS R6', 'webp: EXIF chunk without Exif\\0\\0 prefix also parsed');
 
+
+  // --- HEIC / AVIF (ISOBMFF): Exif + XMP items are wiped in place, every other byte untouched ---
+  const { buildHeif } = require('./heif-fixture.js');
+  const hevc = Uint8Array.from({ length: 300 }, (_, i) => (i * 37 + 11) & 255);
+  const heTiff = fullTiff(6, false);
+  const heExif = EX.concat([Uint8Array.from([0, 0, 0, 6]), EX.encStr('Exif\0\0'), heTiff]);
+  for (const split of [false, true]) {
+    const hf = buildHeif({ split, items: [{ id: 1, type: 'hvc1', data: hevc }, { id: 2, type: 'Exif', data: heExif, cdsc: 1 }, { id: 3, type: 'mime', mime: 'application/rdf+xml', data: EX.encStr(xmp), cdsc: 1 }] });
+    const hi = EX.parse(hf);
+    ok(hi.format === 'heic' && hi.width === 64 && hi.height === 48, `heic${split ? ' (2 extents)' : ''}: format + ispe dimensions`);
+    ok(fval(hi, 'camera') === 'Canon EOS R6' && hi.summary.orientation === 6 && Math.abs(hi.summary.gps.lat + 33.8688) < 1e-4 && hi.summary.risk === 'high', `heic${split ? ' (2 extents)' : ''}: EXIF item parsed (camera, orientation, GPS)`);
+    ok(/作者/.test(fval(hi, 'xmp')) && fval(hi, 'serial') === '093021004512', 'heic: XMP item + serial');
+    for (const o of [0, 6]) {
+      const hs = EX.strip(hf, { orientation: o });
+      ok(hs.bytes.length === hf.length && hs.removed.map(r => r.kind).sort().join() === 'exif,xmp', `heic strip o=${o}: same length, removed exif+xmp`);
+      let outside = 0; const ranges = EX.heifItems(hf).items.filter(i => i.type !== 'hvc1').flatMap(i => i.extents);
+      for (let k = 0; k < hf.length; k++) if (hf[k] !== hs.bytes[k] && !ranges.some(([a, l]) => k >= a && k < a + l)) outside++;
+      ok(outside === 0, `heic strip o=${o}: only metadata item bytes changed`);
+      const hsi = EX.parse(hs.bytes);
+      ok(!hsi.summary.gps && !hsi.xmp && hsi.summary.count === (o ? 1 : 0) && hsi.summary.orientation === (o || 1) && hsi.summary.risk === 'clean', `heic strip o=${o}: re-parse clean`);
+      ok(['Canon', '093021004512', '林小美', 'Lightroom'].every(w => Buffer.from(hs.bytes).indexOf(w) < 0), `heic strip o=${o}: no identifying strings left in the bytes`);
+      ok(EX.strip(hs.bytes, { orientation: o }).removed.length === 0, `heic strip o=${o}: idempotent`);
+    }
+  }
+  const avifF = buildHeif({ brand: 'avif', compat: ['mif1', 'avif'], items: [{ id: 1, type: 'av01', data: hevc }, { id: 2, type: 'Exif', data: heExif }] });
+  ok(EX.sniff(avifF) === 'avif' && EX.parse(avifF).summary.gps, 'avif: sniffed and EXIF parsed');
+  ok(EX.sniff(buildHeif({ brand: 'mif1', compat: ['mif1', 'avif', 'miaf'], items: [{ id: 1, type: 'av01', data: hevc }] })) === 'avif', 'avif: mif1 major brand with avif compat');
+  let hthrew = false; try { EX.strip(heic, {}); } catch (e) { hthrew = true; } ok(hthrew && EX.parse(heic).broken, 'heic without meta box: reported broken, strip refuses');
+  ok(EX.parse(hf0trunc()).format === 'heic', 'heic: truncated file survives parse');
+  function hf0trunc() { const f = buildHeif({ items: [{ id: 1, type: 'hvc1', data: hevc }, { id: 2, type: 'Exif', data: heExif }] }); return f.subarray(0, 200); }
+
+  // --- formatting / edge cases found in review ---
+  ok(EX.fmtExposure(0.3) === '0.3 s' && EX.fmtExposure(1 / 3) === '1/3 s' && EX.fmtExposure(0.0166) === '1/60 s' && EX.fmtExposure(0.4) === '0.4 s' && EX.fmtExposure(1 / 8000) === '1/8000 s', 'fmtExposure: 0.3 s is not shown as 1/3 s');
+  const t35 = EX.buildTiff({ ifd0: { 0x0110: { t: 2, v: 'X' } }, exif: { 0x920A: { t: 5, v: [26, 1] }, 0xA405: { t: 3, v: 26 } } }, false);
+  ok(fval(EX.parse(EX.jpegInsertExif(JPG, t35)), 'exposure') === '26 mm', 'exposure: 35 mm equivalent omitted when equal');
+  const t00 = EX.buildTiff({ ifd0: { 0x0110: { t: 2, v: 'X' } }, gps: { 1: { t: 2, v: 'N' }, 2: { t: 5, v: [[0, 1], [0, 1], [0, 1]] }, 3: { t: 2, v: 'E' }, 4: { t: 5, v: [[0, 1], [0, 1], [0, 1]] } } }, false);
+  const i00 = EX.parse(EX.jpegInsertExif(JPG, t00));
+  ok(!i00.summary.gps && /沒有定位/.test(fval(i00, 'gps')) && i00.summary.risk !== 'high', 'GPS 0,0 (no fix) not reported as a location');
+  const tbad = EX.buildTiff({ ifd0: { 0x0110: { t: 2, v: 'X' } }, gps: { 2: { t: 5, v: [[95, 1], [0, 1], [0, 1]] }, 4: { t: 5, v: [[10, 1], [0, 1], [0, 1]] } } }, false);
+  ok(/損壞/.test(fval(EX.parse(EX.jpegInsertExif(JPG, tbad)), 'gps')), 'GPS out of range explained as corrupt');
+  const ucBE = EX.concat([EX.encStr('UNICODE\0'), Uint8Array.from([0x5F, 0x35, 0x4E, 0x09])]); // 張三 big-endian
+  const ucLE = EX.concat([EX.encStr('UNICODE\0'), Uint8Array.from([0x35, 0x5F, 0x09, 0x4E])]);
+  ok(fval(EX.parse(EX.jpegInsertExif(JPG, EX.buildTiff({ ifd0: { 0x0110: { t: 2, v: 'X' } }, exif: { 0x9286: { t: 7, v: ucBE } } }, false))), 'comment') === '張三', 'UserComment UNICODE big-endian (MM file)');
+  ok(fval(EX.parse(EX.jpegInsertExif(JPG, EX.buildTiff({ ifd0: { 0x0110: { t: 2, v: 'X' } }, exif: { 0x9286: { t: 7, v: ucLE } } }, true))), 'comment') === '張三', 'UserComment UNICODE little-endian (II file)');
+  ok(EX.parse(EX.jpegInsertExif(JPG, fullTiff(1, false))).summary.count === 35, 'tag count excludes IFD pointer tags: ' + EX.parse(EX.jpegInsertExif(JPG, fullTiff(1, false))).summary.count);
+  const emptyX = EX.jpegInsertExif(JPG, EX.orientationTiff(1), [{ marker: 0xE1, payload: EX.concat([EX.encStr('http://ns.adobe.com/xap/1.0/\0'), EX.encStr('<?xpacket begin=""?><x:xmpmeta xmlns:x="adobe:ns:meta/"/><?xpacket end="w"?>')]) }]);
+  ok(!EX.parse(emptyX).xmp && EX.parse(emptyX).meta.find(m => m.kind === 'xmp').empty, 'empty XMP packet is not flagged as personal data');
+  // garbage / edge inputs never throw from parse
+  for (const g of [new Uint8Array(0), Uint8Array.from([0xFF, 0xD8]), Uint8Array.from([0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF]), EX.concat([PNG.subarray(0, 8)]), EX.encStr('RIFF\x10\0\0\0WEBPVP8X'), EX.encStr('\0\0\0\x08ftyp')]) {
+    let e = null; try { EX.parse(g); } catch (x) { e = x; } ok(!e, 'parse never throws on garbage (' + g.length + ' B) ' + (e && e.message));
+  }
+
+  // truncated files: no scan data → refused with a reason; cut-off tail → stripped and closed with EOI
+  ok(EX.parse(trailing.subarray(0, 400)).broken, 'jpeg cut inside the header is reported broken');
+  const tail = JPG.subarray(0, JPG.length - 20), tailI = EX.parse(EX.jpegInsertExif(tail, fullTiff(1, false)));
+  ok(tailI.cutTail && !tailI.broken && tailI.summary.gps, 'jpeg with a cut-off tail still parsed');
+  const tailS = EX.strip(EX.jpegInsertExif(tail, fullTiff(1, false)), {});
+  ok(EX.parse(tailS.bytes).tiff === null && tailS.bytes[tailS.bytes.length - 2] === 0xFF && tailS.bytes[tailS.bytes.length - 1] === 0xD9 && Buffer.from(tailS.bytes).indexOf(Buffer.from(tail.subarray(tail.length - 60))) === tailS.bytes.length - 62, 'jpeg cut-off tail: every scan byte kept, closed with EOI, EXIF gone');
+  ok(EX.parse(png.subarray(0, png.length - 30)).broken && EX.parse(webp.subarray(0, 40)).broken, 'png / webp truncated → broken');
+  // review fixes: data after PNG IEND is listed and removed; mistyped (BYTE/UNDEFINED) text tags decode as text
+  const pngTail = EX.concat([png, EX.encStr('hidden trailer after IEND: 37.7749,-122.4194')]);
+  const pti = EX.parse(pngTail);
+  ok(pti.trailing === 44 && pti.meta.some(m => m.kind === 'trailing') && field(pti, 'trailing') && pti.summary.warnings.some(w => w.key === 'trailing'), 'png: data after IEND listed like JPEG data after EOI');
+  const ptc = EX.parse(EX.concat([PNG, EX.encStr('xyz')]));
+  ok(ptc.summary.risk !== 'clean' && fval(ptc, 'trailing') === '3 B', 'png: plain PNG with trailer is not called clean');
+  const pts = EX.strip(pngTail, {});
+  ok(pts.removed.some(r => r.kind === 'trailing' && r.bytes === 44) && Buffer.from(pts.bytes).indexOf('hidden trailer') < 0 && !EX.parse(pts.bytes).trailing, 'png strip: IEND trailer removed and reported');
+  const mis = EX.buildTiff({ ifd0: { 0x0110: { t: 7, v: EX.encStr('Pixel 9\0') }, 0x013B: { t: 1, v: EX.encStr('林小美') } }, exif: { 0xA430: { t: 7, v: EX.encStr('王大明') }, 0xA431: { t: 7, v: EX.encStr('SN-778899\0\0') }, 0xA434: { t: 7, v: Uint8Array.from([1, 2, 3, 250]) } } }, false);
+  const misI = EX.parse(EX.jpegInsertExif(JPG, mis));
+  ok(fval(misI, 'owner') === '王大明' && fval(misI, 'artist') === '林小美' && fval(misI, 'serial') === 'SN-778899' && fval(misI, 'camera') === 'Pixel 9', 'mistyped text tags decoded as text: ' + [fval(misI, 'owner'), fval(misI, 'artist'), fval(misI, 'serial'), fval(misI, 'camera')]);
+  ok(misI.tiff.ifds.exif.find(e => e.name === 'LensModel').text === '01 02 03 fa' && fval(misI, 'lens') === '01 02 03 fa', 'binary bytes in a text tag stay shown as bytes, not garbage text');
   // --- helpers ---
   ok(EX.fmtExposure(1 / 250) === '1/250 s' && EX.fmtExposure(2.5) === '2.5 s' && EX.fmtExposure(0.5) === '1/2 s', 'fmtExposure');
   ok(EX.fmtBytes(512) === '512 B' && EX.fmtBytes(2048) === '2.0 KB' && EX.fmtBytes(3 * 1048576) === '3.00 MB', 'fmtBytes');

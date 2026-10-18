@@ -123,5 +123,48 @@ const trip = o => FP.tripCost(Object.assign({ km: 100, roundTrip: false, kmPerL:
 { const e = FP.evCost({ km: 100, kwhPer100: '', pricePerKwh: 5 }); ok(e.cost === 0, '空電耗 = 0'); }
 { const g = trip({ km: 200, kmPerL: 14.5, price: 31 }), e = FP.evCost({ km: 200, kwhPer100: 16, pricePerKwh: 5 }); ok(g.fuel > e.cost, '範例情境電動車較省'); }
 
+// --- 台電 113/4/1 起住宅非時間電價（每月級距，元/度）逐格核對 ---
+{
+  const exp = [[120, 1.68, 1.68], [330, 2.45, 2.16], [500, 3.70, 3.03], [700, 5.04, 4.14], [1000, 6.24, 5.07], [null, 8.46, 6.63]];
+  ok(R.effective === '2024-04-01', '預設生效日 2024-04-01');
+  ok(exp.every(([u, s, w], i) => R.tiers[i].upTo === u && R.tiers[i].summer === s && R.tiers[i].winter === w), '六段門檻與夏月／非夏月單價與台電電價表相符');
+}
+// --- 寬鬆數字解析 ---
+const P = FP.parseNum;
+ok(P('１２０') === 120 && P('1,234.5') === 1234.5 && P(' 112 ') === 112, '全形數字、千分位、空白');
+ok(P('NT$31.5') === 31.5 && P('$31') === 31 && P('約 30') === 30, '前置 NT$／$／約');
+ok(P('112km') === 112 && P('120 公里') === 120 && P('3人') === 3 && P('14.5 km/L') === 14.5, '後置單位');
+ok(P('．5') === 0.5 && P('.5') === 0.5 && P('5.') === 5, '小數點寫法');
+ok(P('−5') === -5 && P('-5') === -5, '負號（含全形減號）');
+ok(isNaN(P('abc')) && isNaN(P('1.2.3')) && isNaN(P('12a3')) && isNaN(P('')) && isNaN(P('😀')) && isNaN(P(null)), '看不懂的回傳 NaN');
+ok(P(42) === 42, '數字原樣');
+// --- 欄位檢查 ---
+const C = FP.check;
+ok(C('', { name: '距離', required: true }).err === '請輸入距離', '必填空白');
+ok(C('', { name: '過路費' }).err === '', '選填空白沒錯誤');
+ok(C('abc', { name: '距離' }).err.includes('看不懂'), '文字');
+ok(C('-1', { name: '距離' }).err.includes('負數'), '負數');
+ok(C('0', { name: '油耗', positive: true }).err.includes('大於 0'), '0 不行');
+ok(C('25', { name: '每天小時', max: 24 }).err.includes('最多 24'), '超過上限');
+ok(C('１２', { name: 'x', max: 24 }).err === '' && C('１２', {}).n === 12, '全形合法');
+// 解析後計算
+{ const t = trip({ km: '１００ km', kmPerL: '10 km/L', price: 'NT$30', people: '1 人' }); ok(near(t.total, 300), '帶單位與全形的行程照算'); }
+ok(near(bill('1,000', W).total, bill(1000, W).total), '千分位度數');
+// --- 自訂門檻 ---
+{
+  const c = JSON.parse(JSON.stringify(R)); c.tiers[0].upTo = 100;
+  const r = FP.sanitizeRates(c); ok(r && near(bill(250, W, r).total, 200 * 1.68 + 50 * 2.16), '自訂第一段上限 100 度（每期 200）');
+  ok(FP.sameRates(FP.sanitizeRates(JSON.parse(JSON.stringify(R))), R) && !FP.sameRates(r, R), 'sameRates');
+  const big = JSON.parse(JSON.stringify(R)); big.tiers[4].upTo = 2e6; ok(FP.sanitizeRates(big) === null, '門檻過大 → null');
+  const hole = JSON.parse(JSON.stringify(R)); hole.tiers[2] = null; ok(FP.sanitizeRates(hole) === null, '缺段 → null');
+}
+// 跨季按天數：度數與門檻都按比例分攤 = 兩季帳單加權
+{ const p = FP.periodInfo(9), k = 1500; ok(near(bill(k, p.fs).total, p.fs * bill(k, S).total + (1 - p.fs) * bill(k, W).total), '9–10 月 1500 度跨季加權'); }
+
+// 第二輪審查：分攤人數 0 要擋下（UI 用 positive 檢查）
+ok(C('0', { name: '分攤人數', positive: true }).err === '分攤人數要大於 0', '0 人擋下並說明');
+ok(C('1', { name: '分攤人數', positive: true }).err === '', '1 人可以');
+// 天數上限：一期最多 62 天
+ok(Math.max(...Array.from({ length: 12 }, (_, i) => FP.periodInfo(i + 1).days)) === 62 && Math.min(...Array.from({ length: 12 }, (_, i) => FP.periodInfo(i + 1).days)) === 59, '兩個月計費期 59–62 天');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

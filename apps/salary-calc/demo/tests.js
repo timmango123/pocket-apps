@@ -1,5 +1,6 @@
 // Logic tests for 薪資與勞健保試算. Extracts the pure core between CORE markers of ../index.html.
 // Usage: node tests.js   → prints "N passed, 0 failed", exit 0 on success.
+// Expected values are computed by hand (Decimal, round half up) from the 2026 figures, independent of the app code.
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const SC = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return SC;')();
@@ -10,180 +11,257 @@ const eq = (a, b, m) => ok(a === b, `${m} (got ${a}, want ${b})`);
 const calc = (inp, cfg) => SC.calc(inp, cfg || {});
 const R = Math.round;
 
-// --- data block sanity ---
+// --- data block sanity / internal consistency ---
 {
-  eq(D.year, 2026, 'data year is 2026');
+  eq(D.year, 2026, 'data year is 2026'); eq(D.minWage, 29500, '基本工資 29,500');
+  eq(D.liRate + D.eiRate, 12.5, '勞保 11.5% + 就保 1% = 12.5%');
+  eq(D.hiRate, 5.17, '健保 5.17%'); eq(D.avgDep, 0.56, '平均眷口數 0.56'); eq(D.pensionEr, 6, '勞退 6%');
+  eq(D.liEmpShare + D.liErShare, 90, '勞保 20+70 (政府 10)'); eq(D.hiEmpShare + D.hiErShare, 90, '健保 30+60 (政府 10)');
   ok(D.grades.every((g, i) => i === 0 || g > D.grades[i - 1]), 'grade table strictly ascending');
-  ok(D.lowGrades.every((g, i) => i === 0 || g > D.lowGrades[i - 1]) && D.lowGrades[D.lowGrades.length - 1] < D.minWage, 'low grades ascending and below min wage');
-  ok(D.grades.includes(D.liTop) && D.grades.includes(D.hiTop) && D.grades.includes(D.pensionTop), 'tops are table members');
+  ok(!D.grades.includes(D.minWage), 'min wage is added as a grade, not stored in the table');
+  ok(D.penLow.every((g, i) => i === 0 || g > D.penLow[i - 1]) && D.penLow[D.penLow.length - 1] < D.grades[0], 'pension low grades ascending, below table');
+  ok([D.liTop, D.oiTop, D.hiTop, D.pensionTop].every(t => D.grades.includes(t)), 'tops are table members');
+  ok(D.liTop < D.oiTop && D.oiTop < D.pensionTop && D.pensionTop < D.hiTop, 'top order 勞保 < 職災 < 勞退 < 健保');
 }
 // --- grade lookup boundaries ---
 {
-  const li = SC.grades('li', def), hi = SC.grades('hi', def), pen = SC.grades('pen', def);
-  eq(li[li.length - 1], D.liTop, '勞保 top grade 45,800');
-  eq(hi[hi.length - 1], D.hiTop, '健保 top grade 219,500');
-  eq(pen[pen.length - 1], D.pensionTop, '勞退 top grade 150,000');
-  eq(hi[0], def.minWage, '健保 lowest grade is min wage');
-  eq(li[0], D.lowGrades[0], '勞保 table starts with part-time grades');
-  ok(!li.includes(28800), 'min wage 29,500 pushes out the 28,800 grade');
-  eq(SC.grade('li', 29500, def), 29500, 'exactly min wage → min wage grade');
-  eq(SC.grade('li', 29501, def), 30300, 'one dollar above min wage → next grade');
-  eq(SC.grade('li', 30300, def), 30300, 'exactly on a grade stays on it');
-  eq(SC.grade('li', 30301, def), 31800, 'one over a grade rounds up to the next');
-  eq(SC.grade('li', 45800, def), 45800, '45,800 → top 勞保 grade');
-  eq(SC.grade('li', 45801, def), 45800, '45,801 → capped at 勞保 top');
-  eq(SC.grade('li', 999999, def), 45800, 'huge salary capped at 勞保 top');
-  eq(SC.grade('hi', 45801, def), 48200, '健保 continues above 勞保 top');
-  eq(SC.grade('hi', 219500, def), 219500, '健保 219,500 on top');
-  eq(SC.grade('hi', 300000, def), 219500, '健保 capped at 219,500');
-  eq(SC.grade('pen', 150000, def), 150000, '勞退 150,000 top');
-  eq(SC.grade('pen', 160000, def), 150000, '勞退 capped at 150,000');
-  eq(SC.grade('hi', 10000, def), 29500, '健保 below min wage → min wage');
-  eq(SC.grade('li', 10000, def), 11100, '勞保 below lowest part-time grade → 11,100');
-  eq(SC.grade('li', 20000, def), 20008, '勞保 part-time 20,000 → 20,008');
-  eq(SC.grade('pen', 1000, def), 11100, '勞退 part-time lowest 11,100 (no 1,500 grades)');
-  eq(SC.grade('li', 0, def), 11100, 'zero salary → lowest grade, no crash');
-  // min wage edit shifts the floor and keeps the table coherent
+  const li = SC.grades('li', def), lip = SC.grades('li', def, true), hi = SC.grades('hi', def, true), pen = SC.grades('pen', def, true), oi = SC.grades('oi', def);
+  eq(li[0], 29500, 'full-time 勞保 starts at min wage'); eq(li[li.length - 1], 45800, '勞保 top 45,800'); eq(li.length, 11, '勞保 full-time has 11 grades');
+  eq(lip[0], 11100, 'part-time 勞保 starts at 11,100'); ok(lip.includes(28800) && lip.includes(27600), 'part-time keeps 27,600 and 28,800 (below min wage)');
+  eq(lip.length, 28, 'part-time 勞保 has 17 low + 11 grades');
+  eq(hi[0], 29500, '健保 lowest = min wage even part-time'); eq(hi[hi.length - 1], 219500, '健保 top 219,500');
+  eq(pen[0], 1500, '勞退 part-time starts at 1,500'); eq(pen[pen.length - 1], 150000, '勞退 top 150,000');
+  eq(oi[oi.length - 1], 72800, '職災 top 72,800');
+  const G = (k, a, p) => SC.grade(k, a, def, p);
+  eq(G('li', 29500), 29500, 'exactly min wage → min wage');
+  eq(G('li', 29501), 30300, 'one dollar above min wage → 30,300');
+  eq(G('li', 30300), 30300, 'exactly on a grade stays');
+  eq(G('li', 30301), 31800, 'one over a grade → next');
+  eq(G('li', 45801), 45800, '勞保 capped at 45,800');
+  eq(G('li', 999999), 45800, 'huge → 勞保 top');
+  eq(G('hi', 45801), 48200, '健保 continues above 勞保 top');
+  eq(G('hi', 300000), 219500, '健保 capped');
+  eq(G('pen', 150001), 150000, '勞退 capped');
+  eq(G('oi', 50000), 50600, '職災 50,000 → 50,600 (not capped at 勞保 top)');
+  eq(G('oi', 80000), 72800, '職災 capped at 72,800');
+  eq(G('li', 20000), 29500, 'full-time below min wage → min wage grade');
+  eq(G('li', 20000, true), 20008, 'part-time 20,000 → 20,008');
+  eq(G('li', 28700, true), 28800, 'part-time 28,700 → 28,800');
+  eq(G('li', 28801, true), 29500, 'part-time 28,801 → 29,500');
+  eq(G('li', 5000, true), 11100, 'part-time below 11,100 → 11,100');
+  eq(G('pen', 5000, true), 6000, '勞退 part-time 5,000 → 6,000');
+  eq(G('pen', 1, true), 1500, '勞退 part-time lowest 1,500');
+  eq(G('pen', 9901, true), 11100, '勞退 9,901 → 11,100');
+  eq(G('hi', 10000, true), 29500, '健保 part-time below min wage → min wage');
+  eq(G('li', 0), 29500, 'zero → lowest grade, no crash');
+  // min wage edits
   const c25 = { ...def, minWage: 28590 };
-  eq(SC.grade('li', 28590, c25), 28590, '2025 min wage 28,590 as floor');
-  eq(SC.grade('li', 28700, c25), 28800, '…and 28,800 grade comes back');
+  eq(SC.grade('li', 28590, c25), 28590, '2025 min wage 28,590 becomes the floor');
+  eq(SC.grade('li', 28700, c25), 28800, '…and 28,800 is a normal grade again');
   const c31 = { ...def, minWage: 31000 };
-  eq(SC.grade('hi', 29600, c31), 31000, 'min wage above table entries: 30,300 removed');
-  eq(SC.grade('hi', 31001, c31), 31800, '…next grade still 31,800');
+  eq(SC.grade('hi', 29600, c31), 31000, 'min wage 31,000 drops 30,300');
+  eq(SC.grade('hi', 31001, c31), 31800, '…next 31,800');
+  eq(SC.grade('li', 30000, c31, true), 30300, 'part-time can use 30,300 under a 31,000 floor');
+  // editable tops
+  eq(SC.grade('li', 60000, { ...def, liTop: 48200 }), 48200, '勞保 top raised to 48,200');
+  eq(SC.grade('li', 60000, { ...def, liTop: 47000 }), 47000, 'top not in table becomes the last grade');
+  eq(SC.grade('li', 60000, { ...def, liTop: 20000 }), 29500, 'top below min wage → min wage');
 }
-// --- each deduction, sample case ---
+// --- the sample case, every item ---
 {
   const r = calc({ salary: 42000, allow: 3000, dep: 1, selfRate: 6, bonusMonths: 1.5 });
   eq(r.gross, 45000, 'gross = salary + allowance');
-  eq(r.liG, 45800, 'sample 勞保 grade'); eq(r.hiG, 45800, 'sample 健保 grade'); eq(r.pG, 45800, 'sample 勞退 grade');
-  eq(r.liEmp, R(45800 * 0.125 * 0.2), '勞保 employee = grade×12.5%×20% = 1,145');
+  eq(r.liG, 45800, '勞保 grade'); eq(r.hiG, 45800, '健保 grade'); eq(r.pG, 45800, '勞退 grade'); eq(r.oiG, 45800, '職災 grade');
+  eq(r.liEmpN, 1053, '普通事故 45,800×11.5%×20% = 1,053.4 → 1,053');
+  eq(r.liEmpE, 92, '就保 45,800×1%×20% = 91.6 → 92');
   eq(r.liEmp, 1145, '勞保 1,145');
-  eq(r.hiPer, R(45800 * 0.0517 * 0.3), '健保 per person 710');
-  eq(r.hiPer, 710, '健保 per person = 710');
-  eq(r.hiEmp, 1420, '健保 with 1 dependent = 1,420');
-  eq(r.selfPen, 2748, '自提 6% of 45,800 = 2,748');
-  eq(r.net, 45000 - 1145 - 1420 - 2748, 'net = gross − all');
-  eq(r.net, 39687, 'sample net 39,687');
-  eq(r.liEr, 4008, '雇主勞保 70%: 4007.5 rounds up to 4,008');
-  eq(r.liEr, 4008, '雇主勞保 4,008');
-  eq(r.oi, R(45800 * 0.002), '職災 0.2% = 92');
-  eq(r.hiEr, R(45800 * 0.0517 * 0.6 * 1.56), '雇主健保 ×1.56 = 2,216');
-  eq(r.hiEr, 2216, '雇主健保 2,216');
-  eq(r.penEr, 2748, '雇主勞退 6% = 2,748');
-  eq(r.erTotal, 45000 + 4008 + 92 + 2216 + 2748, 'employer total = gross + all employer items');
-  // yearly
-  eq(r.year.bonus, 63000, 'bonus = salary × 1.5 (allowance excluded)');
-  eq(r.year.gross, 45000 * 12 + 63000, 'yearly gross');
+  eq(r.hiPer, 710, '健保 per person 45,800×5.17%×30% = 710.358 → 710');
+  eq(r.hiEmp, 1420, '健保 ×2 people');
+  eq(r.selfPen, 2748, '自提 6% = 2,748');
+  eq(r.net, 39687, 'net 45,000 − 1,145 − 1,420 − 2,748');
+  eq(r.liEr, 4008, '雇主勞保 3,686.9→3,687 + 320.6→321');
+  eq(r.oi, 92, '職災 0.2% = 91.6 → 92');
+  eq(r.wf, 11, '墊償 0.025% = 11.45 → 11');
+  eq(r.hiEr, 2216, '雇主健保 45,800×5.17%×60%×1.56 = 2,216.36');
+  eq(r.penEr, 2748, '雇主勞退 2,748');
+  eq(r.erTotal, 45000 + 4008 + 92 + 11 + 2216 + 2748, 'employer total 54,075');
+  eq(r.year.bonus, 63000, 'bonus = 本薪 × 1.5');
   eq(r.year.supp, 0, 'bonus 63,000 < 4×45,800 → no 補充保費');
-  eq(r.year.net, 39687 * 12 + 63000, 'yearly net = net×12 + bonus');
-  eq(r.year.erTotal, r.erTotal * 12 + 63000, 'yearly employer cost includes bonus');
+  eq(r.year.net, 39687 * 12 + 63000, 'yearly net');
+  eq(r.year.erTotal, r.erTotal * 12 + 63000, 'yearly employer cost');
+  eq(r.year.self, 2748 * 12, 'yearly 自提 32,976');
+  eq(JSON.stringify(r.year.taxSave), JSON.stringify([[5, 1649], [12, 3957], [20, 6595], [30, 9893], [40, 13190]]), '自提 tax saving at 5/12/20/30/40%');
+}
+// --- 勞保 split rounding differs from combined rounding ---
+{
+  const r = calc({ salary: 40100 });
+  eq(r.liEmp, 922 + 80, '40,100: 922.3→922 + 80.2→80 = 1,002 (combined would give 1,003)');
+  const r2 = calc({ salary: 29500 });
+  eq(r2.liEr, 2375 + 207, '29,500 employer: 2,374.75→2,375 + 206.5→207 = 2,582');
+  eq(r2.liEmp, 679 + 59, '29,500 employee: 678.5→679 + 59 = 738');
+  const r3 = calc({ salary: 11000, part: true });
+  eq(r3.liEmp, 255 + 22, 'part-time 11,100: 255.3→255 + 22.2→22 = 277');
 }
 // --- dependents cap ---
 {
-  const base = { salary: 40000, allow: 0, selfRate: 0 };
-  const h = d => calc({ ...base, dep: d }).hiEmp;
-  eq(h(0), 622, '健保 alone = 622');
-  eq(h(1), 1244, '1 dependent doubles');
-  eq(h(2), 1866, '2 dependents triples');
-  eq(h(3), 2488, '3 dependents ×4');
-  eq(h(4), 2488, '4 dependents capped at 3');
-  eq(h(9), 2488, '9 dependents capped at 3');
-  eq(h(-1), 622, 'negative dependents treated as 0');
-  eq(calc({ ...base, dep: 0 }).dep, 0, 'dep recorded 0'); eq(calc({ ...base, dep: 7 }).dep, 3, 'dep recorded capped 3');
-  // employer side unaffected by dependents
-  eq(calc({ ...base, dep: 0 }).hiEr, calc({ ...base, dep: 3 }).hiEr, 'employer 健保 ignores actual dependents');
+  const h = d => calc({ salary: 40000, dep: d }).hiEmp;
+  eq(h(0), 622, '健保 alone 40,100×5.17%×30% = 621.951 → 622');
+  eq(h(1), 1244, '×2'); eq(h(2), 1866, '×3'); eq(h(3), 2488, '×4');
+  eq(h(4), 2488, '4 dependents capped at 3'); eq(h(9), 2488, '9 capped'); eq(h(-1), 622, 'negative → 0'); eq(h(1.7), 1244, 'fraction floors');
+  eq(calc({ salary: 40000, dep: 7 }).dep, 3, 'dep recorded capped 3');
+  eq(calc({ salary: 40000, dep: 0 }).hiEr, calc({ salary: 40000, dep: 3 }).hiEr, 'employer 健保 ignores dependents');
+  eq(calc({ salary: 40000, dep: 5 }, { maxDep: 5 }).hiEmp, 622 * 6, 'editable cap');
+  const r2 = calc({ salary: 31800, dep: 3 });
+  eq(r2.hiEmp, 493 * 4, 'per-person rounded before multiplying (1,972 not 1,973)');
 }
-// --- rounding: whole NT$ ---
+// --- part-time ---
 {
-  // 30,300 × 12.5% × 20% = 757.5 → 758 (round half up)
-  const r = calc({ salary: 30300, allow: 0, dep: 0, selfRate: 0 });
-  eq(r.liEmp, 758, '757.5 rounds up to 758');
-  // 30,300 × 5.17% × 30% = 469.953 → 470
-  eq(r.hiPer, 470, '469.953 → 470');
-  // per-person rounded first, then multiplied: 3 dep → 470×4 = 1880, not round(1879.8)=1880 here, check a case that differs
-  // 31,800 × 5.17% × 30% = 493.218 → 493; ×4 = 1972 (not round(1972.87)=1973)
-  const r2 = calc({ salary: 31800, allow: 0, dep: 3, selfRate: 0 });
-  eq(r2.hiEmp, 1972, 'per-person premium rounded before multiplying by household');
-  // 自提: 33,300 × 1% = 333; 33,300 × 3% = 999; 34,800×3% = 1044; 36,300 × 1% = 363 all integer; 38,200×3%=1146; 40,100×3%=1203; use 43,900×3% = 1317; 45,800×1%=458; try 42,000×5%=2100; 38,200×5%=1910; 30,300×5%=1515; 31,800×5%=1590; 36,300×5%=1815 — fractional case: 20,008×3% = 600.24 → 600
-  const r3 = calc({ salary: 20000, allow: 0, dep: 0, selfRate: 3, insured: 20000 });
-  eq(r3.pG, 20008, 'part-time grade 20,008'); eq(r3.selfPen, 600, '600.24 → 600');
-  // everything integer
-  const r4 = calc({ salary: 57123, allow: 456, dep: 2, selfRate: 5, bonusMonths: 2.3 });
-  for (const k of ['liEmp', 'hiEmp', 'selfPen', 'net', 'liEr', 'oi', 'hiEr', 'penEr', 'erTotal']) ok(Number.isInteger(r4[k]), k + ' is a whole number');
-  for (const k of ['gross', 'bonus', 'supp', 'net', 'erTotal']) ok(Number.isInteger(r4.year[k]), 'year.' + k + ' is a whole number');
-  // employer 健保 rounding: 57,800 × 5.17% × 60% × 1.56 = 2796.8 → 2797
-  eq(r4.hiG, 57800, '57,579 → 57,800'); eq(r4.hiEr, 2797, 'employer 健保 2796.8 → 2797');
+  const p = calc({ salary: 20000, part: true, selfRate: 3 });
+  eq(p.liG, 20008, '勞保 20,008'); eq(p.pG, 20008, '勞退 20,008'); eq(p.hiG, 29500, '健保 29,500'); eq(p.oiG, 20008, '職災 follows part-time grade');
+  eq(p.liEmp, 460 + 40, '20,008: 460.18→460 + 40.016→40');
+}
+// --- part-time health premium, 健保 not insured here ---
+{
+  const p = calc({ salary: 20000, part: true, selfRate: 3 });
+  eq(p.hiPer, 458, '健保 29,500×5.17%×30% = 457.545 → 458');
+  eq(p.selfPen, 600, '自提 20,008×3% = 600.24 → 600');
+  eq(p.net, 20000 - 500 - 458 - 600, 'part-time net 18,442');
+  const q = calc({ salary: 20000, part: true, hiIn: false });
+  eq(q.hiG, 0, '健保 not insured here → no grade'); eq(q.hiEmp, 0, 'no 健保 premium'); eq(q.hiEr, 0, 'no employer 健保');
+  eq(q.net, 20000 - 500, 'net only minus 勞保');
+  ok(calc({ salary: 20000, part: false, hiIn: false }).hiEmp > 0, 'hiIn=false ignored for full-time');
+  const f = calc({ salary: 20000 });
+  ok(f.belowMin && f.liG === 29500, 'full-time below min wage flagged, insured at min wage');
+  ok(!calc({ salary: 20000, part: true }).belowMin, 'part-time not flagged');
+  const tiny = calc({ salary: 1200, part: true, selfRate: 6 });
+  eq(tiny.pG, 1500, 'tiny part-time 勞退 1,500'); eq(tiny.selfPen, 90, '自提 90'); eq(tiny.liG, 11100, '勞保 11,100');
+  eq(tiny.net, 1200 - 277 - 458 - 90, 'tiny part-time net 375');
+  ok(calc({ salary: 500, part: true }).net < 0, '500/month with 健保 goes negative (UI warns)');
 }
 // --- 投保薪資 override ---
 {
-  const full = calc({ salary: 50000, allow: 0, dep: 0, selfRate: 6 });
-  const low = calc({ salary: 50000, allow: 0, dep: 0, selfRate: 6, insured: 30000 });
+  const full = calc({ salary: 50000, selfRate: 6 }), low = calc({ salary: 50000, selfRate: 6, insured: 30000 });
   ok(!full.underInsured && low.underInsured, 'underInsured flag');
-  eq(low.liG, 30300, 'override 30,000 → 30,300 grade'); eq(full.liG, 45800, 'full 50,000 → 45,800 勞保 top');
-  eq(full.hiG, 50600, 'full 健保 50,600');
-  ok(low.deduct < full.deduct, 'under-insured pays less');
+  eq(low.liG, 30300, 'override 30,000 → 30,300'); eq(full.hiG, 50600, 'full 健保 50,600'); eq(full.oiG, 50600, '職災 50,600');
+  eq(full.oi, 101, '職災 50,600×0.2% = 101.2 → 101');
   eq(low.net, 50000 - low.liEmp - low.hiEmp - low.selfPen, 'net still based on real gross');
-  ok(low.penEr < full.penEr, 'employer pension lower when under-insured');
-  const same = calc({ salary: 50000, allow: 0, dep: 0, selfRate: 0, insured: '' });
-  eq(same.insBase, 50000, 'empty override = real salary');
-  const over = calc({ salary: 30000, allow: 0, dep: 0, selfRate: 0, insured: 60000 });
-  ok(!over.underInsured && over.hiG === 60800, 'override above salary allowed, not flagged');
+  eq(calc({ salary: 50000, insured: '' }).insBase, 50000, 'empty override = real salary');
+  const over = calc({ salary: 30000, insured: 60000 });
+  ok(!over.underInsured && over.hiG === 60800, 'override above salary allowed');
 }
 // --- yearly bonus and 補充保費 ---
 {
-  const r = calc({ salary: 60000, allow: 0, dep: 0, selfRate: 0, bonusMonths: 6 });
-  eq(r.hiG, 60800, '健保 grade 60,800');
-  eq(r.year.bonus, 360000, 'bonus 6 months');
-  const base = 360000 - 60800 * 4;
-  eq(r.year.supp, R(base * 0.0211), '補充保費 2.11% on the part over 4× grade');
-  eq(r.year.supp, 2464, '補充保費 = 2,464');
+  const r = calc({ salary: 60000, bonusMonths: 6 });
+  eq(r.hiG, 60800, '健保 60,800'); eq(r.year.bonus, 360000, 'bonus 6 months');
+  eq(r.year.suppBase, 360000 - 243200, '補充保費 base = part over 4×');
+  eq(r.year.supp, 2464, '116,800×2.11% = 2,464.48 → 2,464');
   eq(r.year.net, r.net * 12 + 360000 - 2464, 'yearly net minus 補充保費');
-  const z = calc({ salary: 60000, allow: 0, dep: 0, selfRate: 0, bonusMonths: 0 });
-  eq(z.year.bonus, 0, 'no bonus'); eq(z.year.net, z.net * 12, 'yearly = 12× monthly');
-  eq(z.year.gross, 720000, 'yearly gross 720,000');
-  const b4 = calc({ salary: 60800, allow: 0, dep: 0, selfRate: 0, bonusMonths: 4 });
-  eq(b4.year.supp, 0, 'exactly 4× grade → no 補充保費');
+  eq(calc({ salary: 60800, bonusMonths: 4 }).year.supp, 0, 'exactly 4× → none');
+  eq(calc({ salary: 60000, bonusMonths: 30 }).year.bonusMonths, 24, 'bonus months capped at 24');
+  eq(calc({ salary: 20000, part: true, hiIn: false, bonusMonths: 10 }).year.supp, 0, 'no 補充保費 when 健保 not insured here');
+  eq(calc({ salary: 42000, allow: 3000, bonusMonths: 2.5 }).year.bonus, 105000, 'bonus excludes allowance');
 }
 // --- editing rates changes results ---
 {
-  const inp = { salary: 40000, allow: 0, dep: 1, selfRate: 3 };
-  const a = calc(inp), b = calc(inp, { liRate: 12 });
-  eq(b.liEmp, R(40100 * 0.13 * 0.2), '勞保 12%+1% → 1,043');
-  ok(b.liEmp > a.liEmp && b.net < a.net && b.liEr > a.liEr, 'raising 勞保 rate raises premium, lowers net');
-  const c = calc(inp, { hiRate: 6 });
-  eq(c.hiPer, R(40100 * 0.06 * 0.3), '健保 6% per person'); eq(c.hiEmp, c.hiPer * 2, '…×2 people');
-  ok(c.hiEr > a.hiEr, 'employer 健保 up too');
-  const d = calc({ salary: 29000, allow: 0, dep: 0, selfRate: 0 }, { minWage: 28590 });
-  eq(d.liG, 29000 <= 28800 ? 28800 : 30300, 'with 2025 floor 29,000 → 30,300'); eq(d.hiG, 30300, '健保 30,300');
-  const d2 = calc({ salary: 28590, allow: 0, dep: 0, selfRate: 0 }, { minWage: 28590 });
-  eq(d2.liG, 28590, 'floor becomes a grade'); eq(d2.liEmp, R(28590 * 0.125 * 0.2), '…and premium follows it');
-  const e = calc(inp, { avgDep: 0.57 });
-  eq(e.hiEr, R(40100 * 0.0517 * 0.6 * 1.57), 'avg dependents 0.57 changes employer 健保'); ok(e.hiEr !== a.hiEr || true, 'noted');
-  const f = calc(inp, { oiRate: 1.5 });
-  eq(f.oi, R(40100 * 0.015), '職災 1.5% → 602'); eq(f.oi, 602, '職災 602');
-  const g = calc(inp, { eiRate: 0 });
-  eq(g.liEmp, R(40100 * 0.115 * 0.2), 'eiRate 0 → only 11.5%');
-  ok(calc(inp, { liRate: 'x' }).liEmp === a.liEmp || true, 'non-numeric cfg handled by caller');
-  eq(calc(inp).cfg.liRate, D.liRate, 'defaults restored when cfg empty');
+  const inp = { salary: 40000, dep: 1, selfRate: 3 }, a = calc(inp);
+  const b = calc(inp, { liRate: 12 });
+  eq(b.liEmp, R(40100 * 0.12 * 0.2) + R(40100 * 0.01 * 0.2), '勞保 12% → 962+80');
+  ok(b.net < a.net && b.liEr > a.liEr, 'raising 勞保 lowers net, raises employer');
+  const c = calc(inp, { hiRate: 6 }); eq(c.hiPer, R(40100 * 0.06 * 0.3), '健保 6%');
+  eq(calc(inp, { avgDep: 0.57 }).hiEr, R(40100 * 0.0517 * 0.6 * 1.57), 'avg dependents 0.57');
+  eq(calc(inp, { oiRate: 1.5 }).oi, 602, '職災 1.5% → 601.5 → 602');
+  eq(calc(inp, { eiRate: 0 }).liEmp, R(40100 * 0.115 * 0.2), '就保 0%');
+  eq(calc(inp, { liEmpShare: 30 }).liEmp, R(40100 * 0.115 * 0.3) + R(40100 * 0.01 * 0.3), '勞保 share 30%');
+  eq(calc(inp, { pensionEr: 7 }).penEr, R(40100 * 0.07), '勞退 7%');
+  eq(calc({ salary: 60000, bonusMonths: 6 }, { suppRate: 2.5 }).year.supp, R(116800 * 0.025), '補充保費 2.5%');
+  eq(calc({ salary: 29000 }, { minWage: 28590 }).liG, 30300, '2025 floor: 29,000 → 30,300');
+  eq(calc({ salary: 28590 }, { minWage: 28590 }).liEmp, R(28590 * 0.115 * 0.2) + R(28590 * 0.01 * 0.2), 'premium follows edited floor');
+  eq(calc({ salary: 33000 }, { grades: [30000, 35000, 45800] }).liG, 35000, 'edited grade table used');
+  // garbage cfg falls back per field
+  const g = calc(inp, { liRate: 'x', hiRate: -1, avgDep: 99, grades: [3, 2, 1], minWage: NaN });
+  eq(g.cfg.liRate, 11.5, 'non-numeric rate → default'); eq(g.cfg.hiRate, 5.17, 'negative rate → default');
+  eq(g.cfg.avgDep, 0.56, 'out-of-range → default'); eq(g.cfg.grades.length, D.grades.length, 'descending grades rejected'); eq(g.cfg.minWage, 29500, 'NaN min wage → default');
+  eq(g.net, a.net, 'garbage cfg gives default result');
+  ok(!SC.isCustom(SC.defaults()) && SC.isCustom({ ...SC.defaults(), wfRate: 0.03 }), 'isCustom');
+}
+// --- input parsing ---
+{
+  const P = (s, o) => SC.parseNum(s, o);
+  eq(P('42000').value, 42000, 'plain'); eq(P('42,000').value, 42000, 'commas'); eq(P(' NT$ 42,000 元 ').value, 42000, 'NT$ and 元');
+  eq(P('４２０００').value, 42000, 'full-width digits'); eq(P('4.2萬').value, 42000, '萬'); eq(P('42k').value, 42000, 'k'); eq(P('3.5K').value, 3500, 'K');
+  eq(P('$38000').value, 38000, '$'); eq(P('42000.6').value, 42001, 'decimal money rounds');
+  ok(P('').ok && P('').empty && P('').value === 0, 'empty ok = 0');
+  ok(!P('-5').ok && /負數/.test(P('-5').msg), 'negative rejected with reason');
+  ok(!P('abc').ok && /看不懂/.test(P('abc').msg), 'letters rejected');
+  ok(!P('四萬').ok, 'Chinese numerals rejected'); ok(!P('😀').ok, 'emoji rejected'); ok(!P('4..2').ok, 'double dot rejected');
+  ok(!P('1e9').ok, 'scientific notation rejected');
+  ok(!P('99999999').ok && /太大/.test(P('99999999').msg), 'too large rejected');
+  eq(P('1.5', { months: true, max: 24 }).value, 1.5, 'months keep decimals');
+  ok(!P('25', { months: true, max: 24 }).ok, 'months > 24 rejected'); ok(!P('2萬', { months: true, max: 24 }).ok, 'months with 萬 rejected');
+  const L = SC.parseList;
+  eq(L('100, 200 300\n400').value.join(), '100,200,300,400', 'list separators');
+  eq(L('11,100, 12,540').value.join(), '11100,12540', 'list with thousands commas');
+  ok(!L('300, 200').ok && !L('a, 1').ok && !L('').ok && !L('1, 1').ok, 'bad lists rejected');
 }
 // --- text output ---
 {
   const t = SC.text(calc({ salary: 42000, allow: 3000, dep: 1, selfRate: 6, bonusMonths: 1.5 }));
-  ok(t.includes('【薪資試算】2026 年') && t.includes('每月實領（稅前）39,687') && t.includes('雇主每月成本 54,064') && t.includes('年終 1.5 個月'), 'copy text has key lines\n' + t);
+  ok(t.includes('【薪資試算】依 2026 年') && t.includes('每月實領（稅前）39,687') && t.includes('雇主每月成本 54,075') && t.includes('年終 1.5 個月'), 'copy text key lines\n' + t);
   ok(/勞保（含就保）12\.5%×20%：1,145/.test(t), 'copy text 勞保 line');
-  eq(SC.fmt(1234567), '1,234,567', 'thousands formatting'); eq(SC.fmt(-5), '-5', 'negative'); eq(SC.fmt(0), '0', 'zero');
+  ok(SC.text(calc({ salary: 20000, part: true, hiIn: false })).includes('健保：未在此投保'), 'copy text without 健保');
+  eq(SC.fmt(1234567), '1,234,567', 'fmt'); eq(SC.fmt(-5), '-5', 'negative'); eq(SC.fmt(0), '0', 'zero');
 }
 // --- edge inputs ---
 {
-  const z = calc({ salary: 0, allow: 0, dep: 0, selfRate: 0 });
-  ok(z.gross === 0 && z.net === 0 - z.deduct && Number.isFinite(z.net), 'zero salary computes (premiums at lowest grade)');
+  const z = calc({ salary: 0 });
+  ok(z.gross === 0 && Number.isFinite(z.net), 'zero salary computes');
   const n = calc({ salary: 'abc', allow: null, dep: 'x', selfRate: 99 });
   ok(n.gross === 0 && n.dep === 0 && n.selfRate === 6, 'garbage inputs sanitized, self rate capped 6%');
-  const neg = calc({ salary: -5, allow: -5, dep: 0, selfRate: -2 });
-  ok(neg.gross === 0 && neg.selfRate === 0, 'negatives clamp to 0');
-  const big = calc({ salary: 500000, allow: 0, dep: 3, selfRate: 6 });
-  eq(big.liG, 45800, 'big salary 勞保 top'); eq(big.hiG, 219500, 'big 健保 top'); eq(big.pG, 150000, 'big 勞退 top');
-  eq(big.selfPen, 9000, '自提 6% of 150,000 = 9,000');
+  const neg = calc({ salary: -5, allow: -5, selfRate: -2 }); ok(neg.gross === 0 && neg.selfRate === 0, 'negatives clamp');
+  const big = calc({ salary: 9999999, dep: 3, selfRate: 6, bonusMonths: 24 });
+  eq(big.liG, 45800, 'big 勞保'); eq(big.hiG, 219500, 'big 健保'); eq(big.pG, 150000, 'big 勞退'); eq(big.selfPen, 9000, '自提 9,000');
+  eq(big.year.supp, R((9999999 * 24 - 219500 * 4) * 0.0211), 'big bonus 補充保費');
+  ok(Object.values(big).every(v => typeof v !== 'number' || Number.isFinite(v)), 'all finite');
+}
+// --- reviewer fixes (batch1) ---
+{
+  // decimal money is rounded and flagged so the UI can say so
+  const P = (x, o) => SC.parseNum(x, o);
+  ok(P('42000.6').rounded === true && P('42000.6').value === 42001, '42000.6 → 42,001 flagged rounded');
+  ok(!P('42000').rounded && !P('4.2萬').rounded && !P('1.1萬').rounded && !P('0.07萬').rounded, 'exact values (incl. float 萬) not flagged');
+  ok(P('1.23456萬').rounded && P('1.23456萬').value === 12346, '1.23456萬 → 12,346 flagged');
+  ok(!P('1.5', { months: true, max: 24 }).rounded, 'months never flagged');
+  // stored input: amounts capped 0–9,999,999, sample bookkeeping sanitized
+  const ci = SC.cleanInput;
+  eq(ci({ salary: 1e300 }).salary, 9999999, 'salary 1e300 capped to 9,999,999');
+  eq(ci({ salary: '1e300', allow: 5e12, insured: 1e99, insMode: 'custom' }).allow, 9999999, 'allow capped');
+  eq(ci({ insured: 1e99 }).insured, 9999999, 'insured capped');
+  eq(ci({ salary: -50 }).salary, 0, 'negative salary → 0'); eq(ci({ salary: 42000.6 }).salary, 42001, 'stored decimal rounded');
+  eq(ci({ salary: Infinity }).salary, 42000, 'Infinity ignored');
+  eq(ci({ bonusMonths: 1e300 }).bonusMonths, 24, 'bonus months capped');
+  ok(ci(null) === null && ci([1]) === null && ci('x') === null, 'non-objects rejected');
+  eq(ci({ sample: true, kept: ['dep', 'evil', 'salary'] }).kept.join(), 'dep', 'kept filtered to sample-only keys');
+  eq(ci({ sample: false, kept: ['dep'] }).kept.length, 0, 'kept dropped when not sample');
+  eq(SC.SAMPLE_ONLY.join(), 'allow,bonusMonths,dep,selfRate', 'sample-only values: 津貼 年終 眷屬 自提');
+  // the sample trap: same person with sample-only values reset gets 48,070, not 47,031
+  const trap = { ...SC.SAMPLE, salary: 50000 };
+  eq(calc(trap).net, 47031, 'sample extras kept → 47,031 (the old wrong number)');
+  const reset = { ...trap }; for (const k of SC.SAMPLE_ONLY) reset[k] = 0;
+  eq(calc(reset).net, 48070, 'sample extras reset → 48,070');
+  // export / import
+  const cfg = { ...SC.defaults(), liRate: 13, grades: [30000, 35000, 45800] };
+  const txt = SC.backup({ salary: 55000, dep: 2, selfRate: 3, sample: false }, cfg, 'dark', '2026-10-18');
+  const b = SC.readBackup(txt);
+  ok(b.ok && b.rates.liRate === 13 && b.rates.grades.join() === '30000,35000,45800', 'backup round-trips rates and grades');
+  ok(b.input.salary === 55000 && b.input.dep === 2 && b.input.selfRate === 3 && b.theme === 'dark', 'backup round-trips input and theme');
+  eq(JSON.parse(txt).app, 'salary-calc', 'backup tagged with app id');
+  ok(!SC.readBackup('').ok && /看不懂/.test(SC.readBackup('{oops').msg), 'bad JSON rejected with reason');
+  ok(!SC.readBackup('{"app":"other"}').ok && /不是/.test(SC.readBackup('[1]').msg), 'foreign JSON rejected');
+  ok(!SC.readBackup('{"app":"salary-calc"}').ok, 'empty backup rejected');
+  const g = SC.readBackup(JSON.stringify({ app: 'salary-calc', rates: { liRate: 'x', hiRate: 6, grades: [3, 2] }, input: { salary: 1e300 }, theme: 'neon' }));
+  ok(g.ok && g.rates.liRate === 11.5 && g.rates.hiRate === 6 && g.rates.grades.length === D.grades.length, 'garbage rate fields fall back to defaults');
+  ok(g.input.salary === 9999999 && g.theme === null, 'imported amounts capped, bad theme ignored');
+  ok(SC.readBackup(JSON.stringify({ app: 'salary-calc', rates: { hiRate: 6 } })).input === null, 'rates-only backup leaves input alone');
 }
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
