@@ -238,6 +238,14 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok(/改選.*暫不套用/.test(await page.textContent('#toast-msg')) && (await res2()) === '新的一行\n今天早上他說\n今天天氣很好\n他的頭髮很長', 'removed spot is reported, the other line keeps the default: ' + (await page.textContent('#toast-msg')));
       await page.fill('#src', '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(250);
       ok((await res2()) === '新的一行\n今天早上他說他的頭發真的很長\n今天天氣很好\n他的頭髮很長', 'choice comes back when the text comes back');
+      const pickToast = () => page.evaluate(() => document.getElementById('toast').classList.contains('on') && /暫不套用/.test(document.getElementById('toast-msg').textContent));
+      ok(!(await pickToast()), 'the notice goes away once the choice applies again');
+      // a notice about a lost choice never stays next to a choice that applies: switching 台灣用語 off and on takes it away
+      await page.fill('#src', '新的一行\n今天早上他说\n今天天气很好\n他的头发很长'); await page.waitForTimeout(250);
+      await page.fill('#src', '新的一行\n今天早上他说他的头发真的很长\n今天天气很好\n他的头发很长'); await page.waitForTimeout(100);
+      await page.click('label.opt:has(#opt-tw)'); await page.waitForTimeout(250);
+      ok(!(await pickToast()) && /頭發/.test(await res2()), '台灣用語 off: the choice applies and no 暫不套用 notice is shown');
+      await page.click('label.opt:has(#opt-tw)'); await page.waitForTimeout(250);
       // 對調 twice (簡→繁→簡→繁) brings back the original text with its choice
       const before2 = await res2();
       await page.click('#swap'); await page.waitForTimeout(200);
@@ -248,6 +256,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'false' && /^none\|rgba\(0, 0, 0, 0\)$/.test(await oneStyle()), 'one-to-one marks hidden by default: ' + (await oneStyle()));
       await page.click('#lg-0'); await page.waitForTimeout(100);
       ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'true' && /underline/.test(await oneStyle()), 'legend 一對一 shows them: ' + (await oneStyle()));
+      { const bb = await page.locator('#lg-0').boundingBox(); ok(bb.height >= 44, 'legend 一對一 switch is at least 44px tall: ' + Math.round(bb.width) + '×' + Math.round(bb.height)); }
       await page.reload(); await page.waitForTimeout(300);
       ok((await page.getAttribute('#lg-0', 'aria-pressed')) === 'true', '一對一 choice remembered');
       await page.click('#lg-0'); await page.waitForTimeout(100);
