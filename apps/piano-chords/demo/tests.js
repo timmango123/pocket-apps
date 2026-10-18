@@ -169,7 +169,7 @@ ok(Math.abs(PC.freqOf(69) - 440) < 1e-9 && Math.abs(PC.freqOf(60) - 261.63) < 0.
   const majorScale = (Lt, acc) => { const pos = FIFTH[Lt] + 7 * acc, li = LETS.indexOf(Lt); return Array.from({ length: 7 }, (_, d) => { const lt = LETS[(li + d) % 7]; let a = 0; if (pos > 0) a = Math.floor(pos / 7) + (SH.indexOf(lt) < pos % 7 ? 1 : 0); if (pos < 0) a = -(Math.floor(-pos / 7) + (FL.indexOf(lt) < (-pos) % 7 ? 1 : 0)); return [lt, a]; }); };
   const accS = a => a > 0 ? '♯'.repeat(a) : '♭'.repeat(-a);
   const build = (Lt, a, f) => { const sc = majorScale(Lt, a); return f.split(' ').map(t => { const m = t.match(/^([b#]*)(\d+)$/), d = (+m[2] - 1) % 7, alt = [...m[1]].reduce((x, c) => x + (c === '#' ? 1 : -1), 0); return sc[d][0] + accS(sc[d][1] + alt); }).join(' '); };
-  const F = { maj: '1 3 5', m: '1 b3 5', 7: '1 3 5 b7', maj7: '1 3 5 7', m7: '1 b3 5 b7', dim: '1 b3 b5', dim7: '1 b3 b5 bb7', m7b5: '1 b3 b5 b7', aug: '1 3 #5', sus2: '1 2 5', sus4: '1 4 5', 6: '1 3 5 6', m6: '1 b3 5 6', 9: '1 3 5 b7 9', maj9: '1 3 5 7 9', m9: '1 b3 5 b7 9', add9: '1 3 5 9', 69: '1 3 5 6 9', 11: '1 3 5 b7 9 11', 13: '1 3 5 b7 9 13', '7sus4': '1 4 5 b7', '7b9': '1 3 5 b7 b9', aug7: '1 3 #5 b7', mMaj7: '1 b3 5 7' };
+  const F = { maj: '1 3 5', m: '1 b3 5', 7: '1 3 5 b7', maj7: '1 3 5 7', m7: '1 b3 5 b7', dim: '1 b3 b5', dim7: '1 b3 b5 bb7', m7b5: '1 b3 b5 b7', aug: '1 3 #5', sus2: '1 2 5', sus4: '1 4 5', 6: '1 3 5 6', m6: '1 b3 5 6', 9: '1 3 5 b7 9', maj9: '1 3 5 7 9', m9: '1 b3 5 b7 9', add9: '1 3 5 9', 69: '1 3 5 6 9', 11: '1 3 5 b7 9 11', 13: '1 3 5 b7 9 13', '7sus4': '1 4 5 b7', '7b9': '1 3 5 b7 b9', aug7: '1 3 #5 b7', mMaj7: '1 b3 5 7', madd9: '1 b3 5 9', m11: '1 b3 5 b7 9 11', maj13: '1 3 5 7 9 13', '7s9': '1 3 5 b7 #9', '7b5': '1 3 b5 b7', maj7s11: '1 3 5 7 #11', '9sus4': '1 4 5 b7 9' };
   const SF = { major: '1 2 3 4 5 6 7', minor: '1 2 b3 4 5 b6 b7', harm: '1 2 b3 4 5 b6 7', melo: '1 2 b3 4 5 6 7', pentM: '1 2 3 5 6', pentm: '1 b3 4 5 b7', blues: '1 b3 4 b5 5 b7', dorian: '1 2 b3 4 5 6 b7', phrygian: '1 b2 b3 4 5 b6 b7', lydian: '1 2 3 #4 5 6 7', mixo: '1 2 3 4 5 6 b7', locrian: '1 b2 b3 4 b5 b6 b7' };
   ok(Object.keys(F).length === PC.QUAL.length && Object.keys(SF).length === PC.SCALES.length, 'independent formulas cover every quality and scale');
   let n = 0, badS = 0, badInv = 0;
@@ -208,13 +208,32 @@ eq(id([60, 67]).zh, '完全五度・強力和弦 C5', 'fifth is also named as a 
 eq(id([61]).zh, '單音 C♯4 = D♭4', 'single black key shows both names and the octave');
 eq(id([60, 61, 62]).kind, 'unknown', 'cluster has no name');
 
+// ---- added types: identification (also with the fifth left out) and the honest "not supported" message ----
+eq(id([48, 52, 58, 63]).name, 'C7♯9', 'C3 E3 B♭3 D♯4 → C7♯9 (fifth omitted)');
+ok(/省略五音/.test(id([48, 52, 58, 63]).zh), '… and says the fifth is omitted');
+eq(PC.chordNotes(0, 0, '7s9').map(n => n.name).join(' '), 'C E G B♭ D♯', 'C7♯9 spelled with D♯, not E♭');
+eq(id([60, 63, 67, 70, 74, 77]).name, 'Cm11', 'C E♭ G B♭ D F → Cm11');
+eq(id([60, 63, 70, 74, 77]).name, 'Cm11', 'Cm11 without the fifth');
+eq(id([60, 63, 67, 74]).name, 'Cm(add9)', 'C E♭ G D → Cm(add9)');
+eq(id([60, 64, 67, 71, 74, 81]).name, 'Cmaj13', 'C E G B D A → Cmaj13');
+eq(id([60, 64, 71, 74, 81]).name, 'Cmaj13', 'Cmaj13 without the fifth');
+eq(id([60, 64, 66, 70]).name, 'C7♭5', 'C E G♭ B♭ → C7♭5 (bass decides between C7♭5 and F♯7♭5)');
+eq(id([66, 70, 72, 76]).name, 'F♯7♭5', 'same notes from F♯ → F♯7♭5');
+eq(id([60, 64, 67, 71, 78]).name, 'Cmaj7♯11', 'C E G B F♯ → Cmaj7♯11');
+eq(id([60, 65, 67, 70, 74]).name, 'C9sus4', 'C F G B♭ D → C9sus4 (not B♭6/9/C)');
+eq(PC.chordNotes(1, -1, '7b5').map(n => n.name).join(' '), 'D♭ F A♭♭ C♭', 'D♭7♭5 spelled by degree');
+eq(rootRow([0, 4, 6, 10]), 'C7♭5 D♭7♭5 D7♭5 E♭7♭5 E7♭5 F7♭5 F♯7♭5 G7♭5 A♭7♭5 A7♭5 B♭7♭5 B7♭5', '7♭5 roots read like dominant sevenths');
+ok(id([60, 61, 62]).zh.includes(`支援的 ${PC.QUAL.length} 種和弦`) && !/不是常見/.test(id([60, 61, 62]).zh), 'unknown sets say they are outside the supported types: ' + id([60, 61, 62]).zh);
+ok(PC.QUAL.length === 31, '31 chord types');
+
 // ---- typed chord names ----
 const P = s => { const r = PC.parseChord(s); return r.ok ? PC.chordName(r.l, r.a, r.q, PC.chordNotes(r.l, r.a, r.q)[r.inv]) : 'ERR'; };
 const typed = { 'C': 'C', 'cm7': 'Cm7', 'F#m7b5': 'F♯m7♭5', 'F♯m7♭5': 'F♯m7♭5', 'Bb/D': 'B♭/D', 'C/E': 'C/E', 'C7(b9)': 'C7♭9', 'Cm(maj7)': 'CmM7', 'C△7': 'Cmaj7', 'CΔ': 'Cmaj7', 'CM7': 'Cmaj7', 'C°7': 'Cdim7', 'Co': 'Cdim', 'Cø': 'Cm7♭5', 'C+': 'Caug',
-  'Ｆ＃ｍ７': 'F♯m7', '  g7  ': 'G7', 'C6/9': 'C6/9', 'Cmaj7/B': 'Cmaj7/B', 'Am7/G': 'Am7/G', 'Ebsus': 'E♭sus4', 'CMAJ7': 'Cmaj7', 'Cmin7': 'Cm7', 'C-7': 'Cm7', 'E#m': 'E♯m', 'B#dim7': 'B♯dim7', 'Cb7': 'C♭7', 'Am/C': 'Am/C', 'Gadd9': 'Gadd9', 'D7sus4': 'D7sus4', 'G7#5': 'G7♯5', 'C/Fb': 'C/E',
+  'Ｆ＃ｍ７': 'F♯m7', '  g7  ': 'G7', 'C6/9': 'C6/9', 'Cmaj7/B': 'Cmaj7/B', 'Am7/G': 'Am7/G', 'Ebsus': 'E♭sus4', 'CMAJ7': 'Cmaj7', 'Cmin7': 'Cm7', 'C-7': 'Cm7', 'E#m': 'E♯m', 'B#dim7': 'B♯dim7', 'Cb7': 'C♭7', 'Am/C': 'Am/C', 'Gadd9': 'Gadd9', 'D7sus4': 'D7sus4', 'G7#5': 'G7♯5', 'C/Fb': 'C/E', 'C7#9': 'C7♯9', 'Cm11': 'Cm11', 'Cmaj13': 'Cmaj13', 'CM13': 'Cmaj13', 'Cm(add9)': 'Cm(add9)', 'Cmadd9': 'Cm(add9)', 'C7b5': 'C7♭5', 'Cmaj7#11': 'Cmaj7♯11', 'CΔ7#11': 'Cmaj7♯11', 'C9sus4': 'C9sus4', 'Bb9sus': 'B♭9sus4', 'Cm13': 'ERR', 'Cxyz': 'ERR',
   '': 'ERR', 'H7': 'ERR', '🎹': 'ERR', 'Bbb': 'ERR', 'Cx': 'ERR', 'C5': 'ERR', 'C/F': 'ERR', 'C/Bb': 'ERR', 'C/': 'ERR', 'C//E': 'ERR', '<script>': 'ERR', 'Cmaj13#11': 'ERR', '123': 'ERR', ['C'.repeat(200)]: 'ERR' };
 let tbad = 0; for (const k in typed) { const got = P(k); if (got !== typed[k]) { tbad++; console.log('  typed', JSON.stringify(k), got, '≠', typed[k]); } }
 ok(tbad === 0, `${Object.keys(typed).length} typed chord names parsed or rejected correctly (${tbad} bad)`);
+ok(PC.parseChord('Cxyz').err.includes('看不懂和弦種類「xyz」') && !PC.parseChord('Cxyz').err.includes('升降記號'), 'Cxyz is reported as an unknown chord type, not as a double sharp');
 ok(PC.parseChord('C/Bb').err.includes('不是') && PC.parseChord('H7').err.includes('A–G') && PC.parseChord('Cfoo').err.includes('看不懂'), 'errors say what is wrong in plain words');
 ok(PC.parseChord(null).ok === false && PC.parseChord(undefined).ok === false && PC.parseChord(42).ok === false, 'non-strings do not throw');
 
