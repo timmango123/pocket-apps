@@ -222,13 +222,34 @@ for (const t of CN_TEXT) ok(t2s(t) === t, `t2s is idempotent on simplified text:
   ok(ZC.count('你好\n世界').cjk === 4, 'count ignores newlines');
 }
 
+
+// ---- hand-checked sample sentences and phrases (demo/samples.tsv), both directions, with and without 台灣用語 ----
+{
+  const rows = fs.readFileSync(path.join(__dirname, 'samples.tsv'), 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(l => l.split('\t'));
+  ok(rows.length >= 300, 'at least 300 checked samples (' + rows.length + ')');
+  for (const [d, tw, a, b] of rows) eq(d === 's2t' ? (t => s2t(t, { tw: tw === '1' })) : (t => t2s(t, { tw: tw === '1' })), a, b, 'sample ' + d + (tw === '1' ? '+tw' : ''));
+}
+// one-to-many fixes added on top of the OpenCC phrase list
+const FIX = `冲咖啡>沖咖啡 热水冲>熱水沖 冲马桶>沖馬桶 冲奶粉>沖奶粉 冲个澡>沖個澡 冲锋>衝鋒 冲过去>衝過去 这只是>這只是 这只不过>這只不過 这只猫>這隻貓 这只能>這只能
+不准确>不準確 不准时>不準時 不准>不准 系扣子>繫釦子 系围巾>繫圍巾 钟山>鍾山 余华>余華 余秋雨>余秋雨 姓余>姓余 剩余>剩餘 范老师>范老師 范围>範圍 蛋卷>蛋捲 点赞>點讚 理了个发>理了個髮 衣服干了>衣服乾了 头发干了>頭髮乾了 干了一杯>乾了一杯 干了>幹了 哭干>哭乾`;
+for (const e of FIX.split(/\s+/)) { const [a, b] = e.split('>'); eq(s2t, a, b, 'fix'); }
+eq(s2tw, '点赞', '按讚', 'fix keeps 台灣用語 按讚');
+// edge cases: emoji, astral characters, mixed scripts, punctuation-only, very long words, control characters
+eq(s2t, '😀发👍🏽', '😀發👍🏽', 'emoji kept');
+eq(s2t, '𠮷野家的头发', '𠮷野家的頭髮', 'astral character kept');
+eq(s2t, 'C++程序员 & <b>头发</b> "引号"', 'C++程序員 & <b>頭髮</b> "引號"', 'markup and ascii kept');
+eq(s2t, '！？。，、；：「」', '！？。，、；：「」', 'punctuation only');
+eq(s2t, '\t头发\r\n发型\u0000', '\t頭髮\r\n髮型\u0000', 'tabs, CRLF and NUL kept');
+eq(t2s, '   ', '   ', 'spaces only');
+eq(s2t, '０１２３ＡＢＣ', '０１２３ＡＢＣ', 'full-width ascii kept');
+
 // ---- performance ----
 {
-  const big = '他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快。'.repeat(1500);
+  const big = '他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快。'.repeat(3000); // ~100k characters
   const t0 = Date.now(); s2t(big, { tw: true }); const ms = Date.now() - t0;
-  ok(ms < 1500, `50k chars with vocabulary in ${ms} ms`);
+  ok(ms < 2500, `100k chars with vocabulary in ${ms} ms`);
   const t1 = Date.now(); t2s(s2t(big), { tw: true }); const ms2 = Date.now() - t1;
-  ok(ms2 < 1500, `50k chars reverse in ${ms2} ms`);
+  ok(ms2 < 3000, `100k chars reverse in ${ms2} ms`);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

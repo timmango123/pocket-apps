@@ -102,6 +102,59 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok((await page.getAttribute('html', 'data-theme')) === 'light', 'theme button cycles to light');
       await page.click('#theme-btn');
       ok((await page.getAttribute('html', 'data-theme')) === 'dark', 'theme button cycles to dark');
+      // clear can be undone from the toast (back in 簡→繁)
+      await page.click('#dir-s2t');
+      await page.fill('#src', '头发'); await page.waitForTimeout(150);
+      await page.click('#clear'); await page.waitForTimeout(100);
+      ok(await page.locator('#empty').isVisible() && await page.locator('#e-paste').isVisible(), 'empty state with paste / open / sample actions');
+      ok(await page.isDisabled('#copy'), 'copy disabled while empty');
+      await page.click('#toast-act');
+      await page.waitForTimeout(150);
+      ok((await page.inputValue('#src')) === '头发' && (await outText()) === '頭髮', 'clear undone from the toast');
+      // marks toggle hides highlights but keeps the text
+      await page.click('#opt-marks + .sw'); await page.waitForTimeout(300);
+      ok(await page.evaluate(() => getComputedStyle(document.querySelector('#out .m')).backgroundColor === 'rgba(0, 0, 0, 0)'), 'marks toggle shows plain text');
+      await page.click('#opt-marks + .sw');
+      // paste button reads the clipboard; result equals the engine output; Ctrl+Enter copies
+      await page.evaluate(() => navigator.clipboard.writeText('冲咖啡要用热水冲。这只是一个开始。'));
+      await page.click('#paste'); await page.waitForTimeout(150);
+      ok((await outText()) === '沖咖啡要用熱水沖。這只是一個開始。', 'paste button converts clipboard text: ' + (await outText()));
+      await page.evaluate(() => navigator.clipboard.writeText(''));
+      await page.keyboard.press('Control+Enter'); await page.waitForTimeout(100);
+      ok((await page.evaluate(() => navigator.clipboard.readText())) === '沖咖啡要用熱水沖。這只是一個開始。', 'Ctrl+Enter copies the result');
+      // open a GBK-encoded text file (legacy mainland encoding) and a Big5 one
+      const gbk = Buffer.from([0xcd, 0xb7, 0xb7, 0xa2, 0xb8, 0xc9, 0xbe, 0xbb]); // 头发干净
+      await page.setInputFiles('#file', { name: 'gbk.txt', mimeType: 'text/plain', buffer: gbk });
+      await page.waitForTimeout(250);
+      ok((await page.inputValue('#src')) === '头发干净' && (await outText()) === '頭髮乾淨', 'GBK file decoded and converted: ' + (await page.inputValue('#src')));
+      await page.setInputFiles('#file', { name: 'u8.srt', mimeType: '', buffer: Buffer.from('﻿1\n00:00:01,000 --> 00:00:02,000\n后来的面条\n', 'utf8') });
+      await page.waitForTimeout(250);
+      const res = () => page.evaluate(() => window.__zc.result());
+      ok((await res()) === '1\n00:00:01,000 --> 00:00:02,000\n後來的麵條\n', 'UTF-8 subtitle file with BOM keeps lines: ' + JSON.stringify(await res()));
+      ok((await page.locator('#out .p').count()) === 3, 'each line is its own block in the result');
+      await page.setInputFiles('#file', { name: 'pic.png', mimeType: 'image/png', buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0]) });
+      await page.waitForTimeout(150);
+      ok(/不是文字/.test(await page.textContent('#toast-msg')) && /後來/.test(await outText()), 'non-text file refused with a plain message, text kept');
+      // download the result as .txt
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);
+      const dlPath = await dl.path(); const dlText = fs.readFileSync(dlPath, 'utf8');
+      // (headless Chromium reports non-ASCII download names as "download", so only the content is checked here)
+      ok(dlText === '1\n00:00:01,000 --> 00:00:02,000\n後來的麵條\n', 'download writes the full result as UTF-8 text');
+      // 100k characters: no long freeze, result identical to a one-shot conversion, copy works
+      const big = ('他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快，冲咖啡要用热水冲。\n').repeat(2300);
+      await page.evaluate(() => { window.__lf = 0; let last = performance.now(); (function f() { const n = performance.now(); window.__lf = Math.max(window.__lf, n - last); last = n; requestAnimationFrame(f); })(); });
+      const t0 = Date.now();
+      await page.evaluate(t => { const s = document.getElementById('src'); s.value = t; s.dispatchEvent(new Event('input')); }, big);
+      await page.waitForFunction(() => /處變更/.test(document.getElementById('out-meta').textContent), null, { timeout: 15000 });
+      const bigMs = Date.now() - t0;
+      await page.click('#src'); await page.keyboard.press('Control+Home'); await page.keyboard.type('发', { delay: 60 }); await page.waitForTimeout(400);
+      const lf = await page.evaluate(() => window.__lf);
+      ok(lf < 450, `100k characters: converted in ${bigMs} ms, longest frame ${Math.round(lf)} ms`);
+      const same = await page.evaluate(() => { const r = window.__zc.result(); return r.length; });
+      const want = await page.evaluate(() => { const ZCs = document.getElementById('src').value; return ZCs.length; });
+      ok(same === want, `100k result has the same length as the input (${same} / ${want})`);
+      ok((await page.evaluate(() => window.__zc.result().slice(0, 9))) === '發他的頭髮很長，公', 'typed character at the top converted');
+      ok(await page.evaluate(() => window.__zc.result() === ZC.join(ZC.convert(document.getElementById('src').value, { dir: 's2t', tw: document.getElementById('opt-tw').checked, tai: true }))), '100k block-by-block result equals a one-shot conversion');
       // back to a sample state for the cover: reset storage and reload
       await page.evaluate(() => localStorage.clear());
     }
