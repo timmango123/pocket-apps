@@ -83,10 +83,11 @@ function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } 
 }
 // --- stars ---
 {
-  ok(C.starsFor(10, 10) === 3 && C.starsFor(9, 10) === 3, '3 stars at or under par');
-  ok(C.starsFor(14, 10) === 2 && C.starsFor(11, 10) === 2, '2 stars up to par+4 / par*1.4');
-  ok(C.starsFor(15, 10) === 1 && C.starsFor(50, 10) === 1, '1 star otherwise');
-  ok(C.starsFor(28, 20) === 2 && C.starsFor(29, 20) === 1, '2-star limit uses 1.4x for longer levels');
+  ok(C.starsFor(10, 10) === 3 && C.starsFor(9, 10) === 3 && C.starsFor(12, 10) === 3, '3 stars up to par+2 on short levels');
+  ok(C.starsFor(13, 10) === 2 && C.starsFor(16, 10) === 2, '2 stars up to par+6 on short levels');
+  ok(C.starsFor(17, 10) === 1 && C.starsFor(50, 10) === 1, '1 star otherwise');
+  ok(C.starsFor(110, 100) === 3 && C.starsFor(111, 100) === 2, '3-star limit is +10% on long levels');
+  ok(C.starsFor(160, 100) === 2 && C.starsFor(161, 100) === 1, '2-star limit is +60% on long levels');
 }
 // --- all embedded levels: solvable (replay), well-formed, within size, distinct, gentle curve ---
 {

@@ -39,6 +39,9 @@ function newPage(browser, w, h, dark, touch) {
   for (const [w, h] of [[390, 844], [375, 500], [390, 610], [430, 740]]) for (const dark of [false, true]) {
     const { ctx, page, errors } = await newPage(browser, w, h, dark, true);
     ok(await page.isVisible('#title'), `${w}x${h} ${dark ? 'dark' : 'light'}: title shown`);
+    // title vignette sits between the progress pill and the buttons, not under them
+    const tv = await page.evaluate(() => { const t = window.__game.titleScene(), a = document.getElementById('tProg').getBoundingClientRect(), b = document.querySelector('.tbtns').getBoundingClientRect(); return { ok: t.s < 18 || (t.y >= a.bottom && t.y + t.s * 3 <= b.top && t.x >= 0 && t.x + t.s * 7 <= innerWidth), s: t.s }; });
+    ok(tv.ok, `${w}x${h}: title scene fits between the title and the buttons (cell ${tv.s})`);
     await page.click('#tPlay'); await sleep(300);
     if (await page.isVisible('#hOk')) { await page.click('#hOk'); await sleep(200); }
     ok(await page.isVisible('#hud') && await page.isVisible('#dpad'), `${w}x${h}: HUD and D-pad visible`);
@@ -54,19 +57,23 @@ function newPage(browser, w, h, dark, touch) {
   {
     const { ctx, page, errors } = await newPage(browser, 390, 844, false, true);
     const cdp = await ctx.newCDPSession(page);
-    await tap(cdp, page, '#tPlay'); await sleep(300);
-    if (await page.isVisible('#hOk')) { await tap(cdp, page, '#hOk'); await sleep(200); }
+    await tap(cdp, page, '#tPlay'); for (let k = 0; k < 50 && await page.isVisible('#title'); k++) await sleep(100); await sleep(200);
+    for (let k = 0; k < 30 && !(await page.isVisible('#hOk')); k++) await sleep(100);
+    if (await page.isVisible('#hOk')) { await sleep(400); await tap(cdp, page, '#hOk'); for (let k = 0; k < 30 && await page.isVisible('#help'); k++) await sleep(100); }
+    ok(!(await page.isVisible('#help')) && (await page.evaluate(() => window.__game.state())).status === 'play', 'help closes and play starts');
     // level 1 by swipes
     const sol1 = LEVELS[0].s;
     for (const ch of sol1) { await swipe(cdp, 195, 400, C.DCH.indexOf(ch)); await sleep(60); await idle(page); }
     let st = await idle(page);
     ok(st.won && st.level === 1 && st.moves === sol1.length, `level 1 solved by swipes (moves ${st.moves}/${sol1.length}, won ${st.won})`);
-    await sleep(1500);
+    const placed = await page.textContent('#hPlaced');
+    ok(placed === '1/1', 'HUD placed counter shows 1/1 (' + placed + ')');
+    for (let k = 0; k < 50 && !(await page.isVisible('#win')); k++) await sleep(100);
     ok(await page.isVisible('#win'), 'win card appears');
     const stars = await page.locator('#wStars .on').count();
     ok(stars === 3, 'three stars at par (' + stars + ')');
     const prog = await page.evaluate(() => window.__game.prog());
-    ok(prog[1] && prog[1].m === sol1.length && prog[1].s === 3, 'progress saved for level 1');
+    ok(prog[1] && prog[1].m === sol1.length && prog[1].s === 3, 'progress saved for level 1 ' + JSON.stringify(prog[1]) + ' ' + JSON.stringify(await page.evaluate(() => window.__game.state())) + ' ' + errors.join(' | '));
     await tap(cdp, page, '#wNext'); await sleep(400);
     st = await idle(page);
     ok(st.level === 2 && st.status === 'play', 'next level starts level 2');
@@ -97,7 +104,7 @@ function newPage(browser, w, h, dark, touch) {
     const exp = []; for (let k = 0; k < L2.n; k++) if (S2.box[k]) exp.push(k);
     ok(JSON.stringify(snap.box) === JSON.stringify(exp) && snap.p === S2.p, 'board matches the core after walks + D-pad pushes');
     ok(st.won && st.level === 2, `level 2 solved with tap-to-walk (${walkUsed} walks) and D-pad (${padUsed} presses); moves ${st.moves}, par ${sol2.length}`);
-    await sleep(1500);
+    for (let k = 0; k < 50 && !(await page.isVisible('#win')); k++) await sleep(100);
     await tap(cdp, page, '#wNext'); await sleep(400);
     // level 3: undo and restart via the buttons
     st = await idle(page);
@@ -113,6 +120,18 @@ function newPage(browser, w, h, dark, touch) {
     await tap(cdp, page, '#bRestart'); await sleep(200);
     st = await page.evaluate(() => window.__game.state());
     ok(st.moves === 0 && st.pushes === 0, 'restart resets counters');
+    // one swipe = one step, even when the finger stays down afterwards
+    {
+      const L3 = C.parseLevel(LEVELS[2].m), S3 = C.initState(L3); let dd = 0;
+      for (let k = 0; k < 4; k++) { const t = C.nb(L3, S3.p, k); if (t >= 0 && !L3.wall[t] && !S3.box[t]) { dd = k; break; } }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 420 }] });
+      for (let k = 1; k <= 4; k++) { await sleep(15); await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195 + C.DX[dd] * 12 * k, y: 420 + C.DY[dd] * 12 * k }] }); }
+      await sleep(900);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await idle(page);
+      st = await page.evaluate(() => window.__game.state());
+      ok(st.moves === 1, 'a held swipe moves exactly one step (' + st.moves + ')');
+      await tap(cdp, page, '#bRestart'); await sleep(200);
+    }
     // pause / level select shows progress
     await tap(cdp, page, '#bPause'); await sleep(200);
     ok(await page.isVisible('#pause'), 'pause card opens');
@@ -143,7 +162,7 @@ function newPage(browser, w, h, dark, touch) {
     for (const ch of sol3) { await page.keyboard.press(KEYS[C.DCH.indexOf(ch)]); await idle(page); }
     let st = await idle(page);
     ok(st.won && st.level === 3, 'level 3 solved with the keyboard');
-    await sleep(1500);
+    for (let k = 0; k < 50 && !(await page.isVisible('#win')); k++) await sleep(100);
     await page.keyboard.press('Enter'); await sleep(300);
     st = await page.evaluate(() => window.__game.state());
     ok(st.level === 4, 'Enter on the win card goes to the next level');
@@ -151,6 +170,19 @@ function newPage(browser, w, h, dark, touch) {
     ok(await page.isVisible('#pause'), 'Esc pauses');
     await page.keyboard.press('Escape'); await sleep(150);
     ok(!(await page.isVisible('#pause')), 'Esc again resumes');
+    // a crate pushed against a wall with no goal on it is flagged as stuck (red outline + toast)
+    {
+      const n = (() => { for (let k = 1; k <= LEVELS.length; k++) { const L = C.parseLevel(LEVELS[k - 1].m), S = C.initState(L); for (let d = 0; d < 4; d++) { const b = C.nb(L, S.p, d), t = b < 0 ? -1 : C.nb(L, b, d); if (b >= 0 && S.box[b] && t >= 0 && !L.wall[t] && !S.box[t] && !L.goal[t]) { const u = C.nb(L, t, d); const side = [C.nb(L, t, (d + 1) % 4), C.nb(L, t, (d + 3) % 4)]; if (u >= 0 && L.wall[u] && (L.wall[side[0]] || L.wall[side[1]])) return [k, d]; } } } return null; })();
+      if (n) {
+        await page.evaluate(n => window.__game.go(n), n[0]); await sleep(300);
+        await page.keyboard.press(KEYS[n[1]]); await idle(page); await sleep(400);
+        const stuck = await page.evaluate(() => window.__game.stuckCount());
+        ok(stuck >= 1, 'pushing a crate into a corner marks it stuck (level ' + n[0] + ')');
+        ok(await page.isVisible('#toast') && /卡住/.test(await page.textContent('#toast')), 'stuck toast tells the player to undo');
+        await page.keyboard.press('z'); await idle(page);
+        ok(await page.evaluate(() => window.__game.stuckCount()) === 0, 'undo clears the stuck mark');
+      } else ok(true, 'no corner push available at a level start');
+    }
     await page.evaluate(() => window.__game.go(100)); await sleep(300);
     const r100 = C.replay(C.parseLevel(LEVELS[99].m), LEVELS[99].s);
     ok(r100.won, 'level 100 stored solution replays to a win');
