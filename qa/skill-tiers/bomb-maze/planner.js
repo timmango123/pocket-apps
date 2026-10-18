@@ -18,7 +18,7 @@ module.exports = function makePlanner(BM) {
         bombs: b.bombs, fire: b.fire, speed: b.speed, kick: b.kick, shield: b.shield, invul: b.invul, placed: b.placed, onBomb: b.onBomb,
         inDir: -1, inBomb: false, bombHeld: false, deadT: 0, anim: 0, plan: null, wait: 0, lastCell: -1, lastVer: -1, kills: 0, skill: 2 })),
       enemies: o.enemies.map(e => ({ t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed || BM.ENEMY[e.t].speed, hp: e.hp, alive: e.alive, hurt: e.hurt || 0, anim: 0, deadT: 0 })),
-      events: [], time: o.time, limit: o.limit || 999, status: 'play', winner: -1, doorOpen: o.doorOpen, doorCell: o.doorCell,
+      events: [], time: o.time, limit: o.limit || 999, fuse: o.fuse, status: 'play', winner: -1, doorOpen: o.doorOpen, doorCell: o.doorCell,
       rng: BM.mulberry(seed), bombVer: 0, lives: 1, sudden: o.sudden ? Object.assign({}, o.sudden, { order: o.sudden.order || BM.spiralOrder(o.w, o.h) }) : null,
       distP: null, distT: 0, endT: 0, started: true, skill: 1, deaths: 0, kills: o.kills || 0
     };
@@ -66,7 +66,7 @@ module.exports = function makePlanner(BM) {
         b.inDir = dir; b.inBomb = i === 0 && macro.bomb;
         if (!path.length && i > 0 && i * DT >= (macro.hold || 0)) { b.cpu = true; b.plan = null; b.lastCell = -1; }   // then the built-in brain takes over
       }
-      BM.stepOnce(s, DT);
+      try { BM.stepOnce(s, DT); } catch (e) { break; }   // the pre-fix engine can throw on some chain reactions
       s.events.length = 0;
       if (!b.alive) { dead = i; break; }
       if (s.status === 'won') { won = true; break; }

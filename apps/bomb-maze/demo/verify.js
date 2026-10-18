@@ -74,6 +74,12 @@ async function fullFlow(browser, w, h, scheme) {
   await tap(cdp, page, '#bombBtn');
   s = await page.evaluate(() => { window.__game.tick(50); return window.__game.state(); });
   ok(s.bombs === 1, tag + ' bomb button plants a firecracker');
+  ok((await page.textContent('#bombN')) === '0', tag + ' the bomb button badge counts down to 0 firecrackers left');
+  if (h >= 640) {
+    const info = await page.evaluate(() => { const el = document.getElementById('info'), r = el.getBoundingClientRect(), c = document.getElementById('cv').getBoundingClientRect(), p = document.getElementById('pad').getBoundingClientRect();
+      return { shown: getComputedStyle(el).display !== 'none', icons: el.querySelectorAll('.mon img').length, text: el.textContent, below: r.top >= c.bottom - 1 && r.bottom <= p.top + 1 }; });
+    ok(info.shown && info.icons >= 1 && /×2/.test(info.text) && info.below, tag + ' objective strip shows the monsters left between the maze and the controls ' + JSON.stringify(info));
+  }
   await page.evaluate(() => window.__game.auto(true));
   let fired = false;
   for (let i = 0; i < 40 && !fired; i++) { const q = await page.evaluate(() => { window.__game.tick(100); return window.__game.state(); }); if (q.fires > 0) fired = true; }
@@ -143,6 +149,30 @@ async function fullFlow(browser, w, h, scheme) {
   await ctx.close();
 }
 
+async function landscape(browser) {
+  const { ctx, page, errors } = await open(browser, 844, 390, 'light');
+  await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(3); window.__game.tick(1400); });
+  const b = await page.evaluate(() => ['pad', 'cv', 'bombBtn'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; }));
+  ok(b[0].r <= b[1].l + 1 && b[2].l >= b[1].r - 1, 'landscape: stick left of the maze, bomb button right of it');
+  ok(b[1].t >= 0 && b[1].b <= 391 && b[0].b <= 391 && b[2].b <= 391, 'landscape: everything fits the height');
+  ok(errors.length === 0, 'landscape: no page errors');
+  await ctx.close();
+}
+
+async function padEdge(browser) {
+  const { ctx, page, cdp, errors } = await open(browser, 390, 844, 'light');
+  await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(3); window.__game.tick(1500); });
+  const b = await page.locator('#pad').boundingBox(), cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  for (const [dx, dy, want] of [[76, 0, 1], [0, -82, 0], [-72, 8, 3]]) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx + dx, y: cy + dy, id: 1 }] });
+    const g = await page.evaluate(() => { window.__game.tick(20); return window.__game.sim().bombers[0].inDir; });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    ok(g === want, 'a thumb landing ' + Math.round(Math.hypot(dx, dy)) + ' px from the stick centre (outside the ring) still steers (' + g + ')');
+  }
+  ok(errors.length === 0, 'pad edge: no page errors');
+  await ctx.close();
+}
+
 async function cover(browser) {
   const { ctx, page, errors } = await open(browser, 390, 520, 'light', 2);
   await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(7); window.__game.auto(true); window.__game.tick(1400); });
@@ -165,6 +195,8 @@ async function cover(browser) {
   for (const [w, h] of sizes) for (const scheme of ['light', 'dark']) {
     try { await fullFlow(browser, w, h, scheme); } catch (e) { fails++; console.log('FAIL', w + 'x' + h, scheme, 'threw', e.message.split('\n')[0]); }
   }
+  await landscape(browser);
+  await padEdge(browser);
   await cover(browser);
   await browser.close(); srv.close();
   console.log(checks - fails + ' passed, ' + fails + ' failed');

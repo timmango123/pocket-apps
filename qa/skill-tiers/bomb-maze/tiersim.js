@@ -5,11 +5,11 @@ const H = require('./harness');
 const { BM, MODEL, decide, dirToward } = require('./bot');
 const tier = process.argv[2], levels = process.argv[3].split(',').map(Number), seeds = +(process.argv[4] || 3);
 const T = H.TIERS[tier], M = MODEL[tier], FR = 1000 / 60;
-const snap = s => ({ st: s.status, mode: s.mode, time: s.time, limit: s.limit, kills: s.kills, doorOpen: s.doorOpen, doorCell: s.doorCell, w: s.w, h: s.h, grid: s.grid.slice(), items: s.items.slice(), fire: Array.from(s.fire),
+const snap = s => ({ st: s.status, mode: s.mode, fuse: s.fuse, time: s.time, limit: s.limit, kills: s.kills, doorOpen: s.doorOpen, doorCell: s.doorCell, w: s.w, h: s.h, grid: s.grid.slice(), items: s.items.slice(), fire: Array.from(s.fire),
   bombs: s.bombs.map(b => Object.assign({}, b)), bombers: s.bombers.map(b => Object.assign({}, b, { plan: null })), enemies: s.enemies.map(e => Object.assign({}, e)), sudden: null, cpuSkill: s.skill });
-function mk(o, rng) { return { w: o.w, h: o.h, time: o.time, limit: o.limit, kills: o.kills, mode: o.mode, grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null }; }
+function mk(o, rng) { return { w: o.w, h: o.h, fuse: o.fuse, time: o.time, limit: o.limit, kills: o.kills, mode: o.mode, grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null }; }
 function play(n, seed) {
-  const rng = H.makeRng(seed), L = BM.genStage(n), s = BM.createSim(L, { mode: 'stage', cpu: [false], seed: n * 31 + 7 + seed, lives: 3 });
+  const rng = H.makeRng(seed), L = BM.genStage(n), s = BM.createSim(L, { mode: 'stage', cpu: [false], seed: n * 31 + 7 + seed, lives: +(process.env.LIVES || BM.stageParams(n).lives) });
   const stepN = M.step || (M.every <= 3 ? (M.every === 1 ? 2 : 3) : (M.every <= 5 ? 4 : 6));
   const buf = []; let frame = 0, nextDec = 0, plan = null, wrongDir = -1, wrongUntil = 0, pendingBomb = null, lastDecCell = -1, lastBombKey = '', lastDecFrame = -999, held = -1;
   const me = s.bombers[0]; const why = [];
@@ -26,7 +26,7 @@ function play(n, seed) {
       nextDec = frame + M.every; lastDecCell = cellNow; lastBombKey = bombKey; lastDecFrame = frame;
       const react = Math.max(16, rng.gauss(T.react[0], T.react[1]));
       const d = Math.max(1, Math.round(react / FR / stepN)); const ob = buf[Math.max(0, buf.length - d)];
-      const sv = mk(Object.assign({}, ob, { bombs: ob.bombs.filter(x => x.owner !== 0).concat(o.bombs.filter(x => x.owner === 0)) }), rng);
+      const sv = mk(Object.assign({}, ob, { bombs: ob.bombs.concat(o.bombs.filter(x => x.owner === 0 && !ob.bombs.some(y => y.x === x.x && y.y === x.y))) }), rng);
       const b = Object.assign({}, ob.bombers[0], { x: me.x, y: me.y, placed: me.placed, onBomb: me.onBomb, alive: true });
       plan = decide(M, sv, b, rng);
       if (rng() < T.mistake) { wrongDir = rng.int(4); wrongUntil = frame + M.every; }
@@ -37,7 +37,7 @@ function play(n, seed) {
     if (frame < wrongUntil) want = wrongDir;
     else if (plan && plan.path.length) {
       const tol = Math.max(0.08, me.speed * stepN / 60 * 0.55);
-      while (plan.path.length && dirToward(me, plan.path[0], s.w, plan.path.length > 1 ? tol : tol * 0.8) < 0) plan.path.shift();
+      while (plan.path.length && dirToward(me, plan.path[0], s.w, tol) < 0) plan.path.shift();   // tol covers half a look-to-look move, so the thumb never overshoots back and forth
       if (plan.path.length) want = dirToward(me, plan.path[0], s.w, 0.03);
     }
     held = want;
@@ -47,5 +47,5 @@ function play(n, seed) {
 }
 const LOG = [];
 const out = [];
-for (const n of levels) { let w = 0; const ws = []; for (let sd = 1; sd <= seeds; sd++) { const r = play(n, sd * 101); if (r.won) w++; ws.push(r.won ? 'W' + r.t : r.why.map(x => x[0]).join('')); } out.push(`L${n}:${w}/${seeds}(${ws.join(' ')})`); }
+for (const n of levels) { let w = 0; const ws = []; for (let sd = 1; sd <= seeds; sd++) { const r = play(n, sd * 101 + (+process.env.SO || 0)); if (r.won) w++; ws.push(r.won ? 'W' + r.t : r.why.map(x => x[0]).join('')); } out.push(`L${n}:${w}/${seeds}(${ws.join(' ')})`); }
 console.log(tier, out.join('  '));

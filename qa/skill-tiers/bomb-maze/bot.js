@@ -36,7 +36,7 @@ const PAD_PUSH = 44; // px the thumb is pushed from the pad centre for a directi
 
 // read-only observation installed in the page (the game exposes sim() for tests; we only read it)
 const OBS = `window.__obs = () => { const g = window.__game, s = g && g.sim(); if (!s) return null; const st = g.state();
-  return { st: s.status, mode: st.mode, playing: st.playing, paused: st.paused, time: s.time, limit: s.limit, lives: s.lives, kills: s.kills, doorOpen: s.doorOpen, doorCell: s.doorCell, w: s.w, h: s.h, hold: s.hold || 0,
+  return { st: s.status, mode: st.mode, playing: st.playing, paused: st.paused, time: s.time, limit: s.limit, fuse: s.fuse, lives: s.lives, kills: s.kills, doorOpen: s.doorOpen, doorCell: s.doorCell, w: s.w, h: s.h, hold: s.hold || 0,
     grid: Array.from(s.grid), items: Array.from(s.items), fire: Array.from(s.fire, v => +v.toFixed(3)),
     bombs: s.bombs.map(b => ({ x: b.x, y: b.y, t: +b.t.toFixed(3), range: b.range, slide: b.slide, p: b.p, owner: b.owner })),
     bombers: s.bombers.map(b => ({ id: b.id, sx: b.sx, sy: b.sy, x: +b.x.toFixed(3), y: +b.y.toFixed(3), alive: b.alive, invul: b.invul, shield: b.shield, kick: b.kick, bombs: b.bombs, fire: b.fire, speed: b.speed, placed: b.placed, onBomb: b.onBomb, inDir: b.inDir })),
@@ -45,7 +45,7 @@ const OBS = `window.__obs = () => { const g = window.__game, s = g && g.sim(); i
 
 // Node-side view of the snapshot that the game's own planner functions accept
 function mkSim(o, rng) {
-  const sim = { w: o.w, h: o.h, time: o.time, limit: o.limit, kills: o.kills, cpuSkill: o.cpuSkill, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
+  const sim = { w: o.w, h: o.h, time: o.time, limit: o.limit, fuse: o.fuse, kills: o.kills, cpuSkill: o.cpuSkill, mode: o.mode === 'battle' ? 'battle' : 'stage', grid: o.grid, items: o.items, fire: Float32Array.from(o.fire), bombs: o.bombs, bombers: o.bombers, enemies: o.enemies, doorOpen: o.doorOpen, doorCell: o.doorCell, rng, sudden: null };
   if (o.sudden) sim.sudden = Object.assign({ order: BM.spiralOrder(o.w, o.h) }, o.sudden);
   return sim;
 }
@@ -63,7 +63,7 @@ function simpleDecide(M, s, b, rng) {
   const D = BM.dangerMap(s), pass = passableFn(s, c);
   const monsters = s.enemies.filter(e => e.alive);
   const mDist = (x, y) => monsters.reduce((m, e) => Math.min(m, Math.abs(e.x - x - 0.5) + Math.abs(e.y - y - 0.5)), 99);
-  const avoid = (x, y) => M.policy === 'casual' ? mDist(x, y) < 1.6 : false;
+  const avoid = (x, y) => mDist(x, y) < (M.policy === 'casual' ? 1.6 : 1.1);   // nobody walks onto a monster they can see
   const safeIsh = (x, y, d) => pass(x, y) && !avoid(x, y) && (D[y * W + x] === Infinity || (M.policy === 'casual' && D[y * W + x] > d / b.speed + M.margin));
   if (D[c] !== Infinity || mDist(cx, cy) < 1.1) {
     const p = nearest(s, cx, cy, (x, y, d) => pass(x, y) && (M.policy === 'clumsy' || D[y * W + x] !== 0), (u, d) => (D[u] === Infinity && !avoid(u % W, (u - u % W) / W)) ? d : null);
@@ -78,12 +78,13 @@ function simpleDecide(M, s, b, rng) {
     else {
       const own = { w: s.w, h: s.h, grid: s.grid, items: s.items, fire: s.fire, bombs: [{ x: cx, y: cy, range: b.fire, t: BM.FUSE }], bombers: s.bombers, enemies: s.enemies, sudden: null };
       const D2 = BM.dangerMap(own);
-      const p = nearest(s, cx, cy, (x, y, d) => pass(x, y) && !avoid(x, y) && D2[y * W + x] > d / b.speed + M.margin, (u, d) => D2[u] === Infinity && d / b.speed < BM.FUSE - 0.4 ? d : null);
+      const p = nearest(s, cx, cy, (x, y, d) => pass(x, y) && !avoid(x, y) && D2[y * W + x] > d / b.speed + M.margin && D[y * W + x] > d / b.speed + M.margin, (u, d) => D2[u] === Infinity && d / b.speed < BM.FUSE - 0.4 ? d : null);
       if (p) return { path: p, bomb: true };
     }
   }
   const p = nearest(s, cx, cy, safeIsh, (u, d) => {
     const ux = u % W, uy = (u - ux) / W, it = s.items[u];
+    if (M.policy === 'casual' && D[u] !== Infinity) return null;   // will not wait inside a blast that is still to come
     if (it === IT.DOOR) return s.doorOpen ? d - 50 : null;
     if (it) return d - 6;
     if (b.placed < b.bombs && BM.softAdj(s, ux, uy) > 0) return d;
@@ -93,7 +94,7 @@ function simpleDecide(M, s, b, rng) {
   if (p) return { path: p, bomb: false };
   if (targets.length) { // nothing to burn: walk toward the nearest target
     const t = targets.reduce((a, e) => (Math.abs(e.x - b.x) + Math.abs(e.y - b.y) < Math.abs(a.x - b.x) + Math.abs(a.y - b.y) ? e : a));
-    const p2 = nearest(s, cx, cy, safeIsh, (u, d) => { const ux = u % W, uy = (u - ux) / W, md = Math.abs(ux + 0.5 - t.x) + Math.abs(uy + 0.5 - t.y); return md >= 2 ? md * 2 + d * 0.5 : null; });
+    const p2 = nearest(s, cx, cy, safeIsh, (u, d) => { if (M.policy === 'casual' && D[u] !== Infinity) return null; const ux = u % W, uy = (u - ux) / W, md = Math.abs(ux + 0.5 - t.x) + Math.abs(uy + 0.5 - t.y); return md >= 2 ? md * 2 + d * 0.5 : null; });
     if (p2) return { path: p2, bomb: false };
   }
   const opts = []; for (let d = 0; d < 4; d++) if (safeIsh(cx + DX[d], cy + DY[d], 1)) opts.push((cy + DY[d]) * W + cx + DX[d]);
@@ -154,7 +155,7 @@ async function playRun(P, M, kind, n, opts) {
   let livesLost = 0, lastLives = o.lives, lastAlive = true; const deaths = []; const picks = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   let lastItems = o.items.slice(); let end = null, wrongDir = -1, wrongUntil = 0; const t0 = Date.now(); const prof = { ev: 0, dec: 0 }; let lastDecCell = -1, lastBombKey = '', lastDecFrame = -999, mismatch = 0;
   const capFrames = Math.round(((kind === 'stage' ? o.limit + 5 : 200)) * 60);
-  while (frame < capFrames && Date.now() - t0 < 240000) {
+  while (frame < capFrames && Date.now() - t0 < 900000) {   // wall-clock guard only; the stage timer is the real cap
     const _te = Date.now(); o = await page.evaluate(n => window.__step(n, true), stepN); frame += stepN; prof.ev += Date.now() - _te;
     buf.push(o); if (buf.length > 80) buf.shift();
     if (process.env.BM_DEBUG && frame % (+process.env.BM_DEBUG) === 0) console.log('  f', frame, 't', o.time.toFixed(1), 'pos', o.bombers[0].x.toFixed(2), o.bombers[0].y.toFixed(2), 'dir', F.dir, o.bombers[0].inDir, 'plan', plan && JSON.stringify(plan.path), plan && plan.flee ? 'FLEE' : '', plan && plan.bomb ? 'BOMB' : '', 'en', o.enemies.filter(e => e.alive).map(e => e.x.toFixed(1) + ',' + e.y.toFixed(1)).join(' '), 'bombs', o.bombs.map(b => b.x + ',' + b.y).join(' '), 'kills', o.kills, 'wall', Date.now() - t0, 'touches', F.stats.moves);
@@ -180,7 +181,7 @@ async function playRun(P, M, kind, n, opts) {
       const ob = buf[Math.max(0, buf.length - d)];
       if (ob.st === 'play') {
         // the player knows where its own firecrackers are (it just planted them), like its own position
-        const s = mkSim(Object.assign({}, ob, { bombs: ob.bombs.filter(x => x.owner !== 0).concat(o.bombs.filter(x => x.owner === 0)) }), rng);
+        const s = mkSim(Object.assign({}, ob, { bombs: ob.bombs.concat(o.bombs.filter(x => x.owner === 0 && !ob.bombs.some(y => y.x === x.x && y.y === x.y))) }), rng);
         const b = Object.assign({}, ob.bombers[0], { x: me.x, y: me.y, placed: me.placed, onBomb: me.onBomb });
         if (b.alive) {
           const _td = Date.now(); const dec = decide(M, s, b, rng); prof.dec += Date.now() - _td; decisions++; if (dec.random) randoms++;
@@ -196,7 +197,7 @@ async function playRun(P, M, kind, n, opts) {
     if (frame < wrongUntil) want = wrongDir;
     else if (plan && plan.path.length) {
       const tol = Math.max(0.08, me.speed * stepN / 60 * 0.55);
-      while (plan.path.length && dirToward(me, plan.path[0], o.w, plan.path.length > 1 ? tol : tol * 0.8) < 0) plan.path.shift();
+      while (plan.path.length && dirToward(me, plan.path[0], o.w, tol) < 0) plan.path.shift();   // tol covers half a look-to-look move, so the thumb never overshoots back and forth
       if (plan.path.length) want = dirToward(me, plan.path[0], o.w, 0.03);
     }
     // the stick is held until the intended direction changes; a registered direction that differs from the finger's

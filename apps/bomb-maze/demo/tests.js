@@ -219,6 +219,52 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
   s.sudden.at = 0.5; run(s, 10);
   ok(s.sudden.on && s.sudden.idx > 10 && s.grid[s.w + 1] === HARD, 'sudden death drops pillars from the top-left corner inward');
 }
+// ---- a later bomb that goes off first and chains an earlier one (kicked into fire) must not crash the loop ----
+{
+  {
+    const s = BM.createSim(mkLevel(['#########', '#P......#', '#########']), { mode: 'battle', cpu: [false] });
+    s.bombs.push({ x: 3, y: 1, owner: 0, range: 2, t: 2, slide: -1, p: 0 }, { x: 4, y: 1, owner: 0, range: 2, t: 0.001, slide: -1, p: 0 });
+    let threw = null; try { BM.tick(s, 1 / 60); } catch (e) { threw = e; }
+    ok(!threw && s.bombs.length === 0, 'chain reaction started by the newer bomb clears both without an error' + (threw ? ' (' + threw.message + ')' : ''));
+  }
+}
+// ---- a battle stand-off cannot run forever ----
+{
+  const s = BM.createSim(BM.genBattle(5, 2), { mode: 'battle', cpu: [false, false], seed: 5 });
+  ok(s.limit === 180, 'battle clock is 3 minutes');
+  s.sudden.at = 1e9; for (let t = 0; t < 181 && s.status === 'play'; t += 1 / 60) { BM.tick(s, 1 / 60); s.events.length = 0; }
+  ok(s.status === 'over' && s.winner === -1 && s.timeUp, 'two cats that never meet end in a draw when the clock runs out');
+}
+// ---- difficulty curve and beginner help ----
+{
+  const L = mkLevel(['#######', '#P.+..#', '#.#.#.#', '#..r..#', '#######']); L.items[1 * 7 + 3] = IT.DOOR;
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] }); s.enemies[0].alive = false; BM.tick(s, 1 / 60);
+  ok(s.doorOpen && s.grid[1 * 7 + 3] === EMPTY, 'clearing the monsters also shakes the brick off the hidden door');
+}
+{
+  let prevE = 0, prevS = 0, mono = true;
+  for (let n = 1; n <= 100; n++) { const P = BM.stageParams(n); if (P.enemies < prevE || P.speedMul < prevS - 1e-9) mono = false; prevE = P.enemies; prevS = P.speedMul; }
+  ok(mono, 'monster count and speed never drop from one stage to the next');
+  ok(BM.stageParams(1).enemies === 2 && BM.stageParams(100).enemies === 7, 'two monsters on stage 1, seven on stage 100');
+  ok(BM.stageParams(1).speedMul < 0.85 && Math.abs(BM.stageParams(100).speedMul - 1.2) < 1e-9, 'monsters start slow and end 20% faster');
+  ok(BM.stageParams(1).lives === 5 && BM.stageParams(25).lives === 4 && BM.stageParams(50).lives === 3, 'five lives on the teaching stages, three from stage 41');
+  ok(BM.genStage(1).fuse === 3 && BM.genStage(10).fuse > 2.4 && BM.genStage(11).fuse === BM.FUSE, 'early stages have a slower fuse');
+  const L = mkLevel(['#######', '#P....#', '#.#.#.#', '#.....#', '#######'], { fuse: 3 });
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] }), b = s.bombers[0];
+  BM.setInput(s, 0, -1, true); BM.tick(s, 1 / 60);
+  ok(s.bombs.length === 1 && Math.abs(s.bombs[0].t - (3 - 1 / 60)) < 1e-6, 'a bomb uses the stage fuse');
+  const s2 = BM.createSim(mkLevel(['#######', '#P....#', '#######']), { mode: 'stage', cpu: [false] });
+  s2.fire[s2.w + 1] = 0.1; BM.tick(s2, 1 / 60);
+  ok(s2.bombers[0].alive, 'the last tenth of a second of a flame is a harmless fade');
+  s2.fire[s2.w + 1] = 0.3; BM.tick(s2, 1 / 60);
+  ok(!s2.bombers[0].alive, 'a live flame still burns');
+  // touching: a monster 0.6 cells away does not catch the cat, 0.4 does
+  const s3 = BM.createSim(mkLevel(['#######', '#P...r#', '#######']), { mode: 'stage', cpu: [false] });
+  s3.enemies[0].speed = 0; s3.enemies[0].x = s3.bombers[0].x + 0.6; s3.enemies[0].tx = 1; BM.tick(s3, 1 / 60);
+  ok(s3.bombers[0].alive, 'a monster that only brushes past (0.6 cells) does not catch the cat');
+  s3.enemies[0].x = s3.bombers[0].x + 0.4; BM.tick(s3, 1 / 60);
+  ok(!s3.bombers[0].alive, 'a monster on top of the cat catches it');
+}
 // ---- whole stages playable by the CPU ----
 {
   let won = 0;
