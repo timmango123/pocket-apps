@@ -233,6 +233,18 @@ const fullTiff = (ori, le) => EX.buildTiff({
   const tailS = EX.strip(EX.jpegInsertExif(tail, fullTiff(1, false)), {});
   ok(EX.parse(tailS.bytes).tiff === null && tailS.bytes[tailS.bytes.length - 2] === 0xFF && tailS.bytes[tailS.bytes.length - 1] === 0xD9 && Buffer.from(tailS.bytes).indexOf(Buffer.from(tail.subarray(tail.length - 60))) === tailS.bytes.length - 62, 'jpeg cut-off tail: every scan byte kept, closed with EOI, EXIF gone');
   ok(EX.parse(png.subarray(0, png.length - 30)).broken && EX.parse(webp.subarray(0, 40)).broken, 'png / webp truncated → broken');
+  // review fixes: data after PNG IEND is listed and removed; mistyped (BYTE/UNDEFINED) text tags decode as text
+  const pngTail = EX.concat([png, EX.encStr('hidden trailer after IEND: 37.7749,-122.4194')]);
+  const pti = EX.parse(pngTail);
+  ok(pti.trailing === 44 && pti.meta.some(m => m.kind === 'trailing') && field(pti, 'trailing') && pti.summary.warnings.some(w => w.key === 'trailing'), 'png: data after IEND listed like JPEG data after EOI');
+  const ptc = EX.parse(EX.concat([PNG, EX.encStr('xyz')]));
+  ok(ptc.summary.risk !== 'clean' && fval(ptc, 'trailing') === '3 B', 'png: plain PNG with trailer is not called clean');
+  const pts = EX.strip(pngTail, {});
+  ok(pts.removed.some(r => r.kind === 'trailing' && r.bytes === 44) && Buffer.from(pts.bytes).indexOf('hidden trailer') < 0 && !EX.parse(pts.bytes).trailing, 'png strip: IEND trailer removed and reported');
+  const mis = EX.buildTiff({ ifd0: { 0x0110: { t: 7, v: EX.encStr('Pixel 9\0') }, 0x013B: { t: 1, v: EX.encStr('林小美') } }, exif: { 0xA430: { t: 7, v: EX.encStr('王大明') }, 0xA431: { t: 7, v: EX.encStr('SN-778899\0\0') }, 0xA434: { t: 7, v: Uint8Array.from([1, 2, 3, 250]) } } }, false);
+  const misI = EX.parse(EX.jpegInsertExif(JPG, mis));
+  ok(fval(misI, 'owner') === '王大明' && fval(misI, 'artist') === '林小美' && fval(misI, 'serial') === 'SN-778899' && fval(misI, 'camera') === 'Pixel 9', 'mistyped text tags decoded as text: ' + [fval(misI, 'owner'), fval(misI, 'artist'), fval(misI, 'serial'), fval(misI, 'camera')]);
+  ok(misI.tiff.ifds.exif.find(e => e.name === 'LensModel').text === '01 02 03 fa' && fval(misI, 'lens') === '01 02 03 fa', 'binary bytes in a text tag stay shown as bytes, not garbage text');
   // --- helpers ---
   ok(EX.fmtExposure(1 / 250) === '1/250 s' && EX.fmtExposure(2.5) === '2.5 s' && EX.fmtExposure(0.5) === '1/2 s', 'fmtExposure');
   ok(EX.fmtBytes(512) === '512 B' && EX.fmtBytes(2048) === '2.0 KB' && EX.fmtBytes(3 * 1048576) === '3.00 MB', 'fmtBytes');
