@@ -17,4 +17,4 @@ Audit tooling for the s2t phrase table (run from this folder; not loaded by the 
 eng.js (a 3-line loader of the CORE block) must sit next to the scripts.
 
 cross-tw.js: after editing TW_CTX in index.html, regenerate simp.txt (extract-jieba.py) and run `node cross-tw.js` to rebuild TW_CROSS
-(jieba words that cut a phrase's changed part and reach outside it, e.g. 推导|出 for 导出PDF); delete simp.txt afterwards.
+(jieba words that reach outside a phrase, e.g. 推导|出 for 导出PDF, 返回值|班; shared by the phrase edge they cut); delete simp.txt afterwards.
