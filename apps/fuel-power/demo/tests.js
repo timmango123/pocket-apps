@@ -161,5 +161,10 @@ ok(near(bill('1,000', W).total, bill(1000, W).total), '千分位度數');
 // 跨季按天數：度數與門檻都按比例分攤 = 兩季帳單加權
 { const p = FP.periodInfo(9), k = 1500; ok(near(bill(k, p.fs).total, p.fs * bill(k, S).total + (1 - p.fs) * bill(k, W).total), '9–10 月 1500 度跨季加權'); }
 
+// 第二輪審查：分攤人數 0 要擋下（UI 用 positive 檢查）
+ok(C('0', { name: '分攤人數', positive: true }).err === '分攤人數要大於 0', '0 人擋下並說明');
+ok(C('1', { name: '分攤人數', positive: true }).err === '', '1 人可以');
+// 天數上限：一期最多 62 天
+ok(Math.max(...Array.from({ length: 12 }, (_, i) => FP.periodInfo(i + 1).days)) === 62 && Math.min(...Array.from({ length: 12 }, (_, i) => FP.periodInfo(i + 1).days)) === 59, '兩個月計費期 59–62 天');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
