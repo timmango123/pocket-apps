@@ -36,7 +36,9 @@ const FH = 480;
   const full = C.captureBonus(0, 30, 30), half = C.captureBonus(0, 15, 30), none = C.captureBonus(0, 0, 30);
   ok(full > half && half > none && none > 0 && full % 100 === 0, 'capture bonus rewards remaining time, rounded to 100');
   ok(C.captureBonus(2, 30, 30) > C.captureBonus(0, 30, 30), 'later stages pay more');
-  ok(!C.nextExtend(999999, 0) && C.nextExtend(1000000, 0) && !C.nextExtend(1000000, 1) && C.nextExtend(3000000, 1) && !C.nextExtend(9e9, 2), 'extends at 1M and 3M, only once each');
+  ok(!C.nextExtend(499999, 0) && C.nextExtend(500000, 0) && !C.nextExtend(500000, 1) && C.nextExtend(1200000, 1) && !C.nextExtend(9e9, 2), 'extends at 500k and 1.2M, only once each');
+ok(C.DIFFS[0].autoBomb === true && !C.DIFFS[1].autoBomb && !C.DIFFS[2].autoBomb && !C.DIFFS[3].autoBomb, 'only 簡單 has the auto-bomb guard');
+ok(C.DIFFS.every(d => d.blurb && d.blurb.indexOf((d.lives + 1) + ' 條命') === 0 && d.blurb.indexOf('炸彈 ' + d.bombs) > 0), 'difficulty blurbs state the real lives and bombs');
   ok(Math.abs(C.aimAt(0, 0, 0, 10) - Math.PI / 2) < 1e-9, 'aimAt points straight down for a target below');
 }
 // --- difficulty table ---

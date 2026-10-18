@@ -10,11 +10,11 @@ const SRC = process.env.BH_SRC || path.resolve(__dirname, '../../../apps/bullet-
 const FRAME = 1000 / 60;
 
 const TIERS = {
-  clumsy:     { name: '手殘', react: [650, 200], pos: 40, timing: 120, mistake: 0.15,  every: 12, policy: 'clumsy', pred: 0.5, speed: 600,  margin: 2, H: 0.35, focusBoss: false, bombThr: 6, bombP: 0.3 },
-  casual:     { name: '普通', react: [400, 100], pos: 20, timing: 60,  mistake: 0.06,  every: 8,  policy: 'greedy', pred: 0.8, speed: 900,  margin: 3, H: 0.45, focusBoss: false, bombThr: 4, bombP: 0.6 },
-  skilled:    { name: '熟練', react: [260, 50],  pos: 10, timing: 30,  mistake: 0.02,  every: 5,  policy: 'look2',  pred: 1,   speed: 1200, margin: 4, H: 0.6,  focusBoss: true,  bombThr: 2.5, bombP: 0.85 },
-  world:      { name: '世界級', react: [180, 25], pos: 4,  timing: 12,  mistake: 0.003, every: 3,  policy: 'search', pred: 1,   speed: 1600, margin: 4, H: 0.8,  focusBoss: true,  bombThr: 1.5, bombP: 0.97, fine: true },
-  superhuman: { name: '非人', react: [16, 0],    pos: 0,  timing: 0,   mistake: 0,     every: 1,  policy: 'perfect', pred: 1,  speed: 2000, margin: 3, H: 0.8,  focusBoss: true,  bombThr: 0.9, bombP: 1, fine: true, exact: true },
+  clumsy:     { name: '手殘', react: [650, 200], pos: 40, timing: 120, mistake: 0.15,  every: 12, policy: 'clumsy', pred: 0.5, speed: 600,  margin: 2, H: 0.35, focusBoss: false, bombThr: 6, bombP: 0.3, crowd: 4 },
+  casual:     { name: '普通', react: [400, 100], pos: 20, timing: 60,  mistake: 0.06,  every: 8,  policy: 'greedy', pred: 0.8, speed: 900,  margin: 3, H: 0.45, focusBoss: false, bombThr: 4, bombP: 0.6, crowd: 3 },
+  skilled:    { name: '熟練', react: [260, 50],  pos: 10, timing: 30,  mistake: 0.02,  every: 5,  policy: 'look2',  pred: 1,   speed: 1200, margin: 4, H: 0.6,  focusBoss: true,  bombThr: 2.5, bombP: 0.85, crowd: 3 },
+  world:      { name: '世界級', react: [180, 25], pos: 4,  timing: 12,  mistake: 0.003, every: 3,  policy: 'search', pred: 1,   speed: 1600, margin: 4, H: 0.8,  focusBoss: true,  bombThr: 1.5, bombP: 0.97, crowd: 4, fine: true },
+  superhuman: { name: '非人', react: [16, 0],    pos: 0,  timing: 0,   mistake: 0,     every: 1,  policy: 'perfect', pred: 1,  speed: 2000, margin: 3, H: 0.8,  focusBoss: true,  bombThr: 0.9, bombP: 1, crowd: 99, fine: true, exact: true },
 };
 const TIER_IDS = Object.keys(TIERS);
 const DIFFS = ['簡單', '普通', '困難', '地獄'];

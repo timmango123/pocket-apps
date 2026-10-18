@@ -64,9 +64,13 @@ function decide(T, o, rnd, age, vmax) {
     }
   }
   // what the player sees closing in on the crane right now (in the delayed, extrapolated picture): bullets about to touch
-  let close = 0;
-  for (const bl of o.near) { const bx = bl[0] + bl[2] * ext, by = bl[1] + bl[3] * ext, rr = bl[4] + HIT + 12; if ((bx - o.pl.x) ** 2 + (by - o.pl.y) ** 2 < rr * rr) close++; }
-  best.close = close;
+  let close = 0, crowd = 0;
+  for (const bl of o.near) {
+    const bx = bl[0] + bl[2] * ext, by = bl[1] + bl[3] * ext, d2 = (bx - o.pl.x) ** 2 + (by - o.pl.y) ** 2, rr = bl[4] + HIT + 12;
+    if (d2 < rr * rr) close++;
+    if (d2 < 40 * 40) crowd++;       // "the crane is boxed in": what makes a human reach for the bomb
+  }
+  best.close = close; best.crowd = crowd;
   return best;
 }
 
@@ -121,7 +125,7 @@ async function runOnce(browser, URL, tierId, diff, seed, capSec, log) {
       // bomb when the planner sees an unavoidable hit soon (tier threshold); the tap lands after a reaction delay
       // panic bomb: even the best path the player can see runs into a bullet very soon. The observation is already
       // reaction-delayed, so the tap only adds motor timing noise; lower tiers often forget to bomb (bombP).
-      if (bombAt < 0 && o.bombs > 0 && o.pl.invul <= 0.1 && (plan.kind === 'plan' && plan.first < 0.3 && plan.pen >= 1 || plan.close >= 2) && rnd() < T.bombP)
+      if (bombAt < 0 && o.bombs > 0 && o.pl.invul <= 0.1 && (plan.kind === 'plan' && plan.first < 0.3 && plan.pen >= 1 || plan.close >= 2 || plan.crowd >= T.crowd) && rnd() < T.bombP)
         bombAt = frame + Math.round(Math.abs(rnd.gauss() * T.timing) / H.FRAME);
     }
     if (bombAt >= 0 && frame >= bombAt) { bombAt = -1; bombTaps++; await hands.tap(bombXY[0], bombXY[1]); }
