@@ -211,5 +211,53 @@ eq(IL.prevPeriod(2026, 1), { year: 2025, m: 11 }, '1–2月 的上一期');
   eq(bad, 0, `與獨立實作比對 ${n} 組隨機號碼`);
 }
 
+// --- history cap: only old misses fold into a count ---
+{
+  const mk = (n, s, k, t) => ({ n, s, k: k || null, a: k ? IL.TIER[k].amt : 0, t });
+  const arr = [];
+  for (let i = 0; i < 6; i++) arr.push(mk('55' + i, 'miss', null, 100 - i));
+  arr.push(mk('11111111', 'win', 'first', 50), mk('222', 'maybe', null, 40), mk('333', 'miss', null, 30), mk('000', 'win', 'extra', 20));
+  const f = IL.foldHistory(arr, 5);
+  eq(f, 5, '超過上限：只收合沒中 5 筆');
+  eq(arr.map(r => r.n), ['550', '551', '11111111', '222', '000'], '剩下：最新的 2 筆沒中 + 全部中獎與待核對');
+  eq(arr.filter(r => r.s !== 'miss').length, 3, '中獎與待核對全部保留');
+  eq(arr[0].n, '550', '保留最新的沒中');
+  const all = [mk('1', 'win', 'sixth', 1)].concat(Array.from({ length: 10 }, (_, i) => mk('12345678', 'win', 'sixth', i)));
+  eq(IL.foldHistory(all, 5), 0, '全是中獎：一筆都不丟（可超過上限）');
+  eq(all.length, 11, '中獎筆數不變');
+  eq(IL.cleanRow({ n: '12345678', k: 'first', s: 'miss', t: 5 }), { n: '12345678', t: 5, k: 'first', a: 200000, s: 'win' }, 'cleanRow：有獎別就是中獎，金額照獎別');
+  eq(IL.cleanRow({ n: '12', s: 'miss' }), null, 'cleanRow：2 碼丟棄');
+  eq(IL.cleanRow({ n: '123', s: 'maybe', t: 9 }).s, 'maybe', 'cleanRow：待核對保留');
+  eq(IL.cleanRow('x'), null, 'cleanRow：非物件');
+}
+
+// --- backup / restore ---
+{
+  const A = IL.normPeriod({ id: 'a', year: 2026, m: 7, special: '12345678', first: ['11111111'] });
+  const S = IL.normPeriod({ id: 'sample', year: 2026, m: 7, sample: true, special: '99999999' });
+  const H = { a: [{ n: '11111111', t: 3, k: 'first', a: 200000, s: 'win' }, { n: '555', t: 2, k: null, a: 0, s: 'miss' }], sample: [{ n: '999', t: 1, k: null, a: 0, s: 'miss' }] };
+  const txt = IL.makeBackup([A, S], H, { a: 7 });
+  const o = JSON.parse(txt);
+  ok(o.app === 'invoice-lottery' && o.periods.length === 1 && !o.history.sample && o.folded.a === 7, '備份不含範例、含合併張數');
+  const b = IL.parseBackup(txt);
+  ok(!b.error && b.rows === 2 && b.periods[0].special === '12345678', '備份可解析');
+  ok(IL.parseBackup('').error && IL.parseBackup('hello').error && IL.parseBackup('{"app":"x","periods":[]}').error && IL.parseBackup('{"app":"invoice-lottery","periods":[]}').error && IL.parseBackup('[1,2]').error, '壞檔、空白、別的 app、沒有期別 → 錯誤說明');
+  const junk = IL.parseBackup(JSON.stringify({ app: 'invoice-lottery', periods: [{ id: 'z', year: 2025, m: 3 }, 5, null], history: { z: [{ n: 'abc' }, { n: '123', s: 'maybe', t: 4 }, 7] }, folded: { z: '-3' } }));
+  ok(!junk.error && junk.periods.length === 1 && junk.history.z.length === 1 && !junk.folded.z, '備份內的垃圾資料被濾掉');
+  // merge into a state that has the same period with other rows + the sample
+  const local = { periods: [IL.normPeriod({ id: 'L', year: 2026, m: 7, special: '12345678', first: ['11111111'] }), S], hist: { L: [{ n: '777', t: 9, k: null, a: 0, s: 'miss' }, { n: '555', t: 2, k: null, a: 0, s: 'miss' }], sample: [] }, folded: {} };
+  const m = IL.mergeBackup(local, b, 30, 400);
+  eq(m.periods.map(p => p.id), ['L'], '同期別合併到本機那一期，範例移除');
+  eq(m.hist.L.map(r => r.n), ['777', '11111111', '555'], '紀錄合併、依時間排序、555@2 重複略過');
+  eq([m.stats.addP, m.stats.addR, m.stats.dupR, m.folded.L], [0, 1, 1, 7], '統計數字與合併張數');
+  const m2 = IL.mergeBackup(m, b, 30, 400);
+  eq([m2.stats.addR, m2.stats.dupR, m2.folded.L], [0, 2, 7], '同一份備份還原兩次：不重複、張數不加倍');
+  const empty = { periods: [], hist: {}, folded: {} };
+  const m3 = IL.mergeBackup(empty, b, 30, 400);
+  ok(m3.periods.length === 1 && m3.periods[0].id !== 'a' && m3.hist[m3.periods[0].id].length === 2, '空白狀態還原：新增期別與紀錄');
+  const m4 = IL.mergeBackup({ periods: [IL.normPeriod({ id: 'x', year: 2020, m: 1, special: '11111111' })], hist: {}, folded: {} }, b, 1, 400);
+  eq(m4.stats.skipP, 1, '超過期別上限 → 略過並回報');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

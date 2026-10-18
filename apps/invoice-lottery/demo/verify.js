@@ -28,6 +28,14 @@ const hook = (p, tag) => { p.on('console', m => { if (m.type() === 'error') erro
     assert(pad.bottom <= pad.h + 1 && pad.top >= 0, `${s.name} ${scheme} 鍵盤完整在畫面內 (${Math.round(pad.bottom)} <= ${pad.h})`);
     const minBtn = await p.$$eval('#pad button', bs => Math.min(...bs.map(b => Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height))));
     assert(minBtn >= 44, `${s.name} ${scheme} 鍵盤按鍵 ≥ 44px (${Math.round(minBtn)})`);
+    const small = await p.$$eval('.tabs [role=tab], #sampleFix, .iconbtn', bs => bs.filter(b => b.offsetParent).map(b => [b.textContent.trim() || b.id, Math.round(b.getBoundingClientRect().height), Math.round(b.getBoundingClientRect().width)]).filter(x => x[1] < 44 || x[2] < 44));
+    assert(!small.length, `${s.name} ${scheme} 分頁、輸入真實號碼等按鈕 ≥ 44px ${JSON.stringify(small)}`);
+    const contrast = await p.evaluate(() => {
+      const rgb = c => c.match(/[\d.]+/g).slice(0, 3).map(Number), L = c => { const v = rgb(c).map(x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; };
+      const a = L(getComputedStyle(document.querySelector('.psel label')).color), b = L(getComputedStyle(document.querySelector('#periodSel')).backgroundColor);
+      return { r: (Math.max(a, b) + .05) / (Math.min(a, b) + .05), fs: parseFloat(getComputedStyle(document.querySelector('.psel label')).fontSize) };
+    });
+    assert(contrast.r >= 4.5 && contrast.fs >= 11.5, `${s.name} ${scheme} 期別標籤對比 ${contrast.r.toFixed(2)}:1、字級 ${contrast.fs}px`);
     // flow: miss, then possible → win
     await p.click('[data-k="5"]'); await p.click('[data-k="5"]'); await p.click('[data-k="5"]');
     assert((await p.textContent('#result')).includes('沒中'), `${s.name} ${scheme} 555 沒中`);
@@ -37,6 +45,10 @@ const hook = (p, tag) => { p.on('console', m => { if (m.type() === 'error') erro
     assert((await p.textContent('#result')).includes('頭獎') && (await p.textContent('#result')).includes('NT$200,000'), `${s.name} ${scheme} 11111111 頭獎 20 萬`);
     const pad2 = await p.$eval('#pad', e => [...e.querySelectorAll('button')].every(x => x.getBoundingClientRect().bottom <= innerHeight + 1));
     assert(pad2, `${s.name} ${scheme} 顯示結果後鍵盤仍在畫面內`);
+    assert((await p.textContent('#result')).includes('範例號碼'), `${s.name} ${scheme} 範例期別的結果標示範例號碼`);
+    const sp = await p.evaluate(() => { const e = document.querySelector('#spare'), k = () => document.querySelector('#pad button').getBoundingClientRect().height; const shown = !e.hidden, a = k(); e.hidden = true; const b = k(); e.hidden = !shown; return { shown, a, b, clear: !shown || e.getBoundingClientRect().bottom <= document.querySelector('#pad button').getBoundingClientRect().top }; });
+    assert(Math.abs(sp.a - sp.b) < 0.5 && sp.clear, `${s.name} ${scheme} 鍵盤上方對照列（${sp.shown ? '顯示' : '空間不夠不顯示'}）不會壓縮或蓋到按鍵`);
+    if (s.name === '375x500' || s.name === '844x390') assert(!sp.shown, `${s.name} ${scheme} 空間不夠時不顯示對照列`);
     if (scheme === 'light') await p.screenshot({ path: `${OUT}/${s.name}.png` }); else if (s.name === '390x844') await p.screenshot({ path: `${OUT}/${s.name}-dark.png` });
     // other tabs render
     await p.click('[data-tab="nums"]'); assert(await p.isVisible('#editBtn'), `${s.name} ${scheme} 號碼頁`);
@@ -53,9 +65,13 @@ const hook = (p, tag) => { p.on('console', m => { if (m.type() === 'error') erro
   assert((await p.textContent('#periodSel')).includes('範例'), '首次開啟載入範例期別');
   assert(!(await p.$eval('#sampleNote', e => e.hidden)), '對獎頁顯示範例提示');
   assert((await p.$$('#result .chip')).length === 7, '閒置時列出本期尾 3 碼（7 組）');
+  assert(await p.isVisible('#firstHint') && (await p.textContent('#firstHint')).includes('最後 3 碼'), '第一次使用：提示先輸入最後 3 碼');
   // keyboard input; 999 only matches 增開六獎, so 3 digits already decide it
   await p.keyboard.type('999');
   assert((await p.textContent('#result')).includes('增開六獎') && (await p.textContent('#result')).includes('NT$200') && (await p.textContent('#result')).includes('不必再對前碼'), '實體鍵盤 999 → 直接確定增開六獎 200（3 次按鍵）');
+  assert((await p.textContent('#result')).includes('範例號碼') && !(await p.textContent('#result')).includes('恭喜'), '範例期別中獎：標示範例號碼');
+  await p.click('[data-k="clr"]');
+  assert(!(await p.$('#firstHint')), '對過一次後提示消失');
   // special tail only → full miss
   await p.keyboard.type('678');
   assert((await p.textContent('#result')).includes('要 8 碼全中'), '678 只符合特別獎，提示需全中');
@@ -126,6 +142,10 @@ const hook = (p, tag) => { p.on('console', m => { if (m.type() === 'error') erro
   await p.fill('#fSp', '00000001'); await p.fill('#fGr', ''); await p.fill('#fF1', '00000777'); await p.fill('#fEx', '12, 345');
   await p.click('#fSave');
   assert((await p.textContent('#fErr')).includes('3 碼'), '增開六獎非 3 碼擋下');
+  for (const bad of ['abc', '本期沒有喔', '12a']) {
+    await p.fill('#fEx', bad); await p.click('#fSave');
+    assert((await p.textContent('#fErr')).length > 0 && await p.isVisible('#fSave'), `增開六獎「${bad}」被擋下並說明，不會存成本期無`);
+  }
   await p.fill('#fEx', '345');
   await p.click('#fSave'); await p.waitForTimeout(100);
   st = await p.evaluate(() => window.__invoiceLottery.state);
@@ -212,6 +232,90 @@ const hook = (p, tag) => { p.on('console', m => { if (m.type() === 'error') erro
   st = await p.evaluate(() => window.__invoiceLottery.state);
   assert(!(st.hist.e || []).length, '沒有號碼時不記錄');
   await ctx.close();
+
+  // ---- pending tails survive reload / 清除 / switching; history cap; backup ----
+  {
+    const c = await browser.newContext({ viewport: { width: 360, height: 640 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    await c.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+    const q = await c.newPage(); hook(q, 'pend');
+    await q.goto(URL); await q.evaluate(() => localStorage.clear());
+    await q.evaluate(() => addEventListener('pagehide', () => { localStorage.setItem('invoice-lottery:v1:periods', JSON.stringify([{ id: 'real', year: 2026, m: 7, special: '12345678', grand: '87654321', first: ['11111111', '22222222', '33333333'], extra: ['000', '999'] }])); localStorage.setItem('invoice-lottery:v1:cur', 'real'); }));
+    await q.reload(); await q.waitForTimeout(150);
+    await q.keyboard.type('111');
+    assert((await q.textContent('#tally')).includes('待核對 1'), '末 3 碼可能中獎 → 立刻記成待核對');
+    await q.reload(); await q.waitForTimeout(150);
+    let st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(st.hist.real.length === 1 && st.hist.real[0].s === 'maybe' && st.hist.real[0].n === '111', '重新整理後待核對還在');
+    assert(!(await q.$('#firstHint')), '重新整理後不再出現第一次提示');
+    await q.keyboard.type('222'); await q.click('[data-k="clr"]');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(st.hist.real.filter(h => h.s === 'maybe').length === 2, '可能中獎時按清除 → 仍保留待核對');
+    await q.keyboard.type('333'); await q.keyboard.press('Backspace');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(st.hist.real.length === 2 && st.buf === '33', '倒退修改末 3 碼 → 撤回這筆待核對');
+    await q.click('[data-tab="hist"]');
+    const rs = await q.$$eval('.resume', bs => bs.map(b => Math.round(b.getBoundingClientRect().height)));
+    assert(rs.length === 2 && Math.min(...rs) >= 44, '待核對・繼續按鈕 ≥ 44px ' + rs);
+    await q.click('.resume'); await q.keyboard.type('22222');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(st.hist.real.length === 2 && st.hist.real.filter(h => h.s === 'maybe').length === 1 && st.hist.real[0].k === 'first', '繼續核對 → 待核對換成結果');
+    // history cap: 2 wins + 1 pending + misses up to 399, then 2 more misses
+    await q.evaluate(() => { const a = window.__invoiceLottery.state.hist.real; while (a.length < 399) a.push({ n: String(100 + a.length % 800).padStart(3, '0').slice(-3), t: 1000 - a.length, k: null, a: 0, s: 'miss' }); a.push({ n: '33333333', t: 1, k: 'first', a: 200000, s: 'win' }); });
+    await q.click('[data-tab="check"]'); await q.keyboard.type('555'); await q.keyboard.type('556');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    const hs = st.hist.real;
+    assert(hs.length === 400 && hs.filter(h => h.s === 'win').length === 2 && hs.filter(h => h.s === 'maybe').length === 1 && hs[hs.length - 1].n === '33333333', '超過 400 筆：只合併最舊的沒中，中獎與待核對都保留');
+    assert((await q.textContent('#tally')).includes('已對 402'), '合併的張數仍算進已對 ' + await q.textContent('#tally'));
+    await q.waitForTimeout(1000); assert((await q.textContent('#toast')).includes('紀錄已滿'), '第一次合併時提示紀錄已滿');
+    await q.reload(); await q.waitForTimeout(150);
+    await q.click('[data-tab="hist"]');
+    assert((await q.textContent('.hrow.folded')).includes('較早 2 張沒中'), '紀錄頁顯示合併的張數（重新整理後仍在）');
+    // backup → clear → restore
+    await q.click('#backupBtn');
+    await q.click('#bkCopy'); await q.waitForTimeout(100);
+    const backup = await q.evaluate(() => navigator.clipboard.readText().catch(() => null));
+    assert(backup && JSON.parse(backup).app === 'invoice-lottery', '備份文字可複製');
+    await q.fill('#bkTxt', 'not a backup'); await q.click('#bkOk');
+    assert((await q.textContent('#bkErr')).includes('不是'), '貼上錯誤內容 → 說明不是備份');
+    await q.click('#bkClose');
+    await q.screenshot({ path: `${OUT}/flow-hist-cap.png` });
+    const bk2 = backup;
+    assert(JSON.parse(bk2).folded.real === 2 && JSON.parse(bk2).history.real.length === 400, '備份含全部 400 筆與合併張數');
+    await q.click('#clearHist'); await q.click('#cYes');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(!(st.hist.real || []).length, '清除紀錄');
+    await q.click('#backupBtn');
+    await q.setInputFiles('#bkFile', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(bk2) });
+    await q.waitForTimeout(200);
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    const rid = st.periods[0].id;
+    assert((st.hist[rid] || []).length === 400 && (await q.textContent('#tally')).includes('已對 402') && /已還原/.test(await q.textContent('#toast')), '選擇備份檔 → 還原全部紀錄 ' + (st.hist[rid] || []).length);
+    await q.click('[data-tab="hist"]').catch(() => {});
+    await q.click('#backupBtn'); await q.fill('#bkTxt', bk2); await q.click('#bkOk');
+    st = await q.evaluate(() => window.__invoiceLottery.state);
+    assert(st.hist[rid].length === 400 && /重複略過/.test(await q.textContent('#toast')), '同一份備份再還原 → 不重複');
+    // 「本期無」 is a valid 增開六獎 entry
+    await q.click('[data-tab="nums"]'); await q.click('#editBtn'); await q.fill('#fEx', '本期無'); await q.click('#fSave'); await q.waitForTimeout(100);
+    assert(!(await q.$('#fSave')), '增開六獎填「本期無」可以儲存');
+    // paste box hint fits at 360px
+    await q.click('#importBtn');
+    const pb = await q.$eval('#pBtn', e => Math.round(e.getBoundingClientRect().height));
+    assert(pb >= 44, '從剪貼簿貼上 ≥ 44px');
+    await q.waitForTimeout(2500); await q.screenshot({ path: `${OUT}/flow-paste-360.png` });
+    await c.close();
+  }
+
+  // ---- tall phone: the space above the keypad after a win is used ----
+  {
+    const c = await browser.newContext({ viewport: { width: 430, height: 932 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const q = await c.newPage(); hook(q, '430x932');
+    await q.goto(URL); await q.evaluate(() => localStorage.clear()); await q.reload(); await q.waitForTimeout(150);
+    await q.keyboard.type('11111111'); await q.waitForTimeout(100);
+    const r = await q.evaluate(() => { const e = document.querySelector('#spare'); return { shown: !e.hidden, n: e.querySelectorAll('.chip').length, gap: document.querySelector('#pad button').getBoundingClientRect().top - e.getBoundingClientRect().bottom }; });
+    assert(r.shown && r.n === 7 && r.gap >= 0 && r.gap < 60, `430x932 中獎後鍵盤上方顯示本期末 3 碼對照（剩餘空隙 ${Math.round(r.gap)}px）`);
+    await q.screenshot({ path: `${OUT}/430x932-win.png` });
+    await c.close();
+  }
 
   // ---- cover 390x520 ----
   {
