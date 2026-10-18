@@ -141,5 +141,75 @@ eq(IL.prevPeriod(2026, 1), { year: 2025, m: 11 }, '1–2月 的上一期');
   ok(r4.error, '全空期別匯出後匯入 → 沒有號碼錯誤');
 }
 
+// --- what matched (shown to the user) ---
+{
+  const Q = IL.normPeriod({ year: 2026, m: 7, special: '12345678', first: ['11111111', '20011111', '33333333'], extra: ['777'] });
+  const b = n => { const r = IL.bestMatch(Q, n); return r ? [r.tier.key, r.kind, r.num, r.len] : null; };
+  eq(b('90011111'), ['second', 'first', '20011111', 7], '兩組頭獎：選對中最多碼的那組（末 7 碼）');
+  eq(b('12345678'), ['special', 'special', '12345678', 8], '特別獎 8 碼');
+  eq(b('00000777'), ['extra', 'extra', '777', 3], '增開六獎');
+  eq(b('1234'), null, '不足 8 碼 → null');
+  eq(IL.checkTail(Q, '777').final.key, 'extra', '末 3 碼只符合增開六獎 → 直接確定，不必再輸入');
+  eq(IL.checkTail(Q, '111').final, null, '符合頭獎尾 → 還要輸入前 5 碼');
+  eq(IL.checkTail(Q, '678').final, null, '符合特別獎尾 → 還要輸入前 5 碼');
+  const Q2 = IL.normPeriod({ year: 2026, m: 7, first: ['11111777'], extra: ['777'] });
+  eq(IL.checkTail(Q2, '777').final, null, '增開與頭獎同尾 → 不能直接確定（可能更高）');
+  eq(IL.checkFull(IL.normPeriod({ year: 2026, m: 7, first: ['12345678'] }), '１２３４５６７８').key, 'first', '全形數字也能對');
+  ok(IL.hasNumbers(Q) && !IL.hasNumbers(IL.normPeriod({ year: 2026, m: 7 })), 'hasNumbers');
+  eq(IL.missing(Q), ['特獎'], '只缺特獎');
+  eq(IL.missing(IL.normPeriod({ year: 2026, m: 7, first: ['11111111'] })), ['特別獎', '特獎', '頭獎（只有 1 組）'], '缺欄位說明');
+}
+
+// --- claim countdown ---
+{
+  const cd = (Y, M, D) => { const r = IL.claimDays(2026, 7, new Date(Y, M - 1, D)); return [r.status, r.days]; };
+  eq(cd(2026, 9, 20), ['pending', 5], '開獎前 5 天');
+  eq(cd(2026, 9, 25), ['wait', 11], '開獎當天：11 天後領獎（10/6）');
+  eq(cd(2026, 10, 18), ['open', 79], '10/18 距 116/1/5 截止 79 天');
+  eq(cd(2027, 1, 5), ['open', 0], '最後一天 0');
+  eq(cd(2027, 1, 6), ['closed', null], '截止');
+  eq(IL.claimDays(2026, 11, new Date(2027, 4, 5)).days, 0, '11–12月 跨年 5/5 最後一天');
+}
+
+// --- paste the official announcement ---
+{
+  const official = '財政部公告115年07、08月統一發票中獎號碼單\n開獎日期：115年09月25日\n特別獎\n21981893\n同期統一發票收執聯8位數號碼與特別獎號碼相同者獎金1,000萬元\n特獎\n31406153\n同期統一發票收執聯8位數號碼與特獎號碼相同者獎金200萬元\n頭獎\n05023027\n54012562\n71931472\n同期統一發票收執聯8位數號碼與頭獎號碼相同者獎金20萬元\n二獎 末7位數號碼與頭獎中獎號碼末7位相同者各得獎金4萬元\n增開六獎\n826\n同期統一發票收執聯末3位數號碼與增開六獎號碼相同者各得獎金200元\n領獎期間自115年10月6日起至116年1月5日止\n雲端發票專屬二千元獎 12345678 23456789';
+  const r = IL.importText(official);
+  eq([r.period.year, r.period.m, r.period.special, r.period.grand, r.period.first, r.period.extra], [2026, 7, '21981893', '31406153', ['05023027', '54012562', '71931472'], ['826']], '財政部公告全文：跳過金額、日期與雲端發票專屬獎');
+  const r2 = IL.importText('１１５年１１－１２月 特別獎：１２３４５６７８');
+  eq([r2.period.year, r2.period.m, r2.period.special], [2026, 11, '12345678'], '全形數字與全形破折號');
+  const r3 = IL.importText('12345678\n87654321\n11111111 22222222 33333333', { year: 2026, m: 9 });
+  eq([r3.period.year, r3.period.m, r3.period.special, r3.period.grand, r3.period.first], [2026, 9, '12345678', '87654321', ['11111111', '22222222', '33333333']], '沒有獎別名稱：依公告順序，期別用目前選的');
+  ok(r3.notes.length === 1, '依序填入有提示');
+  ok(IL.importText('115年8–9月 特別獎 12345678').error.includes('單月'), '偶數月開始 → 說明原因');
+  ok(IL.importText('特別獎 12345678').error, '沒有期別也沒有預設 → 錯誤');
+  eq(IL.importText('115年1-2月 頭獎 11111111、11111111、22222222').period.first, ['11111111', '22222222', ''], '重複頭獎去重');
+  eq(IL.importText('115年1-2月 特別獎 1234 5678').error, '沒有讀到任何號碼', '被空白拆開的不算 8 碼');
+  eq(IL.importText('115年1-2月 頭獎 123456789 00000001').period.first, ['00000001', '', ''], '9 碼忽略、前導零保留');
+  eq(IL.importText('民國115年 7月-8月 特獎 87654321').period.grand, '87654321', '「7月-8月」寫法');
+}
+
+// --- independent reference: every tier spelled out, highest amount wins (六獎 over 增開六獎) ---
+{
+  const ref = (Pp, n) => {
+    const c = [];
+    if (Pp.special === n) c.push(['special', 1e7]); if (Pp.grand === n) c.push(['grand', 2e6]);
+    const A = { 8: ['first', 2e5], 7: ['second', 4e4], 6: ['third', 1e4], 5: ['fourth', 4e3], 4: ['fifth', 1e3], 3: ['sixth', 200] };
+    for (const f of Pp.first) if (f) for (const L of [8, 7, 6, 5, 4, 3]) if (n.substring(8 - L) === f.substring(8 - L)) { c.push(A[L]); break; }
+    if (Pp.extra.includes(n.substring(5))) c.push(['extra', 200]);
+    c.sort((a, b) => b[1] - a[1] || (a[0] === 'extra') - (b[0] === 'extra'));
+    return c.length ? c[0][0] : null;
+  };
+  let sd = 11; const rnd = () => (sd = (sd * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const r8 = () => String(Math.floor(rnd() * 1e8)).padStart(8, '0');
+  let bad = 0, n = 0;
+  for (let k = 0; k < 200; k++) {
+    const Pp = IL.normPeriod({ year: 2026, m: 7, special: r8(), grand: r8(), first: [r8(), r8(), r8()], extra: rnd() < .5 ? [r8().slice(5)] : [] });
+    const pool = [Pp.special, Pp.grand, ...Pp.first];
+    for (let j = 0; j < 25; j++) { const b = pool[j % 5], L = j % 9, x = r8().slice(0, 8 - L) + b.slice(8 - L); const a = IL.checkFull(Pp, x); n++; if ((a ? a.key : null) !== ref(Pp, x)) bad++; }
+  }
+  eq(bad, 0, `與獨立實作比對 ${n} 組隨機號碼`);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
