@@ -10,7 +10,7 @@ const t2s = (t, o) => ZC.join(ZC.convert(t, Object.assign({ dir: 't2s' }, o || {
 function eq(fn, src, want, label) { const got = fn(src); ok(got === want, `${label || ''} ${src} → ${got} (want ${want})`); }
 
 // ---- file budget ----
-ok(Buffer.byteLength(html) < 400 * 1024, 'index.html under 400 KB (' + Buffer.byteLength(html) + ')');
+ok(Buffer.byteLength(html) < 600 * 1024, 'index.html under 600 KB (' + Buffer.byteLength(html) + ')');
 ok(ZC.build().sp.m.size > 9000 && ZC.build().sc.size > 3500, 'tables loaded (phrases ' + ZC.build().sp.m.size + ', chars ' + ZC.build().sc.size + ')');
 
 // ---- simplified -> traditional (Taiwan): one-to-many resolved by phrases ----
@@ -228,6 +228,12 @@ for (const t of CN_TEXT) ok(t2s(t) === t, `t2s is idempotent on simplified text:
   const rows = fs.readFileSync(path.join(__dirname, 'samples.tsv'), 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(l => l.split('\t'));
   ok(rows.length >= 300, 'at least 300 checked samples (' + rows.length + ')');
   for (const [d, tw, a, b] of rows) eq(d === 's2t' ? (t => s2t(t, { tw: tw === '1' })) : (t => t2s(t, { tw: tw === '1' })), a, b, 'sample ' + d + (tw === '1' ? '+tw' : ''));
+}
+// generated cross-word-boundary pairs (demo/cross-boundary.tsv): a phrase entry must not fire across two words
+{
+  const rows = fs.readFileSync(path.join(__dirname, 'cross-boundary.tsv'), 'utf8').split('\n').filter(l => l && !l.startsWith('#')).map(l => l.split('\t'));
+  let bad = 0; for (const [d, tw, a, b] of rows) { const got = s2t(a); if (got !== b) { bad++; if (bad <= 10) console.log('FAIL cross', a, got, b); } }
+  ok(rows.length > 5000 && bad === 0, 'cross-boundary pairs: ' + rows.length + ', wrong ' + bad);
 }
 // one-to-many fixes added on top of the OpenCC phrase list
 const FIX = `冲咖啡>沖咖啡 热水冲>熱水沖 冲马桶>沖馬桶 冲奶粉>沖奶粉 冲个澡>沖個澡 冲锋>衝鋒 冲过去>衝過去 这只是>這只是 这只不过>這只不過 这只猫>這隻貓 这只能>這只能

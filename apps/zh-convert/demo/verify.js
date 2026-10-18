@@ -155,6 +155,78 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
       ok(same === want, `100k result has the same length as the input (${same} / ${want})`);
       ok((await page.evaluate(() => window.__zc.result().slice(0, 9))) === '發他的頭髮很長，公', 'typed character at the top converted');
       ok(await page.evaluate(() => window.__zc.result() === ZC.join(ZC.convert(document.getElementById('src').value, { dir: 's2t', tw: document.getElementById('opt-tw').checked, tai: true }))), '100k block-by-block result equals a one-shot conversion');
+      // ---- second review fixes ----
+      await page.click('#clear'); await page.click('#e-sample'); await page.reload(); await page.waitForTimeout(300);
+      ok(await page.locator('#sample-chip').isVisible(), 'sample shown again');
+      // first input replaces the sample instead of mixing with it
+      await page.click('#src'); await page.waitForTimeout(100);
+      await page.keyboard.type('头发');
+      await page.waitForTimeout(150);
+      ok((await page.inputValue('#src')) === '头发', 'typing on first focus replaces the sample: ' + (await page.inputValue('#src')).slice(0, 40));
+      // one-to-one marks are faint, one-to-many marks are strong
+      await page.fill('#src', '他说头发很长，发现了问题。'); await page.waitForTimeout(150);
+      const cls = await page.evaluate(() => [...document.querySelectorAll('#out .m')].map(m => m.textContent + ':' + (m.classList.contains('one') ? 'one' : 'amb')));
+      ok(cls.includes('說:one') && cls.includes('頭髮:amb') && cls.includes('發:amb') && cls.includes('現:one'), 'faint one-to-one marks, strong one-to-many marks: ' + cls.join(' '));
+      // a tap just beside a one-character mark opens it
+      const mb = await page.locator('#out .m', { hasText: '說' }).boundingBox();
+      await page.mouse.click(mb.x + mb.width + 5, mb.y + mb.height / 2); await page.waitForTimeout(250);
+      ok(await page.locator('#sheet.on').isVisible(), 'tap 5px beside a one-character mark opens it');
+      await page.click('#sheet-close'); await page.waitForTimeout(250);
+      // a choice is remembered after reload, after editing elsewhere in the line and after toggling 台灣用語
+      await page.click('#out .m:has-text("頭髮")'); await page.waitForTimeout(250);
+      await page.click('#sheet-alts button:has-text("頭發")'); await page.click('#sheet-close'); await page.waitForTimeout(200);
+      const res2 = () => page.evaluate(() => window.__zc.result());
+      ok((await res2()) === '他說頭發很長，發現了問題。', 'choice applied');
+      await page.reload(); await page.waitForTimeout(300);
+      ok((await res2()) === '他說頭發很長，發現了問題。', 'choice remembered after reload');
+      await page.fill('#src', '他说头发很长，发现了问题。我们走吧'); await page.waitForTimeout(150);
+      ok((await res2()) === '他說頭發很長，發現了問題。我們走吧', 'choice kept after editing elsewhere in the line: ' + (await res2()));
+      await page.click('#opt-tw + .sw'); await page.waitForTimeout(150);
+      ok(/頭發/.test(await res2()), 'choice kept after toggling 台灣用語');
+      await page.click('#opt-tw + .sw'); await page.waitForTimeout(150);
+      ok((await page.locator('#out .m.picked').count()) === 1, 'remembered choice is styled as picked');
+      // custom dictionary export and import
+      await page.click('#dict summary').catch(() => {});
+      if (!(await page.locator('#dict[open]').count())) await page.click('#dict summary');
+      await page.fill('#dict-from', '土豆'); await page.fill('#dict-to', '洋芋'); await page.click('#dict-add');
+      ok((await page.getAttribute('#dict-from', 'enterkeyhint')) === 'next' && (await page.getAttribute('#dict-to', 'enterkeyhint')) === 'done', 'dictionary inputs have enterkeyhint');
+      const [dx] = await Promise.all([page.waitForEvent('download'), page.click('#dict-export')]);
+      const dtext = fs.readFileSync(await dx.path(), 'utf8');
+      ok(/土豆\t洋芋\t簡→繁/.test(dtext), 'dictionary export writes tab-separated lines');
+      await page.click('#dict-list .del'); await page.waitForTimeout(100);
+      await page.setInputFiles('#dict-file', { name: 'd.txt', mimeType: 'text/plain', buffer: Buffer.from(dtext + '面条,面線,簡→繁\n壞行\n', 'utf8') });
+      await page.waitForTimeout(250);
+      ok(/2 筆/.test(await page.textContent('#dict-n')) && /匯入 2 筆新詞，略過 1 行/.test(await page.textContent('#toast-msg')), 'dictionary import adds entries and reports bad lines: ' + (await page.textContent('#toast-msg')));
+      await page.click('#toast-act'); await page.waitForTimeout(150);
+      ok(/0 筆/.test(await page.textContent('#dict-n')), 'import can be undone');
+      // empty file keeps the text; too-large file explained; CRLF kept on download
+      const keep = await page.inputValue('#src');
+      await page.setInputFiles('#file', { name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('') });
+      await page.waitForTimeout(150);
+      ok(/空的檔案/.test(await page.textContent('#toast-msg')) && (await page.inputValue('#src')) === keep, 'empty file explained, text kept');
+      await page.setInputFiles('#file', { name: 'huge.txt', mimeType: 'text/plain', buffer: Buffer.alloc(10 * 1024 * 1024 + 10, 0x61) });
+      await page.waitForTimeout(150);
+      ok(/上限 10 MB/.test(await page.textContent('#toast-msg')), 'file over 10 MB explained');
+      await page.setInputFiles('#file', { name: 'win.txt', mimeType: 'text/plain', buffer: Buffer.from('头发\r\n面条\r\n', 'utf8') });
+      await page.waitForTimeout(200);
+      const [dw] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);
+      ok(fs.readFileSync(await dw.path(), 'utf8') === '頭髮\r\n麵條\r\n', 'download keeps Windows line breaks');
+      // a 1500+ character line is only cut at a safe place: 理发店 after 1499 characters stays one word
+      await page.fill('#src', 'he'.repeat(750) + '理发店很好'); await page.waitForTimeout(200);
+      ok((await res2()).endsWith('理髮店很好'), 'long line cut does not split 理发店');
+      await page.fill('#src', '他'.repeat(1499) + '理发店'); await page.waitForTimeout(250);
+      ok((await res2()).endsWith('理髮店'), 'long CJK line without punctuation is not split inside a word');
+      // big mode: 1,000,000 characters
+      const huge = ('他的头发很长，公司的发展很快。这个软件的质量很高，程序运行得很快。\n').repeat(30000);
+      await page.evaluate(t => navigator.clipboard.writeText(t), huge);
+      await page.evaluate(() => { window.__lf = 0; let last = performance.now(); (function f() { const n = performance.now(); window.__lf = Math.max(window.__lf, n - last); last = n; requestAnimationFrame(f); })(); });
+      await page.click('#paste');
+      await page.waitForFunction(() => /處變更/.test(document.getElementById('out-meta').textContent), null, { timeout: 60000 });
+      const lf2 = await page.evaluate(() => window.__lf);
+      ok(lf2 < 700 && (await page.evaluate(() => document.body.classList.contains('bigmode'))), `1M characters in big mode, longest frame ${Math.round(lf2)} ms`);
+      ok(await page.evaluate(() => window.__zc.result().length) === huge.length && /\.\.\.|……/.test(await page.textContent('#out .more')), 'big mode result complete, display trimmed with a note');
+      await page.click('#clear'); await page.waitForTimeout(150);
+      ok(!(await page.evaluate(() => document.body.classList.contains('bigmode'))) && !(await page.isEditable('#src')) === false, 'clear leaves big mode');
       // back to a sample state for the cover: reset storage and reload
       await page.evaluate(() => localStorage.clear());
     }
