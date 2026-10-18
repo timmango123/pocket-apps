@@ -379,6 +379,7 @@ details[open] summary::before{transform:rotate(45deg)}
 @keyframes toastin{from{opacity:0;transform:translate(-50%,8px)}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
+@media (max-width:400px){ #theme-label{display:none} .ttl h1{font-size:16px;white-space:normal;overflow:visible} .top{gap:6px} }
 @media (min-width:900px){ body{padding:20px 24px 40px} .wrap,.dock .in{max-width:720px} .names{grid-template-columns:1fr 1fr 1fr} }
 @media (max-height:620px){ .pass,.reveal{min-height:0;padding-top:18px;padding-bottom:18px;gap:6px} .reveal .seal{width:60px;height:60px;margin-top:14px} .reveal .seal .ic{width:32px;height:32px} .reveal .word{font-size:36px} .reveal .role{font-size:32px} .pass .eye{display:none} .ring{width:128px;height:128px} .ring .tm{font-size:32px} .ring .st{bottom:24px} .script .line{font-size:19px} }
 @media (max-height:420px){ .top{margin-bottom:4px} .pass::before{width:100px;height:100px} .pass .who{font-size:26px} .reveal .desc{font-size:13px} }
@@ -431,7 +432,7 @@ details[open] summary::before{transform:rotate(45deg)}
           <div class="step"><button type="button" id="under-minus" aria-label="減少臥底">−</button><output id="under-out">1</output><button type="button" id="under-plus" aria-label="增加臥底">+</button></div></div>
         <div class="row"><div class="lbl"><span>白板人數<small>沒有詞，要靠猜</small></span></div>
           <div class="step"><button type="button" id="blank-minus" aria-label="減少白板">−</button><output id="blank-out">0</output><button type="button" id="blank-plus" aria-label="增加白板">+</button></div></div>
-        <div class="row"><div class="lbl"><span>臥底撐到幾人獲勝<small>場上剩這麼多人時臥底方獲勝</small></span></div>
+        <div class="row"><div class="lbl"><span>臥底撐到幾人獲勝<small>場上剩這麼多人時臥底方獲勝；臥底加白板不少於平民時也算臥底方贏</small></span></div>
           <div class="pick"><button type="button" data-last="2" aria-pressed="false">2 人</button><button type="button" data-last="3" aria-pressed="true">3 人</button></div></div>
         <div class="row"><div class="lbl"><span>每人發言時間<small>秒，0 為不計時</small></span></div>
           <div class="step"><button type="button" id="t-minus" aria-label="減少秒數">−</button><output id="t-out">60</output><button type="button" id="t-plus" aria-label="增加秒數">+</button></div></div>
@@ -457,7 +458,7 @@ details[open] summary::before{transform:rotate(45deg)}
       </div>
       <div class="card">
         <h2>規則</h2>
-        <div class="row"><div class="lbl"><span>狼人勝利條件<small>屠邊：殺光村民或神職其中一邊</small></span></div>
+        <div class="row wrap2"><div class="lbl"><span>狼人勝利條件<small>屠邊：殺光村民或神職其中一邊就贏；屠城：要殺光所有好人。兩種都是狼人數不少於好人時，狼人直接獲勝（白天投票已無法翻盤）</small></span></div>
           <div class="pick"><button type="button" data-win="side" aria-pressed="true">屠邊</button><button type="button" data-win="all" aria-pressed="false">屠城</button></div></div>
         <div class="row wrap2"><div class="lbl"><span>女巫自救<small>被狼殺的是女巫自己時能不能用解藥</small></span></div>
           <div class="pick"><button type="button" data-self="first" aria-pressed="true">僅第一晚</button><button type="button" data-self="never" aria-pressed="false">不能</button><button type="button" data-self="always" aria-pressed="false">可以</button></div></div>
@@ -521,14 +522,24 @@ const WH = (() => {
   };
   const CATS = Object.keys(BANK);
   const pairOf = s => s.split('/');
-  function parseCustom(text) {
-    const out = [];
-    String(text || '').split(/\r?\n/).forEach(line => {
-      const p = line.split(/[／/、,，\s|｜]+/).map(s => s.trim()).filter(Boolean);
-      if (p.length >= 2 && p[0] !== p[1] && p[0].length <= 20 && p[1].length <= 20) out.push([p[0], p[1]]);
-    });
-    return out;
+  // One pair per line. Separator priority: ／ | ｜ , ， 、 (then ASCII /, then spaces), so "Taylor Swift／Lady Gaga"
+  // and "AC/DC／Queen" stay intact. A line must give exactly two different words of at most 20 characters.
+  function splitPair(line) {
+    const t = String(line).trim(); if (!t) return null;
+    let p;
+    if (/[／|｜,，、]/.test(t)) p = t.split(/[／|｜,，、]/);
+    else if (t.includes('/')) p = t.split('/');
+    else p = t.split(/\s+/);
+    p = p.map(x => x.trim().replace(/\s+/g, ' ')).filter(Boolean);
+    if (p.length !== 2 || p[0] === p[1] || Array.from(p[0]).length > 20 || Array.from(p[1]).length > 20) return { bad: true };
+    return { pair: p };
   }
+  function customReport(text) {
+    const pairs = [], bad = [];
+    String(text || '').split(/\r?\n/).forEach((line, k) => { const r = splitPair(line); if (!r) return; if (r.bad) bad.push(k + 1); else pairs.push(r.pair); });
+    return { pairs, bad };
+  }
+  function parseCustom(text) { return customReport(text).pairs; }
   function pool(cats, custom) {
     const out = [];
     (cats || []).forEach(c => { if (BANK[c]) BANK[c].forEach(s => out.push(pairOf(s))); });
@@ -566,8 +577,17 @@ const WH = (() => {
     }
     addLog(tag, text) { this.log.push({ tag, text }); }
     alive() { return this.players.filter(p => p.alive); }
+    // 平票 PK: only the tied players speak again, then the vote is between them.
+    pkRound(list) {
+      const pk = [...new Set(list || [])].filter(i => this.players[i] && this.players[i].alive).sort((a, b) => a - b);
+      if (pk.length < 2 || this.phase !== 'vote' || this.result) return false;
+      const s = this.rnd(pk.length);
+      this.pk = pk; this.order = pk.slice(s).concat(pk.slice(0, s)); this.speaker = 0; this.phase = 'speak';
+      this.addLog('第' + this.round + '輪', '平票 PK：' + this.order.map(i => this.players[i].name).join('→'));
+      return true;
+    }
     newRound() {
-      this.round++;
+      this.round++; this.pk = null;
       const a = this.alive(), s = this.rnd(a.length);
       this.order = a.slice(s).concat(a.slice(0, s)).map(p => p.i);
       this.speaker = 0; this.phase = 'speak';
@@ -608,7 +628,7 @@ const WH = (() => {
   /* ---------- 狼人殺 ---------- */
   const ROLES = {
     wolf: { name: '狼人', side: 'wolf', kind: 'wolf', desc: '每晚和同伴一起選一個人殺掉。白天裝成好人。' },
-    wolfking: { name: '狼王', side: 'wolf', kind: 'wolf', desc: '狼人的一員；被投票出局時可以開槍帶走一個人。' },
+    wolfking: { name: '狼王', side: 'wolf', kind: 'wolf', desc: '狼人的一員；被投票出局或白天自爆時可以開槍帶走一個人，被毒死或夜裡死亡不能開槍。' },
     villager: { name: '村民', side: 'good', kind: 'villager', desc: '沒有特殊能力，用推理和投票找出狼人。' },
     seer: { name: '預言家', side: 'good', kind: 'god', desc: '每晚可以查驗一個人是狼人還是好人。' },
     witch: { name: '女巫', side: 'good', kind: 'god', desc: '有一瓶解藥、一瓶毒藥，整場各只能用一次，一晚只能用一瓶。' },
@@ -766,6 +786,7 @@ const WH = (() => {
       const p = this.players[i];
       if (this.result || !p || !p.alive || ROLES[p.role].side !== 'wolf' || (this.phase !== 'day' && this.phase !== 'vote')) return null;
       this.addLog('第' + this.night + '天', ROLES[p.role].name + ' ' + p.name + ' 自爆，直接進入夜晚');
+      if (!this.sheriffDone) { this.sheriffDone = true; this.sheriff = null; this.addLog('第' + this.night + '天', '警長競選中自爆，警徽流失。' + (() => { const d = this.players.filter(q => q.deadAt === 'n' + this.night && q.i !== i); return d.length ? '昨晚死亡：' + d.map(q => q.name).join('、') + '（第一晚有遺言）' : '昨晚是平安夜'; })()); }
       this.applyDeaths([{ i, cause: 'explode' }]);
       this.phase = 'dusk';
       return { player: p };
@@ -815,7 +836,7 @@ const WH = (() => {
     if (g.kind === 'ww' && !Array.isArray(g.pending)) g.pending = [];
     return g;
   }
-  return { randInt, shuffle, BANK, CATS, parseCustom, pool, bankSize, ucValidate, ucDeal, UCGame, ROLES, ROLE_ORDER, wwPreset, BOARDS, boardsFor, sameRoles, wwValidate, wwDeal, resolveNight, WWGame, dump, load };
+  return { randInt, shuffle, BANK, CATS, parseCustom, customReport, pool, bankSize, ucValidate, ucDeal, UCGame, ROLES, ROLE_ORDER, wwPreset, BOARDS, boardsFor, sameRoles, wwValidate, wwDeal, resolveNight, WWGame, dump, load };
 })();
 /*CORE-END*/
 </script>
@@ -1024,6 +1045,19 @@ function repeatable(btn, fn) {
   btn.addEventListener('click', () => { if (fired) { fired = false; return; } fn(); });
 }
 
+/* ---------- safe tap: the finger that held "看身分" lifts over the new "蓋起來" button. On touch screens that lift
+   arrives as a click on the new button, so a cover button only accepts a click whose press started on it,
+   and nothing in the first 600 ms after the card opened. Keyboard activation (detail 0) still works. ---------- */
+function safeTap(btn, fn) {
+  const born = Date.now(); let armed = false;
+  btn.addEventListener('pointerdown', () => { armed = Date.now() - born >= 600; });
+  btn.addEventListener('click', e => {
+    if (e.detail === 0) { fn(); return; }
+    const ok = armed; armed = false;
+    if (ok) fn();
+  });
+}
+
 /* ---------- hold-to-reveal: a stray tap or a double tap from the last player never shows the next card ---------- */
 let holdBlock = 0;
 function holdButton(btn, done) {
@@ -1195,7 +1229,6 @@ function splitNames(t) {
   const strip = x => x.replace(/^\s*\d+\s*[.、)）:：號]\s*/, '').trim();
   const lines = String(t || '').split(/\r?\n/).map(strip).join('\n');
   let parts = lines.split(/[\n,，、;；\t]+/).map(strip).filter(Boolean);
-  if (parts.length < 2) parts = lines.trim().split(/\s+/).filter(Boolean);
   return parts.map(x => Array.from(x).slice(0, 12).join(''));
 }
 function renderNames() {
@@ -1277,9 +1310,9 @@ function renderCats() {
 function currentPool() { return WH.pool(S.cats.filter(c => c !== '自訂'), S.cats.includes('自訂') ? WH.parseCustom(S.custom) : []); }
 function renderBankMeta() {
   const n = currentPool().length, cn = WH.parseCustom(S.custom).length;
-  const lines = String(S.custom).split(/\r?\n/).filter(l => l.trim()).length, bad = lines - cn;
+  const bad = WH.customReport(S.custom).bad;
   $('bank-meta').textContent = '可抽 ' + n + ' 組';
-  $('custom-hint').textContent = (cn ? '已讀到 ' + cn + ' 組自訂詞。' : '') + (bad > 0 ? bad + ' 行看不懂（每行要兩個不同的詞，各 20 字內）。' : '') + (cn && !S.cats.includes('自訂') ? '要勾「自訂」才會抽到。' : '自訂詞組會和勾選的分類混在一起抽；只勾「自訂」就只用自己的。');
+  $('custom-hint').textContent = (cn ? '已讀到 ' + cn + ' 組自訂詞。' : '') + (bad.length ? '第 ' + bad.slice(0, 6).join('、') + (bad.length > 6 ? '…' : '') + ' 行沒有用到：每行要剛好兩個不同的詞，用「／」或逗號分開（詞裡有空白時一定要用「／」）。' : '') + (cn && !S.cats.includes('自訂') ? '要勾「自訂」才會抽到。' : '自訂詞組會和勾選的分類混在一起抽；只勾「自訂」就只用自己的。');
   const cb = $('cats').querySelector('[data-c="自訂"] small'); if (cb) cb.textContent = String(cn);
 }
 function setupError() {
@@ -1410,7 +1443,7 @@ function renderDeal() {
     enter(box, 'reveal' + deal.i);
     box.innerHTML = dots + roleCard(p) + '<p class="under-hint">蓋起來後會換成下一位的畫面，別人看不到你的' + word + '。</p>';
     setDock(row2('<button class="btn big night" id="deal-hide" type="button">記住了，蓋起來</button>'));
-    $('deal-hide').onclick = () => { deal.shown = false; deal.i++; holdBlock = Date.now() + 500; sfx('cover'); vib(10); render(); };
+    safeTap($('deal-hide'), () => { deal.shown = false; deal.i++; holdBlock = Date.now() + 500; sfx('cover'); vib(10); render(); });
   }
 }
 function openPeekPicker() {
@@ -1433,7 +1466,7 @@ function renderPeek() {
     enter(box, 'peek-reveal' + peek.i);
     box.innerHTML = roleCard(p) + '<p class="under-hint">蓋起來後回到主持畫面，請把手機還給主持人。</p>';
     setDock(row2('<button class="btn big night" id="deal-hide" type="button">記住了，蓋起來</button>'));
-    $('deal-hide').onclick = () => { G.addLog('提醒', p.name + ' 重看了' + word); sfx('cover'); back(); };
+    safeTap($('deal-hide'), () => { G.addLog('提醒', p.name + ' 重看了' + word); sfx('cover'); back(); });
   }
 }
 
@@ -1442,13 +1475,14 @@ function renderUC() {
   const box = $('uc-box'), c = G.counts(), alive = G.alive();
   $('uc-meta').textContent = '剩 ' + alive.length + ' 人・臥底方 ' + (c.under + c.blank);
   if (G.phase === 'speak') {
-    $('uc-phase').textContent = '第 ' + G.round + ' 輪・發言';
+    $('uc-phase').textContent = '第 ' + G.round + ' 輪・' + (G.pk ? '平票 PK 發言' : '發言');
     const cur = G.players[G.order[G.speaker]], last = G.speaker >= G.order.length - 1;
     timerFor('uc' + G.round + ':' + G.speaker + ':' + G.log.length, G.timer);
     enter(box, 'uc-s' + G.round + '-' + G.speaker + '-' + G.log.length);
     box.innerHTML = '<div class="speaker"><div class="k">現在發言</div><div class="who">' + esc(cur.name) + '</div><div class="seatline">' + (cur.i + 1) + ' 號・第 ' + (G.speaker + 1) + ' ／ ' + G.order.length + ' 位</div>' + timerBlock('uc-timer', G.timer) +
       '<div class="order">' + G.order.map((i, k) => '<span class="' + (k === G.speaker ? 'now' : k < G.speaker ? 'done' : '') + '"><i>' + (k + 1) + '</i>' + esc(G.players[i].name) + '</span>').join('') + '</div></div>' +
-      (G.round === 1 && G.speaker === 0 ? '<p class="under-hint">從隨機抽到的人開始，順時針輪流，各用一句話描述自己的詞。' + (G.timer ? '點計時圈開始計時，之後換人會自動接著計時。' : '') + '</p>' : '');
+      (G.pk && G.speaker === 0 ? '<p class="under-hint">平票 PK：只有平票的人再各說一次，接著只在他們之中投票。</p>' : '') +
+      (G.round === 1 && G.speaker === 0 && !G.pk ? '<p class="under-hint">從隨機抽到的人開始，順時針輪流，各用一句話描述自己的詞。' + (G.timer ? '點計時圈開始計時，之後換人會自動接著計時。' : '') + '</p>' : '');
     setDock(row2(undoBtn() + '<button class="btn big night" id="uc-next" type="button">' + (last ? '發言結束，開始投票' : '下一位：' + esc(G.players[G.order[G.speaker + 1]].name)) + '</button>'));
     wireTimer(); wireUndo();
     $('uc-next').onclick = () => {
@@ -1460,10 +1494,11 @@ function renderUC() {
   }
   if (G.phase === 'vote') {
     stopTimer();
-    $('uc-phase').textContent = '第 ' + G.round + ' 輪・投票';
+    $('uc-phase').textContent = '第 ' + G.round + ' 輪・' + (G.pk ? 'PK 投票' : '投票');
     enter(box, 'uc-v' + G.round + '-' + G.log.length);
     const sel = G.ui.sel;
-    box.innerHTML = '<div class="card"><h2>大家指認後，點被淘汰的人</h2>' + pgrid(G.players, { sel }) + '</div><div class="actions"><button class="btn ghost" id="uc-revote" type="button">平票，再發言一輪</button></div>';
+    const pk = G.pk;
+    box.innerHTML = '<div class="card"><h2>' + (pk ? 'PK 後大家再投一次，只能投 PK 的人' : '大家指認後，點被淘汰的人') + '</h2>' + pgrid(G.players, { sel, disable: p => !!pk && !pk.includes(p.i), sub: p => pk && pk.includes(p.i) ? 'PK' : '' }) + '</div><div class="actions"><button class="btn ghost" id="uc-revote" type="button">' + (pk ? 'PK 還是平票：沒人出局，進下一輪' : '平票：讓平票的人 PK') + '</button></div>';
     setDock(row2(undoBtn() + '<button class="btn big primary" id="uc-out" type="button"' + (sel == null ? ' disabled' : '') + '>' + (sel == null ? '先點要淘汰的人' : '淘汰 ' + esc(G.players[sel].name) + '，公布身分') + '</button>'));
     wireUndo();
     wireGrid(box, i => { if (i == null) return; G.ui.sel = i; sfx('pick'); vib(6); render(); });
@@ -1473,7 +1508,10 @@ function renderUC() {
       const r = G.eliminate(i); G.ui = {}; if (!r) return render();
       sfx(r.player.role === 'civ' ? 'death' : 'reveal'); vib(30); render(); showUCReveal(r);
     };
-    $('uc-revote').onclick = () => { checkpoint('平票重說'); G.addLog('第' + G.round + '輪', '投票平手，重新發言'); G.newRound(); G.ui = {}; sfx('tap'); render(); };
+    $('uc-revote').onclick = () => {
+      if (G.pk) { checkpoint('PK 平票'); G.addLog('第' + G.round + '輪', 'PK 仍然平票，沒有人出局'); G.newRound(); G.ui = {}; sfx('tap'); render(); return; }
+      openPkPicker();
+    };
     return;
   }
   if (G.phase === 'guess') {
@@ -1486,6 +1524,19 @@ function renderUC() {
     $('g-no').onclick = () => { checkpoint('白板猜詞'); G.blankGuess(false); sfx('tap'); render(); };
     $('g-yes').onclick = () => { checkpoint('白板猜詞'); G.blankGuess(true); render(); };
   }
+}
+function openPkPicker() {
+  const chosen = new Set();
+  const draw = root => {
+    root.querySelector('#pk-grid').innerHTML = pgrid(G.players, {}).replace(/<button class="pbtn" type="button" data-i="(\d+)"/g, (m, i) => chosen.has(+i) ? m.replace('class="pbtn"', 'class="pbtn sel"') : m);
+    const b = root.querySelector('[data-x="ok"]'); b.disabled = chosen.size < 2; b.textContent = chosen.size < 2 ? '至少點兩個平票的人' : '讓這 ' + chosen.size + ' 人 PK';
+    wireGrid(root.querySelector('#pk-grid'), i => { if (i == null) return; chosen.has(i) ? chosen.delete(i) : chosen.add(i); sfx('pick'); draw(root); });
+  };
+  sheet('<h2>誰和誰平票？</h2><p>點選平票的人（可多選）。他們再各說一次，然後大家只在他們之中投票。</p><div id="pk-grid"></div><div class="actions"><button class="btn ghost" data-x="cancel" type="button">取消</button><button class="btn night" data-x="ok" type="button" disabled>至少點兩個平票的人</button></div>', (root, close) => {
+    root.querySelector('[data-x="cancel"]').onclick = close;
+    root.querySelector('[data-x="ok"]').onclick = () => { if (chosen.size < 2) return; close(); checkpoint('平票 PK'); G.pkRound([...chosen]); G.ui = {}; sfx('tap'); render(); };
+    draw(root);
+  });
 }
 function showUCReveal(r) {
   const p = r.player;
@@ -1580,9 +1631,11 @@ function renderSheriff() {
   $('ww-phase').textContent = '第 1 天・警長競選';
   const say = '想競選警長的玩家請舉手。上警的人依序發言，其他人投票選出警長。';
   enter(box, 'sheriff');
-  box.innerHTML = scriptHtml(say, '昨晚的死訊等選完警長再公布。', true) + '<div class="card"><h2>誰當選警長？</h2>' + pgrid(G.players, { sel, isDead: p => !G.sheriffCandidate(p.i), none: '沒有警長（沒人上警或警徽流失）' }) + '</div>';
+  box.innerHTML = scriptHtml(say, '昨晚的死訊等選完警長再公布。', true) + '<div class="card"><h2>誰當選警長？</h2>' + pgrid(G.players, { sel, isDead: p => !G.sheriffCandidate(p.i), none: '沒有警長（沒人上警或警徽流失）' }) + '</div>' +
+    '<div class="actions"><button class="btn ghost" id="explode-btn" type="button">' + I('bomb') + '有狼人自爆（警徽流失）</button></div>';
   setDock(row2(undoBtn() + '<button class="btn big primary" id="sheriff-ok" type="button"' + (sel === undefined ? ' disabled' : '') + '>' + (sel === undefined ? '先點當選的人' : sel === null ? '沒有警長，公布死訊' : '警長是 ' + esc(Nm(sel)) + '，公布死訊') + '</button>'));
   wireSay(say, 'sheriff'); wireUndo();
+  $('explode-btn').onclick = openExplode;
   wireGrid(box, v => { G.ui.sel = v; sfx('pick'); vib(6); render(); });
   $('sheriff-ok').onclick = () => { if (G.ui.sel === undefined) return; checkpoint('選警長'); G.electSheriff(G.ui.sel); G.ui = {}; sfx('dawn'); render(); };
 }
@@ -1611,7 +1664,7 @@ function renderShoot() {
 function openExplode() {
   sheet('<h2>誰自爆了？</h2><p>狼人白天可以自爆：他立刻出局，跳過投票直接天黑。狼王自爆可以開槍。</p>' + pgrid(G.players, { disable: p => WH.ROLES[p.role].side !== 'wolf', sub: p => WH.ROLES[p.role].side !== 'wolf' ? '不是狼' : WH.ROLES[p.role].name, subCls: p => WH.ROLES[p.role].side === 'wolf' ? 'w' : '' }) + '<div class="actions"><button class="btn ghost" data-x="cancel" type="button">取消</button></div>', (root, close) => {
     root.querySelector('[data-x="cancel"]').onclick = close;
-    wireGrid(root, i => { if (i == null) return; close(); checkpoint(G.players[i].name + ' 自爆'); stopTimer(); G.explode(i); G.ui = {}; sfx('death'); vib(40); toast(G.players[i].name + ' 自爆，直接天黑'); render(); });
+    wireGrid(root, i => { if (i == null) return; close(); checkpoint(G.players[i].name + ' 自爆'); stopTimer(); G.explode(i); G.ui = {}; sfx('death'); vib(40); const ex = G.log.filter(l => /警徽流失/.test(l.text)).pop(); toast(G.players[i].name + ' 自爆，直接天黑' + (ex && G.night === 1 ? '。' + ex.text.split('。')[1] : '')); render(); });
   });
 }
 function renderDayTalk() {
@@ -1679,7 +1732,7 @@ function renderResult() {
   wireUndo();
   $('copy-log').onclick = () => copyText(logText());
   $('again').onclick = () => { startGame(); };
-  $('back').onclick = () => { G = null; undoStack = []; view = 'setup'; sfx('tap'); render(); };
+  $('back').onclick = () => confirmSheet('回到設定？', '這局的結果會收起來；紀錄仍可在下一局的「紀錄」裡看到上一局。', '回到設定', () => { store.set('lastlog', G.log); G = null; undoStack = []; view = 'setup'; sfx('tap'); render(); });
   if (first) { sfx(cls === 'good' ? 'win' : cls === 'bad' && !uc ? 'lose' : 'win'); vib([40, 60, 40]); if (S.voice) speak(title + '。' + r.reason); }
 }
 

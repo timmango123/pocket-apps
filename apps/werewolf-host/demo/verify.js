@@ -36,7 +36,24 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   };
   // hold-to-reveal: press, keep the finger down for 0.6 s, release
   const hold = async (page, sel) => { const b = await page.locator(sel).boundingBox(); await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await wait(600); await page.mouse.up(); await wait(40); };
-  const dealAll = async (page, n, each) => { for (let i = 0; i < n; i++) { await wait(520); await hold(page, '#deal-show'); if (each) await each(i); await page.click('#deal-hide'); } };
+  const cover = async page => { await wait(620); await page.click('#deal-hide'); };
+  // real touch through CDP: finger down on the hold button, keep it there, lift it. The lift must not close the card.
+  const touchHold = async (page, sel, ms) => {
+    const cdp = await page.context().newCDPSession(page);
+    const b = await page.locator(sel).boundingBox(), x = b.x + b.width / 2, y = b.y + b.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await wait(ms);
+    const open = await page.isVisible('.reveal');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(150);
+    const still = await page.isVisible('.reveal'); await cdp.detach();
+    return { open, still };
+  };
+  const touchTap = async (page, sel) => {
+    const cdp = await page.context().newCDPSession(page);
+    const b = await page.locator(sel).boundingBox(), x = b.x + b.width / 2, y = b.y + b.height / 2;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await wait(60);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await wait(120); await cdp.detach();
+  };
+  const dealAll = async (page, n, each) => { for (let i = 0; i < n; i++) { await wait(520); await hold(page, '#deal-show'); if (each) await each(i); await cover(page); } };
 
   // --- sizes, light & dark, both setup modes ---
   const sizes = [
@@ -92,11 +109,11 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       if (i === 0) { await page.screenshot({ path: `${OUT}/375x500-reveal.png` }); await checkLayout(page, '375x500 reveal'); }
       if (i === 2) {
         // the last player double-taps "cover": the second tap must not open the next player's card
-        await page.dblclick('#deal-hide'); await page.waitForTimeout(80);
+        await wait(620); await page.dblclick('#deal-hide'); await page.waitForTimeout(80);
         ok(!(await page.isVisible('.reveal')) && (await txt(page, '#deal-meta')).startsWith('4'), 'double tap on "cover" goes to player 4 and keeps the card closed');
         continue;
       }
-      await page.click('#deal-hide');
+      await cover(page);
     }
     ok(new Set(words).size === 2 && words.every(w => w), `8 players saw exactly two different words: ${[...new Set(words)].join(' / ')}`);
     await page.click('#deal-done'); await page.waitForTimeout(50);
@@ -136,7 +153,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     ok(await page.isVisible('#s-result'), `誰是臥底 reaches a result after ${rounds} votes: ` + (await txt(page, '.banner .w')).trim());
     await checkLayout(page, '375x500 result');
     await page.screenshot({ path: `${OUT}/375x500-result.png` });
-    await page.click('#back'); ok(await page.isVisible('#s-setup'), 'back to setup');
+    await page.click('#back'); await page.click('[data-x="ok"]'); ok(await page.isVisible('#s-setup'), 'back to setup (after confirm)');
     ok(errors.length === 0, `誰是臥底 flow no console errors ${errors.join(' | ')}`);
     await ctx.close();
   }
@@ -157,6 +174,61 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     await page.fill('#names input >> nth=1', '小王');
     ok(await page.isVisible('#dup-warn'), 'duplicate names are flagged');
     ok(errors.length === 0, `reload/paste no console errors ${errors.join(' | ')}`);
+    await ctx.close();
+  }
+
+  // --- real touch: lifting the finger after the hold never counts as a tap on 蓋起來 (deal and 重看) ---
+  {
+    const { ctx, page, errors } = await mk({ viewport: { width: 390, height: 844 } });
+    await page.click('#mode-ww'); await page.click('#start-btn');
+    let bad = 0, runs = 0;
+    for (const ms of [520, 800, 1500, 2500, 650, 1000]) {
+      await wait(560);
+      const seat = await txt(page, '#deal-meta');
+      const r = await touchHold(page, '#deal-show', ms); runs++;
+      if (!r.open || !r.still) { bad++; console.log('  touch hold', ms, 'ms at', seat, JSON.stringify(r)); }
+      await wait(650); await touchTap(page, '#deal-hide'); // a fresh tap covers once the card has been open > 600 ms
+    }
+    ok(bad === 0, `deal: ${runs} real-touch holds, card stays open after the finger lifts (failures ${bad})`);
+    const meta = await txt(page, '#deal-meta');
+    ok(meta.startsWith('7'), 'deal: each touch tap on 蓋起來 moved exactly one seat (now at ' + meta + ')');
+    await wait(560); await touchHold(page, '#deal-show', 700); await wait(500); await touchTap(page, '#deal-hide');
+    await wait(560); await touchHold(page, '#deal-show', 700); await wait(500); await touchTap(page, '#deal-hide');
+    await page.click('#deal-done'); await page.waitForTimeout(50);
+    bad = 0;
+    for (const ms of [520, 1200, 2500]) {
+      await page.click('#menu-btn'); await page.click('[data-m="peek"]'); await page.click('.sheet .pbtn[data-i="2"]');
+      await wait(560);
+      const r = await touchHold(page, '#deal-show', ms);
+      if (!r.open || !r.still) bad++;
+      await wait(650); await touchTap(page, '#deal-hide');
+      ok(await page.evaluate(() => window.__wh.view === 'ww'), '重看 ' + ms + ' ms: a later tap on 蓋起來 returns to the game');
+    }
+    ok(bad === 0, `重看身分: real-touch holds keep the card open after release (failures ${bad})`);
+    ok(errors.length === 0, `touch test no console errors ${errors.join(' | ')}`);
+    await ctx.close();
+  }
+
+  // --- 誰是臥底 PK and custom words ---
+  {
+    const { ctx, page, errors } = await mk({ viewport: { width: 375, height: 500 } });
+    await page.click('#custom-box summary');
+    await page.fill('#custom', 'Taylor Swift／Lady Gaga\n貓 狗 兔\nAC/DC／Queen');
+    ok(/第 2 行/.test(await txt(page, '#custom-hint')) && /自訂 ?2/.test((await txt(page, '#cats')).replace(/\s+/g, ' ')), 'custom words: 2 pairs read, line 2 flagged: ' + await txt(page, '#custom-hint'));
+    await page.evaluate(() => { const inp = document.querySelector('#names input'); const dt = new DataTransfer(); dt.setData('text/plain', 'Mary Jane'); inp.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    ok((await txt(page, '#cnt-out')) === '8', 'pasting one name with a space does not split it');
+    await page.click('#start-btn'); await dealAll(page, 8); await page.click('#deal-done');
+    for (let i = 0; i < 8; i++) await page.click('#uc-next');
+    await page.click('#uc-revote');
+    ok(await page.isDisabled('.sheet [data-x="ok"]'), 'PK needs at least two players');
+    await page.click('.sheet .pbtn[data-i="1"]'); await page.click('.sheet .pbtn[data-i="4"]'); await page.click('.sheet [data-x="ok"]');
+    ok(/PK/.test(await txt(page, '#uc-phase')) && await page.evaluate(() => window.__wh.G.order.length === 2), 'tie → PK: only the two tied players speak');
+    await page.click('#uc-next'); await page.click('#uc-next');
+    ok(await page.isDisabled('#uc-box .pbtn[data-i="0"]') && !(await page.isDisabled('#uc-box .pbtn[data-i="1"]')), 'PK vote: only the tied players can be voted');
+    await page.click('#uc-box .pbtn[data-i="4"]'); await page.click('#uc-out'); await page.click('[data-x="ok"]');
+    if (await page.isVisible('#s-result')) { await page.click('#back'); ok(await page.isVisible('.sheet') && await page.isVisible('#s-result'), 'leaving the result asks first'); await page.click('[data-x="ok"]'); }
+    else ok(await page.evaluate(() => !window.__wh.G.pk), 'after the PK the next round is normal');
+    ok(errors.length === 0, `PK test no console errors ${errors.join(' | ')}`);
     await ctx.close();
   }
 

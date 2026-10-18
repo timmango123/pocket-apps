@@ -309,5 +309,23 @@ const lcg = seed => { let x = seed >>> 0; return n => { x = (x * 1664525 + 10139
   ok(WH.load(null) === null && WH.load({ kind: 'x' }) === null && WH.load({ kind: 'ww', players: [] }) === null, 'load rejects broken saves');
 }
 
+// --- review fixes: custom pairs with spaces/slashes, PK, 狼王 wording, explode during the sheriff election ---
+{
+  const r = WH.customReport('Taylor Swift／Lady Gaga\n貓 狗 兔\nAC/DC／Queen\nTaylor Swift/Lady Gaga\n老虎 獅子\nA／B／C\n  \n珍奶 , 奶茶\n同 同');
+  ok(r.pairs.length === 5 && r.pairs[0].join('|') === 'Taylor Swift|Lady Gaga' && r.pairs[1].join('|') === 'AC/DC|Queen' && r.pairs[2].join('|') === 'Taylor Swift|Lady Gaga' && r.pairs[3].join('|') === '老虎|獅子' && r.pairs[4].join('|') === '珍奶|奶茶', 'custom pairs keep spaces and slashes inside words: ' + JSON.stringify(r.pairs));
+  ok(r.bad.join() === '2,6,9', 'lines that do not give exactly two words are reported by line number (' + r.bad.join() + ')');
+  const g = new WH.UCGame({ names: N(6), under: 1, blank: 0, pair: ['A', 'B'], rnd: lcg(8) });
+  while (g.nextSpeaker()); 
+  ok(!g.pkRound([1]) && g.pkRound([4, 2, 2]) && g.phase === 'speak' && g.order.length === 2 && g.order.every(i => [2, 4].includes(i)) && g.pk.join() === '2,4', 'PK: only the tied players speak');
+  while (g.nextSpeaker()); ok(g.phase === 'vote' && g.pk, 'PK vote keeps the PK list');
+  const civ = g.pk.find(i => g.players[i].role === 'civ'); const res = g.eliminate(civ != null ? civ : g.pk[0]);
+  ok(g.pk === null || (res.result && res.result.over), 'after the PK elimination the next round is a normal one');
+  ok(/自爆/.test(WH.ROLES.wolfking.desc) && /投票出局/.test(WH.ROLES.wolfking.desc), '狼王 card mentions both vote and 自爆 shots');
+  const w = new WH.WWGame({ names: N(9), roles: WH.wwPreset(9), sheriff: true, rnd: lcg(30) });
+  const v = w.players.find(p => p.role === 'villager').i; w.setWolf(v); w.resolveNight();
+  const wolf = w.players.find(p => p.role === 'wolf').i;
+  ok(w.explode(wolf) && w.sheriffDone && w.sheriff === null && w.phase === 'dusk' && w.log.some(l => /警徽流失.*昨晚死亡：P/.test(l.text)), 'explode during the election: badge lost, last night\'s death announced, day over');
+}
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
