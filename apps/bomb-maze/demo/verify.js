@@ -74,6 +74,12 @@ async function fullFlow(browser, w, h, scheme) {
   await tap(cdp, page, '#bombBtn');
   s = await page.evaluate(() => { window.__game.tick(50); return window.__game.state(); });
   ok(s.bombs === 1, tag + ' bomb button plants a firecracker');
+  ok((await page.textContent('#bombN')) === '0', tag + ' the bomb button badge counts down to 0 firecrackers left');
+  if (h >= 600) {
+    const info = await page.evaluate(() => { const el = document.getElementById('info'), r = el.getBoundingClientRect(), c = document.getElementById('cv').getBoundingClientRect(), p = document.getElementById('pad').getBoundingClientRect();
+      return { shown: getComputedStyle(el).display !== 'none', icons: el.querySelectorAll('.mon img').length, text: el.textContent, below: r.top >= c.bottom - 1 && r.bottom <= p.top + 1 }; });
+    ok(info.shown && info.icons >= 1 && /×2/.test(info.text) && info.below, tag + ' objective strip shows the monsters left between the maze and the controls ' + JSON.stringify(info));
+  }
   await page.evaluate(() => window.__game.auto(true));
   let fired = false;
   for (let i = 0; i < 40 && !fired; i++) { const q = await page.evaluate(() => { window.__game.tick(100); return window.__game.state(); }); if (q.fires > 0) fired = true; }
@@ -143,6 +149,139 @@ async function fullFlow(browser, w, h, scheme) {
   await ctx.close();
 }
 
+async function landscape(browser) {
+  const { ctx, page, errors } = await open(browser, 844, 390, 'light');
+  await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(3); window.__game.tick(1400); });
+  const b = await page.evaluate(() => ['pad', 'cv', 'bombBtn'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; }));
+  ok(b[0].r <= b[1].l + 1 && b[2].l >= b[1].r - 1, 'landscape: stick left of the maze, bomb button right of it');
+  ok(b[1].t >= 0 && b[1].b <= 391 && b[0].b <= 391 && b[2].b <= 391, 'landscape: everything fits the height');
+  ok(errors.length === 0, 'landscape: no page errors');
+  await ctx.close();
+}
+
+async function padEdge(browser) {
+  const { ctx, page, cdp, errors } = await open(browser, 390, 844, 'light');
+  await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(3); window.__game.tick(1500); });
+  const b = await page.locator('#pad').boundingBox(), cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  for (const [dx, dy, want] of [[76, 0, 1], [0, -82, 0], [-72, 8, 3]]) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx + dx, y: cy + dy, id: 1 }] });
+    const g = await page.evaluate(() => { window.__game.tick(20); return window.__game.sim().bombers[0].inDir; });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    ok(g === want, 'a thumb landing ' + Math.round(Math.hypot(dx, dy)) + ' px from the stick centre (outside the ring) still steers (' + g + ')');
+  }
+  ok(errors.length === 0, 'pad edge: no page errors');
+  await ctx.close();
+}
+
+// 360 px wide, stage 100 with every power-up: the status bar keeps the pause button whole and it still answers a tap
+async function narrowHud(browser) {
+  for (const [w, h] of [[360, 640], [320, 568], [375, 667]]) {
+    const { ctx, page, cdp, errors } = await open(browser, w, h, 'light');
+    await page.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(100); g.tick(1100); const b = g.sim().bombers[0]; b.bombs = 8; b.fire = 8; b.speed = 5.2; b.kick = true; b.shield = true; g.sim().lives = 3; g.tick(30); });
+    const m = await page.evaluate(() => { const r = id => document.getElementById(id).getBoundingClientRect(), hd = r('hud'), p = r('pauseBtn'), pw = document.getElementById('hudPw');
+      return { p: [p.left, p.right, p.top, p.bottom], hd: [hd.top, hd.bottom], vw: innerWidth, chips: pw.textContent, pwCut: pw.scrollWidth - pw.clientWidth }; });
+    ok(m.p[1] <= m.vw && m.p[0] >= 0 && m.p[2] >= m.hd[0] - 0.5 && m.p[3] <= m.hd[1] + 0.5 && m.p[1] - m.p[0] >= 44 && m.p[3] - m.p[2] >= 44, `${w}x${h} L100 all power-ups: 44x44 pause button fully inside the bar ` + JSON.stringify(m));
+    ok(m.pwCut <= 0 && /炮8/.test(m.chips) && /火8/.test(m.chips) && /鞋4/.test(m.chips) && /踢/.test(m.chips) && /符/.test(m.chips), `${w}x${h} every power-up chip readable: ` + m.chips);
+    await page.evaluate(() => window.__game.manual(false));
+    await tap(cdp, page, '#pauseBtn');
+    ok(await page.isVisible('#ovPause'), `${w}x${h} the pause button answers a real tap at stage 100`);
+    ok(errors.length === 0, `${w}x${h} narrow HUD: no page errors`);
+    await ctx.close();
+  }
+}
+
+// clear stage 7, result screen 選關, then 返回: the start screen shows the new numbers
+async function staleStart(browser) {
+  const { ctx, page, cdp, errors } = await open(browser, 390, 844, 'light');
+  await page.evaluate(() => { localStorage.setItem('bomb-maze:v1:progress', JSON.stringify({ 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3 })); });
+  await page.reload(); await sleep(400);
+  ok((await page.textContent('#startN')) === '7', 'start screen offers stage 7 after 6 cleared');
+  await tap(cdp, page, '#startBtn');
+  await page.evaluate(() => { window.__game.manual(true); window.__game.auto(true); });
+  let res = null;
+  for (let i = 0; i < 300 && !res; i++) { const q = await page.evaluate(() => { window.__game.tick(1000); return window.__game.state(); }); if (q.status !== 'play') res = q; }
+  ok(res && res.status === 'won', 'stage 7 cleared by the built-in brain');
+  await page.evaluate(() => { window.__game.tick(1500); window.__game.auto(false); window.__game.manual(false); }); await sleep(150);
+  await tap(cdp, page, '#resSelect'); await tap(cdp, page, '#selBack');
+  const t = await page.evaluate(() => [document.getElementById('startN').textContent, document.getElementById('startDone').textContent]);
+  ok(t[0] === '8' && t[1] === '7', 'after 選關 → 返回 the start screen says 第 8 關 and 已通過 7 (' + t + ')');
+  ok(errors.length === 0, 'stale start: no page errors');
+  await ctx.close();
+}
+
+// the first-stage tip shows on short screens too (in the intro banner); a touch during the intro starts at once
+async function introAndHint(browser) {
+  for (const [w, h] of [[375, 500], [390, 610], [390, 844]]) {
+    const { ctx, page, cdp, errors } = await open(browser, w, h, 'light');
+    await tap(cdp, page, '#startBtn');
+    const bn = await page.evaluate(() => window.__game.banner());
+    ok(bn && /放炮炸紅磚/.test(bn.sub), `${w}x${h} stage 1 intro banner carries the tip: ` + JSON.stringify(bn));
+    await page.evaluate(() => window.__game.manual(true));
+    await tap(cdp, page, '#bombBtn');
+    const s = await page.evaluate(() => { window.__game.tick(17); return { hold: window.__game.sim().hold, bombs: window.__game.sim().bombs.length, t: window.__game.sim().time }; });
+    ok(s.hold <= 0 && s.bombs === 1 && s.t < 0.1, `${w}x${h} a tap on 放炮 during the intro plants at once ` + JSON.stringify(s));
+    ok(errors.length === 0, `${w}x${h} intro: no page errors`);
+    await ctx.close();
+  }
+}
+
+// reload in the middle of a stage: 繼續 brings back the same stage, clock and power-ups
+async function resumeAfterReload(browser) {
+  const { ctx, page, cdp, errors } = await open(browser, 390, 844, 'light');
+  await page.evaluate(() => { const g = window.__game; g.startStage(12); g.manual(true); g.tick(1200); g.sim().bombers[0].fire = 5; g.auto(true); g.tick(12000); g.auto(false); });
+  const before = await page.evaluate(() => { const s = window.__game.sim(); return { t: s.time, kills: s.kills, lives: s.lives, fire: s.bombers[0].fire, x: s.bombers[0].x, alive: s.enemies.filter(e => e.alive).length }; });
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.reload(); await sleep(500);
+  ok(await page.isVisible('#contBtn') && (await page.textContent('#contN')) === '12', 'after a reload the start screen offers 繼續第 12 關');
+  await tap(cdp, page, '#contBtn');
+  const after = await page.evaluate(() => { const s = window.__game.sim(); return { t: s.time, kills: s.kills, lives: s.lives, fire: s.bombers[0].fire, x: s.bombers[0].x, alive: s.enemies.filter(e => e.alive).length, paused: window.__game.state().paused }; });
+  ok(Math.abs(after.t - before.t) < 0.01 && after.kills === before.kills && after.lives === before.lives && after.fire === 5 && Math.abs(after.x - before.x) < 1e-6 && after.alive === before.alive, 'resumed stage matches the saved one ' + JSON.stringify([before, after]));
+  ok(after.paused && await page.isVisible('#ovPause'), 'a resumed stage waits on the pause panel');
+  await tap(cdp, page, '#resumeBtn'); await sleep(1600);
+  ok((await st(page)).time > before.t, 'and runs on after 繼續 (and its 1 s intro)');
+  await tap(cdp, page, '#pauseBtn'); await tap(cdp, page, '#quitBtn');
+  ok(!(await page.isVisible('#contBtn')), 'leaving the stage clears the saved game');
+  ok(errors.length === 0, 'resume: no page errors');
+  await ctx.close();
+}
+
+// clear a stage and go on: the power-ups come along; portrait cells are bigger and the camera keeps the cat in view
+async function runAndCamera(browser) {
+  const { ctx, page, cdp, errors } = await open(browser, 390, 844, 'light');
+  await tap(cdp, page, '#startBtn');
+  await page.evaluate(() => { const g = window.__game; g.manual(true); g.tick(1100); const b = g.sim().bombers[0]; b.bombs = 3; b.fire = 4; b.kick = true; g.auto(true); });
+  let res = null;
+  for (let i = 0; i < 240 && !res; i++) { const q = await page.evaluate(() => { window.__game.tick(1000); return window.__game.state(); }); if (q.status !== 'play') res = q; }
+  await page.evaluate(() => { window.__game.tick(1500); window.__game.auto(false); }); await sleep(150);
+  ok(res && res.status === 'won' && /帶著/.test(await page.textContent('#resInfo')), 'result screen says what the next stage brings along');
+  await tap(cdp, page, '#resMain');
+  const k = await page.evaluate(() => { const b = window.__game.sim().bombers[0]; return { bombs: b.bombs, fire: b.fire, kick: b.kick, n: window.__game.run() }; });
+  ok(k.bombs >= 3 && k.fire >= 4 && k.kick, 'stage 2 starts with the power-ups from stage 1 ' + JSON.stringify(k));
+  await page.evaluate(() => window.__game.startStage(24));
+  const v = await page.evaluate(() => window.__game.view());
+  ok(v.cell >= 30, '390x844 portrait cells are at least 30 px (' + v.cell + ')');
+  const pts = [];
+  for (const x of [1.5, 7.5, 13.5]) pts.push(await page.evaluate(x => { const g = window.__game; g.sim().bombers[0].x = x; g.tick(1500); const v = g.view(); return { x, px: x * v.cell - v.camX, w: v.viewW }; }, x));
+  ok(pts.every(p => p.px > 0 && p.px < p.w), 'the camera keeps the cat on screen across the maze ' + JSON.stringify(pts));
+  ok(errors.length === 0, 'run/camera: no page errors');
+  await ctx.close();
+}
+
+// landscape: 選關 and 對戰 panels show 返回 without scrolling
+async function landscapePanels(browser) {
+  for (const [w, h] of [[844, 390], [667, 375]]) {
+    const { ctx, page, cdp, errors } = await open(browser, w, h, 'light');
+    for (const [btn, ov, back] of [['#selectBtn', 'ovSelect', 'selBack'], ['#battleBtn', 'ovBattle', 'battleBack'], ['#howBtn', 'ovHow', 'howBack']]) {
+      await tap(cdp, page, btn);
+      const r = await page.evaluate(([ov, back]) => { const el = document.getElementById(ov), b = document.getElementById(back).getBoundingClientRect(); return { bottom: b.bottom, h: innerHeight, scrolled: el.scrollTop }; }, [ov, back]);
+      ok(r.bottom <= r.h && r.scrolled === 0, `${w}x${h} ${ov}: 返回 visible without scrolling ` + JSON.stringify(r));
+      await tap(cdp, page, '#' + back);
+    }
+    ok(errors.length === 0, `${w}x${h} panels: no page errors`);
+    await ctx.close();
+  }
+}
+
 async function cover(browser) {
   const { ctx, page, errors } = await open(browser, 390, 520, 'light', 2);
   await page.evaluate(() => { window.__game.manual(true); window.__game.startStage(7); window.__game.auto(true); window.__game.tick(1400); });
@@ -164,6 +303,11 @@ async function cover(browser) {
   const sizes = [[390, 844], [375, 500], [390, 610], [430, 740]];
   for (const [w, h] of sizes) for (const scheme of ['light', 'dark']) {
     try { await fullFlow(browser, w, h, scheme); } catch (e) { fails++; console.log('FAIL', w + 'x' + h, scheme, 'threw', e.message.split('\n')[0]); }
+  }
+  await landscape(browser);
+  await padEdge(browser);
+  for (const f of [narrowHud, staleStart, introAndHint, resumeAfterReload, runAndCamera, landscapePanels]) {
+    try { await f(browser); } catch (e) { fails++; console.log('FAIL', f.name, 'threw', e.message.split('\n')[0]); }
   }
   await cover(browser);
   await browser.close(); srv.close();

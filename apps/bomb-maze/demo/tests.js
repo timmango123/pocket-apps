@@ -13,6 +13,8 @@ const mkLevel = (rows, extra) => {
     grid.push(ch === '#' ? HARD : ch === '+' ? SOFT : EMPTY); items.push(0);
     if (ch === 'P') spawns.push({ x, y }); if (ch === 'Q') spawns.push({ x, y });
     if (ch === 'r') enemies.push({ t: 0, x, y }); if (ch === 'g') enemies.push({ t: 2, x, y }); if (ch === 'L') enemies.push({ t: 4, x, y });
+    if (ch === 'b') enemies.push({ t: 5, x, y }); if (ch === 'm') enemies.push({ t: 6, x, y }); if (ch === 'N') enemies.push({ t: 7, x, y, hp: 3 });
+    if (ch === 'X') grid[grid.length - 1] = BM.CRATE;
   }));
   return Object.assign({ w, h, grid, items, spawns, enemies, time: 100, n: 1 }, extra || {});
 };
@@ -36,8 +38,8 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
     while (q.length) { const c = q.pop(), x = c % L.w, y = (c - x) / L.w; for (let d = 0; d < 4; d++) { const nx = x + BM.DX[d], ny = y + BM.DY[d], k = ny * L.w + nx; if (L.grid[k] !== HARD && !seen[k]) { seen[k] = 1; q.push(k); } } }
     ok(seen[dc] && L.enemies.every(e => seen[e.y * L.w + e.x]), 'stage ' + n + ' door and enemies reachable');
   }
-  const p1 = BM.stageParams(1), p100 = BM.stageParams(100);
-  ok(p100.enemies > p1.enemies && p100.density > p1.density && p100.pool.length > p1.pool.length, 'difficulty ramps up');
+  const p1 = BM.stageParams(1), p99 = BM.stageParams(99);
+  ok(p99.enemies > p1.enemies && p99.density > p1.density && p99.pool.length > p1.pool.length, 'difficulty ramps up');
   const B = BM.genBattle(5, 4);
   ok(B.spawns.length === 4 && B.spawns.every(s => B.grid[s.y * B.w + s.x] === EMPTY), 'battle: 4 spawns on empty corners');
   ok(B.spawns.every(s => [[1, 0], [0, 1]].every(([dx, dy]) => B.grid[(s.y + (s.y === 1 ? dy : -dy)) * B.w + s.x + (s.x === 1 ? dx : -dx)] === EMPTY)), 'battle: corners have breathing room');
@@ -219,15 +221,153 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
   s.sudden.at = 0.5; run(s, 10);
   ok(s.sudden.on && s.sudden.idx > 10 && s.grid[s.w + 1] === HARD, 'sudden death drops pillars from the top-left corner inward');
 }
+// ---- a later bomb that goes off first and chains an earlier one (kicked into fire) must not crash the loop ----
+{
+  {
+    const s = BM.createSim(mkLevel(['#########', '#P......#', '#########']), { mode: 'battle', cpu: [false] });
+    s.bombs.push({ x: 3, y: 1, owner: 0, range: 2, t: 2, slide: -1, p: 0 }, { x: 4, y: 1, owner: 0, range: 2, t: 0.001, slide: -1, p: 0 });
+    let threw = null; try { BM.tick(s, 1 / 60); } catch (e) { threw = e; }
+    ok(!threw && s.bombs.length === 0, 'chain reaction started by the newer bomb clears both without an error' + (threw ? ' (' + threw.message + ')' : ''));
+  }
+}
+// ---- a battle stand-off cannot run forever ----
+{
+  const s = BM.createSim(BM.genBattle(5, 2), { mode: 'battle', cpu: [false, false], seed: 5 });
+  ok(s.limit === 180, 'battle clock is 3 minutes');
+  s.sudden.at = 1e9; for (let t = 0; t < 181 && s.status === 'play'; t += 1 / 60) { BM.tick(s, 1 / 60); s.events.length = 0; }
+  ok(s.status === 'over' && s.winner === -1 && s.timeUp, 'two cats that never meet end in a draw when the clock runs out');
+}
+// ---- difficulty curve and beginner help ----
+{
+  const L = mkLevel(['#######', '#P.+..#', '#.#.#.#', '#..r..#', '#######']); L.items[1 * 7 + 3] = IT.DOOR;
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] }); s.enemies[0].alive = false; BM.tick(s, 1 / 60);
+  ok(s.doorOpen && s.grid[1 * 7 + 3] === EMPTY, 'clearing the monsters also shakes the brick off the hidden door');
+}
+{
+  let prevE = 0, prevS = 0, mono = true;
+  for (let n = 1; n <= 100; n++) { const P = BM.stageParams(n); if (P.boss) continue; if (P.enemies < prevE || P.speedMul < prevS - 1e-9) mono = false; prevE = P.enemies; prevS = P.speedMul; }
+  ok(mono, 'monster count and speed never drop from one (non-boss) stage to the next');
+  ok(BM.stageParams(1).enemies === 2 && BM.stageParams(99).enemies === 7, 'two monsters on stage 1, seven on stage 99');
+  ok(BM.stageParams(1).speedMul < 0.85 && Math.abs(BM.stageParams(100).speedMul - 1.2) < 1e-9, 'monsters start slow and end 20% faster');
+  ok(BM.stageParams(1).lives === 5 && BM.stageParams(25).lives === 4 && BM.stageParams(50).lives === 3, 'five lives on the teaching stages, three from stage 41');
+  ok(BM.genStage(1).fuse === 3 && BM.genStage(10).fuse > 2.4 && BM.genStage(11).fuse === BM.FUSE, 'early stages have a slower fuse');
+  const L = mkLevel(['#######', '#P....#', '#.#.#.#', '#.....#', '#######'], { fuse: 3 });
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] }), b = s.bombers[0];
+  BM.setInput(s, 0, -1, true); BM.tick(s, 1 / 60);
+  ok(s.bombs.length === 1 && Math.abs(s.bombs[0].t - (3 - 1 / 60)) < 1e-6, 'a bomb uses the stage fuse');
+  const s2 = BM.createSim(mkLevel(['#######', '#P....#', '#######']), { mode: 'stage', cpu: [false] });
+  s2.fire[s2.w + 1] = 0.1; BM.tick(s2, 1 / 60);
+  ok(s2.bombers[0].alive, 'the last tenth of a second of a flame is a harmless fade');
+  s2.fire[s2.w + 1] = 0.3; BM.tick(s2, 1 / 60);
+  ok(!s2.bombers[0].alive, 'a live flame still burns');
+  // touching: a monster 0.6 cells away does not catch the cat, 0.4 does
+  const s3 = BM.createSim(mkLevel(['#######', '#P...r#', '#######']), { mode: 'stage', cpu: [false] });
+  s3.enemies[0].speed = 0; s3.enemies[0].x = s3.bombers[0].x + 0.6; s3.enemies[0].tx = 1; BM.tick(s3, 1 / 60);
+  ok(s3.bombers[0].alive, 'a monster that only brushes past (0.6 cells) does not catch the cat');
+  s3.enemies[0].x = s3.bombers[0].x + 0.4; BM.tick(s3, 1 / 60);
+  ok(!s3.bombers[0].alive, 'a monster on top of the cat catches it');
+}
+// ---- later content: firework crates, boar, mother rat, the Nian boss, special stages ----
+{
+  // crates: a blast sets one off (range 2), the warning map knows it, and crates chain
+  const L = mkLevel(['#########', '#P.X....#', '#.#.#.#.#', '#.......#', '#########']);
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] });
+  ok(s.grid[1 * 9 + 3] === BM.CRATE, 'crate placed');
+  const D = BM.dangerMap(s, { x: 2, y: 1, range: 1, t: 1 });
+  ok(D[1 * 9 + 5] === 1 && D[3 * 9 + 3] === 1 && D[1 * 9 + 6] === Infinity, 'danger map: a bomb next to a crate also marks the crate\'s range-2 cross');
+  ok(BM.blastCells(s, { x: 2, y: 1, range: 1 }).indexOf(1 * 9 + 5) >= 0, 'warning cross on the floor includes what the crate will burn');
+  s.bombers[0].x = 7.5; s.bombers[0].y = 3.5; s.bombs.push({ x: 2, y: 1, owner: 0, range: 1, t: 0.01, slide: -1, p: 0 }); s.bombers[0].placed = 1;
+  BM.tick(s, 1 / 60);
+  ok(s.grid[1 * 9 + 3] === BM.EMPTY && s.fire[1 * 9 + 5] > 0 && s.fire[3 * 9 + 3] > 0, 'burning crate explodes with range 2');
+  ok(s.bombers[0].placed === 0 && s.bombs.length === 0, 'crate explosion does not count as one of the player\'s firecrackers');
+  ok(BM.softAdj(s, 4, 1) === 0 && BM.softAdj(BM.createSim(L, { mode: 'stage' }), 2, 1) === 1, 'CPU sees crates as something worth bombing');
+  const L2 = mkLevel(['#########', '#P.XX...#', '#########']);
+  const s2 = BM.createSim(L2, { mode: 'stage', cpu: [false] }); s2.bombers[0].invul = 9;
+  s2.bombs.push({ x: 2, y: 1, owner: 0, range: 1, t: 0.01, slide: -1, p: 0 }); BM.tick(s2, 1 / 60);
+  ok(s2.grid[1 * 9 + 4] === BM.EMPTY && s2.fire[1 * 9 + 6] > 0, 'crates set each other off');
+  // generation: crates from 33, warehouse stages, bosses every 10th from 20
+  ok(BM.genStage(32).grid.indexOf(BM.CRATE) < 0 && BM.genStage(33).grid.indexOf(BM.CRATE) >= 0, 'crates start on stage 33');
+  ok(BM.stageParams(45).special === 'crates' && BM.genStage(45).grid.filter(g => g === BM.CRATE).length >= 10, 'stage 45 is a firework warehouse');
+  for (let n = 1; n <= 100; n++) { const P = BM.stageParams(n), G = BM.genStage(n), boss = G.enemies.filter(e => e.t === 7);
+    if (P.boss !== (n >= 20 && n % 10 === 0) || boss.length !== (P.boss ? 1 : 0) || (P.boss && !(boss[0].hp >= 2))) ok(false, 'boss placement on stage ' + n);
+    if (n < 41 && G.enemies.some(e => e.t === 5) || n < 56 && G.enemies.some(e => e.t === 6)) ok(false, 'new monster too early on stage ' + n);
+    if (G.enemies.some(e => e.t === 2) && n < 21) ok(false, 'wisp too early on ' + n);
+  }
+  ok(BM.REMIX.length === 100 && BM.REMIX.every(v => v >= 0 && v < 12), 'one layout variant per stage');
+  for (const [n, t] of Object.entries(BM.INTRO)) ok(BM.genStage(+n).enemies.some(e => e.t === t), 'stage ' + n + ' introduces ' + BM.ENEMY[t].name + ' and has one');
+  let nb = 0, nm = 0; for (let n = 41; n <= 100; n++) { const G = BM.genStage(n); if (G.enemies.some(e => e.t === 5)) nb++; if (G.enemies.some(e => e.t === 6)) nm++; }
+  ok(nb >= 15 && nm >= 10, 'boars and mother rats keep showing up later (' + nb + ', ' + nm + ' stages)');
+}
+{
+  // boar: sees the cat down a lane, stamps 0.7 s, then charges at double speed
+  const L = mkLevel(['#########', '#P.....b#', '#########']);
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false], lives: 3 }), e = s.enemies[0];
+  BM.tick(s, 1 / 60);
+  ok(e.tele > 0 && e.dir === 3 && !e.chg, 'boar spots the cat and stamps first');
+  const x0 = e.x; for (let i = 0; i < 30; i++) BM.tick(s, 1 / 60);
+  ok(Math.abs(e.x - x0) < 1e-6, 'boar stands still while stamping');
+  s.bombers[0].invul = 99; for (let i = 0; i < 30; i++) BM.tick(s, 1 / 60);
+  ok(e.chg && e.x < x0 - 0.9, 'then it charges (' + (x0 - e.x).toFixed(2) + ' cells in 0.5 s)');
+  const D = new Uint8Array(1); ok(BM.cpuDecide(s, s.bombers[0]).flee || true, 'brain runs with a charging boar about');
+  // a charge stops at a wall or after 6 cells
+  for (let i = 0; i < 120; i++) { BM.tick(s, 1 / 60); s.events.length = 0; }
+  ok(!e.chg || e.rest > 0, 'charge ends');
+  // mother rat splits into two rats that survive the blast that killed her
+  const L2 = mkLevel(['#########', '#P.....m#', '#.#.#.#.#', '#.......#', '#########']);
+  const s2 = BM.createSim(L2, { mode: 'stage', cpu: [false] }); s2.enemies[0].speed = 0; s2.bombers[0].invul = 99;
+  s2.bombs.push({ x: 7, y: 2, owner: 0, range: 1, t: 0.01, slide: -1, p: 0 }); s2.bombers[0].placed = 1;
+  BM.tick(s2, 1 / 60);
+  ok(!s2.enemies[0].alive && s2.enemies.length === 3 && s2.enemies.slice(1).every(r => r.t === 0 && r.alive && r.baby), 'mother rat leaves two baby rats');
+  for (let i = 0; i < 40; i++) BM.tick(s2, 1 / 60);
+  ok(s2.enemies.slice(1).every(r => r.alive) && !s2.doorOpen, 'babies are fireproof for a moment, door stays shut while they live');
+  // the boss: several hits, stunned after each, a roar pause, door opens when it falls
+  const L3 = mkLevel(['#########', '#P.....N#', '#########']); L3.items[1 * 9 + 2] = IT.DOOR;
+  const s3 = BM.createSim(L3, { mode: 'stage', cpu: [false] }), N = s3.enemies[0];
+  ok(N.hp === 3 && N.maxHp === 3, 'boss hp from the level');
+  BM.hitEnemy(s3, N); ok(N.alive && N.hp === 2 && N.rest > 0 && N.hurt > 1, 'boss survives a hit and is stunned, then fireproof for a while');
+  BM.hitEnemy(s3, N); ok(N.hp === 2, 'no double hit while it flashes');
+  N.hurt = 0; BM.hitEnemy(s3, N); N.hurt = 0; BM.hitEnemy(s3, N);
+  ok(!N.alive && s3.kills === 1, 'third hit takes it down');
+  BM.tick(s3, 1 / 60); ok(s3.doorOpen, 'door opens when the boss falls');
+  const s4 = BM.createSim(mkLevel(['#########', '#P.....N#', '#########']), { mode: 'stage', cpu: [false] }), N4 = s4.enemies[0]; s4.bombers[0].invul = 99;
+  let roared = false; for (let i = 0; i < 60 * 8; i++) { BM.tick(s4, 1 / 60); if (s4.events.some(e => e.t === 'roar')) roared = true; s4.events.length = 0; }
+  ok(roared, 'boss stops to roar every few seconds');
+}
+{
+  // door: when it opens, the bricks right next to it crumble too
+  const L = mkLevel(['#######', '#P....#', '#.#.#.#', '#..+..#', '#.#+#.#', '#..r..#', '#######']); L.items[3 * 7 + 3] = IT.DOOR; L.grid[3 * 7 + 3] = SOFT;
+  const s = BM.createSim(L, { mode: 'stage', cpu: [false] }); s.enemies[0].alive = false; BM.tick(s, 1 / 60);
+  ok(s.doorOpen && s.grid[4 * 7 + 3] === EMPTY, 'opening door shakes off its neighbour bricks');
+  // respawn: monsters near the start are startled
+  const L2 = mkLevel(['#######', '#P.r..#', '#######']);
+  const s2 = BM.createSim(L2, { mode: 'stage', cpu: [false], lives: 3 }); s2.enemies[0].speed = 0;
+  BM.killPlayerNow(s2); run(s2, 1.4);
+  ok(s2.lives === 2 && s2.bombers[0].alive && s2.enemies[0].rest > 0, 'after a respawn the monster next to the start freezes for a moment');
+  // carried power-ups
+  const s3 = BM.createSim(BM.genStage(5), { mode: 'stage', kit: { bombs: 3, fire: 4, speed: 4.2, kick: true } }), b3 = s3.bombers[0];
+  ok(b3.bombs === 3 && b3.fire === 4 && b3.speed === 4.2 && b3.kick && !b3.shield, 'a run carries 炮, 火, 鞋 and 踢 into the next stage');
+  const s4 = BM.createSim(BM.genStage(5), { mode: 'stage', kit: { bombs: 99, fire: -3, speed: 99 } });
+  ok(s4.bombers[0].bombs === 8 && s4.bombers[0].fire === 2 && s4.bombers[0].speed === 5.2, 'carried power-ups are clamped');
+  // snapshot / restore round trip, and the run continues identically
+  const mk = () => BM.createSim(BM.genStage(57), { mode: 'stage', cpu: [true], seed: 99, skill: 2, lives: 3 });
+  const a = mk(); for (let i = 0; i < 60 * 20; i++) { BM.tick(a, 1 / 60); a.events.length = 0; }
+  const snap = JSON.parse(JSON.stringify(BM.snapshot(a)));
+  const b = mk(); ok(BM.restore(b, snap), 'restore accepts a snapshot');
+  b.bombers[0].cpu = true;
+  for (let i = 0; i < 60 * 15; i++) { BM.tick(a, 1 / 60); BM.tick(b, 1 / 60); a.events.length = 0; b.events.length = 0; }
+  const sig = s => [s.time.toFixed(3), s.kills, s.lives, s.bombers[0].x.toFixed(3), s.bombers[0].y.toFixed(3), s.enemies.map(e => e.x.toFixed(2) + e.alive).join()].join('|');
+  ok(sig(a) === sig(b), 'a restored stage plays on exactly like the original (' + sig(a).slice(0, 40) + ')');
+  ok(!BM.restore(BM.createSim(BM.genStage(1), { mode: 'stage' }), snap), 'a snapshot of another map size is refused');
+}
 // ---- whole stages playable by the CPU ----
 {
   let won = 0;
-  for (const n of [1, 2, 3, 4, 5, 8, 12, 20]) {
+  for (const n of [1, 2, 3, 4, 5, 8, 12, 20, 33, 41, 56]) {
     const L = BM.genStage(n), s = BM.createSim(L, { mode: 'stage', cpu: [true], seed: n, skill: 2, lives: 3 });
     let t = 0; while (s.status === 'play' && t < L.time + 1) { BM.tick(s, 1 / 60); t += 1 / 60; s.events.length = 0; }
     if (s.status === 'won') won++; else console.log('  note: CPU did not clear stage', n, s.status);
   }
-  ok(won >= 6, 'CPU clears most early stages (' + won + '/8)');
+  ok(won >= 8, 'CPU clears most early stages and the first stages with new things (' + won + '/11)');
 }
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
