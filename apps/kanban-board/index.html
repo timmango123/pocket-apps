@@ -1,0 +1,1438 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>看板待辦</title>
+<style>
+:root{
+  --bg:#e7e4dc; --dot:rgba(60,50,30,.09); --panel:#f4f2ec; --panel-line:#dedad0; --card:#fffefa; --card-2:#f7f5ef;
+  --ink:#1c1e23; --ink-2:#525762; --ink-3:#6f7480; --line:#d8d4ca; --line-2:#bdb8ab;
+  --c0:#4a64a0; --c0-soft:#e1e7f4; --c1:#b86a00; --c1-soft:#f8ead2; --c2:#25845a; --c2-soft:#dbefe4;
+  --accent:#2c4f9e; --accent-ink:#fff; --danger:#c0352f; --danger-soft:#fbe4e1; --warn:#9a5b00; --warn-soft:#fdf0d8;
+  --l-red:#e0443e; --l-orange:#ec7a1c; --l-yellow:#d8a400; --l-green:#2e9e64; --l-blue:#3d63d6; --l-purple:#8a4fc4;
+  --shadow-card:0 1px 0 rgba(40,32,16,.05),0 2px 6px -2px rgba(40,32,16,.20);
+  --shadow-lift:0 18px 34px -10px rgba(30,24,10,.45),0 4px 10px rgba(30,24,10,.16);
+  --shadow-sheet:0 -10px 40px -10px rgba(20,16,8,.35);
+  --scrim:rgba(20,18,12,.42); --focus:#2f6bff;
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121417; --dot:rgba(255,255,255,.05); --panel:#1a1d22; --panel-line:#262a31; --card:#252931; --card-2:#2c313a;
+    --ink:#eceef2; --ink-2:#adb3bf; --ink-3:#8d94a1; --line:#323741; --line-2:#474d59;
+    --c0:#8ea7e6; --c0-soft:#222c44; --c1:#f0aa4a; --c1-soft:#3a2c17; --c2:#5ccf98; --c2-soft:#173326;
+    --accent:#8fa8ff; --accent-ink:#0b1430; --danger:#ff8a80; --danger-soft:#3d1f1d; --warn:#ffbe5c; --warn-soft:#3a2a12;
+    --l-red:#f0625b; --l-orange:#f59443; --l-yellow:#e8c03a; --l-green:#4cc184; --l-blue:#6f8ff0; --l-purple:#b07ce6;
+    --shadow-card:0 1px 0 rgba(0,0,0,.3),0 2px 8px -2px rgba(0,0,0,.5);
+    --shadow-lift:0 18px 36px -8px rgba(0,0,0,.75),0 4px 12px rgba(0,0,0,.4);
+    --shadow-sheet:0 -10px 40px -10px rgba(0,0,0,.8);
+    --scrim:rgba(0,0,0,.6); --focus:#8fb0ff;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121417; --dot:rgba(255,255,255,.05); --panel:#1a1d22; --panel-line:#262a31; --card:#252931; --card-2:#2c313a;
+  --ink:#eceef2; --ink-2:#adb3bf; --ink-3:#8d94a1; --line:#323741; --line-2:#474d59;
+  --c0:#8ea7e6; --c0-soft:#222c44; --c1:#f0aa4a; --c1-soft:#3a2c17; --c2:#5ccf98; --c2-soft:#173326;
+  --accent:#8fa8ff; --accent-ink:#0b1430; --danger:#ff8a80; --danger-soft:#3d1f1d; --warn:#ffbe5c; --warn-soft:#3a2a12;
+  --l-red:#f0625b; --l-orange:#f59443; --l-yellow:#e8c03a; --l-green:#4cc184; --l-blue:#6f8ff0; --l-purple:#b07ce6;
+  --shadow-card:0 1px 0 rgba(0,0,0,.3),0 2px 8px -2px rgba(0,0,0,.5);
+  --shadow-lift:0 18px 36px -8px rgba(0,0,0,.75),0 4px 12px rgba(0,0,0,.4);
+  --shadow-sheet:0 -10px 40px -10px rgba(0,0,0,.8);
+  --scrim:rgba(0,0,0,.6); --focus:#8fb0ff;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+svg{flex:none}
+.app{height:100%;height:100dvh;display:flex;flex-direction:column;max-width:1200px;margin:0 auto;
+  padding:0 max(0px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0px,env(safe-area-inset-left))}
+
+/* ---------- header ---------- */
+.top{flex:none;display:flex;align-items:center;gap:4px;padding:calc(6px + env(safe-area-inset-top)) 8px 6px 6px;position:relative}
+.boardbtn{flex:1;min-width:0;min-height:48px;display:flex;align-items:center;gap:8px;border:0;background:transparent;border-radius:12px;padding:2px 8px;text-align:left}
+.boardbtn:active{background:var(--panel)}
+.mark{width:34px;height:34px;border-radius:10px;flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;padding:7px 6px;background:var(--ink)}
+.mark i{border-radius:2px;background:var(--bg);opacity:.9}
+.mark i:nth-child(1){height:100%}.mark i:nth-child(2){height:70%}.mark i:nth-child(3){height:45%;background:var(--c2)}
+.bmeta{min-width:0;display:flex;flex-direction:column}
+.bname{display:flex;align-items:center;gap:6px;min-width:0;font-size:17px;font-weight:800;letter-spacing:.02em;line-height:1.25}
+.bname b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:inherit}
+.bname svg{width:16px;height:16px;color:var(--ink-3)}
+.chip{flex:none;font-size:11px;font-weight:700;line-height:1;padding:4px 6px;border-radius:6px;background:var(--warn-soft);color:var(--warn);letter-spacing:.04em}
+.bsub{font-size:12px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.iconbtn{flex:none;width:44px;height:44px;border-radius:12px;border:0;background:transparent;display:grid;place-items:center;color:var(--ink)}
+.iconbtn:active:not(:disabled){background:var(--panel)}
+.iconbtn:disabled{color:var(--ink-3);opacity:.45;cursor:default}
+.iconbtn svg{width:22px;height:22px}
+.prog{position:absolute;left:14px;right:14px;bottom:0;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--c2);border-radius:2px;transition:width .4s cubic-bezier(.2,.8,.2,1)}
+
+/* ---------- banners ---------- */
+.banner{flex:none;margin:8px 10px 0;display:flex;align-items:center;gap:6px;padding:4px 4px 4px 12px;border-radius:12px;font-size:13px;line-height:1.35;background:var(--card);border:1px dashed var(--line-2);color:var(--ink-2)}
+.banner>span{flex:1;min-width:0}
+.nw{white-space:nowrap;display:inline-block}
+.banner b{color:var(--warn)}
+.banner .bbtn{flex:none;min-height:44px;padding:0 10px;border-radius:9px;border:1px solid var(--line);background:var(--panel);font-size:13px;font-weight:700;color:var(--ink)}
+.banner .x{flex:none;width:44px;height:44px;border:0;background:transparent;border-radius:9px;display:grid;place-items:center;color:var(--ink-3)}
+.banner .x svg{width:18px;height:18px}
+.banner.err{border-style:solid;border-color:var(--danger);background:var(--danger-soft);color:var(--danger)}
+
+/* ---------- tabs (phone) ---------- */
+.tabs{flex:none;position:relative;display:grid;grid-template-columns:repeat(3,1fr);margin:8px 10px 0;padding:3px;border-radius:14px;background:var(--panel);border:1px solid var(--panel-line)}
+.tab{position:relative;z-index:1;min-height:44px;border:0;background:transparent;border-radius:11px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:14px;color:var(--ink-2);padding:0 4px;transition:color .2s}
+.tab[aria-selected="true"]{color:var(--ink)}
+.tab .dot{width:8px;height:8px;border-radius:50%;background:var(--cc)}
+.tab .n{min-width:22px;height:20px;padding:0 6px;border-radius:10px;font-size:12px;line-height:20px;font-variant-numeric:tabular-nums;background:var(--line);color:var(--ink-2);transition:transform .25s}
+.tab[aria-selected="true"] .n{background:var(--cc);color:var(--card)}
+.tab.bump .n{animation:bump .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes bump{30%{transform:scale(1.35)}}
+.tabind{position:absolute;z-index:0;top:3px;bottom:3px;left:3px;width:calc((100% - 6px)/3);border-radius:11px;background:var(--card);box-shadow:var(--shadow-card);will-change:transform}
+.tabind::after{content:"";position:absolute;left:28%;right:28%;bottom:3px;height:3px;border-radius:2px;background:var(--ci,var(--c0));transition:background .2s}
+.tab.drop{background:var(--cs);color:var(--ink);box-shadow:inset 0 0 0 2px var(--cc)}
+.tab.drop::after{content:"放到這欄最上面";position:absolute;left:50%;top:calc(100% + 6px);transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:700;padding:4px 8px;border-radius:8px;background:var(--ink);color:var(--bg);pointer-events:none}
+.kb-drag .tab:not([aria-selected="true"]):not(.drop){box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--cc) 60%,transparent);border-radius:11px}
+.c0v{--cc:var(--c0);--cs:var(--c0-soft)} .c1v{--cc:var(--c1);--cs:var(--c1-soft)} .c2v{--cc:var(--c2);--cs:var(--c2-soft)}
+
+/* ---------- board ---------- */
+.board{flex:1;min-height:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;margin-top:8px;
+  background-image:radial-gradient(var(--dot) 1px,transparent 1.3px);background-size:14px 14px}
+.board::-webkit-scrollbar{display:none}
+.board.dragging{scroll-snap-type:none}
+.col{flex:0 0 100%;min-width:0;scroll-snap-align:start;scroll-snap-stop:always;display:flex;flex-direction:column;padding:0 10px 10px}
+.colin{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--panel-line);border-radius:16px;overflow:hidden;position:relative}
+.colin::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--cc);opacity:.85;z-index:2}
+.colhead{display:none;align-items:center;gap:8px;padding:12px 12px 4px 14px;font-weight:800;font-size:15px}
+.colhead .dot{width:9px;height:9px;border-radius:50%;background:var(--cc)}
+.colhead .n{font-size:12px;font-weight:700;color:var(--ink-3);font-variant-numeric:tabular-nums;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:0 7px;line-height:18px}
+.list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px 10px 14px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.cards{display:flex;flex-direction:column;gap:8px;min-height:8px}
+
+/* add row & composer */
+.addbtn{width:100%;min-height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1.5px dashed var(--line-2);border-radius:12px;background:transparent;color:var(--ink-2);font-weight:700;font-size:14px;margin-bottom:8px}
+.addbtn svg{width:18px;height:18px;color:var(--cc)}
+.addbtn:active{background:var(--card)}
+.composer{background:var(--card);border-radius:12px;box-shadow:0 0 0 2px var(--cc),var(--shadow-card);padding:8px;margin-bottom:10px}
+.composer textarea{display:block;width:100%;border:0;background:transparent;resize:none;outline:none;font-size:15px;line-height:1.4;padding:4px 4px 6px;min-height:30px;max-height:180px;font-weight:600}
+.composer .crow{display:flex;align-items:center;gap:6px}
+.composer .hint{flex:1;min-width:0;font-size:12px;color:var(--ink-3);line-height:1.3}
+.btn{min-height:44px;padding:0 14px;border-radius:11px;border:1px solid var(--line);background:var(--card);font-weight:700;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px;color:var(--ink)}
+.btn svg{width:18px;height:18px}
+.btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.btn.cbtn{background:var(--cc);border-color:var(--cc);color:#fff}
+:root[data-theme="dark"] .btn.cbtn{color:#111}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.cbtn{color:#111}}
+.btn.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.sq{width:44px;padding:0}
+
+/* card */
+.card{content-visibility:auto;contain-intrinsic-size:auto 60px;position:relative;display:flex;align-items:stretch;min-height:56px;background:var(--card);border-radius:12px;box-shadow:var(--shadow-card);cursor:pointer;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-x pan-y;transition:transform .32s cubic-bezier(.2,.8,.2,1),box-shadow .2s;outline-offset:2px}
+.card.press{transform:scale(.975)}
+.card .lab{flex:none;width:5px;margin:8px 0 8px 6px;border-radius:3px;background:var(--lc,transparent)}
+.card .cb{flex:1;min-width:0;padding:9px 6px 9px 9px;display:flex;flex-direction:column;justify-content:center;gap:5px}
+.card .ct{font-size:15px;font-weight:600;line-height:1.38;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.card .cm{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:12px;color:var(--ink-3);line-height:1.3}
+.card .cm:empty{display:none}
+.card .cm svg{width:14px;height:14px;vertical-align:-2px}
+.card .cm span{display:inline-flex;align-items:center;gap:3px}
+.due{padding:2px 6px;border-radius:6px;background:var(--card-2);color:var(--ink-2);font-weight:600}
+.due.over{background:var(--danger-soft);color:var(--danger)}
+.due.today{background:var(--warn-soft);color:var(--warn)}
+.due.soon{color:var(--warn)}
+.card .adv{flex:none;align-self:center;width:44px;height:44px;margin-right:4px;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;color:var(--cn)}
+.card .adv i{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;border:1.5px solid color-mix(in srgb,var(--cn) 55%,transparent);transition:background .15s}
+.card .adv svg{width:16px;height:16px}
+.card .adv:active i{background:var(--cn);color:var(--card)}
+.c0v .card{--cn:var(--c1)} .c1v .card{--cn:var(--c2)}
+.c2v .card .ct{color:var(--ink-2)}
+.c2v .card .ct::before{content:"";display:inline-block;width:14px;height:14px;margin-right:6px;vertical-align:-1px;border-radius:50%;background:var(--c2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.4l2.6 2.5L12 5.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat}
+.card.ph{background:transparent;box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--cc) 55%,transparent);transform:none}
+.card.ph>*{visibility:hidden}
+.card.pop{animation:pop .34s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{opacity:0;transform:translateY(-6px) scale(.97)}}
+.card.flash{animation:flash 1s ease}
+@keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--cc),var(--shadow-card)}}
+.ghost{position:fixed!important;left:0;top:0;z-index:50;margin:0;border-radius:12px;pointer-events:none;box-shadow:var(--shadow-lift);will-change:transform;transition:none}
+.ghost.land{transition:transform .17s cubic-bezier(.2,.8,.2,1),box-shadow .17s,opacity .17s}
+.ghost>.card,.leave>.card{height:100%;content-visibility:visible}
+.leave{border-radius:12px;position:fixed!important;z-index:40;pointer-events:none;margin:0;animation:leave .32s cubic-bezier(.4,0,.6,1) forwards}
+@keyframes leave{to{opacity:0;transform:translateX(40px) scale(.96)}}
+
+/* empty & foot */
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:22px 16px 10px;color:var(--ink-3);font-size:13px;line-height:1.5}
+.empty svg{width:64px;height:48px;color:var(--cc);opacity:.85}
+.empty b{color:var(--ink-2);font-size:14px}
+.more{padding-top:10px;display:flex;justify-content:center}
+.more .btn{font-size:13px;color:var(--ink-2)}
+.colfoot{padding-top:10px;display:flex;justify-content:center}
+.colfoot .btn{background:transparent;border-style:dashed;color:var(--ink-2);font-size:13px;min-height:44px}
+
+/* side drop zones while dragging (phone) */
+.edge{position:fixed;z-index:45;top:50%;display:flex;align-items:center;gap:4px;min-height:52px;padding:0 10px;font-size:13px;font-weight:800;background:var(--ink);color:var(--bg);opacity:.0;pointer-events:none;transition:opacity .15s,transform .15s}
+.edge svg{width:16px;height:16px}
+.edge.l{left:0;border-radius:0 26px 26px 0;transform:translate(-8px,-50%)}
+.edge.r{right:0;border-radius:26px 0 0 26px;transform:translate(8px,-50%)}
+.edge.on{opacity:.82;transform:translate(0,-50%)}
+.edge.hot{opacity:1;background:var(--cc);color:#fff}
+
+/* ---------- wide: three columns side by side ---------- */
+@media (min-width:720px){
+  .tabs{display:none}
+  .board{scroll-snap-type:none;padding:0 6px;overflow-x:hidden}
+  .col{flex:1 1 0;padding:0 6px 12px}
+  .colhead{display:flex}
+  .list{padding-top:6px}
+  .edge{display:none}
+}
+
+/* short landscape: give the columns the height */
+@media (max-height:480px) and (min-width:720px){
+  .top{padding-top:calc(2px + env(safe-area-inset-top));padding-bottom:4px}
+  .mark{width:30px;height:30px;padding:6px 5px}
+  .banner{margin-top:4px;padding-top:0;padding-bottom:0}
+  .board{margin-top:6px}
+  .colhead{padding:8px 12px 2px 14px}
+  .list{padding-top:4px}
+  .addbtn{margin-bottom:6px}
+}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:12px;right:12px;margin:0 auto;width:fit-content;max-width:560px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:70;transform:translateY(20px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:4px;min-height:52px;padding:4px 4px 4px 16px;border-radius:14px;background:var(--ink);color:var(--bg);font-size:14px;font-weight:600;box-shadow:0 10px 30px -8px rgba(0,0,0,.45);transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .22s}
+.toast.on{opacity:1;transform:none;pointer-events:auto}
+.snote{flex:none;display:flex;align-items:center;gap:6px;margin:0 16px 6px;padding:4px 4px 4px 12px;min-height:44px;border-radius:12px;background:var(--ink);color:var(--bg);font-size:13.5px;font-weight:600;animation:pop .25s ease}
+.snote span{flex:1;min-width:0;padding:6px 0}
+.snote button{flex:none;min-height:44px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:var(--bg);font-weight:800;text-decoration:underline}
+.toast span{flex:0 1 auto;min-width:0;overflow-wrap:anywhere;padding:6px 0}
+.toast button{flex:none;min-height:44px;min-width:44px;padding:0 12px;border:0;border-radius:10px;background:transparent;color:var(--bg);font-weight:800;text-decoration:underline;text-underline-offset:3px}
+.toast button[hidden]+span{padding-right:12px}
+.toast .tx{width:44px;padding:0;text-decoration:none;opacity:.7;display:grid;place-items:center}
+.toast .tx svg{width:16px;height:16px}
+
+/* ---------- sheet ---------- */
+.scrim{position:fixed;inset:0;z-index:60;background:var(--scrim);opacity:0;transition:opacity .2s}
+.scrim.on{opacity:1}
+.sheet{position:fixed;left:0;right:0;bottom:var(--kb,0px);z-index:61;max-height:calc(100% - 24px - var(--kb,0px));display:flex;flex-direction:column;background:var(--panel);border-radius:20px 20px 0 0;box-shadow:var(--shadow-sheet);transform:translateY(105%);transition:transform .26s cubic-bezier(.2,.8,.2,1);padding-bottom:env(safe-area-inset-bottom)}
+.sheet.on{transform:none}
+.sheet .grab{flex:none;width:40px;height:4px;border-radius:2px;background:var(--line-2);margin:8px auto 0}
+.shead{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px 4px 16px}
+.shead h2{flex:1;min-width:0;margin:0;font-size:16px;font-weight:800;display:flex;align-items:center;gap:8px}
+.shead h2 .dot{width:9px;height:9px;border-radius:50%;background:var(--cc)}
+.sbody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 16px 16px}
+.sfoot{flex:none;display:flex;gap:8px;padding:10px 16px 12px;border-top:1px solid var(--panel-line)}
+.sfoot .grow{flex:1}
+@media (min-width:720px){
+  .sheet{left:50%;right:auto;bottom:auto;top:50%;width:460px;max-height:min(720px,calc(100% - 48px));border-radius:20px;transform:translate(-50%,-46%);opacity:0;transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .2s}
+  .sheet.on{transform:translate(-50%,-50%);opacity:1}
+  .sheet .grab{display:none}
+}
+.fld{display:block;margin:12px 0 0}
+.fld>.lbl{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--ink-2);margin:0 2px 6px}
+.fld>.lbl svg{width:15px;height:15px}
+.inp{display:block;width:100%;min-height:46px;border:1.5px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px;font-size:16px;line-height:1.4;resize:none}
+.inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.inp.title{font-size:18px;font-weight:700}
+textarea.inp{min-height:84px}
+.inp.title{min-height:52px}
+.err-msg{font-size:13px;color:var(--danger);margin:6px 2px 0;min-height:0}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.pill{min-height:44px;padding:0 12px;border-radius:20px;border:1px solid var(--line);background:var(--card);font-size:13px;font-weight:700;color:var(--ink-2)}
+.pill[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.pill:active{transform:scale(.96)}
+.duerow{display:flex;gap:8px;align-items:center}
+.duerow .inp{flex:1;min-width:0}
+.duehint{font-size:13px;font-weight:700;margin:6px 2px 0;min-height:18px}
+.duehint.over{color:var(--danger)} .duehint.today,.duehint.soon{color:var(--warn)} .duehint.later,.duehint.done{color:var(--ink-3)}
+.sw{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.sw button{height:44px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);display:grid;place-items:center;position:relative;padding:0}
+.sw button i{width:22px;height:22px;border-radius:50%;background:var(--lc)}
+.sw button.none i{background:transparent;border:1.5px dashed var(--ink-3)}
+.sw button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--ink)}
+.sw button[aria-pressed="true"] i::after{content:"";display:block;width:100%;height:100%;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.4l2.6 2.5L12 5.4' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat}
+.sw button.none[aria-pressed="true"] i::after{display:none}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:3px;border-radius:13px;background:var(--card-2);border:1px solid var(--line)}
+.seg button{min-height:44px;border:0;border-radius:10px;background:transparent;font-weight:700;font-size:14px;color:var(--ink-2);display:flex;align-items:center;justify-content:center;gap:6px}
+.seg button .dot{width:8px;height:8px;border-radius:50%;background:var(--cc)}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:var(--shadow-card),inset 0 -3px 0 var(--cc)}
+.ord{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.ord .btn{padding:0 4px;font-size:13px;gap:4px}
+.meta{font-size:12px;color:var(--ink-3);margin:14px 2px 0;line-height:1.6}
+select.inp{appearance:auto}
+.lrow{width:100%;min-height:56px;display:flex;align-items:center;gap:12px;border:0;border-radius:12px;background:var(--card);padding:8px 12px;text-align:left;margin-top:6px;box-shadow:var(--shadow-card)}
+.lrow .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--card-2);color:var(--ink-2);flex:none}
+.lrow .ic svg{width:20px;height:20px}
+.lrow .tx{flex:1;min-width:0;display:flex;flex-direction:column}
+.lrow .tx b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .tx small{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.lrow[aria-current="true"]{box-shadow:inset 0 0 0 2px var(--ink),var(--shadow-card)}
+.lrow[aria-current="true"] .ic{background:var(--ink);color:var(--bg)}
+.lrow.danger .ic{background:var(--danger-soft);color:var(--danger)} .lrow.danger b{color:var(--danger)}
+.lrow:disabled{opacity:.5}
+.mini{display:flex;gap:2px;flex:none}
+.mini i{font-style:normal;font-size:11px;font-weight:800;min-width:22px;text-align:center;padding:2px 4px;border-radius:6px;background:var(--cs);color:var(--cc);font-variant-numeric:tabular-nums}
+.sec{font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--ink-3);margin:18px 2px 2px}
+.sec:first-child{margin-top:6px}
+.note{font-size:12.5px;color:var(--ink-3);margin:8px 2px 0;line-height:1.55}
+.preview{font-size:13px;font-weight:700;margin:8px 2px 0;min-height:20px;color:var(--ink-2)}
+.preview.ok{color:var(--c2)} .preview.bad{color:var(--danger)} .preview.warn{color:var(--warn)}
+.expout{width:100%;height:120px;font-family:var(--mono);font-size:12px!important;margin-top:8px}
+.radio{display:flex;gap:10px;align-items:flex-start;min-height:48px;padding:10px 12px;border-radius:12px;background:var(--card);border:1.5px solid var(--line);margin-top:6px;cursor:pointer}
+.radio input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--ink);flex:none}
+.radio small{display:block;color:var(--ink-3);font-size:12px}
+.radio:has(input:checked){border-color:var(--ink)}
+
+.burst{position:fixed;z-index:80;pointer-events:none;width:8px;height:8px;border-radius:2px;animation:burst .9s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes burst{to{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <button class="boardbtn" id="boardBtn" aria-haspopup="dialog" aria-label="切換看板">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="bmeta"><span class="bname"><b id="bName">看板</b><span class="chip" id="bChip" hidden>範例</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span><span class="bsub" id="bSub"></span></span>
+    </button>
+    <button class="iconbtn" id="undoBtn" aria-label="復原" title="復原" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></button>
+    <button class="iconbtn" id="redoBtn" aria-label="重做" title="重做" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></button>
+    <button class="iconbtn" id="menuBtn" aria-haspopup="dialog" aria-label="選單：匯出、匯入、外觀" title="選單"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+    <div class="prog" aria-hidden="true"><i id="progBar"></i></div>
+  </header>
+  <div class="banner err" id="saveErr" role="alert" hidden><span>無法儲存到這台裝置（瀏覽器空間不足或封鎖了儲存）。請先從選單匯出備份。</span></div>
+  <div class="banner err" id="corruptBar" role="alert" hidden><span>上次存的看板資料損毀、讀不出來，先顯示範例。原始資料已另外保存，可以下載交給懂的人修復。</span><button class="bbtn" id="corruptDl">下載原始資料</button><button class="x" id="corruptX" aria-label="關閉提示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="banner" id="sampleBar" hidden><span><b>範例看板</b>　<span class="nw">長按卡片可拖曳換欄，</span><span class="nw">點一下編輯。</span></span><button class="bbtn" id="sampleClear">清空開始用</button><button class="x" id="sampleKeep" aria-label="保留範例並關閉提示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="欄位">
+    <span class="tabind" id="tabInd" aria-hidden="true"></span>
+  </nav>
+  <main class="board" id="board" aria-label="看板"></main>
+</div>
+<div class="edge l" id="edgeL" aria-hidden="true"></div>
+<div class="edge r" id="edgeR" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toastMsg"></span><button id="toastAct" hidden>復原</button><button class="tx" id="toastX" aria-label="關閉提示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+<input type="file" id="fileIn" accept=".json,application/json,text/plain,.txt" hidden>
+
+<script>
+/*CORE-START*/
+var KB = (function(){
+  var COLS = [{key:'todo', name:'待辦'}, {key:'doing', name:'進行中'}, {key:'done', name:'完成'}];
+  var COLORS = ['red','orange','yellow','green','blue','purple'];
+  var COLOR_NAMES = {red:'紅', orange:'橘', yellow:'黃', green:'綠', blue:'藍', purple:'紫'};
+  var LIM = {title:300, note:5000, board:40, cards:3000, boards:100, bytes:10*1024*1024};
+  var WD = '日一二三四五六';
+  var seq = 0;
+  function uid(){ return 'k' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 7) + (seq++).toString(36); }
+  function pad(n){ return (n < 10 ? '0' : '') + n; }
+  function ymd(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function cut(s, n){ var a = Array.from(s); return a.length > n ? a.slice(0, n).join('') : s; }
+  function validDate(s){
+    if (typeof s !== 'string') return null;
+    var m = /^\s*(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})(?:$|[T\s])/.exec(s);
+    if (!m) return null;
+    var y = +m[1], mo = +m[2], d = +m[3];
+    if (y < 1900 || y > 2999 || mo < 1 || mo > 12 || d < 1) return null;
+    if (d > new Date(Date.UTC(y, mo, 0)).getUTCDate()) return null;
+    return m[1] + '-' + pad(mo) + '-' + pad(d);
+  }
+  function dayNum(s){ var p = s.split('-'); return Math.round(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000); }
+  function addDays(s, n){ var t = new Date((dayNum(s) + n) * 86400000); return t.getUTCFullYear() + '-' + pad(t.getUTCMonth() + 1) + '-' + pad(t.getUTCDate()); }
+  function weekday(s){ return WD[new Date(dayNum(s) * 86400000).getUTCDay()]; }
+  function fmtDate(s, today){ var p = s.split('-'); return (today && p[0] === today.slice(0, 4) ? '' : p[0] + '/') + (+p[1]) + '/' + (+p[2]) + '（' + weekday(s) + '）'; }
+  function dueInfo(due, today, done){
+    if (!due) return null;
+    var diff = dayNum(due) - dayNum(today), full = fmtDate(due, today), text, level;
+    if (done){ text = full; level = 'done'; }
+    else if (diff < 0){ text = '逾期 ' + (-diff) + ' 天'; level = 'over'; }
+    else if (diff === 0){ text = '今天到期'; level = 'today'; }
+    else if (diff === 1){ text = '明天到期'; level = 'soon'; }
+    else if (diff === 2){ text = '後天到期'; level = 'soon'; }
+    else { text = full; level = 'later'; }
+    return {text:text, level:level, diff:diff, full:full};
+  }
+  function nextMonday(today){ var w = new Date(dayNum(today) * 86400000).getUTCDay(); return addDays(today, ((8 - w) % 7) || 7); }
+  // Zero-width space / word joiner / BOM are removed outright (ZWJ U+200D stays: it joins emoji).
+  function fullTitle(s){
+    if (s == null) return '';
+    return String(s).replace(/[\u200b\u2060\ufeff]/g, '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function normTitle(s){ return cut(fullTitle(s), LIM.title); }
+  // Title longer than the limit: keep the first 300 characters as title and the whole text in the note, so nothing is lost.
+  function overflowNote(full, title, note){
+    if (full === title) return note;
+    return cut(full + (note ? '\n\n' + note : ''), LIM.note);
+  }
+  function normNote(s){
+    if (s == null || typeof s === 'object') return '';
+    return cut(String(s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').replace(/\s+$/, ''), LIM.note);
+  }
+  var BULLET = /^\s*(?:[-*+•‧·▪◦]\s+|\d{1,3}[.)、．](?!\d)\s*|[☐□]\s*|\[\s?\]\s*)/;
+  var DONE = /^\s*(?:[-*+•]\s+)?(?:\[[xX✓✔]\]|[☑✅✓✔])\s*/;
+  function parseLines(text){
+    var out = [];
+    String(text == null ? '' : text).split(/\r\n?|\n/).forEach(function(line){
+      var done = DONE.test(line);
+      line = done ? line.replace(DONE, '') : line.replace(BULLET, '');
+      var f = fullTitle(line), t = cut(f, LIM.title);
+      if (t) out.push({title:t, done:done, note:f === t ? '' : overflowNote(f, t, '')});
+    });
+    return out;
+  }
+  function colIndex(v){
+    if (typeof v === 'number' && v >= 0 && v <= 2 && v === Math.floor(v)) return v;
+    if (typeof v !== 'string') return -1;
+    var s = v.trim().toLowerCase();
+    var map = {todo:0, 'to do':0, 'to-do':0, backlog:0, '待辦':0, '待做':0, '0':0, doing:1, 'in progress':1, progress:1, wip:1, '進行中':1, '1':1, done:2, complete:2, completed:2, finished:2, '完成':2, '已完成':2, '2':2};
+    return s in map ? map[s] : -1;
+  }
+  function cleanCard(raw, now, keepId, ids){
+    if (typeof raw === 'string') raw = {title:raw};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    var rawTitle = raw.title != null ? raw.title : raw.name != null ? raw.name : raw.text;
+    var full = typeof rawTitle === 'object' ? '' : fullTitle(rawTitle), title = cut(full, LIM.title);
+    if (!title) return null;
+    var id = keepId && typeof raw.id === 'string' && /^[\w-]{1,40}$/.test(raw.id) && !ids[raw.id] ? raw.id : uid();
+    ids[id] = 1;
+    var color = typeof raw.color === 'string' && COLORS.indexOf(raw.color) >= 0 ? raw.color : null;
+    var created = typeof raw.created === 'number' && isFinite(raw.created) && raw.created > 0 ? Math.floor(raw.created) : now;
+    var doneAt = typeof raw.doneAt === 'number' && isFinite(raw.doneAt) && raw.doneAt > 0 ? Math.floor(raw.doneAt) : null;
+    return {id:id, title:title, note:overflowNote(full, title, normNote(raw.note != null ? raw.note : raw.desc != null ? raw.desc : raw.description)), due:validDate(raw.due != null ? raw.due : raw.dueDate), color:color, created:created, doneAt:doneAt};
+  }
+  // Accepts internal {cols:[[],[],[]]}, export {columns:[{key,cards}]}, or flat {cards:[{...,column}]}.
+  function cleanBoard(raw, now, keepId, ids){
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    var b = {id: keepId && typeof raw.id === 'string' && /^[\w-]{1,40}$/.test(raw.id) && !ids[raw.id] ? raw.id : uid(), name: cut(normTitle(raw.name != null ? raw.name : raw.title), LIM.board) || '未命名看板', cols:[[], [], []]};
+    ids[b.id] = 1;
+    if (raw.sample === true) b.sample = true;
+    var stat = {cards:0, skipped:0, capped:0};
+    function put(c, ci){
+      if (ci < 0 || ci > 2) ci = 0;
+      var card = cleanCard(c, now, keepId, ids);
+      if (!card){ stat.skipped++; return; }
+      if (stat.cards >= LIM.cards){ stat.skipped++; stat.capped++; return; }
+      if (ci === 2 && !card.doneAt) card.doneAt = now;
+      if (ci !== 2) card.doneAt = null;
+      b.cols[ci].push(card); stat.cards++;
+    }
+    if (Array.isArray(raw.cols)){
+      raw.cols.slice(0, 3).forEach(function(list, ci){ if (Array.isArray(list)) list.forEach(function(c){ put(c, ci); }); });
+    } else if (Array.isArray(raw.columns)){
+      raw.columns.forEach(function(col, i){
+        if (!col || typeof col !== 'object') return;
+        var ci = colIndex(col.key); if (ci < 0) ci = colIndex(col.name); if (ci < 0) ci = i <= 2 ? i : 0;
+        var list = Array.isArray(col.cards) ? col.cards : Array.isArray(col) ? col : [];
+        list.forEach(function(c){ put(c, ci); });
+      });
+    } else if (Array.isArray(raw.cards)){
+      raw.cards.forEach(function(c){
+        var ci = c && typeof c === 'object' ? colIndex(c.column != null ? c.column : c.col != null ? c.col : c.status) : 0;
+        if (ci < 0) ci = c && c.done === true ? 2 : 0;
+        put(c, ci);
+      });
+    } else return null;
+    b._stat = stat;
+    return b;
+  }
+  function looksBoard(x){ return x && typeof x === 'object' && !Array.isArray(x) && (Array.isArray(x.cols) || Array.isArray(x.columns) || Array.isArray(x.cards)); }
+  // Where JSON.parse gave up (engines no longer report a position): a small validating scanner.
+  function jsonErrPos(s){
+    var i = 0, n = s.length;
+    function ws(){ while (i < n && (s[i] === ' ' || s[i] === '\n' || s[i] === '\r' || s[i] === '\t')) i++; }
+    function str(){ i++; while (i < n){ var c = s[i]; if (c === '"'){ i++; return; } if (c === '\\'){ i += 2; continue; } if (c < ' ') throw i; i++; } throw i; }
+    function val(){
+      ws(); var c = s[i];
+      if (c === '{'){ i++; ws(); if (s[i] === '}'){ i++; return; } for (;;){ ws(); if (s[i] !== '"') throw i; str(); ws(); if (s[i] !== ':') throw i; i++; val(); ws(); if (s[i] === ','){ i++; continue; } if (s[i] === '}'){ i++; return; } throw i; } }
+      if (c === '['){ i++; ws(); if (s[i] === ']'){ i++; return; } for (;;){ val(); ws(); if (s[i] === ','){ i++; continue; } if (s[i] === ']'){ i++; return; } throw i; } }
+      if (c === '"'){ str(); return; }
+      var m = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(s.slice(i, i + 400)); if (m){ i += m[0].length; return; }
+      var w = ['true', 'false', 'null']; for (var k = 0; k < 3; k++) if (s.substr(i, w[k].length) === w[k]){ i += w[k].length; return; }
+      throw i;
+    }
+    try { val(); ws(); return i < n ? i : -1; } catch (p){ return typeof p === 'number' ? Math.min(p, n) : -1; }
+  }
+  function parseImport(text, now){
+    now = now || Date.now();
+    if (typeof text !== 'string') return {error:'讀不到內容。'};
+    if (text.length > LIM.bytes) return {error:'檔案太大（超過 10 MB），請確認選對檔案。'};
+    text = text.replace(/^\ufeff/, '');
+    if (!text.trim()) return {error:'內容是空的，請貼上 JSON 或選擇匯出的備份檔。'};
+    var data, t = text.trim();
+    try { data = JSON.parse(t); }
+    catch (e){
+      if (/^[\[{]/.test(t)){
+        var pos = jsonErrPos(t), where = '';
+        if (pos >= 0){ var before = t.slice(0, pos); where = '（第 ' + (before.split('\n').length) + ' 行附近）'; }
+        return {error:'JSON 格式有誤' + where + '，可能是檔案不完整或被修改過。'};
+      }
+      var lines = parseLines(t);
+      if (!lines.length) return {error:'找不到可以匯入的內容。'};
+      var ids0 = {};
+      var b0 = cleanBoard({name:'匯入的清單', cards:lines.map(function(l){ return {title:l.title, note:l.note, column:l.done ? 2 : 0}; })}, now, false, ids0);
+      return {boards:[b0], cards:b0._stat.cards, skipped:b0._stat.skipped, capped:b0._stat.capped, plain:true};
+    }
+    var list;
+    if (Array.isArray(data)){
+      if (!data.length) return {error:'這個 JSON 是空陣列，沒有看板或卡片。'};
+      if (data.every(looksBoard)) list = data;
+      else if (data.every(function(x){ return typeof x === 'string' || (x && typeof x === 'object' && !Array.isArray(x) && (x.title != null || x.name != null || x.text != null)); })) list = [{name:'匯入的清單', cards:data}];
+      else return {error:'找不到看板資料：陣列裡應該是看板或卡片。'};
+    } else if (data && typeof data === 'object'){
+      if (Array.isArray(data.boards)) list = data.boards;
+      else if (looksBoard(data)) list = [data];
+      else return {error:'找不到看板資料：需要 boards 清單，或含 columns 的看板。'};
+    } else return {error:'找不到看板資料：這是 JSON，但不是看板備份。'};
+    var ids = {}, boards = [], cards = 0, skipped = 0, capped = 0, badBoards = 0, overBoards = 0;
+    list.forEach(function(raw){
+      if (boards.length >= LIM.boards){ overBoards++; return; }
+      var b = cleanBoard(raw, now, false, ids);
+      if (!b){ badBoards++; return; }
+      cards += b._stat.cards; skipped += b._stat.skipped; capped += b._stat.capped; boards.push(b);
+    });
+    if (!boards.length) return {error:'找不到看板資料：清單裡沒有可讀的看板。'};
+    return {boards:boards, cards:cards, skipped:skipped, capped:capped, badBoards:badBoards, overBoards:overBoards};
+  }
+  function importSummary(r){
+    var head = r.plain ? '不是 JSON，會把 ' + r.cards + ' 行當成卡片放進新看板「匯入的清單」' : '找到 ' + r.boards.length + ' 個看板、' + r.cards + ' 張卡片', notes = [];
+    var blank = (r.skipped || 0) - (r.capped || 0);
+    if (r.capped) notes.push(r.capped + ' 張超過每個看板 ' + LIM.cards + ' 張的上限，不會匯入');
+    if (blank) notes.push(blank + ' 張沒有標題已略過');
+    if (r.badBoards) notes.push(r.badBoards + ' 個看板格式不對已略過');
+    if (r.overBoards) notes.push(r.overBoards + ' 個看板超過 ' + LIM.boards + ' 個的上限，不會匯入');
+    return head + '。' + (notes.length ? '注意：' + notes.join('；') + '。' : '');
+  }
+  function stripStat(b){ delete b._stat; return b; }
+  function exportData(state, now){
+    return {app:'kanban-board', version:1, exportedAt:new Date(now || Date.now()).toISOString(),
+      boards:state.boards.map(function(b){ return {name:b.name, columns:b.cols.map(function(list, i){ return {key:COLS[i].key, name:COLS[i].name, cards:list.map(function(c){
+        var o = {title:c.title}; if (c.note) o.note = c.note; if (c.due) o.due = c.due; if (c.color) o.color = c.color; o.created = c.created; if (c.doneAt) o.doneAt = c.doneAt; return o; })}; })}; })};
+  }
+  function loadState(raw, now){
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.boards)) return null;
+    var ids = {}, boards = [];
+    raw.boards.forEach(function(b){ var c = cleanBoard(b, now, true, ids); if (c) boards.push(stripStat(c)); });
+    if (!boards.length) return null;
+    var cur = boards.some(function(b){ return b.id === raw.cur; }) ? raw.cur : boards[0].id;
+    return {v:1, cur:cur, boards:boards};
+  }
+  function find(board, id){
+    for (var c = 0; c < 3; c++){ var i = board.cols[c].findIndex(function(x){ return x.id === id; }); if (i >= 0) return {col:c, idx:i, card:board.cols[c][i]}; }
+    return null;
+  }
+  // Move card id to column toCol at index toIdx (index counted after the card is removed). Returns true if anything changed.
+  function move(board, id, toCol, toIdx, now){
+    var f = find(board, id); if (!f || toCol < 0 || toCol > 2) return false;
+    var dest = board.cols[toCol];
+    var max = f.col === toCol ? dest.length - 1 : dest.length;
+    toIdx = Math.max(0, Math.min(max, toIdx | 0));
+    if (f.col === toCol && f.idx === toIdx) return false;
+    board.cols[f.col].splice(f.idx, 1);
+    dest.splice(toIdx, 0, f.card);
+    if (toCol === 2 && f.col !== 2) f.card.doneAt = now || Date.now();
+    if (toCol !== 2) f.card.doneAt = null;
+    return true;
+  }
+  function counts(board){ return board.cols.map(function(l){ return l.length; }); }
+  function sample(today, now){
+    var d = function(n){ return addDays(today, n); }, t = now - 86400000 * 3;
+    var mk = function(title, o){ o = o || {}; return {id:uid(), title:title, note:o.note || '', due:o.due || null, color:o.color || null, created:t, doneAt:o.doneAt || null}; };
+    return {id:uid(), name:'週末搬家', sample:true, cols:[
+      [mk('跟房東約點交時間', {due:d(1), color:'red', note:'記得拍水電錶度數照片，押金收據帶著。'}),
+       mk('打包書櫃與廚房', {due:d(3), color:'blue'}),
+       mk('申請網路移機', {color:'orange', note:'客服 0800 要排 3–5 個工作天'}),
+       mk('買紙箱 20 個、膠帶 6 卷', {color:'green'}),
+       mk('新家量窗簾尺寸')],
+      [mk('比較三家搬家公司報價', {due:today, color:'purple', note:'A 家 6,500／B 家 7,200／C 家 5,800（不含樓層費）'}),
+       mk('整理不要的衣服捐出', {color:'green'})],
+      [mk('訂好搬家日期', {doneAt:now - 86400000}),
+       mk('通知家人新地址', {doneAt:now - 7200000, color:'blue'})]
+    ]};
+  }
+  return {COLS:COLS, COLORS:COLORS, COLOR_NAMES:COLOR_NAMES, LIM:LIM, uid:uid, ymd:ymd, validDate:validDate, addDays:addDays, dayNum:dayNum, nextMonday:nextMonday, weekday:weekday, fmtDate:fmtDate,
+    dueInfo:dueInfo, normTitle:normTitle, fullTitle:fullTitle, normNote:normNote, parseLines:parseLines, colIndex:colIndex, cleanCard:cleanCard, cleanBoard:cleanBoard, parseImport:parseImport, importSummary:importSummary, stripStat:stripStat,
+    exportData:exportData, loadState:loadState, find:find, move:move, counts:counts, sample:sample};
+})();
+/*CORE-END*/
+
+(function(){
+'use strict';
+var $ = function(s, r){ return (r || document).querySelector(s); };
+var $$ = function(s, r){ return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+var ID = 'kanban-board', KEY = ID + ':v1:data', KUI = ID + ':v1:ui', KTHEME = ID + ':v1:theme';
+var reduced = function(){ return matchMedia('(prefers-reduced-motion: reduce)').matches; };
+var wide = function(){ return matchMedia('(min-width: 720px)').matches; };
+var esc = function(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+var today = function(){ return KB.ymd(new Date()); };
+var buzz = function(ms){ try { if (navigator.vibrate) navigator.vibrate(ms); } catch(e){} };
+var I = {
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  play:'<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 3.6v8.8a.6.6 0 00.92.5l6.6-4.4a.6.6 0 000-1l-6.6-4.4a.6.6 0 00-.92.5z"/></svg>',
+  check:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.4l3 2.9 6-6.3"/></svg>',
+  note:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 4h10M3 8h10M3 12h6"/></svg>',
+  cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5A1.5 1.5 0 008.5 21h7a1.5 1.5 0 001.5-1.5L18 7M9 7V4.5A1.5 1.5 0 0110.5 3h3A1.5 1.5 0 0115 4.5V7"/></svg>',
+  top:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14M12 20V9M7 13l5-5 5 5"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
+  bottom:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20h14M12 4v11M7 11l5 5 5-5"/></svg>',
+  dl:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
+  ul:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V5M7 9.5l5-5 5 5M5 20h14"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="12" height="12" rx="2.5"/><path d="M15.5 8.5V6a2.5 2.5 0 00-2.5-2.5H6A2.5 2.5 0 003.5 6v7A2.5 2.5 0 006 15.5h2.5"/></svg>',
+  board:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M9.3 4v16M14.7 4v16"/></svg>',
+  pen:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
+  sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>',
+  sweep:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l4.5 4.5L20 5.5"/><path d="M4 20h16"/></svg>',
+  arrowL:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  arrowR:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V7.5a3.5 3.5 0 017 0v3"/></svg>'
+};
+var EMPTY = [
+  ['<svg viewBox="0 0 64 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="10" y="8" width="44" height="12" rx="4" opacity=".35"/><rect x="10" y="26" width="44" height="12" rx="4" stroke-dasharray="4 4"/><path d="M32 29v6M29 32h6"/></svg>', '待辦是空的', '按上面的「新增卡片」，一次可以貼上多行。'],
+  ['<svg viewBox="0 0 64 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="12" width="34" height="24" rx="5" stroke-dasharray="4 4"/><path d="M46 24h12M53 19l5 5-5 5"/></svg>', '目前沒有進行中的事', '在待辦卡片上按 ▶ 開始，或長按拖過來。'],
+  ['<svg viewBox="0 0 64 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="24" r="15" stroke-dasharray="4 4"/><path d="M25 24.5l5 5 9-10"/></svg>', '還沒有完成的卡片', '按卡片上的 ✓ 就會移到這裡。']
+];
+
+/* ---------- storage ---------- */
+var store = {
+  ok: true,
+  get: function(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set: function(k, v){ try { localStorage.setItem(k, v); return true; } catch(e){ return false; } }
+};
+var state, ui = {col:{}, hint:false, drafts:{}};
+try { var u = JSON.parse(store.get(KUI) || 'null'); if (u && typeof u === 'object'){ if (u.col && typeof u.col === 'object') ui.col = u.col; ui.hint = !!u.hint; if (u.drafts && typeof u.drafts === 'object') ui.drafts = u.drafts; } } catch(e){}
+function saveUI(){ store.set(KUI, JSON.stringify(ui)); }
+function load(){
+  var raw = store.get(KEY), parsed = null, now = Date.now();
+  if (raw){
+    try { parsed = KB.loadState(JSON.parse(raw), now); } catch(e){ parsed = null; }
+    if (!parsed){ corruptKey = ID + ':v1:corrupt-' + now; corruptRaw = raw; store.set(corruptKey, raw); }
+  }
+  if (parsed) return parsed;
+  var b = KB.sample(today(), now);
+  return {v:1, cur:b.id, boards:[b], _fresh:true};
+}
+var lastSaved = '', corruptKey = null, corruptRaw = null;
+function save(){
+  var s = JSON.stringify({v:1, cur:state.cur, boards:state.boards});
+  if (s === lastSaved) return;
+  var ok = store.set(KEY, s);
+  if (ok) lastSaved = s;
+  if (ok !== store.ok){ store.ok = ok; $('#saveErr').hidden = ok; }
+}
+function board(){ return state.boards.find(function(b){ return b.id === state.cur; }) || state.boards[0]; }
+
+/* ---------- undo ---------- */
+var undoStack = [], redoStack = [];
+function snap(){ return JSON.stringify({cur:state.cur, boards:state.boards}); }
+function commit(label){ undoStack.push({s:snap(), label:label}); if (undoStack.length > 60) undoStack.shift(); redoStack.length = 0; updUndo(); }
+function restore(s){ var o = JSON.parse(s); state.cur = o.cur; state.boards = o.boards; }
+function undo(){
+  if (D.on) return;
+  var e = undoStack.pop(); if (!e) return;
+  redoStack.push({s:snap(), label:e.label}); restore(e.s); save(); closeSheet(true); render(); updUndo();
+  toast('已復原：' + e.label);
+}
+function redo(){
+  if (D.on) return;
+  var e = redoStack.pop(); if (!e) return;
+  undoStack.push({s:snap(), label:e.label}); restore(e.s); save(); closeSheet(true); render(); updUndo();
+  toast('已重做：' + e.label);
+}
+function updUndo(){
+  $('#undoBtn').disabled = !undoStack.length; $('#redoBtn').disabled = !redoStack.length;
+  $('#undoBtn').title = undoStack.length ? '復原：' + undoStack[undoStack.length - 1].label : '復原';
+  $('#undoBtn').setAttribute('aria-label', $('#undoBtn').title);
+}
+
+/* ---------- toast ---------- */
+var toastT = 0, toastFn = null;
+function toast(msg, act, fn, ms){
+  if (sheet){ sheetNote(msg, act, fn, ms); return; }
+  $('#toastMsg').textContent = msg;
+  var a = $('#toastAct'); a.hidden = !act; a.textContent = act || ''; toastFn = fn || null;
+  $('#toast').classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(hideToast, ms || (act ? 5000 : 2200));
+}
+// While a sheet is open, messages appear inside it (under its title) so nothing covers the sheet's buttons.
+var snT = 0;
+function sheetNote(msg, act, fn, ms){
+  var n = sheet.el.querySelector('.snote');
+  n.innerHTML = '<span></span>' + (act ? '<button>' + act + '</button>' : '');
+  n.firstChild.textContent = msg; n.hidden = false;
+  if (act) n.lastChild.onclick = function(){ n.hidden = true; fn && fn(); };
+  clearTimeout(snT); snT = setTimeout(function(){ n.hidden = true; }, ms || (act ? 5000 : 2600));
+}
+function hideToast(){ $('#toast').classList.remove('on'); toastFn = null; }
+$('#toastAct').addEventListener('click', function(){ var f = toastFn; hideToast(); if (f) f(); });
+$('#toastX').addEventListener('click', hideToast);
+function undoToast(msg){ toast(msg, '復原', undo); }
+
+/* ---------- board skeleton ---------- */
+var boardEl = $('#board'), tabsEl = $('#tabs');
+KB.COLS.forEach(function(c, i){
+  var t = document.createElement('button');
+  t.className = 'tab c' + i + 'v'; t.id = 'tab' + i; t.setAttribute('role', 'tab'); t.dataset.col = i;
+  t.innerHTML = '<span class="dot"></span><span class="nm">' + c.name + '</span><span class="n" id="tn' + i + '">0</span>';
+  tabsEl.appendChild(t);
+  var s = document.createElement('section');
+  s.className = 'col c' + i + 'v'; s.dataset.col = i; s.id = 'col' + i; s.setAttribute('aria-label', c.name);
+  s.innerHTML = '<div class="colin"><div class="colhead"><span class="dot"></span>' + c.name + '<span class="n" id="hn' + i + '">0</span></div>' +
+    '<div class="list" data-col="' + i + '">' +
+      '<div class="adder"><button class="addbtn" data-add="' + i + '">' + I.plus + '新增卡片</button>' +
+      '<div class="composer" hidden><textarea rows="1" enterkeyhint="enter" aria-label="新卡片標題（' + c.name + '）" placeholder="要做什麼？"></textarea>' +
+      '<div class="crow"><span class="hint">Enter 新增・可貼上多行</span><button class="btn sq" data-cclose aria-label="收起">' + I.x + '</button><button class="btn cbtn" data-cadd>新增</button></div></div></div>' +
+      '<div class="cards" data-col="' + i + '"></div><div class="more" hidden><button class="btn" data-more="' + i + '"></button></div><div class="empty" hidden></div>' +
+      (i === 2 ? '<div class="colfoot"><button class="btn" id="clearDone">' + I.sweep + '清除已完成</button></div>' : '') +
+    '</div></div>';
+  boardEl.appendChild(s);
+});
+var lists = $$('.cards'), scrollers = $$('.list');
+
+/* ---------- render ---------- */
+var enterIds = {}, flashId = null;
+function cardHTML(c, col, td){
+  var di = KB.dueInfo(c.due, td, col === 2), meta = '';
+  if (di) meta += '<span class="due ' + di.level + '" title="到期日 ' + esc(di.full) + '">' + (col === 2 ? I.cal.replace('viewBox', 'width="14" height="14" viewBox') + ' ' : '') + esc(di.text) + '</span>';
+  if (c.note) meta += '<span title="有備註">' + I.note + '備註</span>';
+  if (col === 2 && c.doneAt){ var d = new Date(c.doneAt); meta += '<span>完成於 ' + (d.getMonth() + 1) + '/' + d.getDate() + '</span>'; }
+  var label = c.title + (di ? '，' + di.text : '') + (c.color ? '，' + KB.COLOR_NAMES[c.color] + '色標籤' : '') + (c.note ? '，有備註' : '');
+  var adv = col < 2 ? '<button class="adv" data-adv aria-label="' + (col === 0 ? '開始：移到進行中' : '完成：移到完成') + '"><i>' + (col === 0 ? I.play : I.check) + '</i></button>' : '';
+  return '<div class="card' + (enterIds[c.id] ? ' pop' : '') + (flashId === c.id ? ' flash' : '') + '" data-id="' + c.id + '" role="button" tabindex="0" aria-label="' + esc(label) + '"' + (c.color ? ' style="--lc:var(--l-' + c.color + ')"' : '') + '>' +
+    '<span class="lab"></span><div class="cb"><div class="ct">' + esc(c.title) + '</div><div class="cm">' + meta + '</div></div>' + adv + '</div>';
+}
+// Keyed update: reuse card elements whose markup did not change, so big boards stay fast.
+var tpl = document.createElement('template');
+function patchList(list, cards, col, td){
+  var old = {}, k, el;
+  for (k = 0; k < list.children.length; k++){ el = list.children[k]; if (el.dataset.id) old[el.dataset.id] = el; }
+  var want = cards.map(function(c){
+    var h = cardHTML(c, col, td), e = old[c.id];
+    if (e && e._h === h && !enterIds[c.id] && flashId !== c.id){ delete old[c.id]; return e; }
+    tpl.innerHTML = h; e = tpl.content.firstChild; e._h = h.replace(/^<div class="card[^"]*"/, '<div class="card"'); return e;
+  });
+  for (k in old) old[k].remove();
+  var cur = list.firstChild;
+  for (k = 0; k < want.length; k++){
+    el = want[k];
+    if (el === cur){ cur = cur.nextSibling; continue; }
+    list.insertBefore(el, cur);
+  }
+  while (cur){ var nx = cur.nextSibling; list.removeChild(cur); cur = nx; }
+}
+var PAGE = 200, shown = [PAGE, PAGE, PAGE];
+function render(){
+  if (D.on){ D.pendingRender = true; return; }
+  var b = board(), td = today(), n = KB.counts(b), total = n[0] + n[1] + n[2];
+  $('#bName').textContent = b.name;
+  $('#bChip').hidden = !b.sample;
+  $('#bSub').textContent = total ? '完成 ' + n[2] + ' / ' + total + ' 張・' + Math.round(n[2] / total * 100) + '%' : '還沒有卡片';
+  $('#progBar').style.width = (total ? n[2] / total * 100 : 0) + '%';
+  $('#sampleBar').hidden = !b.sample;
+  for (var i = 0; i < 3; i++){
+    var sc = scrollers[i], top = sc.scrollTop;
+    // Very long columns render in pages so dragging and scrolling stay smooth; the rest is one tap away.
+    var lim = Math.max(PAGE, shown[i]), more = n[i] - lim;
+    patchList(lists[i], more > 0 ? b.cols[i].slice(0, lim) : b.cols[i], i, td);
+    var mw = sc.querySelector('.more'); mw.hidden = more <= 0;
+    if (more > 0) mw.firstChild.textContent = '再顯示 ' + Math.min(PAGE, more) + ' 張（還有 ' + more + ' 張未顯示）';
+    var em = sc.querySelector('.empty');
+    em.hidden = n[i] > 0;
+    if (!n[i]) em.innerHTML = EMPTY[i][0] + '<b>' + EMPTY[i][1] + '</b><span>' + EMPTY[i][2] + '</span>';
+    sc.scrollTop = top;
+    $('#tn' + i).textContent = n[i]; $('#hn' + i).textContent = n[i];
+    $('#tab' + i).setAttribute('aria-label', KB.COLS[i].name + ' ' + n[i] + ' 張');
+  }
+  var cd = $('#clearDone'); cd.hidden = !n[2]; cd.lastChild.textContent = '清除已完成（' + n[2] + '）';
+  enterIds = {}; flashId = null;
+  syncComposers();
+  save();
+}
+
+/* ---------- column navigation (phone) ---------- */
+var curCol = 0;
+function colWidth(){ return boardEl.clientWidth || 1; }
+function setTabInd(){
+  var x = boardEl.scrollLeft / colWidth(); x = Math.max(0, Math.min(2, x));
+  var ind = $('#tabInd'); ind.style.transform = 'translateX(' + (x * 100) + '%)';
+  var idx = Math.round(x);
+  ind.style.setProperty('--ci', 'var(--c' + idx + ')');
+  // Only a phone-layout scroll at the current width says which column the user is on; scroll events caused by
+  // a resize/rotation (or the wide layout resetting scrollLeft) must not overwrite it.
+  if (!lastW) lastW = boardEl.clientWidth;
+  if (!wide() && boardEl.clientWidth === lastW) curCol = idx;
+  for (var i = 0; i < 3; i++) $('#tab' + i).setAttribute('aria-selected', i === idx ? 'true' : 'false');
+}
+var scrollSaveT = 0, lastW = boardEl.clientWidth;
+boardEl.addEventListener('scroll', function(){
+  setTabInd();
+  clearTimeout(scrollSaveT);
+  scrollSaveT = setTimeout(function(){ if (wide() || boardEl.clientWidth !== lastW) return; ui.col[state.cur] = curCol; saveUI(); }, 200);
+}, {passive:true});
+function goCol(i, instant){
+  if (wide()){ curCol = i; if (boardEl.scrollLeft) boardEl.scrollLeft = 0; return; }
+  boardEl.scrollTo({left:i * colWidth(), behavior: instant || reduced() ? 'auto' : 'smooth'});
+  if (instant){ curCol = i; setTabInd(); }
+}
+tabsEl.addEventListener('click', function(e){ var t = e.target.closest('.tab'); if (t) goCol(+t.dataset.col); });
+tabsEl.addEventListener('keydown', function(e){
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  var i = Math.max(0, Math.min(2, curCol + (e.key === 'ArrowRight' ? 1 : -1))); goCol(i); $('#tab' + i).focus(); e.preventDefault();
+});
+var rzT = 0;
+addEventListener('resize', function(){ cancelAnimationFrame(rzT); rzT = requestAnimationFrame(function(){ lastW = boardEl.clientWidth; if (!D.on) goCol(curCol, true); }); });
+function bumpTab(i){ var t = $('#tab' + i); t.classList.remove('bump'); void t.offsetWidth; t.classList.add('bump'); }
+
+/* ---------- composer ---------- */
+var comp = {col:-1, idx:0};
+function compEls(i){ var s = scrollers[i]; return {btn:s.querySelector('.addbtn'), box:s.querySelector('.composer'), ta:s.querySelector('.composer textarea')}; }
+function draftKey(i){ return state.cur + ':' + i; }
+function grow(ta){ ta.style.height = 'auto'; ta.style.height = Math.min(180, ta.scrollHeight) + 'px'; }
+function openComposer(i, focus){
+  for (var j = 0; j < 3; j++) if (j !== i) closeComposer(j);
+  var e = compEls(i); e.btn.hidden = true; e.box.hidden = false;
+  if (comp.col !== i) comp = {col:i, idx:0};
+  e.ta.value = ui.drafts[draftKey(i)] || e.ta.value || ''; grow(e.ta);
+  if (focus) e.ta.focus({preventScroll:true});
+  scrollers[i].scrollTop = 0;
+}
+function closeComposer(i){
+  var e = compEls(i); if (e.box.hidden) return;
+  e.box.hidden = true; e.btn.hidden = false; e.ta.value = '';
+  if (ui.drafts[draftKey(i)]){ delete ui.drafts[draftKey(i)]; saveUI(); }
+  if (comp.col === i) comp.col = -1;
+}
+function syncComposers(){
+  for (var i = 0; i < 3; i++){
+    var d = ui.drafts[draftKey(i)], e = compEls(i);
+    if (d && e.box.hidden) openComposer(i, false);
+    else if (!d && !e.box.hidden && document.activeElement !== e.ta && comp.col !== i) closeComposer(i);
+  }
+}
+function submitComposer(i){
+  var e = compEls(i), items = KB.parseLines(e.ta.value);
+  if (!items.length){ e.ta.value = ''; e.ta.focus(); return; }
+  var b = board(), now = Date.now();
+  var have = b.cols.reduce(function(a, l){ return a + l.length; }, 0);
+  if (have + items.length > KB.LIM.cards){ toast('這樣會有 ' + (have + items.length) + ' 張，超過一個看板 ' + KB.LIM.cards + ' 張的上限；內容還在輸入框裡，請分批或開新看板。', '', null, 6000); return; }
+  var longN = items.filter(function(it){ return it.note; }).length;
+  commit(items.length > 1 ? '新增 ' + items.length + ' 張卡片' : '新增卡片');
+  var idx = Math.min(comp.col === i ? comp.idx : 0, b.cols[i].length);
+  items.forEach(function(it, k){
+    var c = {id:KB.uid(), title:it.title, note:it.note || '', due:null, color:null, created:now, doneAt:null};
+    var col = it.done && items.length > 1 ? 2 : i;
+    if (col === 2) c.doneAt = now;
+    if (col === i){ b.cols[i].splice(idx, 0, c); idx++; } else b.cols[2].unshift(c);
+    enterIds[c.id] = 1;
+  });
+  comp = {col:i, idx:idx};
+  e.ta.value = ''; grow(e.ta); delete ui.drafts[draftKey(i)]; saveUI();
+  render(); e.ta.focus({preventScroll:true});
+  if (longN) toast('已新增 ' + items.length + ' 張；' + longN + ' 張標題超過 300 字，完整內容放在備註', '', null, 4000);
+  else if (items.length > 1) toast('已新增 ' + items.length + ' 張卡片');
+}
+boardEl.addEventListener('click', function(e){
+  var t = e.target;
+  var add = t.closest('[data-add]'); if (add){ openComposer(+add.dataset.add, true); return; }
+  var list = t.closest('.list'); if (!list) return;
+  var i = +list.dataset.col;
+  if (t.closest('[data-cadd]')){ submitComposer(i); return; }
+  if (t.closest('[data-cclose]')){ var ta = compEls(i).ta; if (ta.value.trim() && !confirmDrop(ta)) return; closeComposer(i); return; }
+  if (t.closest('#clearDone')){ clearDone(); return; }
+  var mb = t.closest('[data-more]'); if (mb){ shown[i] = Math.max(PAGE, shown[i]) + PAGE; render(); return; }
+  if (Date.now() - D.endAt < 400) return;
+  var card = t.closest('.card'); if (!card) return;
+  if (t.closest('[data-adv]')){ advance(card.dataset.id); return; }
+  openCard(card.dataset.id);
+});
+function confirmDrop(ta){ var items = KB.parseLines(ta.value); if (!items.length) return true; submitComposer(+ta.closest('.list').dataset.col); return false; }
+boardEl.addEventListener('pointerdown', function(e){ if (e.target.closest('[data-cadd],[data-cclose]')) e.preventDefault(); });
+boardEl.addEventListener('keydown', function(e){
+  var ta = e.target.closest('.composer textarea');
+  if (ta){
+    var i = +ta.closest('.list').dataset.col;
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); submitComposer(i); }
+    else if (e.key === 'Escape'){ e.preventDefault(); if (!ta.value.trim()) closeComposer(i); else ta.blur(); }
+    return;
+  }
+  var card = e.target.closest('.card');
+  if (card && e.target === card && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); openCard(card.dataset.id); }
+});
+boardEl.addEventListener('input', function(e){
+  var ta = e.target.closest('.composer textarea'); if (!ta) return;
+  grow(ta);
+  var k = draftKey(+ta.closest('.list').dataset.col);
+  if (ta.value) ui.drafts[k] = ta.value; else delete ui.drafts[k];
+  saveUI();
+});
+boardEl.addEventListener('focusout', function(e){
+  var ta = e.target.closest('.composer textarea'); if (!ta) return;
+  setTimeout(function(){ if (document.activeElement !== ta && !ta.value.trim()) closeComposer(+ta.closest('.list').dataset.col); }, 150);
+});
+boardEl.addEventListener('contextmenu', function(e){ if (e.target.closest('.card')) e.preventDefault(); });
+
+/* ---------- actions ---------- */
+function advance(id){
+  var b = board(), f = KB.find(b, id); if (!f || f.col > 1) return;
+  var el = lists[f.col].querySelector('[data-id="' + id + '"]');
+  if (el && !reduced()){
+    var r = el.getBoundingClientRect(), g = document.createElement('div'), gc = el.cloneNode(true);
+    gc.classList.remove('pop', 'flash'); g.appendChild(gc);
+    g.className = 'leave c' + f.col + 'v'; g.style.left = r.left + 'px'; g.style.top = r.top + 'px'; g.style.width = r.width + 'px'; g.style.height = r.height + 'px';
+    document.body.appendChild(g); setTimeout(function(){ g.remove(); }, 400);
+  }
+  var to = f.col + 1;
+  commit(to === 1 ? '開始「' + short(f.card.title) + '」' : '完成「' + short(f.card.title) + '」');
+  KB.move(b, id, to, 0, Date.now());
+  enterIds[id] = 1;
+  render(); bumpTab(to); buzz(8);
+  if (to === 2) celebrateMaybe();
+  undoToast((to === 1 ? '已開始：' : '已完成：') + short(f.card.title));
+}
+function short(s){ var a = Array.from(s); return a.length > 14 ? a.slice(0, 13).join('') + '…' : s; }
+function clearDone(){
+  var b = board(), n = b.cols[2].length; if (!n) return;
+  commit('清除 ' + n + ' 張已完成'); b.cols[2] = []; render();
+  undoToast('已清除 ' + n + ' 張已完成的卡片');
+}
+function celebrateMaybe(){
+  var n = KB.counts(board());
+  if (n[0] || n[1] || !n[2]) return;
+  setTimeout(function(){ toast('這個看板全部完成了，辛苦了！', '', null, 2600); }, 50);
+  if (reduced()) return;
+  var t = wide() ? $('#hn2') : $('#tab2'), r = t.getBoundingClientRect(), cs = getComputedStyle(document.documentElement);
+  var cols = ['--c0', '--c1', '--c2', '--l-red', '--l-blue', '--l-yellow'].map(function(v){ return cs.getPropertyValue(v); });
+  for (var k = 0; k < 18; k++){
+    var p = document.createElement('i'); p.className = 'burst';
+    var a = Math.random() * Math.PI * 2, d = 40 + Math.random() * 70;
+    p.style.left = (r.left + r.width / 2) + 'px'; p.style.top = (r.top + r.height / 2) + 'px'; p.style.background = cols[k % cols.length];
+    p.style.setProperty('--dx', Math.cos(a) * d + 'px'); p.style.setProperty('--dy', Math.sin(a) * d + 40 + 'px'); p.style.setProperty('--r', (Math.random() * 540 - 270) + 'deg');
+    document.body.appendChild(p); setTimeout(p.remove.bind(p), 1000);
+  }
+}
+
+/* ---------- drag & drop ---------- */
+var D = {on:false, pend:null, endAt:0};
+var LONG = 320, SLOP = 9;
+function pendStart(card, x, y, touch, id){
+  if (D.on || D.pend) return;
+  D.pend = {card:card, x:x, y:y, touch:touch, tid:id, timer: touch ? setTimeout(function(){ startDrag(D.pend.x, D.pend.y); }, LONG) : 0};
+  if (touch) card.classList.add('press');
+}
+function pendCancel(){ if (!D.pend) return; clearTimeout(D.pend.timer); D.pend.card.classList.remove('press'); D.pend = null; }
+function startDrag(x, y){
+  var p = D.pend; if (!p) return;
+  clearTimeout(p.timer); D.pend = null;
+  var card = p.card; card.classList.remove('press');
+  if (!card.isConnected) return;
+  closeAllComposersSoft();
+  var r = card.getBoundingClientRect(), b = board(), f = KB.find(b, card.dataset.id); if (!f) return;
+  var g = document.createElement('div'), gc = card.cloneNode(true);
+  g.className = 'ghost c' + f.col + 'v'; gc.classList.remove('pop', 'flash', 'press'); g.appendChild(gc);
+  g.style.width = r.width + 'px'; g.style.height = r.height + 'px';
+  document.body.appendChild(g);
+  card.classList.add('ph');
+  D.on = true; D.card = card; D.ghost = g; D.id = card.dataset.id; D.from = {col:f.col, idx:f.idx}; D.touch = p.touch; D.tid = p.tid;
+  D.ox = x - r.left; D.oy = y - r.top; D.x = x; D.y = y; D.tab = -1; D.tabT = 0; D.edge = 0; D.edgeT = 0; D.edgeLock = 0; D.list = f.col; D.pendingRender = false;
+  D.rot = 0;
+  boardEl.classList.add('dragging'); document.body.classList.add('kb-drag');
+  moveGhost();
+  buzz(12);
+  if (!wide()) showEdges();
+  D.raf = requestAnimationFrame(tick);
+}
+function closeAllComposersSoft(){ var a = document.activeElement; if (a && a.closest && a.closest('.composer')) a.blur(); }
+function moveGhost(){
+  var tx = D.x - D.ox, ty = D.y - D.oy;
+  D.ghost.style.transform = 'translate3d(' + tx + 'px,' + ty + 'px,0) rotate(' + (reduced() ? 0 : 1.6) + 'deg) scale(1.03)';
+}
+function showEdges(){
+  var L = $('#edgeL'), R = $('#edgeR');
+  if (curCol > 0){ L.className = 'edge l on c' + (curCol - 1) + 'v'; L.innerHTML = I.arrowL + KB.COLS[curCol - 1].name; } else L.className = 'edge l';
+  if (curCol < 2){ R.className = 'edge r on c' + (curCol + 1) + 'v'; R.innerHTML = KB.COLS[curCol + 1].name + I.arrowR; } else R.className = 'edge r';
+}
+function hideEdges(){ $('#edgeL').className = 'edge l'; $('#edgeR').className = 'edge r'; }
+function pointList(x){
+  for (var i = 0; i < 3; i++){ var r = scrollers[i].getBoundingClientRect(); if (r.width && x >= r.left && x <= r.right) return i; }
+  return -1;
+}
+function place(){
+  // tabs as drop targets
+  var tab = -1;
+  if (!wide()){ var tr = tabsEl.getBoundingClientRect(); if (D.y >= tr.top - 4 && D.y <= tr.bottom + 4 && D.x >= tr.left && D.x <= tr.right) tab = Math.max(0, Math.min(2, Math.floor((D.x - tr.left) / (tr.width / 3)))); }
+  if (tab !== D.tab){
+    if (D.tab >= 0) $('#tab' + D.tab).classList.remove('drop');
+    D.tab = tab; D.tabT = performance.now();
+    if (tab >= 0) $('#tab' + tab).classList.add('drop');
+  }
+  if (tab >= 0){
+    if (tab !== curCol && performance.now() - D.tabT > 380){ goCol(tab); D.tabT = Infinity; }
+    return;
+  }
+  var li = pointList(D.x); if (li < 0) li = D.list;
+  var sc = scrollers[li], sr = sc.getBoundingClientRect(), y = Math.max(sr.top + 1, Math.min(sr.bottom - 1, D.y));
+  var list = lists[li], kids = list.children, lo = 0, hi = kids.length;
+  while (lo < hi){ var mid = (lo + hi) >> 1, r = kids[mid].getBoundingClientRect(); if (y < r.top + r.height / 2) hi = mid; else lo = mid + 1; }
+  var before = kids[lo] || null;
+  if (D.card.parentNode === list && (before === D.card.nextSibling || before === D.card)) return;
+  if (D.card.parentNode === list && before == null && D.card.nextSibling == null) return;
+  flipMove(function(){ list.insertBefore(D.card, before); }, [lists[D.list], list]);
+  if (li !== D.list){ updEmpty(D.list); D.list = li; updEmpty(li); buzz(6); }
+}
+function updEmpty(i){
+  var n = lists[i].children.length; scrollers[i].querySelector('.empty').hidden = n > 0;
+}
+function flipMove(mut, ls){
+  if (reduced() || ls[0].children.length + ls[1].children.length > 160){ mut(); return; }
+  var els = [], tops = [];
+  ls.forEach(function(l){ for (var k = 0; k < l.children.length; k++){ var el = l.children[k]; if (el !== D.card){ els.push(el); tops.push(el.getBoundingClientRect().top); } } });
+  mut();
+  for (var k = 0; k < els.length; k++){
+    var d = tops[k] - els[k].getBoundingClientRect().top;
+    if (Math.abs(d) < 1 || Math.abs(d) > 600) continue;
+    var el = els[k]; el.style.transition = 'none'; el.style.transform = 'translateY(' + d + 'px)';
+  }
+  void document.body.offsetHeight;
+  for (k = 0; k < els.length; k++){ if (els[k].style.transform){ els[k].style.transition = 'transform .2s cubic-bezier(.2,.8,.2,1)'; els[k].style.transform = ''; } }
+}
+function tick(){
+  if (!D.on) return;
+  var now = performance.now();
+  // vertical auto-scroll in the column under the finger
+  var li = pointList(D.x); if (li < 0) li = D.list;
+  var sc = scrollers[li], r = sc.getBoundingClientRect(), Z = Math.min(64, r.height / 4), v = 0;
+  if (D.y < r.top + Z) v = -Math.ceil(16 * Math.min(1, (r.top + Z - D.y) / Z));
+  else if (D.y > r.bottom - Z) v = Math.ceil(16 * Math.min(1, (D.y - (r.bottom - Z)) / Z));
+  if (D.tab >= 0) v = 0;
+  if (v) sc.scrollTop += v;
+  // horizontal: edge zones switch column after a short dwell (phone)
+  if (!wide()){
+    var br = boardEl.getBoundingClientRect(), EZ = 40, edge = 0;
+    if (D.x < br.left + EZ && curCol > 0) edge = -1; else if (D.x > br.right - EZ && curCol < 2) edge = 1;
+    if (D.tab >= 0) edge = 0;
+    if (edge !== D.edge){ D.edge = edge; D.edgeT = now; $('#edgeL').classList.toggle('hot', edge < 0); $('#edgeR').classList.toggle('hot', edge > 0); }
+    if (edge && now - D.edgeT > 340 && now > D.edgeLock){
+      goCol(curCol + edge); D.edgeLock = now + 650; D.edgeT = now + 650;
+      setTimeout(function(){ if (D.on) showEdges(); }, reduced() ? 20 : 380);
+    }
+  }
+  place();
+  D.raf = requestAnimationFrame(tick);
+}
+function endDrag(cancel){
+  if (!D.on) return;
+  cancelAnimationFrame(D.raf);
+  var b = board(), id = D.id, g = D.ghost, card = D.card, toCol, toIdx, tab = D.tab;
+  if (tab >= 0){ $('#tab' + tab).classList.remove('drop'); toCol = tab; toIdx = 0; }
+  else { toCol = D.list; toIdx = Array.prototype.indexOf.call(lists[toCol].children, card); }
+  if (cancel){ toCol = D.from.col; toIdx = D.from.idx; }
+  hideEdges(); $('#edgeL').classList.remove('hot'); $('#edgeR').classList.remove('hot');
+  boardEl.classList.remove('dragging'); document.body.classList.remove('kb-drag');
+  D.on = false; D.endAt = Date.now();
+  var f = KB.find(b, id), changed = false, fromCol = f ? f.col : -1, title = f ? f.card.title : '';
+  if (f && (f.col !== toCol || f.idx !== toIdx)){
+    var tmp = JSON.parse(snap());
+    commit(fromCol !== toCol ? '移到「' + KB.COLS[toCol].name + '」' : '調整順序');
+    changed = KB.move(b, id, toCol, toIdx, Date.now());
+    if (!changed){ undoStack.pop(); updUndo(); restore(JSON.stringify(tmp)); }
+  }
+  var finish = function(){
+    g.remove();
+    if (changed) flashId = id;
+    render();
+    if (!wide() && changed && fromCol !== toCol){ var target = toCol; if (curCol !== target) goCol(target); }
+    if (changed && fromCol !== toCol){ bumpTab(toCol); buzz(8); undoToast('已移到「' + KB.COLS[toCol].name + '」：' + short(title)); if (toCol === 2) celebrateMaybe(); }
+  };
+  if (reduced() || tab >= 0 || !card.isConnected){ if (tab >= 0 && !reduced()){ g.classList.add('land'); var tr = $('#tab' + tab).getBoundingClientRect(); g.style.opacity = '0'; g.style.transform = 'translate3d(' + (tr.left + tr.width / 2 - g.offsetWidth / 2) + 'px,' + (tr.top - 10) + 'px,0) scale(.3)'; setTimeout(finish, 170); } else finish(); return; }
+  var pr = card.getBoundingClientRect();
+  g.classList.add('land');
+  g.style.transform = 'translate3d(' + pr.left + 'px,' + pr.top + 'px,0)';
+  g.style.boxShadow = 'var(--shadow-card)';
+  setTimeout(finish, 175);
+}
+// touch: long-press to pick up; moving before that is a normal scroll
+boardEl.addEventListener('touchstart', function(e){
+  if (e.touches.length > 1){ pendCancel(); return; }
+  var t = e.changedTouches[0], card = e.target.closest('.card');
+  if (!card || e.target.closest('[data-adv]') || card.classList.contains('ph')) return;
+  pendStart(card, t.clientX, t.clientY, true, t.identifier);
+}, {passive:true});
+document.addEventListener('touchmove', function(e){
+  var t = null;
+  for (var k = 0; k < e.changedTouches.length; k++) if ((D.on ? D.tid : D.pend && D.pend.tid) === e.changedTouches[k].identifier) t = e.changedTouches[k];
+  if (D.pend && D.pend.touch){
+    if (!t) return;
+    if (Math.abs(t.clientX - D.pend.x) > SLOP || Math.abs(t.clientY - D.pend.y) > SLOP) pendCancel();
+    return;
+  }
+  if (!D.on || !D.touch) return;
+  if (e.cancelable) e.preventDefault();
+  if (!t) return;
+  D.x = t.clientX; D.y = t.clientY; moveGhost();
+}, {passive:false});
+function touchEnd(e){
+  var mine = false;
+  for (var k = 0; k < e.changedTouches.length; k++) if ((D.on ? D.tid : D.pend && D.pend.tid) === e.changedTouches[k].identifier) mine = true;
+  if (!mine) return;
+  if (D.pend){ pendCancel(); return; }
+  if (D.on && D.touch){ if (e.cancelable) e.preventDefault(); endDrag(e.type === 'touchcancel'); }
+}
+document.addEventListener('touchend', touchEnd, {passive:false});
+document.addEventListener('touchcancel', touchEnd, {passive:false});
+// mouse / pen: drag after moving a few pixels
+boardEl.addEventListener('pointerdown', function(e){
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  var card = e.target.closest('.card');
+  if (!card || e.target.closest('[data-adv]')) return;
+  pendStart(card, e.clientX, e.clientY, false, e.pointerId);
+});
+addEventListener('pointermove', function(e){
+  if (e.pointerType === 'touch') return;
+  if (D.pend && !D.pend.touch){ if (Math.abs(e.clientX - D.pend.x) > 5 || Math.abs(e.clientY - D.pend.y) > 5){ D.pend.x = e.clientX; D.pend.y = e.clientY; startDrag(e.clientX, e.clientY); } return; }
+  if (D.on && !D.touch){ D.x = e.clientX; D.y = e.clientY; moveGhost(); e.preventDefault(); }
+});
+addEventListener('pointerup', function(e){ if (e.pointerType === 'touch') return; if (D.pend && !D.pend.touch) pendCancel(); else if (D.on && !D.touch) endDrag(false); });
+addEventListener('keydown', function(e){ if (e.key === 'Escape' && D.on) endDrag(true); });
+addEventListener('blur', function(){ if (D.on) endDrag(false); pendCancel(); });
+document.addEventListener('selectstart', function(e){ if (D.on || D.pend) e.preventDefault(); });
+
+/* ---------- sheets ---------- */
+var sheet = null, sheetClose = null;
+function openSheet(title, body, foot, opts){
+  closeSheet(true); hideToast();
+  opts = opts || {};
+  var sc = document.createElement('div'); sc.className = 'scrim';
+  var sh = document.createElement('div'); sh.className = 'sheet' + (opts.cls ? ' ' + opts.cls : ''); sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.setAttribute('aria-labelledby', 'shTitle');
+  sh.innerHTML = '<div class="grab" aria-hidden="true"></div><div class="shead"><h2 id="shTitle">' + title + '</h2><button class="iconbtn" data-close aria-label="關閉">' + I.x + '</button></div><div class="snote" role="status" aria-live="polite" hidden></div><div class="sbody">' + body + '</div>' + (foot ? '<div class="sfoot">' + foot + '</div>' : '');
+  document.body.appendChild(sc); document.body.appendChild(sh);
+  $('#app').inert = true; document.body.classList.add('sheet-open');
+  sheet = {el:sh, scrim:sc, ret:document.activeElement};
+  sheetClose = opts.onClose || null;
+  sc.addEventListener('click', function(){ closeSheet(); });
+  sh.addEventListener('click', function(e){ if (e.target.closest('[data-close]')) closeSheet(); });
+  requestAnimationFrame(function(){ sc.classList.add('on'); sh.classList.add('on'); });
+  if (opts.focus){ var f = sh.querySelector(opts.focus); if (f) setTimeout(function(){ f.focus(); }, wide() ? 30 : 280); }
+  else setTimeout(function(){ var c = sh.querySelector('[data-close]'); if (c && !sh.contains(document.activeElement)) c.focus({preventScroll:true}); }, 30);
+  return sh;
+}
+function closeSheet(instant){
+  if (!sheet) return;
+  var s = sheet, fn = sheetClose; sheet = null; sheetClose = null;
+  if (fn) fn();
+  $('#app').inert = false; document.body.classList.remove('sheet-open');
+  if (instant || reduced()){ s.el.remove(); s.scrim.remove(); }
+  else { s.el.classList.remove('on'); s.scrim.classList.remove('on'); setTimeout(function(){ s.el.remove(); s.scrim.remove(); }, 260); }
+  if (s.ret && s.ret.isConnected && s.ret.focus) try { s.ret.focus({preventScroll:true}); } catch(e){}
+}
+addEventListener('keydown', function(e){ if (e.key === 'Escape' && sheet){ e.preventDefault(); closeSheet(); } });
+if (window.visualViewport){
+  var kb = function(){ var vv = visualViewport, h = Math.max(0, innerHeight - vv.height - vv.offsetTop); document.documentElement.style.setProperty('--kb', (h > 60 ? h : 0) + 'px'); };
+  visualViewport.addEventListener('resize', kb); visualViewport.addEventListener('scroll', kb);
+}
+
+/* ---------- card detail ---------- */
+function openCard(id){
+  var b = board(), f = KB.find(b, id); if (!f) return;
+  var c = f.card, touched = false, origTitle = c.title, td = today();
+  var colorBtns = '<button class="none" data-color="" aria-label="無標籤" aria-pressed="' + !c.color + '"><i></i></button>' + KB.COLORS.map(function(k){ return '<button data-color="' + k + '" style="--lc:var(--l-' + k + ')" aria-label="' + KB.COLOR_NAMES[k] + '色" aria-pressed="' + (c.color === k) + '"><i></i></button>'; }).join('');
+  var otherBoards = state.boards.filter(function(x){ return x.id !== b.id; });
+  var body =
+    '<label class="fld"><span class="lbl">標題</span><textarea class="inp title" id="dTitle" rows="1" enterkeyhint="done">' + esc(c.title) + '</textarea></label><div class="err-msg" id="dTitleErr"></div>' +
+    '<div class="fld"><span class="lbl">欄位</span><div class="seg" id="dCol">' + KB.COLS.map(function(k, i){ return '<button class="c' + i + 'v" data-col="' + i + '" aria-pressed="' + (f.col === i) + '"><span class="dot"></span>' + k.name + '</button>'; }).join('') + '</div>' +
+      '<div class="ord" id="dOrd"><button class="btn" data-ord="top" aria-label="移到最上">' + I.top + '最上</button><button class="btn" data-ord="up" aria-label="上移一格">' + I.up + '上移</button><button class="btn" data-ord="down" aria-label="下移一格">' + I.down + '下移</button><button class="btn" data-ord="bottom" aria-label="移到最下">' + I.bottom + '最下</button></div></div>' +
+    '<div class="fld"><span class="lbl">' + I.cal + '到期日</span><div class="duerow"><input class="inp" type="date" id="dDue" value="' + (c.due || '') + '" aria-label="到期日"></div>' +
+      '<div class="row" style="margin-top:8px"><button class="pill" data-due="0">今天</button><button class="pill" data-due="1">明天</button><button class="pill" data-due="mon">下週一</button><button class="pill" data-due="7">一週後</button><button class="pill" data-due="">不設定</button></div><div class="duehint" id="dDueHint"></div></div>' +
+    '<div class="fld"><span class="lbl">顏色標籤</span><div class="sw" id="dColor">' + colorBtns + '</div></div>' +
+    '<label class="fld"><span class="lbl">' + I.note.replace('viewBox', 'width="15" height="15" viewBox') + '備註</span><textarea class="inp" id="dNote" rows="3" placeholder="細節、連結、電話…">' + esc(c.note) + '</textarea></label><div class="err-msg" id="dNoteErr"></div>' +
+    (otherBoards.length ? '<label class="fld"><span class="lbl">' + I.board.replace('viewBox', 'width="15" height="15" viewBox') + '移到其他看板</span><select class="inp" id="dBoard"><option value="">（留在「' + esc(b.name) + '」）</option>' + otherBoards.map(function(x){ return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label>' : '') +
+    '<p class="meta" id="dMeta"></p>';
+  var foot = '<button class="btn danger" id="dDel">' + I.trash + '刪除</button><span class="grow"></span><button class="btn pri" data-close>完成</button>';
+  var sh = openSheet('<span class="dot" id="dDot"></span><span id="dHead">' + KB.COLS[f.col].name + '</span>', body, foot, {cls:'c' + f.col + 'v', onClose:function(){
+    var cur = KB.find(board(), id);
+    if (cur && !KB.normTitle(cur.card.title)){ cur.card.title = origTitle; render(); }
+  }});
+  var q = function(s){ return sh.querySelector(s); };
+  function touch(){ if (!touched){ commit('編輯「' + short(c.title) + '」'); touched = true; } }
+  function where(){ return KB.find(board(), id); }
+  function refresh(){
+    var w = where(); if (!w) return;
+    sh.className = 'sheet on c' + w.col + 'v';
+    q('#dHead').textContent = KB.COLS[w.col].name + '・第 ' + (w.idx + 1) + ' / ' + board().cols[w.col].length + ' 張';
+    $$('#dCol button', sh).forEach(function(bt){ bt.setAttribute('aria-pressed', +bt.dataset.col === w.col); });
+    var n = board().cols[w.col].length;
+    q('[data-ord="top"]').disabled = q('[data-ord="up"]').disabled = w.idx === 0;
+    q('[data-ord="down"]').disabled = q('[data-ord="bottom"]').disabled = w.idx >= n - 1;
+    var di = KB.dueInfo(w.card.due, td, w.col === 2), hint = q('#dDueHint');
+    hint.className = 'duehint' + (di ? ' ' + di.level : '');
+    hint.textContent = di ? (di.level === 'later' || di.level === 'done' ? di.full + (w.col !== 2 ? '・還有 ' + di.diff + ' 天' : '') : di.full + '・' + di.text) : '';
+    var cr = new Date(w.card.created), m = '建立於 ' + (cr.getFullYear() !== new Date().getFullYear() ? cr.getFullYear() + '/' : '') + (cr.getMonth() + 1) + '/' + cr.getDate();
+    if (w.card.doneAt){ var dd = new Date(w.card.doneAt); m += '・完成於 ' + (dd.getMonth() + 1) + '/' + dd.getDate() + ' ' + String(dd.getHours()).padStart(2, '0') + ':' + String(dd.getMinutes()).padStart(2, '0'); }
+    q('#dMeta').textContent = m;
+  }
+  refresh();
+  var ti = q('#dTitle'); grow(ti); requestAnimationFrame(function(){ grow(ti); });
+  ti.addEventListener('input', function(){
+    grow(ti); var v = KB.normTitle(ti.value), w = where(); if (!w) return;
+    q('#dTitleErr').textContent = !v ? '標題不能空白；關閉時會還原成原本的標題。' : KB.fullTitle(ti.value).length > v.length ? '標題最多 300 字，超出的 ' + (Array.from(KB.fullTitle(ti.value)).length - Array.from(v).length) + ' 字不會保存；較長的內容請寫在備註。' : '';
+    if (!v) return;
+    if (v !== w.card.title){ touch(); w.card.title = v; render(); }
+  });
+  ti.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); ti.blur(); } });
+  q('#dNote').addEventListener('input', function(e){ var w = where(); if (!w) return; var nl = Array.from(e.target.value.replace(/\s+$/, '')).length; q('#dNoteErr').textContent = nl > KB.LIM.note ? '備註最多 5000 字，超出的 ' + (nl - KB.LIM.note) + ' 字不會保存。' : ''; var v = KB.normNote(e.target.value); if (v !== w.card.note){ touch(); w.card.note = v; render(); } });
+  function setDue(v){ var w = where(); if (!w) return; v = v ? KB.validDate(v) : null; if (v !== w.card.due){ touch(); w.card.due = v; render(); } q('#dDue').value = v || ''; refresh(); }
+  q('#dDue').addEventListener('change', function(e){ setDue(e.target.value); });
+  q('#dDue').addEventListener('input', function(e){ if (!e.target.value || KB.validDate(e.target.value)) setDue(e.target.value); });
+  $$('[data-due]', sh).forEach(function(bt){ bt.addEventListener('click', function(){ var v = bt.dataset.due; setDue(v === '' ? null : v === 'mon' ? KB.nextMonday(td) : KB.addDays(td, +v)); }); });
+  $$('#dColor button', sh).forEach(function(bt){ bt.addEventListener('click', function(){
+    var w = where(); if (!w) return; var v = bt.dataset.color || null;
+    if (v !== w.card.color){ touch(); w.card.color = v; render(); }
+    $$('#dColor button', sh).forEach(function(x){ x.setAttribute('aria-pressed', x === bt); });
+  }); });
+  $$('#dCol button', sh).forEach(function(bt){ bt.addEventListener('click', function(){
+    var w = where(); if (!w) return; var to = +bt.dataset.col; if (to === w.col) return;
+    touch(); KB.move(board(), id, to, 0, Date.now()); render(); bumpTab(to); refresh(); goCol(to);
+    if (to === 2) celebrateMaybe();
+  }); });
+  $$('[data-ord]', sh).forEach(function(bt){ bt.addEventListener('click', function(){
+    var w = where(); if (!w) return; var n = board().cols[w.col].length, k = bt.dataset.ord;
+    var to = k === 'top' ? 0 : k === 'up' ? w.idx - 1 : k === 'down' ? w.idx + 1 : n - 1;
+    if (to < 0 || to >= n || to === w.idx) return;
+    touch(); KB.move(board(), id, w.col, to); render(); refresh();
+  }); });
+  var sel = q('#dBoard');
+  if (sel) sel.addEventListener('change', function(){
+    var tb = state.boards.find(function(x){ return x.id === sel.value; }), w = where(); if (!tb || !w) return;
+    if (tb.cols.reduce(function(a, l){ return a + l.length; }, 0) >= KB.LIM.cards){ toast('「' + tb.name + '」已滿 ' + KB.LIM.cards + ' 張。'); sel.value = ''; return; }
+    var name = tb.name;
+    if (!touched) commit('移到看板「' + short(name) + '」'); touched = true;
+    board().cols[w.col].splice(w.idx, 1); tb.cols[w.col].unshift(w.card);
+    closeSheet(); render(); undoToast('已移到看板「' + short(name) + '」');
+  });
+  q('#dDel').addEventListener('click', function(){
+    var w = where(); if (!w) return;
+    commit('刪除「' + short(w.card.title) + '」');
+    board().cols[w.col].splice(w.idx, 1);
+    closeSheet(); render(); undoToast('已刪除「' + short(w.card.title) + '」');
+  });
+}
+
+/* ---------- boards ---------- */
+function boardRow(x){
+  var n = KB.counts(x);
+  return '<button class="lrow" data-board="' + x.id + '" aria-current="' + (x.id === state.cur) + '"><span class="ic">' + I.board + '</span><span class="tx"><b>' + esc(x.name) + (x.sample ? '<span class="chip" style="margin-left:6px;vertical-align:2px">範例</span>' : '') + '</b><small>' + (n[0] + n[1] + n[2]) + ' 張卡片</small></span>' +
+    '<span class="mini" aria-label="待辦 ' + n[0] + '、進行中 ' + n[1] + '、完成 ' + n[2] + '"><i class="c0v">' + n[0] + '</i><i class="c1v">' + n[1] + '</i><i class="c2v">' + n[2] + '</i></span></button>';
+}
+function openBoards(){
+  var b = board();
+  var body = '<div class="sec">我的看板（' + state.boards.length + '）</div><div id="bList">' + state.boards.map(boardRow).join('') + '</div>' +
+    '<div class="sec">新增看板</div><div class="duerow" style="margin-top:6px"><input class="inp" id="bNew" maxlength="40" placeholder="例如：工作、讀書計畫" enterkeyhint="done" aria-label="新看板名稱"><button class="btn pri" id="bAdd">' + I.plus + '新增</button></div><div class="err-msg" id="bErr"></div>' +
+    '<div class="sec">目前看板</div>' +
+    '<button class="lrow" id="bRename"><span class="ic">' + I.pen + '</span><span class="tx"><b>重新命名「' + esc(b.name) + '」</b></span></button>' +
+    '<button class="lrow danger" id="bDel"><span class="ic">' + I.trash + '</span><span class="tx"><b>刪除這個看板</b><small>連同 ' + (KB.counts(b).reduce(function(a, x){ return a + x; }, 0)) + ' 張卡片，可以復原</small></span></button>';
+  var sh = openSheet('看板', body, '');
+  sh.querySelector('#bList').addEventListener('click', function(e){
+    var r = e.target.closest('[data-board]'); if (!r) return;
+    switchBoard(r.dataset.board); closeSheet();
+  });
+  var inp = sh.querySelector('#bNew');
+  var add = function(){
+    var name = KB.normTitle(inp.value).slice(0, 40);
+    if (!name){ sh.querySelector('#bErr').textContent = '請輸入看板名稱。'; inp.focus(); return; }
+    if (state.boards.length >= KB.LIM.boards){ sh.querySelector('#bErr').textContent = '最多 ' + KB.LIM.boards + ' 個看板。'; return; }
+    commit('新增看板「' + short(name) + '」');
+    var nb = {id:KB.uid(), name:name, cols:[[], [], []]}; state.boards.push(nb);
+    closeSheet(); switchBoard(nb.id); openComposer(0, true);
+    toast('已建立「' + short(name) + '」');
+  };
+  sh.querySelector('#bAdd').addEventListener('click', add);
+  inp.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); add(); } });
+  sh.querySelector('#bRename').addEventListener('click', openRename);
+  sh.querySelector('#bDel').addEventListener('click', function(){
+    var cb = board(), i = state.boards.indexOf(cb);
+    commit('刪除看板「' + short(cb.name) + '」');
+    state.boards.splice(i, 1);
+    if (!state.boards.length) state.boards.push({id:KB.uid(), name:'我的看板', cols:[[], [], []]});
+    state.cur = state.boards[Math.max(0, i - 1)].id;
+    closeSheet(); render(); goCol(ui.col[state.cur] || 0, true);
+    undoToast('已刪除看板「' + short(cb.name) + '」');
+  });
+}
+function switchBoard(id){
+  if (id === state.cur) return;
+  for (var i = 0; i < 3; i++) closeComposer(i);
+  state.cur = id; shown = [PAGE, PAGE, PAGE]; render(); goCol(ui.col[id] || 0, true);
+}
+function openRename(){
+  var b = board(), orig = b.name, touched = false;
+  var sh = openSheet('重新命名看板', '<label class="fld"><span class="lbl">看板名稱</span><input class="inp" id="rName" maxlength="40" value="' + esc(b.name) + '" enterkeyhint="done"></label><div class="err-msg" id="rErr"></div>', '<span class="grow"></span><button class="btn pri" data-close>完成</button>', {focus:'#rName', onClose:function(){
+    if (!KB.normTitle(b.name)){ b.name = orig; render(); }
+  }});
+  var inp = sh.querySelector('#rName');
+  inp.addEventListener('input', function(){
+    var v = KB.normTitle(inp.value).slice(0, 40);
+    sh.querySelector('#rErr').textContent = v ? '' : '名稱不能空白；關閉時會保留原本的名稱。';
+    if (!v || v === b.name) return;
+    if (!touched){ commit('重新命名看板'); touched = true; }
+    b.name = v; if (b.sample) delete b.sample; render();
+  });
+  inp.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); closeSheet(); } });
+}
+$('#boardBtn').addEventListener('click', openBoards);
+$('#sampleClear').addEventListener('click', function(){
+  var b = board(); commit('清空範例');
+  b.cols = [[], [], []]; b.name = '我的看板'; delete b.sample;
+  render(); goCol(0); openComposer(0, true);
+  undoToast('範例已清空，開始寫第一張卡片吧');
+});
+$('#sampleKeep').addEventListener('click', function(){ var b = board(); delete b.sample; render(); toast('已保留範例卡片，可以直接改來用'); });
+
+/* ---------- menu: export / import / theme ---------- */
+var downloads = null;
+function themeName(){ var t = store.get(KTHEME); return t === 'light' || t === 'dark' ? t : 'auto'; }
+function applyTheme(t){ if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
+applyTheme(themeName());
+function fileName(){ return 'kanban-' + today() + '.json'; }
+function exportText(){ return JSON.stringify(KB.exportData(state, Date.now()), null, 1); }
+async function saveFile(name, data, fallback){
+  if (downloads){
+    try { await downloads.save({filename:name, data:data}); toast('已匯出 ' + name); return; }
+    catch(e){ if (e && /declin|denied|cancel|abort/i.test(String(e.message || e))){ toast('已取消下載'); return; } }
+  }
+  try {
+    var url = URL.createObjectURL(new Blob([data], {type:'application/json'}));
+    var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    toast('已下載 ' + name + '（若沒看到檔案，改用「複製」）', '', null, 3600);
+  } catch(e){ fallback(); }
+}
+$('#corruptDl').addEventListener('click', function(){
+  var raw = corruptRaw;
+  saveFile('kanban-damaged-' + today() + '.json', raw, function(){ try { navigator.clipboard.writeText(raw).then(function(){ toast('已複製原始資料'); }); } catch(e){} });
+});
+$('#corruptX').addEventListener('click', function(){ $('#corruptBar').hidden = true; });
+function openMenu(){
+  var b = board(), n = KB.counts(b), all = state.boards.reduce(function(a, x){ return a + KB.counts(x).reduce(function(p, q){ return p + q; }, 0); }, 0);
+  var t = themeName();
+  var body =
+    '<div class="sec">備份</div>' +
+    '<button class="lrow" id="mExport"><span class="ic">' + I.dl + '</span><span class="tx"><b>匯出 JSON 備份</b><small>' + state.boards.length + ' 個看板、' + all + ' 張卡片</small></span></button>' +
+    '<button class="lrow" id="mCopy"><span class="ic">' + I.copy + '</span><span class="tx"><b>複製備份文字</b><small>貼到記事本或傳給自己</small></span></button>' +
+    '<button class="lrow" id="mImport"><span class="ic">' + I.ul + '</span><span class="tx"><b>匯入</b><small>JSON 備份檔，或貼上一行一件事的清單</small></span></button>' +
+    '<textarea class="inp expout" id="mOut" readonly hidden aria-label="備份內容"></textarea>' +
+    '<div class="sec">這個看板</div>' +
+    '<button class="lrow" id="mClear"' + (n[2] ? '' : ' disabled') + '><span class="ic">' + I.sweep + '</span><span class="tx"><b>清除已完成</b><small>' + (n[2] ? n[2] + ' 張，可以復原' : '目前沒有已完成的卡片') + '</small></span></button>' +
+    '<div class="sec">外觀</div><div class="seg" id="mTheme" style="margin-top:6px"><button data-t="auto" aria-pressed="' + (t === 'auto') + '">跟隨系統</button><button data-t="light" aria-pressed="' + (t === 'light') + '">淺色</button><button data-t="dark" aria-pressed="' + (t === 'dark') + '">深色</button></div>' +
+    '<p class="note">' + I.lock.replace('viewBox', 'width="13" height="13" style="vertical-align:-2px" viewBox') + ' 資料只存在這台裝置的瀏覽器，不會上傳。清除瀏覽器資料前記得先匯出備份。操作錯了可以按上方的 ↶ 復原。</p>';
+  var sh = openSheet('選單', body, '');
+  var q = function(s){ return sh.querySelector(s); };
+  q('#mExport').addEventListener('click', function(){ var data = exportText(); saveFile(fileName(), data, function(){ showOut(data); }); });
+  function showOut(data){
+    var o = q('#mOut'); o.hidden = false; o.value = data;
+    var done = function(){ toast('已複製備份文字，' + data.length.toLocaleString() + ' 字'); };
+    try { navigator.clipboard.writeText(data).then(done, function(){ o.focus(); o.select(); toast('請長按下方文字全選並複製'); }); }
+    catch(e){ o.focus(); o.select(); toast('請長按下方文字全選並複製'); }
+  }
+  q('#mCopy').addEventListener('click', function(){ showOut(exportText()); });
+  q('#mImport').addEventListener('click', openImport);
+  q('#mClear').addEventListener('click', function(){ closeSheet(); clearDone(); });
+  $$('#mTheme button', sh).forEach(function(bt){ bt.addEventListener('click', function(){
+    var v = bt.dataset.t; if (v === 'auto') { try { localStorage.removeItem(KTHEME); } catch(e){} } else store.set(KTHEME, v);
+    applyTheme(v); $$('#mTheme button', sh).forEach(function(x){ x.setAttribute('aria-pressed', x === bt); });
+  }); });
+}
+$('#menuBtn').addEventListener('click', openMenu);
+var importText = '';
+function openImport(){
+  var body =
+    '<p class="note" style="margin-top:2px">選擇之前匯出的 .json 備份，或直接把內容貼在下面。也可以貼上一行一件事的清單（「- 」「1.」「[x]」這類符號會自動去掉，打勾的放進完成）。</p>' +
+    '<button class="btn" id="iFile" style="width:100%;margin-top:10px">' + I.ul + '選擇檔案…</button>' +
+    '<label class="fld"><span class="lbl">或貼上內容</span><textarea class="inp" id="iText" rows="5" placeholder=\'{"app":"kanban-board", …}　或　買牛奶&#10;繳電話費\' spellcheck="false"></textarea></label>' +
+    '<div class="preview" id="iPrev" aria-live="polite"></div>' +
+    '<div class="sec">匯入方式</div>' +
+    '<label class="radio"><input type="radio" name="imode" value="add" checked><span><b>加入成新的看板</b><small>現有看板保持不變</small></span></label>' +
+    '<label class="radio"><input type="radio" name="imode" value="replace"><span><b>取代全部看板</b><small>目前的 ' + state.boards.length + ' 個看板會被換掉（可以復原）</small></span></label>';
+  var sh = openSheet('匯入', body, '<span class="grow"></span><button class="btn pri" id="iGo" disabled>匯入</button>');
+  var q = function(s){ return sh.querySelector(s); }, res = null;
+  function check(){
+    var t = q('#iText').value;
+    res = t.trim() ? KB.parseImport(t, Date.now()) : null;
+    var p = q('#iPrev');
+    if (!res){ p.className = 'preview'; p.textContent = ''; q('#iGo').disabled = true; return; }
+    if (res.error){ p.className = 'preview bad'; p.textContent = res.error; q('#iGo').disabled = true; return; }
+    show();
+  }
+  function show(big){
+    var p = q('#iPrev');
+    if (res.error){ p.className = 'preview bad'; p.textContent = res.error; q('#iGo').disabled = true; return; }
+    p.className = 'preview ' + (res.skipped || res.badBoards || res.overBoards ? 'warn' : 'ok');
+    p.textContent = (big ? '檔案很大（' + (big / 1048576).toFixed(1) + ' MB）：' : '') + KB.importSummary(res);
+    q('#iGo').disabled = false;
+  }
+  q('#iText').addEventListener('input', check);
+  q('#iFile').addEventListener('click', function(){ $('#fileIn').value = ''; $('#fileIn').click(); });
+  importText = '';
+  sh._load = function(text){ q('#iText').value = text.length > 200000 ? '' : text; if (text.length > 200000){ res = KB.parseImport(text, Date.now()); importText = text; show(text.length); } else check(); };
+  q('#iGo').addEventListener('click', function(){
+    if (!res || res.error) return;
+    var mode = sh.querySelector('input[name=imode]:checked').value;
+    var boards = res.boards.map(KB.stripStat);
+    if (mode === 'add' && state.boards.length + boards.length > KB.LIM.boards){ q('#iPrev').className = 'preview bad'; q('#iPrev').textContent = '看板總數會超過 ' + KB.LIM.boards + ' 個，請改用「取代全部」或先刪掉一些。'; return; }
+    commit(mode === 'replace' ? '匯入並取代全部' : '匯入 ' + boards.length + ' 個看板');
+    if (mode === 'replace') state.boards = boards; else state.boards = state.boards.concat(boards);
+    state.cur = boards[0].id;
+    closeSheet(); render(); goCol(0, true);
+    undoToast('已匯入 ' + boards.length + ' 個看板、' + res.cards + ' 張卡片');
+  });
+}
+$('#fileIn').addEventListener('change', function(e){
+  var f = e.target.files && e.target.files[0]; if (!f) return;
+  if (f.size > KB.LIM.bytes){ toast('檔案太大（超過 10 MB），請確認選對檔案。'); return; }
+  var rd = new FileReader();
+  rd.onload = function(){ if (sheet && sheet.el._load) sheet.el._load(String(rd.result || '')); };
+  rd.onerror = function(){ toast('讀不到這個檔案，請再試一次。'); };
+  rd.readAsText(f);
+});
+
+/* ---------- header & sync ---------- */
+$('#undoBtn').addEventListener('click', undo);
+$('#redoBtn').addEventListener('click', redo);
+addEventListener('keydown', function(e){
+  if (sheet || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+  var tg = e.target; if (tg && (tg.tagName === 'TEXTAREA' || tg.tagName === 'INPUT')) return;
+  if (e.key.toLowerCase() === 'z'){ e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+  else if (e.key.toLowerCase() === 'y'){ e.preventDefault(); redo(); }
+});
+addEventListener('storage', function(e){
+  if (e.key !== KEY || !e.newValue || e.newValue === lastSaved) return;
+  try { var s = KB.loadState(JSON.parse(e.newValue), Date.now()); if (!s) return; state = s; lastSaved = e.newValue; } catch(err){ return; }
+  if (D.on) endDrag(true);
+  undoStack.length = 0; redoStack.length = 0; updUndo();
+  closeSheet(true); render(); toast('已同步其他分頁的變更（復原紀錄已重設）');
+});
+var dayNow = today();
+setInterval(function(){ if (today() !== dayNow){ dayNow = today(); render(); } }, 60000);
+
+/* ---------- boot ---------- */
+state = load();
+var fresh = state._fresh; delete state._fresh;
+render();
+requestAnimationFrame(function(){ goCol(Math.max(0, Math.min(2, +ui.col[state.cur] || 0)), true); });
+updUndo();
+if (fresh) save();
+if (corruptKey) $('#corruptBar').hidden = false;
+document.documentElement.dataset.ready = '1';
+window.__kb = {KB:KB, get state(){ return state; }, render:render, undo:undo, redo:redo, board:board, goCol:goCol, get curCol(){ return curCol; }, D:D, KEY:KEY};
+(async function(){ try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch(e){ downloads = null; } })();
+})();
+</script>
