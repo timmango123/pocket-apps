@@ -92,6 +92,7 @@ GAMES = [
     ("aeroplane-chess", "飛行棋", "board", False, "擲骰起飛撞機回場，對戰三台電腦。"),
     ("backgammon", "雙陸棋", "board", False, "擲骰打擊移出，五級電腦與加倍骰。"),
     ("shogi", "日本將棋", "board", False, "吃子可打入的日本將棋，五級電腦與詰將棋"),
+    ("monopoly", "大富翁", "board", False, "台灣環島買地蓋房，和三台電腦拚身家。"),
     ("klondike-solitaire", "經典接龍", "card", True, "綠呢牌桌上的經典接龍，百局保證可解。"),
     ("spider-solitaire", "蜘蛛接龍", "card", True, "月光蛛網下理順八串牌，一到四種花色。"),
     ("freecell", "新接龍", "card", True, "青花瓷桌上的 FreeCell，百局皆可解。"),
