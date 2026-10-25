@@ -92,6 +92,9 @@ async function play(page, until, maxSteps, log) {
     await page.evaluate(() => window.__game.start(1)); await sleep(300);
     await page.evaluate(() => window.__game.god(true));
     const cdp = await ctx.newCDPSession(page);
+    await page.evaluate(() => localStorage.removeItem('bullet-hell:v1:tut'));
+    await page.evaluate(() => window.__game.start(1)); await sleep(200); await page.evaluate(() => window.__game.god(true));
+    ok((await st(page)).tut === true, 'first play: the "slide anywhere to move" hint is up');
     const a = await st(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 120, y: 300, id: 1 }] });
     for (let i = 1; i <= 10; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 120 + i * 8, y: 300 - i * 4, id: 1 }] }); await sleep(16); }
@@ -100,6 +103,24 @@ async function play(page, until, maxSteps, log) {
     const dx = (b.pl.x - a.pl.x) * b.S, dy = (b.pl.y - a.pl.y) * b.S;
     ok(dx > 70 && dx < 110 && dy < -30 && dy > -55, `relative touch: finger moved (80,-40) px, crane moved (${dx.toFixed(0)},${dy.toFixed(0)}) px, away from the finger`);
     ok(b.focus === false, 'one finger: not focused');
+    ok(b.tut === false && await page.evaluate(() => localStorage.getItem('bullet-hell:v1:tut')) === 'true', 'the hint goes away after the first drag and is remembered');
+    // the action buttons must work while the other thumb is still on the field (no click is synthesised for that tap)
+    // (CDP: touchStart lists every finger down, touchEnd lists the finger that lifts)
+    const bbx = await page.locator('#bBomb').boundingBox(), fbx = await page.locator('#bFocus').boundingBox(), hold = { x: 200, y: 260, id: 1 };
+    const tapWhileHolding = async (x, y, id) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold, { x, y, id }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ x, y, id }] }); };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [hold] });
+    const bm0 = (await st(page)).bombs;
+    await tapWhileHolding(bbx.x + bbx.width / 2, bbx.y + bbx.height / 2, 5); await sleep(150);
+    ok((await st(page)).bombs === bm0 - 1, 'bomb tapped while another finger drags: one bomb used');
+    await tapWhileHolding(fbx.x + fbx.width / 2, fbx.y + fbx.height / 2, 6); await sleep(100);
+    ok(await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed')) === 'true', '低速 tapped while another finger drags: toggles on');
+    let tg = 0;
+    for (let i = 0; i < 8; i++) { const before = await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed'));
+      await tapWhileHolding(fbx.x + 16 + (i % 2) * 30, fbx.y + 20 + (i % 3) * 10, 6); await sleep(125);
+      if (before !== await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed'))) tg++; }
+    ok(tg === 8, `8 taps a second on 低速 while dragging: ${tg}/8 toggles (no drops, no doubles)`);
+    await sleep(1100); await page.locator('#bFocus').focus(); await page.keyboard.press('Enter'); await sleep(50);
+    ok(await page.evaluate(() => document.getElementById('bFocus').getAttribute('aria-pressed')) === 'false', 'keyboard Enter on 低速 still toggles it');
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(100);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 300, id: 1 }] }); await sleep(60);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 300, id: 1 }, { x: 300, y: 500, id: 2 }] }); await sleep(200);
@@ -111,6 +132,65 @@ async function play(page, until, maxSteps, log) {
     await page.keyboard.down('ArrowLeft'); await page.evaluate(() => window.__game.tick(30)); await page.keyboard.up('ArrowLeft');
     ok((await st(page)).pl.x < w0.x - 30, 'keyboard: arrow keys move the crane');
     ok(errors.length === 0, 'touch session: no page errors');
+    await ctx.close();
+  }
+
+  // ---- 2b. real touch held through transitions; pause with a second finger; quitting banks the score; spell practice ----
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, isMobile: true, hasTouch: true, colorScheme: 'dark' });
+    const page = await ctx.newPage(), errors = []; track(page, errors);
+    await page.goto(APP); await sleep(400);
+    const cdp = await ctx.newCDPSession(page), T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const tick = n => page.evaluate(n => window.__game.tick(n), n);
+    await page.evaluate(() => { const g = window.__game; g.start(1); g.god(true); g.skipToBoss(); });
+    for (let i = 0; i < 400 && (await st(page)).st !== 'cleared'; i++) await page.evaluate(() => { const g = window.__game; g.tick(10); g.skipPattern(); });
+    ok((await st(page)).st === 'cleared', 'stage 1 boss beaten: 突破 banner (state cleared)');
+    await T('touchStart', [{ x: 195, y: 650, id: 1 }]);           // finger goes down during the banner and stays
+    for (let i = 0; i < 100 && (await st(page)).st !== 'stage'; i++) await tick(10);
+    await tick(60);
+    let x0 = (await st(page)).pl.x;
+    for (let i = 1; i <= 9; i++) await T('touchMove', [{ x: 195 - i * 10, y: 650, id: 1 }]);
+    await sleep(50);
+    let dx = (await st(page)).pl.x - x0;
+    ok((await st(page)).stage === 1 && dx < -80, `finger held through the stage transition drags in stage 2 (crane moved ${dx.toFixed(0)})`);
+    const pb = await page.locator('#bPause').boundingBox(), pp = { x: pb.x + 22, y: pb.y + 22, id: 2 };
+    await T('touchStart', [{ x: 105, y: 650, id: 1 }, pp]); await T('touchEnd', [pp]); await sleep(100);
+    ok((await st(page)).st === 'paused', 'pause tapped with a second finger while dragging: paused');
+    await T('touchEnd', [{ x: 105, y: 650, id: 1 }]);
+    const sc = (await st(page)).score;
+    await page.locator('#bMenu').tap(); await sleep(200);
+    ok(await page.evaluate(() => JSON.parse(localStorage.getItem('bullet-hell:v1:hi') || '{}').normal) === sc && await page.locator('#title').isVisible(), 'quitting from pause banks the run score (' + sc + ') and returns to the title');
+    // finger resting on the field through game over → continue tapped with another finger → the resting finger drags
+    await page.evaluate(() => { const g = window.__game; g.start(1); g.lives(0); });
+    await T('touchStart', [{ x: 200, y: 600, id: 3 }]);
+    for (let i = 0; i < 600 && (await st(page)).st !== 'over'; i++) await tick(10);
+    await sleep(200);
+    const cb = await page.locator('#bContinue').boundingBox(), cp = { x: cb.x + 40, y: cb.y + 20, id: 4 };
+    await T('touchStart', [{ x: 200, y: 600, id: 3 }, cp]); await T('touchEnd', [cp]); await sleep(100);
+    ok((await st(page)).st !== 'over', 'continue tapped while another finger rests on the field: continues');
+    await tick(80); x0 = (await st(page)).pl.x;
+    for (let i = 1; i <= 5; i++) await T('touchMove', [{ x: 200 + i * 10, y: 600, id: 3 }]);
+    await sleep(50); dx = (await st(page)).pl.x - x0;
+    ok(dx > 40, `the finger held through game over and continue drags (crane moved ${dx.toFixed(0)})`);
+    await T('touchEnd', []);
+    // spell practice from the title
+    await page.keyboard.press('p'); await sleep(100); await page.locator('#bMenu').tap(); await sleep(200);
+    await page.locator('#bPrac').tap(); await sleep(200);
+    const rows = await page.locator('.prow').count(), open = await page.locator('.prow:not([disabled])').count();
+    ok(rows === 7 && open >= 1 && open < 7, `practice list: 7 spell cards, ${open} unlocked (only ones already met)`);
+    await page.locator('.prow:not([disabled])').first().tap(); await sleep(200);
+    let s; for (let i = 0; i < 100; i++) { s = await st(page); if (s.boss && s.boss.name) break; await tick(10); }
+    ok(s.boss && /妖符/.test(s.boss.name) && s.stage === 0, 'practice starts straight at the chosen spell: ' + (s.boss && s.boss.name));
+    await page.evaluate(() => { window.__game.god(true); window.__game.skipPattern(); });
+    for (let i = 0; i < 60 && (await st(page)).st !== 'over'; i++) await tick(10);
+    await sleep(200);
+    const pt = await page.locator('#oTitle').textContent(), pc = await page.locator('#oCause').textContent();
+    ok(pt === '符卡取得！' && /累計取得 \d+ \/ \d+/.test(pc) && !(await page.locator('#bContinue').isVisible()), 'practice result shows the capture and the spell record: ' + pc);
+    const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('bullet-hell:v1:spellrec')));
+    ok(rec && rec['normal|0|1'] && rec['normal|0|1'][1] >= 1, 'spell record saved per difficulty and spell');
+    await page.reload(); await sleep(300); await page.locator('#bPrac').tap(); await sleep(150);
+    ok(/已取得 [1-7] \/ 7/.test(await page.locator('#pracSub').textContent()), 'spell records survive a reload');
+    ok(errors.length === 0, 'transition/practice session: no page errors' + (errors.length ? ' — ' + errors.join(' | ') : ''));
     await ctx.close();
   }
 
@@ -137,6 +217,8 @@ async function play(page, until, maxSteps, log) {
     let s; for (let i = 0; i < 600; i++) { s = await page.evaluate(() => { window.__game.tick(10); return window.__game.state(); }); if (s.st === 'over') break; }
     await sleep(300);
     ok(s.st === 'over' && await page.locator('#over').isVisible() && await page.locator('#bContinue').isVisible(), 'standing still on the last life → game over screen with continue');
+    const cause = await page.locator('#oCause').textContent();
+    ok(/最後倒在 第二面 · /.test(cause), 'game over says where the run ended: ' + cause);
     await page.screenshot({ path: path.join(OUT, 'shot-over.png') });
     await page.locator('#bContinue').tap(); await sleep(300);
     s = await st(page);
