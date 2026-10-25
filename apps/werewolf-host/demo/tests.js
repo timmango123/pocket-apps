@@ -234,5 +234,98 @@ const lcg = seed => { let x = seed >>> 0; return n => { x = (x * 1664525 + 10139
   ok(g.log.filter(l => l.tag === '第1夜').length >= 4, 'log has an entry per night action');
 }
 
+// --- 狼人殺: Taiwan boards, presets ---
+{
+  const sum = r => WH.ROLE_ORDER.reduce((s, k) => s + (r[k] || 0), 0);
+  ok(WH.BOARDS.every(b => sum(b.roles) === b.n && !WH.wwValidate(b.n, b.roles)), 'every named board sums to its head count and validates');
+  const r12 = WH.wwPreset(12), r9 = WH.wwPreset(9);
+  ok(r12.wolf === 4 && r12.seer && r12.witch && r12.hunter && r12.idiot && !r12.guard && r12.villager === 4, '12 players: standard 預女獵白, 4 wolves 4 villagers');
+  ok(r9.wolf === 3 && r9.seer && r9.witch && r9.hunter && r9.villager === 3, '9 players: 預女獵, 3 wolves 3 villagers');
+  ok(WH.boardsFor(12).length === 3 && WH.boardsFor(12).some(b => b.roles.wolfking === 1 && b.roles.guard === 1), '12-player boards include 狼王守衛');
+  ok(WH.boardsFor(8).length === 1 && WH.sameRoles(WH.boardsFor(8)[0].roles, WH.wwPreset(8)), 'counts without a named board fall back to the preset');
+  for (let n = 13; n <= 20; n++) { const r = WH.wwPreset(n); const w = r.wolf + r.wolfking; if (w * 3 < n - 1 || w * 2 >= n || r.villager < w - 1) ok(false, 'preset ' + n + ' balance ' + JSON.stringify(r)); }
+  ok(true, 'presets 13–20: about a third wolves, never half');
+  ok(/減少 1/.test(WH.wwValidate(8, Object.assign(WH.wwPreset(8), { villager: 4 }))) && /再加 1/.test(WH.wwValidate(8, Object.assign(WH.wwPreset(8), { villager: 2 }))), 'role-count error says how many to add or remove');
+}
+
+// --- 狼人殺: witch self-save rule, seer self-check ---
+{
+  const mk = (rule, rnd) => new WH.WWGame({ names: N(6), roles: { wolf: 2, villager: 2, seer: 1, witch: 1 }, witchSelf: rule, rnd: lcg(rnd || 9) });
+  for (const [rule, n1, n2] of [['first', true, false], ['never', false, false], ['always', true, true]]) {
+    const g = mk(rule), w = g.players.find(p => p.role === 'witch').i;
+    g.setWolf(w); const a = g.witchSave(true);
+    g.act.save = false; g.resolveNight(); // she dies? no: we reset save; just move on with a fresh game for night 2
+    const g2 = mk(rule); g2.setWolf(null); g2.resolveNight(); g2.vote(null); g2.startNight();
+    const w2 = g2.players.find(p => p.role === 'witch').i; g2.setWolf(w2);
+    ok(a === n1 && g2.witchSave(true) === n2, '女巫自救 ' + rule + ': night 1 ' + n1 + ', night 2 ' + n2);
+  }
+  const g = mk('first'), seer = g.players.find(p => p.role === 'seer').i;
+  ok(g.seerCheck(seer) === null && g.act.seer === null, 'seer cannot check himself');
+  const v = g.players.find(p => p.role === 'villager').i; g.setWolf(v);
+  ok(g.witchSave(true) && g.canSave(), 'witch can save someone else on night 1');
+}
+
+// --- 狼人殺: 警長, 移交警徽, 自爆, day end ---
+{
+  const mk = () => new WH.WWGame({ names: N(9), roles: { wolf: 3, villager: 3, seer: 1, witch: 1, hunter: 1 }, sheriff: true, rnd: lcg(21) });
+  const idx = (g, role, k) => g.players.filter(p => p.role === role && p.alive)[k || 0].i;
+  let g = mk();
+  ok(g.sheriffOn && !g.sheriffDone && g.sheriff === null, 'sheriff election pending at start');
+  const v0 = idx(g, 'villager', 0); g.setWolf(v0); g.resolveNight();
+  ok(!g.players[v0].alive && g.sheriffCandidate(v0), 'a player killed on night 1 can still run for sheriff');
+  ok(g.electSheriff(v0) && g.sheriff === v0 && g.pending.length === 1 && g.pending[0].type === 'badge', 'dead sheriff must hand over the badge at once');
+  ok(!g.electSheriff(idx(g, 'seer')), 'only one election');
+  ok(!g.passBadge(v0) && g.passBadge(idx(g, 'seer')) && g.sheriff === idx(g, 'seer') && !g.pending.length, 'badge passes to a living player (not back to himself)');
+  ok(g.log.some(l => /把警徽交給/.test(l.text)), 'log records the badge');
+  // hunter sheriff voted out: shoot first, then badge
+  g = mk(); g.setWolf(null); g.resolveNight(); const h = idx(g, 'hunter'); g.electSheriff(h);
+  g.vote(h);
+  ok(g.phase === 'dusk' && g.pending.map(p => p.type).join() === 'shoot,badge', 'voted hunter-sheriff: shot then badge, day is over');
+  ok(g.passBadge(null) === false, 'badge waits until the shot is resolved');
+  g.shoot(null); ok(g.passBadge(null) && g.sheriff === null && /撕毀警徽/.test(g.log[g.log.length - 1].text), 'badge can be torn up');
+  // explode
+  g = mk(); g.electSheriff(null); g.setWolf(null); g.resolveNight();
+  ok(g.explode(idx(g, 'villager')) === null, 'a villager cannot explode');
+  const w = idx(g, 'wolf'); const r = g.explode(w);
+  ok(r && !g.players[w].alive && g.players[w].cause === 'explode' && g.phase === 'dusk', 'wolf explodes: dies, day ends');
+  const g2 = new WH.WWGame({ names: N(7), roles: { wolf: 1, wolfking: 1, villager: 3, seer: 1, witch: 1 }, rnd: lcg(4) });
+  g2.setWolf(null); g2.resolveNight(); g2.explode(g2.players.find(p => p.role === 'wolfking').i);
+  ok(g2.pending.length === 1 && g2.pending[0].role === 'wolfking', 'wolf king may shoot after exploding');
+  // vote ends the day (bug fix: after a hunter shot the vote screen used to come back)
+  const g3 = mk(); g3.electSheriff(null); g3.setWolf(null); g3.resolveNight(); g3.vote(idx(g3, 'villager'));
+  ok(g3.phase === 'dusk', 'any vote result moves the day to dusk');
+}
+
+// --- save / restore ---
+{
+  const g = new WH.WWGame({ names: N(9), roles: WH.wwPreset(9), rnd: lcg(2), sheriff: true });
+  g.setWolf(0); g.resolveNight();
+  const j = WH.dump(g), h = WH.load(JSON.parse(JSON.stringify(j)));
+  ok(h instanceof WH.WWGame && h.night === 1 && h.players.length === 9 && !h.players[0].alive && typeof h.rnd === 'function' && !('rnd' in j), 'dump/load round-trips a werewolf game without the rng');
+  ok(h.electSheriff(1) && h.sheriff === 1, 'restored game keeps working');
+  const u = new WH.UCGame({ names: N(6), under: 1, blank: 1, pair: ['A', 'B'], rnd: lcg(3) });
+  const u2 = WH.load(WH.dump(u));
+  ok(u2 instanceof WH.UCGame && u2.civWord === u.civWord && u2.order.join() === u.order.join(), 'dump/load round-trips an undercover game');
+  ok(WH.load(null) === null && WH.load({ kind: 'x' }) === null && WH.load({ kind: 'ww', players: [] }) === null, 'load rejects broken saves');
+}
+
+// --- review fixes: custom pairs with spaces/slashes, PK, 狼王 wording, explode during the sheriff election ---
+{
+  const r = WH.customReport('Taylor Swift／Lady Gaga\n貓 狗 兔\nAC/DC／Queen\nTaylor Swift/Lady Gaga\n老虎 獅子\nA／B／C\n  \n珍奶 , 奶茶\n同 同');
+  ok(r.pairs.length === 5 && r.pairs[0].join('|') === 'Taylor Swift|Lady Gaga' && r.pairs[1].join('|') === 'AC/DC|Queen' && r.pairs[2].join('|') === 'Taylor Swift|Lady Gaga' && r.pairs[3].join('|') === '老虎|獅子' && r.pairs[4].join('|') === '珍奶|奶茶', 'custom pairs keep spaces and slashes inside words: ' + JSON.stringify(r.pairs));
+  ok(r.bad.join() === '2,6,9', 'lines that do not give exactly two words are reported by line number (' + r.bad.join() + ')');
+  const g = new WH.UCGame({ names: N(6), under: 1, blank: 0, pair: ['A', 'B'], rnd: lcg(8) });
+  while (g.nextSpeaker()); 
+  ok(!g.pkRound([1]) && g.pkRound([4, 2, 2]) && g.phase === 'speak' && g.order.length === 2 && g.order.every(i => [2, 4].includes(i)) && g.pk.join() === '2,4', 'PK: only the tied players speak');
+  while (g.nextSpeaker()); ok(g.phase === 'vote' && g.pk, 'PK vote keeps the PK list');
+  const civ = g.pk.find(i => g.players[i].role === 'civ'); const res = g.eliminate(civ != null ? civ : g.pk[0]);
+  ok(g.pk === null || (res.result && res.result.over), 'after the PK elimination the next round is a normal one');
+  ok(/自爆/.test(WH.ROLES.wolfking.desc) && /投票出局/.test(WH.ROLES.wolfking.desc), '狼王 card mentions both vote and 自爆 shots');
+  const w = new WH.WWGame({ names: N(9), roles: WH.wwPreset(9), sheriff: true, rnd: lcg(30) });
+  const v = w.players.find(p => p.role === 'villager').i; w.setWolf(v); w.resolveNight();
+  const wolf = w.players.find(p => p.role === 'wolf').i;
+  ok(w.explode(wolf) && w.sheriffDone && w.sheriff === null && w.phase === 'dusk' && w.log.some(l => /警徽流失.*昨晚死亡：P/.test(l.text)), 'explode during the election: badge lost, last night\'s death announced, day over');
+}
+
 console.log(pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -1,0 +1,2489 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>格式互轉</title>
+<style>
+/* Relay desk: warm paper, ink rules, one colour per format (YAML ember, JSON brass, TOML teal) */
+:root{
+  --bg:#efebe3; --paper:#fffdf9; --sunk:#f7f4ee; --ink:#1d1a16; --ink2:#47423a; --muted:#6c665c; --faint:#8f897e;
+  --line:#ddd6ca; --line2:#c9c0b1; --gut:#a39c90;
+  --yaml:#bf3f12; --json:#8a6200; --toml:#0d7466;
+  --yaml-soft:#fbe6dc; --json-soft:#f6ebcd; --toml-soft:#d8efe9;
+  --ok:#1f6b3a; --ok-soft:#dff0e3; --bad:#b0261c; --bad-soft:#fbe3df; --warn:#8a5a00; --warn-soft:#f8ecd0; --info-soft:#ece7de;
+  --k:#9a3412; --s:#3f6212; --n:#1d4ed8; --b:#7e22ce; --z:#6b7280; --p:#8a8377; --c:#8f897e; --h:#0d7466; --a:#b45309;
+  --shadow:0 1px 0 rgba(255,255,255,.7) inset,0 1px 2px rgba(60,45,20,.06),0 8px 24px -12px rgba(60,45,20,.18);
+  --pop:0 18px 50px -12px rgba(30,20,5,.35);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+  --fs:13.5px; --lh:21px;
+  color-scheme:light;
+}
+@media (pointer:coarse){:root{--fs:16px;--lh:24px}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14130f; --paper:#1c1b17; --sunk:#181713; --ink:#ece7dc; --ink2:#cdc6b8; --muted:#a39b8c; --faint:#7d766a;
+  --line:#2f2c25; --line2:#433f36; --gut:#6b655a;
+  --yaml:#ff8a5c; --json:#f1c24b; --toml:#3fd0b8;
+  --yaml-soft:#3a2117; --json-soft:#352a10; --toml-soft:#123029;
+  --ok:#7ad69a; --ok-soft:#173222; --bad:#ff8f84; --bad-soft:#3c1b18; --warn:#f2c35c; --warn-soft:#352a11; --info-soft:#24221d;
+  --k:#ffab7e; --s:#b5dc8a; --n:#8ab4ff; --b:#d8a8ff; --z:#a6a196; --p:#8d877b; --c:#7d766a; --h:#3fd0b8; --a:#f2b35c;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset,0 1px 2px rgba(0,0,0,.3),0 10px 28px -14px rgba(0,0,0,.7);
+  --pop:0 18px 50px -10px rgba(0,0,0,.75); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14130f; --paper:#1c1b17; --sunk:#181713; --ink:#ece7dc; --ink2:#cdc6b8; --muted:#a39b8c; --faint:#7d766a;
+  --line:#2f2c25; --line2:#433f36; --gut:#6b655a;
+  --yaml:#ff8a5c; --json:#f1c24b; --toml:#3fd0b8;
+  --yaml-soft:#3a2117; --json-soft:#352a10; --toml-soft:#123029;
+  --ok:#7ad69a; --ok-soft:#173222; --bad:#ff8f84; --bad-soft:#3c1b18; --warn:#f2c35c; --warn-soft:#352a11; --info-soft:#24221d;
+  --k:#ffab7e; --s:#b5dc8a; --n:#8ab4ff; --b:#d8a8ff; --z:#a6a196; --p:#8d877b; --c:#7d766a; --h:#3fd0b8; --a:#f2b35c;
+  --shadow:0 1px 0 rgba(255,255,255,.03) inset,0 1px 2px rgba(0,0,0,.3),0 10px 28px -14px rgba(0,0,0,.7);
+  --pop:0 18px 50px -10px rgba(0,0,0,.75); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  background-image:radial-gradient(rgba(120,100,60,.07) 1px,transparent 1.2px);background-size:14px 14px}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.wrap{max-width:1240px;margin:0 auto}
+svg{display:block}
+/* header */
+.top{display:flex;align-items:center;gap:10px;min-height:58px}
+.mark{width:34px;height:34px;flex:none;border-radius:9px;background:#1d1a16;border:1px solid rgba(255,255,255,.08);display:grid;place-items:center;box-shadow:0 2px 0 rgba(0,0,0,.15)}
+.title{flex:1;min-width:0}
+.title h1{margin:0;font-size:19px;font-weight:760;letter-spacing:.02em;line-height:1.15;white-space:nowrap}
+.title small{display:block;font:600 10.5px/1.3 var(--mono);letter-spacing:.14em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title small i{font-style:normal}
+.title small .y{color:var(--yaml)} .title small .j{color:var(--json)} .title small .t{color:var(--toml)}
+.ib{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:12px;background:var(--paper);display:grid;place-items:center;cursor:pointer;color:var(--ink2);box-shadow:var(--shadow);transition:transform .12s}
+.ib:active{transform:scale(.94)}
+.ib svg{width:20px;height:20px}
+/* route bar */
+.route{display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(0,1.55fr);gap:8px;align-items:center;margin:2px 0 12px}
+.src{width:100%;min-height:48px;border:1.5px solid var(--fc);border-radius:12px;background:var(--paper);display:flex;align-items:center;gap:8px;padding:0 10px 0 12px;cursor:pointer;text-align:left;box-shadow:var(--shadow);min-width:0;--fc:var(--line2)}
+.src .fmt{font:750 15px/1 var(--mono);color:var(--fc);letter-spacing:.04em}
+.src .sub{font-size:11px;color:var(--muted);line-height:1.2;display:block;font-weight:600}
+.src .lbl{flex:1;min-width:0}
+.src .lbl b{display:block;font-size:11px;color:var(--muted);font-weight:600;line-height:1.1;margin-bottom:3px}
+.src svg{width:14px;height:14px;color:var(--muted);flex:none}
+.swap{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:var(--paper);display:grid;place-items:center;cursor:pointer;color:var(--ink2);box-shadow:var(--shadow);transition:transform .35s cubic-bezier(.3,1.4,.5,1)}
+.swap svg{width:20px;height:20px}
+.swap.spin{transform:rotate(180deg)}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line2);border-radius:12px;background:var(--paper);padding:2px;gap:2px;box-shadow:var(--shadow);min-width:0}
+.seg button{min-height:44px;border:0;border-radius:9px;background:transparent;cursor:pointer;font:700 13.5px/1 var(--mono);letter-spacing:.03em;color:var(--muted);padding:0 2px;transition:background .18s,color .18s}
+.seg button[aria-pressed="true"]{background:var(--fc);color:var(--paper)}
+.seg button[data-f="yaml"]{--fc:var(--yaml)} .seg button[data-f="json"]{--fc:var(--json)} .seg button[data-f="toml"]{--fc:var(--toml)}
+.cap{font-size:11px;color:var(--muted);font-weight:600;margin:0 0 4px 2px;display:flex;justify-content:space-between}
+/* panes */
+.panes{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:640px){.route{grid-template-columns:minmax(0,220px) 44px minmax(0,360px);justify-content:start;gap:12px}}
+@media (min-width:640px){.panes{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"in out" "st out";align-items:start}#inCard{grid-area:in}#status{grid-area:st;margin:0}#outCard{grid-area:out}}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);min-width:0;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--fc,var(--line2));transition:background .25s}
+.chead{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;min-height:54px;border-bottom:1px solid var(--line)}
+.chead h2{margin:0;font-size:14px;font-weight:720;display:flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+.tag{font:700 10.5px/1 var(--mono);letter-spacing:.08em;padding:4px 6px;border-radius:6px;background:var(--fs-soft,var(--info-soft));color:var(--fc,var(--muted))}
+.chip{font-size:11px;font-weight:700;padding:3px 7px;border-radius:99px;background:var(--json-soft);color:var(--json);white-space:nowrap}
+.meta .wd{display:none}@media (min-width:600px){.meta .wd{display:inline}}
+.meta{font:11.5px var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.sp{flex:1;min-width:4px}
+.tb{min-width:44px;height:44px;border:0;background:transparent;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:5px;cursor:pointer;color:var(--ink2);font-size:13px;font-weight:650;padding:0 8px;transition:background .15s,transform .1s}
+.tb svg{width:19px;height:19px;flex:none}
+.tb:active{transform:scale(.94)}
+@media (hover:hover){.tb:hover{background:var(--sunk)}}
+.tb.pri{background:var(--ink);color:var(--paper);padding:0 13px}
+.tb.pri.done{background:var(--ok)}
+.tb .t{display:none}
+@media (min-width:430px){.tb.lab .t{display:inline}}
+/* editor */
+.ed{position:relative;display:flex;height:var(--edh);background:var(--sunk)}
+.panes{--edh:clamp(150px,34vh,560px)}
+@media (max-height:700px) and (max-width:639px){.panes{--edh:clamp(112px,24vh,300px)}#inCard{--edh:clamp(100px,18vh,220px)}.cap{display:none}.route{margin-top:0}.chead{min-height:48px;padding-top:2px;padding-bottom:2px}}
+@media (min-width:640px){.panes{--edh:clamp(170px,calc(100vh - 320px),900px)}}
+.gut{flex:none;width:var(--gw,38px);overflow:hidden;position:relative;border-right:1px solid var(--line);background:var(--paper)}
+.gut pre{margin:0;padding:10px 7px 40px 0;font:var(--fs)/var(--lh) var(--mono);color:var(--gut);text-align:right;white-space:pre;will-change:transform}
+.gut .eline{position:absolute;left:0;right:0;height:var(--lh);background:var(--bad);opacity:.9;pointer-events:none}
+.edb{position:relative;flex:1;min-width:0}
+.band{position:absolute;left:0;right:0;height:var(--lh);background:var(--bad-soft);pointer-events:none;border-left:2px solid var(--bad)}
+textarea#src{position:absolute;inset:0;width:100%;height:100%;resize:none;border:0;margin:0;background:transparent;padding:10px 12px 40px;font:var(--fs)/var(--lh) var(--mono);white-space:pre;overflow:auto;tab-size:2;color:var(--ink);outline:none;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+textarea#src::placeholder{color:var(--faint);font-family:var(--sans)}
+.hl{position:absolute;inset:0;margin:0;overflow:hidden;pointer-events:none;font:var(--fs)/var(--lh) var(--mono);tab-size:2;color:var(--ink)}
+.hl .b,.hl .h{font-weight:inherit}.hl .c,.hl .z{font-style:normal}
+.hl code{display:block;padding:10px 12px 40px;white-space:pre;font:inherit;will-change:transform}
+textarea#src.hlon{color:transparent;-webkit-text-fill-color:transparent;caret-color:var(--ink)}
+textarea#src.hlon::placeholder{-webkit-text-fill-color:var(--faint);color:var(--faint)}
+textarea#src::selection{background:color-mix(in srgb,var(--n) 28%,transparent)}
+.ed:focus-within{box-shadow:inset 0 0 0 2px var(--fc,var(--ink))}
+.ed.big .gut,.ed.big .band,.ed.big .hl,.ed.big textarea#src{display:none}
+.out.bigv{position:absolute;inset:0;height:auto}
+.bigbar{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 14px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;line-height:1.45;border-bottom:1px solid var(--line);font-weight:600}
+.bigbar span{flex:1;min-width:0}
+.bigbar .ab{flex:none;font-size:13px;padding:0 12px;color:var(--ink)}
+.bigbar .ab:disabled{opacity:.6}
+.drop{position:absolute;inset:6px;border:2px dashed var(--fc);border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 85%,transparent);font-weight:700;color:var(--ink2);pointer-events:none}
+/* output */
+.out{height:var(--edh);overflow:auto;background:var(--sunk);font:var(--fs)/var(--lh) var(--mono);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;position:relative}
+.out .rows{padding:10px 0 40px;min-width:max-content;transition:opacity .18s}
+.out.wrapon .rows{min-width:0}
+.out .r{display:flex;min-height:var(--lh)}
+.out .n{position:sticky;left:0;flex:none;width:var(--gw,38px);padding-right:7px;text-align:right;color:var(--gut);background:var(--paper);border-right:1px solid var(--line);user-select:none;-webkit-user-select:none}
+.out .x{padding:0 14px 0 12px;white-space:pre;tab-size:2}
+.out.wrapon .x{white-space:pre-wrap;word-break:break-all;min-width:0;flex:1}
+.out .r.cur{background:var(--bad-soft);box-shadow:inset 2px 0 0 var(--bad)}
+.out .n.fold{color:var(--line2)}
+.out .more{padding:10px 14px;font-family:var(--sans);font-size:13px;color:var(--muted)}
+.out.fresh .rows{animation:fresh .35s ease-out}
+@keyframes fresh{from{opacity:.35;transform:translateY(3px)}to{opacity:1;transform:none}}
+.emp{height:100%;display:grid;place-items:center;text-align:center;padding:16px;color:var(--muted);font-family:var(--sans);font-size:14px;line-height:1.6}
+.emp svg{width:40px;height:40px;margin:0 auto 6px;color:var(--line2)}
+.busy{position:absolute;right:10px;top:10px;font:600 12px var(--sans);color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+/* syntax */
+.k{color:var(--k)} .s{color:var(--s)} .nm{color:var(--n)} .b{color:var(--b);font-weight:600} .z{color:var(--z);font-style:italic} .p{color:var(--p)} .c{color:var(--c);font-style:italic} .h{color:var(--h);font-weight:700} .an{color:var(--a)} .bl{color:var(--s)} .dt{color:var(--n)}
+/* status */
+.status{margin:10px 0 0;display:grid;gap:8px}
+.st{border-radius:12px;padding:9px 12px;font-size:13.5px;display:flex;gap:9px;align-items:flex-start;border:1px solid transparent;animation:pop .25s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.st svg{width:18px;height:18px;flex:none;margin-top:1px}
+.st.ok{background:var(--ok-soft);color:var(--ok)}
+.st.ok b{font-weight:720}
+.st.idle{background:var(--info-soft);color:var(--muted)}
+.st.bad{background:var(--bad-soft);color:var(--ink);border-color:color-mix(in srgb,var(--bad) 30%,transparent);flex-direction:column;gap:6px;padding:11px 12px}
+.st.bad .eh{display:flex;gap:8px;align-items:flex-start;color:var(--bad);font-weight:720}
+.st.bad .et{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;min-width:0;flex:1}
+.st.bad .et>span:last-child{min-width:0;flex:1 1 12em}
+.st.bad .where{font:700 12px var(--sans);background:var(--bad);color:var(--paper);border-radius:6px;padding:2px 6px;white-space:nowrap;flex:none}
+.st.bad .hint{color:var(--ink2);line-height:1.55;white-space:pre-line}
+.ctx{align-self:stretch;margin:2px 0 0;font:12.5px/1.6 var(--mono);background:var(--paper);border-radius:8px;padding:6px 0;overflow-x:auto;white-space:pre;border:1px solid var(--line)}
+.ctx .cl{display:block;padding:0 10px 0 0} .ctx .cn{display:inline-block;width:34px;text-align:right;color:var(--gut);margin-right:10px;user-select:none}
+.ctx .cur{background:var(--bad-soft)} .ctx .car{color:var(--bad);font-weight:800}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+.ab{min-height:44px;border-radius:10px;border:1px solid var(--line2);background:var(--paper);padding:0 14px;font-weight:680;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.ab.pri{background:var(--bad);border-color:var(--bad);color:#fff}
+.st.warn{background:var(--warn-soft);color:var(--warn);flex-direction:column;gap:2px;padding:4px 12px}
+.st.warn summary,.st.warn ul,.st.warn .wmore{align-self:stretch}
+.st.warn summary{min-height:44px;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;list-style:none}
+.st.warn summary::-webkit-details-marker{display:none}
+.st.warn summary::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+.st.warn[open] summary::after{transform:rotate(-135deg)}
+.st.warn ul{margin:0 0 6px;padding:0;list-style:none;color:var(--ink2);display:grid;gap:0}
+.st.warn li{display:flex;gap:6px;line-height:1.5;align-items:flex-start}
+.st.warn li>span{padding-top:11px;padding-bottom:4px;min-width:0}
+.st.warn li button{all:unset;cursor:pointer;flex:none;min-width:44px;height:44px;display:grid;place-items:center;margin-left:-8px;border-radius:8px}
+.st.warn li button i{font:700 11.5px/22px var(--mono);font-style:normal;color:var(--warn);background:var(--paper);border-radius:5px;padding:0 6px;height:22px;display:block}
+.st.warn li button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.st.warn .wmore{font-size:12.5px;color:var(--muted);padding:0 0 8px}
+.notes{padding:8px 14px 10px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);display:grid;gap:3px;line-height:1.5}
+.notes div::before{content:"• ";color:var(--faint)}
+/* options */
+.opts{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.opts::-webkit-scrollbar{display:none}
+.op{flex:none;min-height:36px;border:1px solid var(--line2);border-radius:99px;background:var(--paper);padding:0 12px;font-size:13px;font-weight:650;color:var(--ink2);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;position:relative}
+.op::after{content:"";position:absolute;inset:-4px 0}
+.op[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.op:disabled{opacity:.4;cursor:default}
+.op b{font:700 12px var(--mono)}
+/* sheet & menu */
+.scrim{position:fixed;inset:0;background:rgba(20,15,5,.42);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
+@keyframes fade{from{opacity:0}}
+.sheet:focus{outline:none}
+.sheet{background:var(--paper);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:8px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:var(--pop);max-height:86vh;overflow:auto;animation:up .28s cubic-bezier(.2,.9,.3,1)}
+@keyframes up{from{transform:translateY(40px);opacity:.4}}
+@media (min-width:700px){.scrim{align-items:center}.sheet{border-radius:18px}}
+.grab{width:38px;height:4px;border-radius:2px;background:var(--line2);margin:2px auto 10px}
+.sheet h3{margin:0 0 10px;font-size:16px}
+.mi{width:100%;min-height:56px;display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--sunk);border-radius:12px;padding:8px 12px;margin-bottom:8px;cursor:pointer;text-align:left}
+.mi[aria-pressed="true"]{border-color:var(--fc,var(--ink));box-shadow:inset 0 0 0 1px var(--fc,var(--ink));background:var(--paper)}
+.mi .bdg{flex:none;width:52px;height:30px;border-radius:7px;display:grid;place-items:center;font:750 12px var(--mono);background:var(--fsoft,var(--info-soft));color:var(--fc,var(--ink2))}
+.mi .tx{flex:1;min-width:0} .mi .tx b{display:block;font-size:14.5px} .mi .tx span{display:block;font-size:12.5px;color:var(--muted);line-height:1.4}
+.f-yaml{--fc:var(--yaml);--fsoft:var(--yaml-soft)} .f-json{--fc:var(--json);--fsoft:var(--json-soft)} .f-toml{--fc:var(--toml);--fsoft:var(--toml-soft)} .f-auto{--fc:var(--ink);--fsoft:var(--info-soft)}
+.close{width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line2);background:var(--paper);font-weight:700;cursor:pointer;margin-top:4px}
+/* option sheet */
+.orow{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-bottom:1px solid var(--line)}
+.orow:last-of-type{border-bottom:0}
+.orow .ol b{display:block;font-size:14.5px} .orow .ol span{display:block;font-size:12.5px;color:var(--muted)}
+.mseg{display:flex;border:1px solid var(--line2);border-radius:10px;padding:2px;gap:2px;flex:none}
+.mseg button{min-width:52px;min-height:44px;border:0;border-radius:8px;background:transparent;font:700 13px var(--mono);cursor:pointer;color:var(--muted)}
+.mseg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.sw{flex:none;width:56px;height:44px;border:0;background:transparent;cursor:pointer;display:grid;place-items:center;padding:0}
+.sw i{display:block;width:46px;height:28px;border-radius:99px;background:var(--line2);position:relative;transition:background .2s}
+.sw i::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.3,1.3,.5,1)}
+.sw[aria-checked="true"] i{background:var(--ok)}
+.sw[aria-checked="true"] i::after{transform:translateX(18px)}
+.sw:disabled{opacity:.4}
+/* toast */
+#toastHost{position:fixed;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;justify-content:center;z-index:60;pointer-events:none;padding:0 16px}
+.toast{background:var(--ink);color:var(--paper);border-radius:12px;padding:4px 4px 4px 16px;font-size:14px;box-shadow:var(--pop);display:flex;align-items:center;gap:10px;pointer-events:auto;min-height:44px;animation:up .25s ease-out;max-width:100%}
+.toast.solo{padding:8px 16px}
+.toast button{min-height:44px;min-width:64px;border:0;border-radius:8px;background:color-mix(in srgb,var(--paper) 18%,transparent);color:var(--paper);font-weight:700;padding:0 12px;cursor:pointer}
+.foot{margin:14px 2px 0;font-size:12px;color:var(--faint);line-height:1.6;text-align:center}
+@media (max-height:540px) and (min-width:640px){.cap{display:none}.top{min-height:52px}.panes{--edh:clamp(150px,calc(100vh - 190px),400px)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+  <header class="top">
+    <div class="mark" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 22 22"><rect x="2" y="4" width="11" height="3" rx="1.5" fill="#ff8a5c"/><rect x="5" y="9.5" width="13" height="3" rx="1.5" fill="#f1c24b"/><rect x="2" y="15" width="9" height="3" rx="1.5" fill="#3fd0b8"/><path d="M15 3.5l3.5 2-3.5 2" fill="none" stroke="#fffdf9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="title"><h1>格式互轉</h1><small><i class="y">YAML</i> · <i class="j">JSON</i> · <i class="t">TOML</i></small></div>
+    <button class="ib" id="sampleBtn" type="button" aria-label="範例" title="範例"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10l2 2h6.5A1.5 1.5 0 0 1 20 7.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M8 12h8M8 15.5h5"/></svg></button>
+    <button class="ib" id="themeBtn" type="button" aria-label="切換深淺色" title="切換深淺色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+  </header>
+
+  <div class="route">
+    <div style="min-width:0"><div class="cap">來源</div>
+      <button class="src" id="srcBtn" type="button" aria-haspopup="dialog"><span class="lbl"><span class="fmt" id="srcFmt">YAML</span><span class="sub" id="srcSub">自動偵測</span></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6l4 4 4-4"/></svg></button></div>
+    <div><div class="cap">&nbsp;</div><button class="swap" id="swapBtn" type="button" aria-label="對調：把輸出當成新的輸入" title="對調"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></svg></button></div>
+    <div style="min-width:0"><div class="cap"><span>轉成</span></div>
+      <div class="seg" id="toSeg" role="group" aria-label="輸出格式"><button type="button" data-f="yaml" aria-pressed="false">YAML</button><button type="button" data-f="json" aria-pressed="true">JSON</button><button type="button" data-f="toml" aria-pressed="false">TOML</button></div></div>
+  </div>
+
+  <div class="panes">
+    <section class="card" id="inCard" aria-label="輸入">
+      <div class="chead">
+        <h2>輸入 <span class="chip" id="sampleChip" hidden>範例</span></h2>
+        <span class="meta" id="inMeta"></span>
+                <button class="tb" id="pasteBtn" type="button" aria-label="貼上" title="貼上"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.8c0-.7.5-1.3 1.2-1.3h2.6c.7 0 1.2.6 1.2 1.3v.7M9.5 11h5M9.5 14.5h5"/></svg></button>
+        <button class="tb" id="openBtn" type="button" aria-label="開啟檔案" title="開啟檔案"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 11.5v6M9.2 14.3 12 11.5l2.8 2.8"/></svg></button>
+        <button class="tb" id="clearBtn" type="button" aria-label="清除" title="清除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V7M6.5 7l.9 12.2c.1.9.8 1.8 1.8 1.8h5.6c1 0 1.7-.9 1.8-1.8L17.5 7"/></svg></button>
+        <input type="file" id="fileIn" accept=".yaml,.yml,.json,.toml,.txt,.conf,.cfg,.lock,application/json,text/plain" hidden>
+      </div>
+      <div class="bigbar" id="bigBar" hidden><span id="bigMsg"></span><button class="ab" id="fmtBtn" type="button" hidden>展開成多行</button></div>
+      <div class="ed" id="ed">
+        <div class="gut" id="gut" aria-hidden="true"><pre id="gutPre">1</pre></div>
+        <div class="edb"><div class="band" id="band" hidden></div><pre class="hl" id="hl" aria-hidden="true"><code id="hlc"></code></pre>
+          <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="要轉換的內容" placeholder="貼上 YAML、JSON 或 TOML…&#10;也可以把檔案拖進來"></textarea>
+          <div class="out bigv" id="bigv" tabindex="0" aria-label="輸入內容預覽（唯讀）" hidden><div class="rows" id="bigRows"></div></div>
+          <div class="drop" id="drop" hidden>放開以開啟檔案</div></div>
+      </div>
+    </section>
+
+    <div class="status" id="status" aria-live="polite"></div>
+
+    <section class="card" id="outCard" aria-label="輸出">
+      <div class="chead">
+        <h2>輸出 <span class="tag" id="outTag">JSON</span></h2>
+        <span class="meta" id="outMeta"></span>
+                <button class="tb" id="optBtn" type="button" aria-label="輸出選項" title="輸出選項"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+        <button class="tb" id="shareBtn" type="button" aria-label="分享" title="分享"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5M8 7.5l4-4 4 4M6 11H5.5A1.5 1.5 0 0 0 4 12.5v7A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5H18"/></svg></button>
+        <button class="tb" id="dlBtn" type="button" aria-label="下載" title="下載"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5V15M7.5 10.5 12 15l4.5-4.5M4.5 17.5v1A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 2-2v-1"/></svg></button>
+        <button class="tb pri lab" id="copyBtn" type="button" aria-label="複製結果"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></svg><span class="t">複製</span></button>
+      </div>
+
+      <div class="out" id="out" tabindex="0" aria-label="轉換結果"><div class="rows" id="rows"></div></div>
+      <div class="notes" id="notes" hidden></div>
+    </section>
+  </div>
+  <p class="foot">全部在你的裝置上處理，內容不會上傳。輸入會自動保存在這台裝置。</p>
+</div>
+<div id="sheetHost"></div>
+<div id="toastHost" aria-live="polite"></div>
+<script id="yj-core">/*CORE-START*/
+const YJ = (() => {
+"use strict";
+/* ---------- value model ----------
+   null, boolean, string, number (int if integral), bigint (ints beyond 2^53),
+   TFloat (a float whose value happens to be integral, e.g. 1.0), TDate (dates/times),
+   Array, Map (keeps key order exactly). */
+class TFloat { constructor(v) { this.v = v; } }
+class TDate { constructor(kind, raw, norm) { this.kind = kind; this.raw = raw; this.norm = norm || raw; } }
+class PErr { constructor(msg, at, hint) { this.msg = msg; this.at = at; this.hint = hint || ''; } }
+class CErr { constructor(msg, path, at, hint, fix) { this.msg = msg; this.path = path; this.at = at; this.hint = hint || ''; this.fix = fix || null; } }
+const POS = new WeakMap();
+function setPos(c, k, at) { let m = POS.get(c); if (!m) { m = new Map(); POS.set(c, m); } m.set(k, at); }
+function posOf(c, k) { const m = c && POS.get(c); return m ? m.get(k) : undefined; }
+const MAXD = 400;
+const LIMIT = 3000000;
+const DEEP = '括號或縮排一層包一層超過 400 層，通常是少了右括號、多了左括號，或資料自己參照自己。請檢查這附近的括號是否成對；真的這麼深的資料請先拆成幾份再轉換。';
+
+function lineCol(src, at) {
+  if (at > src.length) at = src.length; if (at < 0 || at == null) at = 0;
+  let line = 1, ls = 0;
+  for (let k = src.indexOf('\n'); k !== -1 && k < at; k = src.indexOf('\n', k + 1)) { line++; ls = k + 1; }
+  let col = 1; for (let k = ls; k < at; k++) { const c = src.charCodeAt(k); if (c < 0xDC00 || c > 0xDFFF) col++; }
+  return { line, col, lineStart: ls };
+}
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function showCh(s, i) { const cp = s.codePointAt(i); if (cp === undefined) return ''; if (cp === 9) return 'Tab'; if (cp < 32) return 'U+' + cp.toString(16).toUpperCase().padStart(4, '0'); return String.fromCodePoint(cp); }
+
+function fmtFloat(v) {
+  if (Object.is(v, -0)) return '-0.0';
+  let s = String(v);
+  if (/e/.test(s)) { if (!s.includes('.')) s = s.replace('e', '.0e'); }
+  else if (!s.includes('.')) s += '.0';
+  return s;
+}
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function okDate(y, m, d) { if (m < 1 || m > 12 || d < 1) return false; const dm = [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]; return d <= dm; }
+function okTime(h, mi, s) { return h <= 23 && mi <= 59 && s <= 60; }
+const p2 = x => String(x).padStart(2, '0');
+
+/* YAML 1.1-style timestamp (resolved by most real-world YAML loaders). */
+function yamlTimestamp(t) {
+  let m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(t);
+  if (m) return okDate(+m[1], +m[2], +m[3]) ? new TDate('ld', t, t) : null;
+  m = /^(\d{4})-(\d\d?)-(\d\d?)(?:[Tt]|[ \t]+)(\d\d?):(\d\d):(\d\d)(\.\d*)?(?:[ \t]*(Z|[-+]\d\d?(?::?\d\d)?))?$/.exec(t);
+  if (!m) return null;
+  const [, Y, Mo, D, H, Mi, S, F, Z] = m;
+  if (!okDate(+Y, +Mo, +D) || !okTime(+H, +Mi, +S)) return null;
+  let norm = `${Y}-${p2(Mo)}-${p2(D)}T${p2(H)}:${Mi}:${S}${F && F.length > 1 ? F : ''}`;
+  if (!Z) return new TDate('ldt', t, norm);
+  if (Z === 'Z') norm += 'Z';
+  else { const z = /^([-+])(\d\d?)(?::?(\d\d))?$/.exec(Z); if (+z[2] > 23 || +(z[3] || 0) > 59) return null; norm += z[1] + p2(z[2]) + ':' + (z[3] || '00'); }
+  return new TDate('odt', t, norm);
+}
+
+/* YAML 1.2 core schema resolution of a plain scalar (no warnings). Returns {v} */
+const YNULL = new Set(['', '~', 'null', 'Null', 'NULL']);
+function mkInt(t, base) {
+  let b;
+  if (base === 10) b = BigInt(t.replace(/^\+/, ''));
+  else b = BigInt((base === 16 ? '0x' : base === 8 ? '0o' : '0b') + t);
+  return (b <= 9007199254740991n && b >= -9007199254740991n) ? Number(b) : b;
+}
+function mkFloat(v) { return Number.isInteger(v) ? new TFloat(v) : v; }
+function yamlResolve(t) {
+  if (YNULL.has(t)) return null;
+  if (t === 'true' || t === 'True' || t === 'TRUE') return true;
+  if (t === 'false' || t === 'False' || t === 'FALSE') return false;
+  const c = t[0];
+  if ((c >= '0' && c <= '9') || c === '-' || c === '+' || c === '.') {
+    if (/^[-+]?[0-9]+$/.test(t)) return mkInt(t, 10);
+    if (/^0o[0-7]+$/.test(t)) return mkInt(t.slice(2), 8);
+    if (/^0x[0-9a-fA-F]+$/.test(t)) return mkInt(t.slice(2), 16);
+    if (/^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/.test(t)) return mkFloat(Number(t));
+    if (/^[-+]?\.(inf|Inf|INF)$/.test(t)) return t[0] === '-' ? -Infinity : Infinity;
+    if (/^\.(nan|NaN|NAN)$/.test(t)) return NaN;
+    const d = yamlTimestamp(t); if (d) return d;
+  }
+  return t;
+}
+
+/* ======================= JSON ======================= */
+function parseJSON(src) {
+  const s = src, n = s.length; let i = 0, dups = 0; const warns = [];
+  const fail = (msg, at, hint) => { throw new PErr(msg, at == null ? i : at, hint); };
+  const lineOf = at => lineCol(s, at).line;
+  function ws() {
+    for (;;) {
+      const c = s.charCodeAt(i);
+      if (c === 32 || c === 10 || c === 13 || c === 9) { i++; continue; }
+      if (c === 47 && (s[i + 1] === '/' || s[i + 1] === '*')) fail('JSON 不支援註解', i, '請刪掉 // 或 /* */ 註解。需要註解的設定檔可以改用 YAML 或 TOML。');
+      if (c === 0xFEFF) { i++; continue; }
+      if (c === 0xA0 || c === 0x3000) fail(c === 0x3000 ? '這裡有全形空白' : '這裡有不換行空白（NBSP）', i, 'JSON 只接受一般的半形空白，請把它刪掉或換成一般空白。');
+      return;
+    }
+  }
+  function word() { const m = /^[A-Za-z_$\u00c0-\uffff][\w$\u00c0-\uffff]*/.exec(s.slice(i, i + 40)); return m ? m[0] : ''; }
+  function value(d) {
+    ws();
+    if (i >= n) fail('內容在這裡就結束了，少了一個值', i, '這個位置需要一個值：物件 { }、陣列 [ ]、字串、數字、true、false 或 null。');
+    const c = s[i];
+    if (c === '{') return obj(d);
+    if (c === '[') return arr(d);
+    if (c === '"') return str();
+    if (c === '-' || (c >= '0' && c <= '9')) return num();
+    if (s.startsWith('true', i) && !/[\w$]/.test(s[i + 4] || '')) { i += 4; return true; }
+    if (s.startsWith('false', i) && !/[\w$]/.test(s[i + 5] || '')) { i += 5; return false; }
+    if (s.startsWith('null', i) && !/[\w$]/.test(s[i + 4] || '')) { i += 4; return null; }
+    if (c === "'" || c === '‘' || c === '’') fail('JSON 字串要用雙引號', i, '請把單引號改成半形雙引號 "。');
+    if (c === '“' || c === '”') fail('這是全形（彎）引號', i, 'JSON 只認得半形的直引號 "，請把 “ ” 換掉。');
+    const w = word();
+    if (w) {
+      if (w === 'NaN' || w === 'Infinity') fail(`JSON 不支援 ${w}`, i, '請改用 null，或一般數字。');
+      if (/^(True|TRUE)$/.test(w)) fail(`「${w}」要寫成小寫的 true`, i, 'JSON 的布林值只有小寫的 true 和 false。');
+      if (/^(False|FALSE)$/.test(w)) fail(`「${w}」要寫成小寫的 false`, i, 'JSON 的布林值只有小寫的 true 和 false。');
+      if (/^(None|NULL|Null|nil|undefined)$/.test(w)) fail(`「${w}」要寫成 null`, i, 'JSON 的空值只能寫成小寫的 null。');
+      fail(`看不懂「${w}」`, i, `文字要用雙引號包起來，例如 "${w}"。`);
+    }
+    if (c === '.') fail('數字不能以小數點開頭', i, '請在前面補 0，例如 0.5。');
+    if (c === '+') fail('JSON 的數字前面不能加 +', i, '正數直接寫數字即可，例如 5。');
+    fail(`這裡不該出現「${showCh(s, i)}」`, i, '這個位置需要一個值：物件 { }、陣列 [ ]、字串、數字、true、false 或 null。');
+  }
+  function obj(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const m = new Map(); let lastComma = -1;
+    ws(); if (s[i] === '}') { i++; return m; }
+    for (;;) {
+      ws();
+      if (i >= n) fail('物件沒有結束，少了右大括號 }', n, `第 ${lineOf(open)} 行的 { 沒有對應的 }，請在最後補上。`);
+      if (s[i] === '}' && lastComma >= 0) fail('最後一個項目後面多了逗號', lastComma, 'JSON 不允許尾逗號，請刪掉這個逗號。');
+      if (s[i] !== '"') {
+        if (s[i] === "'") fail('鍵名要用雙引號', i, '請把單引號改成雙引號 "。');
+        const w = word();
+        if (w) fail(`鍵名「${w}」少了雙引號`, i, `JSON 的鍵名一定要加雙引號，例如 "${w}"。`);
+        if (s[i] === ',') fail('這裡多了一個逗號', i, '兩個逗號之間少了「"鍵": 值」，請刪掉多的逗號。');
+        fail('這裡應該是鍵名', i, '物件裡的每一項都要寫成 "鍵": 值。');
+      }
+      const kAt = i, k = str();
+      ws();
+      if (s[i] !== ':') fail('鍵名後面少了冒號 :', i, `請寫成 "${k}": 值。`);
+      i++;
+      const v = value(d + 1);
+      if (m.has(k)) {
+        if (++dups <= 100) {
+          const a = lineCol(s, posOf(m, k)), b = lineCol(s, kAt);
+          warns.push({ msg: a.line === b.line ? `重複的鍵「${k}」：第 ${a.line} 行的第 ${a.col} 欄和第 ${b.col} 欄，只會保留後面的值` : `重複的鍵「${k}」：第 ${a.line} 行和第 ${b.line} 行，只會保留後面的值`, at: kAt });
+        } else if (dups === 101) warns.push({ msg: '還有更多重複的鍵，只列出前 100 個；每個重複的鍵都只會保留後面的值', at: kAt });
+      }
+      else setPos(m, k, kAt);
+      m.set(k, v);
+      const end = i; ws();
+      if (s[i] === ',') { lastComma = i; i++; continue; }
+      if (s[i] === '}') { i++; return m; }
+      if (i >= n) fail('物件沒有結束，少了右大括號 }', n, `第 ${lineOf(open)} 行的 { 沒有對應的 }，請在最後補上。`);
+      if (s[i] === ']') fail('括號不成對：這裡應該用 } 結束物件', i, `第 ${lineOf(open)} 行是用 { 開始的，所以要用 } 結束。`);
+      fail('兩個項目之間少了逗號', end, '請在這個值後面加上逗號「,」，或者用 } 結束物件。');
+    }
+  }
+  function arr(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const a = []; let lastComma = -1;
+    ws(); if (s[i] === ']') { i++; return a; }
+    for (;;) {
+      ws();
+      if (i >= n) fail('陣列沒有結束，少了右中括號 ]', n, `第 ${lineOf(open)} 行的 [ 沒有對應的 ]，請在最後補上。`);
+      if (s[i] === ']' && lastComma >= 0) fail('最後一個項目後面多了逗號', lastComma, 'JSON 不允許尾逗號，請刪掉這個逗號。');
+      if (s[i] === ',') fail('這裡多了一個逗號', i, '兩個逗號之間少了值，請刪掉多的逗號。');
+      const at = i;
+      a.push(value(d + 1)); setPos(a, a.length - 1, at);
+      const end = i; ws();
+      if (s[i] === ',') { lastComma = i; i++; continue; }
+      if (s[i] === ']') { i++; return a; }
+      if (i >= n) fail('陣列沒有結束，少了右中括號 ]', n, `第 ${lineOf(open)} 行的 [ 沒有對應的 ]，請在最後補上。`);
+      if (s[i] === '}') fail('括號不成對：這裡應該用 ] 結束陣列', i, `第 ${lineOf(open)} 行是用 [ 開始的，所以要用 ] 結束。`);
+      if (s[i] === ':') fail('陣列裡不能有「鍵: 值」', i, '要放鍵值的話，請改用大括號 { } 建立物件。');
+      fail('兩個值之間少了逗號', end, '請在這個值後面加上逗號「,」，或者用 ] 結束陣列。');
+    }
+  }
+  const ESC = { '"': '"', '\\': '\\', '/': '/', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t' };
+  function str() {
+    const st = i; i++; let out = '', chunk = i;
+    for (;;) {
+      if (i >= n) fail('字串沒有結束，少了右邊的雙引號 "', st, '請在字串最後補上 "。');
+      const c = s.charCodeAt(i);
+      if (c === 34) { out += s.slice(chunk, i); i++; return out; }
+      if (c === 92) {
+        out += s.slice(chunk, i); const e = s[i + 1];
+        if (e !== undefined && has(ESC, e)) { out += ESC[e]; i += 2; }
+        else if (e === 'u') {
+          const h = s.substr(i + 2, 4);
+          if (!/^[0-9a-fA-F]{4}$/.test(h)) fail('「\\u」後面要接 4 位十六進位數字', i, '例如 \\u4E2D 代表「中」。');
+          out += String.fromCharCode(parseInt(h, 16)); i += 6;
+        } else fail(`「\\${e === undefined ? '' : showCh(s, i + 1)}」不是 JSON 的跳脫字元`, i, 'JSON 只認得 \\" \\\\ \\/ \\b \\f \\n \\r \\t 和 \\uXXXX。要放反斜線本身請寫成 \\\\（例如 Windows 路徑 C:\\\\Users）。');
+        chunk = i; continue;
+      }
+      if (c < 0x20) {
+        if (c === 10) fail('字串沒有結束就換行了', i, `第 ${lineOf(st)} 行的字串少了右邊的雙引號 "。如果文字本身要換行，請寫成 \\n。`);
+        fail('字串裡有控制字元', i, c === 9 ? 'Tab 要寫成 \\t。' : '請改用 \\uXXXX 跳脫寫法。');
+      }
+      i++;
+    }
+  }
+  function num() {
+    const st = i; if (s[i] === '-') i++;
+    if (s[i] === '0') {
+      i++;
+      if (s[i] >= '0' && s[i] <= '9') fail('數字不能以 0 開頭', st, '例如 007 要寫成 7；如果是編號、電話或郵遞區號，請加雙引號變成字串。');
+      if (s[i] === 'x' || s[i] === 'X') fail('JSON 不支援十六進位數字', st, '請改成十進位，或加雙引號當成字串。');
+    } else if (s[i] >= '1' && s[i] <= '9') { while (s[i] >= '0' && s[i] <= '9') i++; }
+    else fail('「-」後面要接數字', i);
+    let fl = false;
+    if (s[i] === '.') { i++; fl = true; if (!(s[i] >= '0' && s[i] <= '9')) fail('小數點後面要有數字', i, '例如 1. 要寫成 1.0 或 1。'); while (s[i] >= '0' && s[i] <= '9') i++; }
+    if (s[i] === 'e' || s[i] === 'E') { i++; fl = true; if (s[i] === '+' || s[i] === '-') i++; if (!(s[i] >= '0' && s[i] <= '9')) fail('指數後面要有數字', i, '例如 1e5、2.5E-3。'); while (s[i] >= '0' && s[i] <= '9') i++; }
+    const raw = s.slice(st, i);
+    if (!fl) { const v = Number(raw); return Number.isSafeInteger(v) ? v : BigInt(raw); }
+    const v = Number(raw);
+    if (!isFinite(v)) fail('數字太大，超出可表示的範圍', st, '請改成較小的數字，或加雙引號當成字串。');
+    return mkFloat(v);
+  }
+  ws();
+  if (i >= n) return { docs: [], warns };
+  const v = value(0); ws();
+  if (i < n) fail('最外層只能有一個值，這裡多出了內容', i, '一份 JSON 只能有一個最外層的物件或陣列。多筆資料請用 [ ] 包成陣列，並用逗號分隔。');
+  return { docs: [v], warns };
+}
+
+/* ======================= YAML ======================= */
+function parseYAML(src) {
+  const s = src, n = s.length; let i = 0;
+  const warns = [], warned = new Set(); let anchors = new Map(), usedAlias = false, sawTag = false;
+  const BUSY = {};
+  const fail = (msg, at, hint) => { throw new PErr(msg, at == null ? i : at, hint); };
+  const warn = (key, msg, at) => { if (!warned.has(key)) { warned.add(key); warns.push({ msg, at }); } };
+  const isWS = c => c === ' ' || c === '\t';
+  const isWSB = c => c === ' ' || c === '\t' || c === '\n' || c === undefined;
+  const FI = ',[]{}';
+  const isFI = c => c !== undefined && FI.includes(c);
+  const lineStart = p => p <= 0 ? 0 : s.lastIndexOf('\n', p - 1) + 1;
+  const colOf = p => p - lineStart(p);
+  const lineOf = at => lineCol(s, at).line;
+  const isDoc = p => (p === 0 || s[p - 1] === '\n') && (s.startsWith('---', p) || s.startsWith('...', p)) && isWSB(s[p + 3]);
+  const isSeq = p => s[p] === '-' && isWSB(s[p + 1]);
+  function skipInline() { while (i < n && isWS(s[i])) i++; }
+  function skipBlank() {
+    for (;;) {
+      skipInline();
+      if (s[i] === '#') while (i < n && s[i] !== '\n') i++;
+      if (s[i] === '\n') { i++; continue; }
+      return;
+    }
+  }
+  const atEnd = () => i >= n || s[i] === '\n' || (s[i] === '#' && isWSB(s[i - 1]));
+  function checkIndent(p) {
+    const ls = lineStart(p);
+    for (let k = ls; k < p; k++) {
+      if (s[k] === '\t') fail('YAML 的縮排不能用 Tab', k, '請把這一行開頭的 Tab 換成空格（通常一層是 2 個空格）。');
+      if (s[k] !== ' ') return;
+    }
+  }
+  function readProps(props) {
+    const at = i;
+    if (s[i] === '&') {
+      if (props.anchor) fail('同一個值不能有兩個錨點', at);
+      i++; const st = i; while (i < n && !isWSB(s[i]) && !isFI(s[i])) i++;
+      if (i === st) fail('「&」後面要接錨點名稱', at, '例如 &base。');
+      props.anchor = s.slice(st, i);
+    } else {
+      if (props.tag != null) fail('同一個值不能有兩個標籤', at);
+      const st = i; i++;
+      if (s[i] === '<') { const e = s.indexOf('>', i); if (e < 0) fail('標籤沒有結束，少了 >', at); i = e + 1; }
+      else while (i < n && !isWSB(s[i]) && !isFI(s[i])) i++;
+      props.tag = s.slice(st, i); props.tagAt = at; sawTag = true;
+    }
+    if (!isWSB(s[i]) && !',]}'.includes(s[i])) fail('錨點或標籤後面要空一格', i);
+    props.line = lineStart(at);
+  }
+  function normTag(t) {
+    if (t.startsWith('!!')) return t.slice(2);
+    if (t.startsWith('!<tag:yaml.org,2002:')) return t.slice(20, -1);
+    return null;
+  }
+  function resolvePlain(t, at) {
+    const v = yamlResolve(t);
+    if (typeof v === 'number' || typeof v === 'bigint') {
+      if (/^[-+]?0[0-9]+$/.test(t)) warn('oct:' + t, `「${t}」照 YAML 1.2 是十進位的 ${String(v)}，但舊版解析器（YAML 1.1）會當成八進位；如果是編號或郵遞區號，請加引號`, at);
+    } else if (typeof v === 'string' && /^[-+]?[0-9][0-9_]*(:[0-5]?[0-9])+(\.[0-9_]*)?$/.test(t)) {
+      warn('sexa:' + t, `「${t}」照 YAML 1.2 是文字，但舊版解析器（YAML 1.1）會當成 60 進位的數字；如果是時間，建議加引號`, at);
+    } else if (typeof v === 'string' && /^(yes|Yes|YES|no|No|NO|on|On|ON|off|Off|OFF)$/.test(t)) {
+      warn('bool:' + t, `「${t}」照 YAML 1.2 是文字，但舊版解析器（YAML 1.1）會當成 ${/^(yes|on)$/i.test(t) ? 'true' : 'false'}；要表示布林值請寫 true 或 false`, at);
+    }
+    return v;
+  }
+  function tagged(text, style, tag, tagAt, at) {
+    if (tag === '!') return text;
+    const t = normTag(tag);
+    const bad = what => fail(`「${text}」不是${what}`, at, `標籤 ${tag} 要求這個值必須是${what}。`);
+    switch (t) {
+      case 'str': return text;
+      case 'null': if (YNULL.has(text)) return null; return bad(' null');
+      case 'bool': { const r = yamlResolve(text); if (typeof r === 'boolean') return r; return bad('布林值'); }
+      case 'int': { const r = yamlResolve(text); if (typeof r === 'bigint' || (typeof r === 'number' && Number.isInteger(r) && /^[-+]?(0x|0o)?[0-9a-fA-F]+$/.test(text))) return r; return bad('整數'); }
+      case 'float': { const r = yamlResolve(text); if (typeof r === 'number') return mkFloat(r); if (r instanceof TFloat) return r; if (typeof r === 'bigint') return new TFloat(Number(r)); return bad('數字'); }
+      case 'binary': return text.replace(/\s+/g, '');
+      case 'timestamp': { const d = yamlTimestamp(text.trim()); if (d) return d; return bad('日期時間'); }
+      case 'map': case 'set': case 'omap': case 'pairs': if (text === '' && style !== 'quoted') return new Map(); return fail(`標籤 ${tag} 要接物件，不能接單一值`, tagAt);
+      case 'seq': if (text === '' && style !== 'quoted') return []; return fail(`標籤 ${tag} 要接清單，不能接單一值`, tagAt);
+      default:
+        warn('tag:' + tag, `已略過標籤 ${tag}：JSON 和 TOML 沒有標籤，只保留它的值`, tagAt);
+        return style === 'plain' ? resolvePlain(text, at) : text;
+    }
+  }
+  function scalar(text, style, props, at) {
+    const v = props && props.tag != null ? tagged(text, style, props.tag, props.tagAt, at) : style === 'plain' ? resolvePlain(text, at) : text;
+    if (props && props.anchor) anchors.set(props.anchor, v);
+    return v;
+  }
+  function collTag(v, props) {
+    if (props.tag == null || props.tag === '!') return v;
+    const t = normTag(props.tag);
+    if (t === 'map' || t === 'set' || t === 'omap' || t === 'pairs') { if (!(v instanceof Map) && !(t !== 'map' && t !== 'set' && Array.isArray(v))) fail(`標籤 ${props.tag} 要接物件`, props.tagAt); return v; }
+    if (t === 'seq') { if (!Array.isArray(v)) fail(`標籤 ${props.tag} 要接清單`, props.tagAt); return v; }
+    if (t === null || !['str', 'int', 'float', 'bool', 'null', 'binary', 'timestamp'].includes(t)) { warn('tag:' + props.tag, `已略過標籤 ${props.tag}：JSON 和 TOML 沒有標籤，只保留它的值`, props.tagAt); return v; }
+    fail(`標籤 ${props.tag} 不能用在清單或物件上`, props.tagAt);
+  }
+  function coll(props, fn) {
+    if (props.anchor) anchors.set(props.anchor, BUSY);
+    let v = fn(); v = collTag(v, props);
+    if (props.anchor) anchors.set(props.anchor, v);
+    return v;
+  }
+  function alias() {
+    const at = i; i++; const st = i;
+    while (i < n && !isWSB(s[i]) && !isFI(s[i])) i++;
+    const name = s.slice(st, i);
+    if (!name) fail('「*」後面要接錨點名稱', at, '例如 *base。');
+    if (!anchors.has(name)) fail(`找不到錨點「&${name}」`, at, `別名 *${name} 必須參照同一份文件裡、在它前面用 &${name} 定義的值，請檢查拼字和先後順序。`);
+    const v = anchors.get(name);
+    if (v === BUSY) fail(`別名 *${name} 參照到自己`, at, '這會形成無限循環的結構，JSON 和 TOML 都無法表示。');
+    usedAlias = true;
+    return v;
+  }
+  function keyString(k) {
+    const v = k.v;
+    if (typeof v === 'string') return v;
+    if (v === null) return k.style === 'empty' ? '' : 'null';
+    if (typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+    if (typeof v === 'number') return isNaN(v) ? '.nan' : v === Infinity ? '.inf' : v === -Infinity ? '-.inf' : String(v);
+    if (v instanceof TFloat) return fmtFloat(v.v);
+    if (v instanceof TDate) return v.raw;
+    fail(Array.isArray(v) ? '鍵不能是清單' : '鍵不能是物件', k.at, 'JSON 和 TOML 的鍵只能是文字，請改用一般的文字鍵。');
+  }
+  function mapBuilder() {
+    const map = new Map(), over = new Set();
+    function merge(v, at) {
+      const srcs = v instanceof Map ? [v] : Array.isArray(v) ? v : null;
+      if (!srcs || srcs.some(x => !(x instanceof Map))) fail('合併鍵「<<」的值必須是物件，或物件組成的清單', at, '例如 <<: *base 或 <<: [*base, *extra]。');
+      for (const src of srcs) for (const [k2, v2] of src) if (!map.has(k2)) { map.set(k2, v2); over.add(k2); setPos(map, k2, at); }
+    }
+    return {
+      map,
+      set(k, v) {
+        if (k.style === 'plain' && k.v === '<<') { merge(v, k.at); return; }
+        const key = keyString(k);
+        if (map.has(key) && !over.has(key)) fail(`重複的鍵「${key}」`, k.at, `第 ${lineOf(posOf(map, key))} 行已經有「${key}」。同一層的鍵不能重複，請刪掉其中一個或改名。`);
+        over.delete(key); map.set(key, v); setPos(map, key, k.at);
+      }
+    };
+  }
+  /* --- quoted scalars --- */
+  function fold(st, kind) {
+    // at '\n' inside a quoted scalar: returns folded text and moves i
+    i++; let breaks = 0;
+    for (;;) { while (isWS(s[i])) i++; if (s[i] === '\n') { breaks++; i++; continue; } break; }
+    if (i >= n) fail(kind === '"' ? '雙引號字串沒有結束，少了右邊的 "' : "單引號字串沒有結束，少了右邊的 '", st, `第 ${lineOf(st)} 行開始的字串一直沒有結束，請補上 ${kind}。`);
+    if (isDoc(lineStart(i)) && colOf(i) === 0) fail('引號字串還沒結束就遇到文件分隔線', st, `第 ${lineOf(st)} 行開始的字串少了右邊的 ${kind}。`);
+    return breaks ? '\n'.repeat(breaks) : ' ';
+  }
+  const DQ = { '0': '\0', a: '\x07', b: '\b', t: '\t', '\t': '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\x85', _: '\xa0', L: '\u2028', P: '\u2029' };
+  function dq() {
+    const st = i; i++; let out = '', keep = 0;
+    for (;;) {
+      if (i >= n) fail('雙引號字串沒有結束，少了右邊的 "', st, '請在字串最後補上 "。');
+      const c = s[i];
+      if (c === '"') { i++; return out; }
+      if (c === '\\') {
+        const e = s[i + 1];
+        if (e === '\n') { i += 2; while (isWS(s[i])) i++; keep = out.length; continue; }
+        if (e !== undefined && has(DQ, e)) { out += DQ[e]; i += 2; keep = out.length; continue; }
+        const len = e === 'x' ? 2 : e === 'u' ? 4 : e === 'U' ? 8 : 0;
+        if (len) {
+          const h = s.substr(i + 2, len);
+          if (!new RegExp(`^[0-9a-fA-F]{${len}}$`).test(h)) fail(`「\\${e}」後面要接 ${len} 位十六進位數字`, i);
+          const cp = parseInt(h, 16); if (cp > 0x10FFFF) fail('Unicode 碼位超出範圍', i);
+          out += len === 4 ? String.fromCharCode(cp) : String.fromCodePoint(cp); i += 2 + len; keep = out.length; continue;
+        }
+        fail(`「\\${e === undefined ? '' : showCh(s, i + 1)}」不是有效的跳脫字元`, i, 'YAML 雙引號字串支援 \\n、\\t、\\"、\\\\、\\uXXXX 等。要放反斜線本身請寫成 \\\\（例如 C:\\\\Users），或改用單引號字串。');
+      }
+      if (c === '\n') { out = out.slice(0, keep) + fold(st, '"'); keep = out.length; continue; }
+      out += c; i++; if (!isWS(c)) keep = out.length;
+    }
+  }
+  function sq() {
+    const st = i; i++; let out = '', keep = 0;
+    for (;;) {
+      if (i >= n) fail("單引號字串沒有結束，少了右邊的 '", st, "請在字串最後補上 '。");
+      const c = s[i];
+      if (c === "'") { if (s[i + 1] === "'") { out += "'"; i += 2; keep = out.length; continue; } i++; return out; }
+      if (c === '\n') { out = out.slice(0, keep) + fold(st, "'"); keep = out.length; continue; }
+      out += c; i++; if (!isWS(c)) keep = out.length;
+    }
+  }
+  /* --- plain scalars --- */
+  function plainLine(flow) {
+    const st = i;
+    for (;;) {
+      if (i >= n) break;
+      const c = s[i];
+      if (c === '\n') break;
+      if (c === ':' && (isWSB(s[i + 1]) || (flow && isFI(s[i + 1])))) break;
+      if (c === '#' && i > st && isWS(s[i - 1])) break;
+      if (flow && isFI(c)) break;
+      i++;
+    }
+    let e = i; while (e > st && isWS(s[e - 1])) e--;
+    i = e;
+    return s.slice(st, e);
+  }
+  function plainRest(text, pInd, flow, isValue) {
+    let prevLine = text;
+    for (;;) {
+      const save = i;
+      skipInline();
+      if (s[i] !== '\n') { i = save; return text; }
+      let p = i, breaks = 0, ind, q;
+      for (;;) {
+        p++; const ls = p;
+        while (s[p] === ' ') p++; ind = p - ls; q = p;
+        while (isWS(s[q])) q++;
+        if (s[q] === '\n') { breaks++; p = q; continue; }
+        break;
+      }
+      if (q >= n || s[q] === '#') { i = save; return text; }
+      if (!flow && ind <= pInd) { i = save; return text; }
+      if (ind === 0 && isDoc(q)) { i = save; return text; }
+      if (flow && (isFI(s[q]) || (s[q] === ':' && (isWSB(s[q + 1]) || isFI(s[q + 1]))))) { i = save; return text; }
+      i = q;
+      const seg = plainLine(flow);
+      if (seg === '') { i = save; return text; }
+      text += (breaks ? '\n'.repeat(breaks) : ' ') + seg;
+      if (!flow) {
+        const pl = prevLine; prevLine = seg;
+        let k = i; while (isWS(s[k])) k++;
+        if (s[k] === ':' && isWSB(s[k + 1])) fail('這裡不能出現「鍵: 值」', q, isValue ? '這一行縮排得比上面的鍵還深，所以被當成上一個值的延續。如果它是新的鍵，請和上面的鍵對齊；如果它是上一個鍵的下一層，上一個鍵的冒號後面就不能有值。' : `上一行「${pl.slice(0, 20)}」不是「鍵: 值」，所以這一行被當成它的延續。請在上一行補上冒號，或把多餘的那行刪掉。`);
+      }
+    }
+  }
+  function checkPlainStart() {
+    const c = s[i];
+    if (c === '@' || c === '`') fail(`「${c}」是保留字元，不能放在值的開頭`, i, '請把整個值用引號包起來。');
+    if (c === ',' || c === ']' || c === '}') fail(`值不能以「${c}」開頭`, i, c === ',' ? '如果是文字，請用引號包起來。' : `這個 ${c} 沒有對應的開頭括號。`);
+    if (c === '%') fail('「%」開頭的值要加引號', i);
+    if (c === '\t') fail('這裡有多餘的 Tab', i);
+  }
+  /* --- block scalars --- */
+  function blockScalar(pInd) {
+    const folded = s[i] === '>'; i++;
+    let chomp = '', ind = 0;
+    for (let k = 0; k < 2; k++) {
+      const c = s[i];
+      if ((c === '+' || c === '-') && !chomp) { chomp = c; i++; }
+      else if (c >= '1' && c <= '9' && !ind) { ind = +c; i++; }
+      else break;
+    }
+    const hs = i; skipInline();
+    if (s[i] === '#' && (i > hs || isWSB(s[i - 1]))) while (i < n && s[i] !== '\n') i++;
+    if (i < n && s[i] !== '\n') fail('「|」或「>」後面只能接註解', i, '區塊字串的內容要從下一行開始寫，並且要縮排。');
+    if (i < n) i++;
+    let tInd;
+    if (ind) tInd = pInd + ind;
+    else {
+      let p = i; tInd = -1; let maxE = 0;
+      while (p < n) {
+        const ls = p; while (s[p] === ' ') p++;
+        if (s[p] === '\n') { maxE = Math.max(maxE, p - ls); p++; continue; }
+        if (p >= n) { maxE = Math.max(maxE, p - ls); break; }
+        tInd = p - ls; break;
+      }
+      if (tInd < 0) tInd = Math.max(maxE, pInd + 1);
+      if (tInd <= pInd) tInd = pInd + 1;
+    }
+    if (tInd < 0) tInd = 0;
+    const lines = [];
+    while (i < n) {
+      const ls = i; let sp = 0;
+      while (s[i] === ' ' && sp < tInd) { i++; sp++; }
+      let e = s.indexOf('\n', i); if (e < 0) e = n;
+      if (sp < tInd) {
+        if (e === i) { lines.push({ t: '', nl: e < n }); i = e < n ? e + 1 : n; continue; }
+        i = ls; break;
+      }
+      if (tInd === 0 && isDoc(ls)) { i = ls; break; }
+      lines.push({ t: s.slice(i, e), nl: e < n });
+      i = e < n ? e + 1 : n;
+    }
+    let last = lines.length - 1; while (last >= 0 && lines[last].t === '') last--;
+    let out = '', empty = 0, more = false, did = false;
+    for (let k = 0; k <= last; k++) {
+      const t = lines[k].t;
+      if (t === '') { empty++; continue; }
+      if (folded) {
+        if (t[0] === ' ' || t[0] === '\t') { more = true; out += '\n'.repeat(did ? 1 + empty : empty); }
+        else if (more) { more = false; out += '\n'.repeat(empty + 1); }
+        else if (empty === 0) { if (did) out += ' '; }
+        else out += '\n'.repeat(empty);
+      } else out += '\n'.repeat(did ? 1 + empty : empty);
+      out += t; did = true; empty = 0;
+    }
+    let total = last >= 0 && lines[last].nl ? 1 : 0;
+    for (let k = last + 1; k < lines.length; k++) if (lines[k].nl) total++;
+    if (chomp === '+') out += '\n'.repeat(total);
+    else if (chomp === '' && did && total > 0) out += '\n';
+    return out;
+  }
+  /* --- flow collections --- */
+  function skipFlow(open, what) {
+    for (;;) {
+      while (i < n && (isWS(s[i]) || s[i] === '\n')) i++;
+      if (s[i] === '#' && isWSB(s[i - 1])) { while (i < n && s[i] !== '\n') i++; continue; }
+      if (i < n && isDoc(i)) fail(`${what} 還沒結束就遇到文件分隔線`, open, `第 ${lineOf(open)} 行的 ${what} 少了結尾的括號。`);
+      return;
+    }
+  }
+  function flowNode(d, open, what) {
+    const props = {};
+    while (s[i] === '&' || s[i] === '!') { readProps(props); skipFlow(open, what); }
+    const at = i, c = s[i];
+    if (c === '[') return { v: coll(props, () => flowSeq(d + 1)), style: 'flow', at };
+    if (c === '{') return { v: coll(props, () => flowMap(d + 1)), style: 'flow', at };
+    if (c === '"') return { v: scalar(dq(), 'quoted', props, at), style: 'quoted', at };
+    if (c === "'") return { v: scalar(sq(), 'quoted', props, at), style: 'quoted', at };
+    if (c === '*') { if (props.anchor || props.tag) fail('別名 * 不能再加錨點或標籤', at); return { v: alias(), style: 'alias', at }; }
+    if (c === ',' || c === ']' || c === '}' || (c === ':' && (isWSB(s[i + 1]) || isFI(s[i + 1]))) || i >= n) return { v: scalar('', 'plain', props, at), style: 'empty', at };
+    if (c === '|' || c === '>') fail('區塊字串（| 或 >）不能放在 [ ] 或 { } 裡面', at, '請改用加引號的字串，換行寫成 \\n。');
+    if (c === '-' && isWSB(s[i + 1])) fail('[ ] 或 { } 裡面不能用「- 」列項目', at, '在中括號裡請用逗號分隔，例如 [a, b, c]。');
+    if (c === '@' || c === '`') fail(`「${c}」是保留字元，不能放在值的開頭`, at, '請把整個值用引號包起來。');
+    let t = plainLine(true); t = plainRest(t, -1, true);
+    return { v: scalar(t, 'plain', props, at), style: 'plain', at };
+  }
+  function flowSeq(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const arr = [];
+    const unclosed = () => fail('清單的 [ 沒有對應的 ]', open, `第 ${lineOf(open)} 行的 [ 少了結尾的 ]。`);
+    for (;;) {
+      skipFlow(open, '[');
+      if (i >= n) unclosed();
+      if (s[i] === ']') { i++; return arr; }
+      if (s[i] === ',') fail('這裡多了一個逗號', i, '兩個逗號之間少了值，請刪掉多的逗號。');
+      if (s[i] === '?' && isWSB(s[i + 1])) { i++; skipFlow(open, '['); }
+      const k = flowNode(d, open, '[');
+      skipFlow(open, '[');
+      if (s[i] === ':' && (k.style === 'quoted' || k.style === 'flow' || isWSB(s[i + 1]) || isFI(s[i + 1]))) {
+        i++; skipFlow(open, '[');
+        let v = null; if (s[i] !== ',' && s[i] !== ']') v = flowNode(d, open, '[').v;
+        const m = new Map(); const kk = keyString(k); m.set(kk, v); setPos(m, kk, k.at); arr.push(m);
+      } else arr.push(k.v);
+      setPos(arr, arr.length - 1, k.at);
+      skipFlow(open, '[');
+      if (s[i] === ',') { i++; continue; }
+      if (s[i] === ']') { i++; return arr; }
+      if (i >= n) unclosed();
+      if (s[i] === '}') fail('括號不成對：這裡應該用 ] 結束清單', i, `第 ${lineOf(open)} 行是用 [ 開始的。`);
+      fail('清單項目之間少了逗號', i, '在 [ ] 裡，每個項目要用逗號「,」分隔。');
+    }
+  }
+  function flowMap(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const mb = mapBuilder();
+    const unclosed = () => fail('物件的 { 沒有對應的 }', open, `第 ${lineOf(open)} 行的 { 少了結尾的 }。`);
+    for (;;) {
+      skipFlow(open, '{');
+      if (i >= n) unclosed();
+      if (s[i] === '}') { i++; return mb.map; }
+      if (s[i] === ',') fail('這裡多了一個逗號', i, '兩個逗號之間少了「鍵: 值」，請刪掉多的逗號。');
+      if (s[i] === '?' && isWSB(s[i + 1])) { i++; skipFlow(open, '{'); }
+      const k = flowNode(d, open, '{');
+      skipFlow(open, '{');
+      let v = null;
+      if (s[i] === ':') { i++; skipFlow(open, '{'); if (s[i] !== ',' && s[i] !== '}') v = flowNode(d, open, '{').v; }
+      else if (i < n && s[i] !== ',' && s[i] !== '}') fail('少了冒號或逗號', i, '在 { } 裡要寫成「鍵: 值」，每組之間用逗號分隔。');
+      mb.set(k, v);
+      skipFlow(open, '{');
+      if (s[i] === ',') { i++; continue; }
+      if (s[i] === '}') { i++; return mb.map; }
+      if (i >= n) unclosed();
+      if (s[i] === ']') fail('括號不成對：這裡應該用 } 結束物件', i, `第 ${lineOf(open)} 行是用 { 開始的。`);
+      fail('物件項目之間少了逗號', i, '在 { } 裡，每組「鍵: 值」要用逗號分隔。');
+    }
+  }
+  /* --- block collections --- */
+  function inlineNode(d, props) {
+    // a node that fits on the current line (or a quoted/flow node spanning lines)
+    const at = i, c = s[i];
+    if (c === '[' || c === '{') return { v: coll(props, () => c === '[' ? flowSeq(d + 1) : flowMap(d + 1)), style: 'flow', at, line: lineStart(at) };
+    if (c === '"') return { text: dq(), style: 'quoted', at, line: lineStart(at) };
+    if (c === "'") return { text: sq(), style: 'quoted', at, line: lineStart(at) };
+    if (c === '*') { if (props.anchor || props.tag) fail('別名 * 不能再加錨點或標籤', at); return { v: alias(), style: 'alias', at, line: lineStart(at) }; }
+    checkPlainStart();
+    return { text: plainLine(false), style: 'plain', at, line: lineStart(at) };
+  }
+  function lineTail(what) {
+    skipInline();
+    if (!atEnd()) fail(`${what}後面多了內容`, i, what === '引號字串' ? '引號結束後，同一行只能再接註解（# 開頭）。如果引號是文字的一部分，請把整個值用另一種引號包起來。' : '同一行只能再接註解（# 開頭）。');
+  }
+  function finishKey(k, props) {
+    if (k.style === 'plain') return { v: scalar(k.text, 'plain', props, k.at), style: 'plain', at: k.at };
+    if (k.style === 'quoted') return { v: scalar(k.text, 'quoted', props, k.at), style: 'quoted', at: k.at };
+    return { v: k.v, style: k.style, at: k.at };
+  }
+  function blockNode(pInd, inline, keyCtx, d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const props = {};
+    for (;;) {
+      skipInline();
+      if (atEnd()) {
+        skipBlank(); inline = false;
+        if (i >= n || isDoc(i)) return scalar('', 'plain', props, i);
+        const c = colOf(i); checkIndent(i);
+        if (c < pInd || (c === pInd && !(keyCtx && isSeq(i)))) return scalar('', 'plain', props, i);
+        if (c === pInd && pInd < 0) return scalar('', 'plain', props, i);
+        continue;
+      }
+      if (s[i] === '&' || s[i] === '!') { if (props.first == null) props.first = i; readProps(props); continue; }
+      break;
+    }
+    const at = i, ch = s[i];
+    let c = colOf(i);
+    if (isSeq(i)) {
+      if (inline && keyCtx) fail('冒號後面不能直接接「- 」清單項目', at, '清單要從下一行開始，並縮排在鍵的下面，例如：\nkey:\n  - a\n  - b');
+      return coll(props, () => blockSeq(c, d + 1));
+    }
+    if (ch === '?' && isWSB(s[i + 1])) {
+      if (inline && keyCtx) fail('這裡不能用「? 」', at);
+      return coll(props, () => blockMap(c, null, d + 1));
+    }
+    if (ch === '|' || ch === '>') return scalar(blockScalar(pInd), 'block', props, at);
+    const sameLineProps = (props.anchor || props.tag != null) && props.line === lineStart(at);
+    const k = inlineNode(d, (props.anchor || props.tag != null) && !sameLineProps ? {} : props);
+    const save = i; skipInline();
+    if (s[i] === ':' && isWSB(s[i + 1])) {
+      if (inline && keyCtx) fail('同一行不能有兩個「鍵: 值」', i, '如果值本身含有「: 」（冒號加空格），請把整個值用引號包起來，例如 title: "注意: 這是範例"。');
+      if (lineStart(i) !== k.line) fail('鍵不能跨行', at, '當作鍵的引號字串要在同一行結束。');
+      let keyProps = null, mapProps = props;
+      if (sameLineProps) { keyProps = props; mapProps = {}; if (!inline || colOf(props.first) < c) { const pc = colOf(props.first); if (/^[ ]*$/.test(s.slice(lineStart(props.first), props.first))) c = pc; } }
+      const keyRec = finishKey(k, keyProps);
+      return coll(mapProps, () => blockMap(c, keyRec, d + 1));
+    }
+    i = save;
+    if (k.style === 'plain') {
+      if (k.text === '' ) fail(`這裡不該出現「${showCh(s, i)}」`, i);
+      const t = plainRest(k.text, pInd, false, keyCtx);
+      return scalar(t, 'plain', props, at);
+    }
+    if (k.style === 'quoted') { lineTail('引號字串'); return scalar(k.text, 'quoted', props, at); }
+    lineTail(k.style === 'alias' ? '別名' : '括號');
+    if (k.style === 'alias') return k.v;
+    if (!(props.anchor || props.tag != null) || sameLineProps) return k.v;
+    return k.v;
+  }
+  function missingColon(k) {
+    const t = k.text || '';
+    let hint;
+    if (/:\S/.test(t)) hint = '冒號後面要空一格，例如「name: Tom」。';
+    else if (/=/.test(t)) hint = '這看起來像 TOML 或 .env 的寫法；YAML 要寫成「鍵: 值」。如果原文是 TOML，請把來源格式改成 TOML。';
+    else hint = '在鍵值清單裡，每一行都要是「鍵: 值」的格式。如果這一行是上一個值的延續，請把它縮排得比鍵更深；如果是清單項目，前面要加「- 」。';
+    fail('這一行少了「: 」', k.at, hint);
+  }
+  function blockMap(m, firstKey, d) {
+    const mb = mapBuilder();
+    let key = firstKey;
+    for (;;) {
+      if (!key) {
+        skipBlank();
+        if (i >= n || isDoc(i)) break;
+        const c = colOf(i);
+        if (c < m) break;
+        checkIndent(i);
+        if (c > m) fail('縮排不一致', i, `這一行縮排 ${c} 格，但同一層的鍵是 ${m} 格。請和上面的鍵對齊；如果它屬於上一個鍵的下一層，上一個鍵的冒號後面就不能有值。`);
+        const at = i;
+        if (s[i] === '?' && isWSB(s[i + 1])) {
+          i++;
+          const kv = blockNode(m, true, false, d);
+          skipBlank();
+          let val = null;
+          if (i < n && !isDoc(i) && colOf(i) === m && s[i] === ':' && isWSB(s[i + 1])) { i++; val = blockNode(m, true, false, d); }
+          mb.set({ v: kv, style: 'explicit', at }, val);
+          continue;
+        }
+        if (isSeq(i)) fail('這裡不能出現清單項目「- 」', at, '這一行和上面的鍵對齊，所以被當成同一層。如果它是上一個鍵底下的清單，請把它縮排到鍵的下面，並讓上一個鍵的冒號後面空著。');
+        if (s[i] === ':' && isWSB(s[i + 1])) key = { v: null, style: 'empty', at };
+        else {
+          const props = {};
+          while (s[i] === '&' || s[i] === '!') { readProps(props); skipInline(); }
+          const k = inlineNode(d, {});
+          skipInline();
+          if (!(s[i] === ':' && isWSB(s[i + 1]))) missingColon(k);
+          if (lineStart(i) !== k.line) fail('鍵不能跨行', at, '當作鍵的引號字串要在同一行結束。');
+          key = finishKey(k, props);
+        }
+      }
+      i++;
+      const val = blockNode(m, true, true, d);
+      mb.set(key, val);
+      key = null;
+    }
+    return mb.map;
+  }
+  function blockSeq(sI, d) {
+    const arr = [];
+    for (;;) {
+      skipBlank();
+      if (i >= n || isDoc(i)) break;
+      const c = colOf(i);
+      if (c < sI) break;
+      checkIndent(i);
+      if (c > sI) fail('縮排不一致', i, `這一行縮排 ${c} 格，但上面的清單項目「- 」在第 ${sI} 格。請和上面的「- 」對齊，或者把它寫在上一個項目的冒號後面。`);
+      if (!isSeq(i)) break;
+      const at = i; i++;
+      arr.push(blockNode(sI, true, false, d)); setPos(arr, arr.length - 1, at);
+    }
+    return arr;
+  }
+  function endLine() { skipInline(); if (s[i] === '#') while (i < n && s[i] !== '\n') i++; if (i < n && s[i] !== '\n') fail('文件結束記號「...」後面不能有內容', i); }
+  const docs = [];
+  for (;;) {
+    skipBlank();
+    let dir = false;
+    while (i < n && s[i] === '%' && colOf(i) === 0) { dir = true; while (i < n && s[i] !== '\n') i++; skipBlank(); }
+    if (i >= n) { if (dir) fail('指令（%）後面要接「---」開始文件', i); break; }
+    anchors = new Map();
+    let explicit = false;
+    if (isDoc(i)) {
+      if (s[i] === '.') { i += 3; endLine(); continue; }
+      i += 3; explicit = true;
+    } else if (dir) fail('指令（%YAML 或 %TAG）後面要接「---」', i);
+    const rootAt = i;
+    let rootCol = -1;
+    { const save = i; skipBlank(); rootCol = i < n ? colOf(i) : 0; i = save; }
+    const v = blockNode(-1, explicit, false, 0);
+    docs.push(v);
+    skipBlank();
+    if (i >= n) break;
+    if (isDoc(i)) { if (s[i] === '.') { i += 3; endLine(); } continue; }
+    const c = colOf(i);
+    checkIndent(i);
+    let hint;
+    if (c < rootCol) hint = `第一行縮排了 ${rootCol} 格，後面同一層的內容也要縮排 ${rootCol} 格。建議最外層一律從行首開始。`;
+    else if (Array.isArray(v)) hint = '清單的每一項都要以「- 」開頭，並和上面的「- 」對齊。';
+    else if (v instanceof Map) hint = '這一行的縮排或格式和上面的鍵值對不上。請檢查是不是少了「: 」，或縮排多了、少了。';
+    else hint = '文件最外層已經是一個值，不能再接其他內容。要寫鍵值請用「鍵: 值」，要分成多份文件請用 --- 隔開。';
+    fail(isSeq(i) && v instanceof Map ? '這裡不能出現清單項目「- 」' : '這一行和上面的結構對不上', i, hint);
+    void rootAt;
+  }
+  return { docs, warns, aliases: usedAlias, tags: sawTag };
+}
+
+/* ======================= TOML (v1.0.0) ======================= */
+function parseTOML(src) {
+  const s = src, n = s.length; let i = 0;
+  const fail = (msg, at, hint) => { throw new PErr(msg, at == null ? i : at, hint); };
+  const lineOf = at => lineCol(s, at).line;
+  const root = new Map();
+  const kind = new WeakMap(); kind.set(root, 'root');
+  let cur = root, curPath = [];
+  const isWS = c => c === ' ' || c === '\t';
+  const ws = () => { while (isWS(s[i])) i++; };
+  const BARE = /[A-Za-z0-9_-]/;
+  const kpath = ks => ks.map(k => /^[A-Za-z0-9_-]+$/.test(k.k) ? k.k : JSON.stringify(k.k)).join('.');
+  function comment() {
+    if (s[i] !== '#') return;
+    for (; i < n && s[i] !== '\n'; i++) { const c = s.charCodeAt(i); if ((c < 32 && c !== 9) || c === 127) fail('註解裡有控制字元', i); }
+  }
+  function eol(msg, hint) { ws(); comment(); if (i < n && s[i] !== '\n') fail(msg, i, hint); if (i < n) i++; }
+  function keyPart() {
+    const at = i, c = s[i];
+    if (c === '"') { if (s.startsWith('"""', i)) fail('鍵名不能用三個引號的多行字串', at); return { k: basic(), at }; }
+    if (c === "'") { if (s.startsWith("'''", i)) fail('鍵名不能用三個引號的多行字串', at); return { k: literal(), at }; }
+    const st = i; while (i < n && BARE.test(s[i])) i++;
+    if (i === st) {
+      if (c === '=') fail('等號前面少了鍵名', at, '每一行要寫成「鍵 = 值」，例如 name = "Tom"。');
+      if (c === undefined || c === '\n' || c === ']') fail('這裡少了鍵名', at, c === ']' ? '表格標題要寫成 [名稱]，括號裡不能是空的，例如 [server]。' : '每一行要寫成「鍵 = 值」，例如 name = "Tom"；表格標題要寫成 [名稱]。');
+      if (c === '.') fail('鍵名不能以點號開頭或連續兩個點', at, '點號是用來分隔階層的，例如 server.port。');
+      if (c.charCodeAt(0) > 127) { const w = /^[^\s=.\]#"']+/.exec(s.slice(i, i + 40))[0]; fail(`鍵名「${w}」要加引號`, at, `沒加引號的鍵名只能用英文字母、數字、底線和連字號；中文或其他字元請寫成 "${w}"。`); }
+      fail(`鍵名不能以「${showCh(s, i)}」開頭`, at, '沒加引號的鍵名只能用英文字母、數字、底線（_）和連字號（-）；其他字元請整個用雙引號包起來。');
+    }
+    if (i < n && !/[ \t.=\]\n#,}\r]/.test(s[i])) {
+      const ch = s[i];
+      if (ch === ':') fail('TOML 用「=」連接鍵和值，不是冒號', i, `請寫成 ${s.slice(st, i)} = 值。冒號是 YAML 和 JSON 的寫法，如果原文是 YAML，請把來源格式改成 YAML。`);
+      fail(`鍵名裡不能有「${showCh(s, i)}」`, i, '沒加引號的鍵名只能用英數字、底線和連字號；含其他字元時請整個鍵名用雙引號包起來。');
+    }
+    return { k: s.slice(st, i), at };
+  }
+  function key() { const parts = [keyPart()]; for (;;) { ws(); if (s[i] !== '.') break; i++; ws(); parts.push(keyPart()); } return parts; }
+  function keyval(table) {
+    const ks = key(); ws();
+    if (s[i] !== '=') {
+      if (s[i] === ':') fail('TOML 用「=」連接鍵和值，不是冒號', i, `請寫成 ${kpath(ks)} = 值。冒號是 YAML 和 JSON 的寫法。`);
+      if (i >= n || s[i] === '\n') fail('鍵名後面少了「= 值」', i, `請寫成 ${kpath(ks)} = 值，例如 name = "Tom"。`);
+      fail('鍵名後面少了「=」', i, '每一行要寫成「鍵 = 值」。鍵名有空白或特殊字元時，請整個用雙引號包起來。');
+    }
+    i++; ws();
+    if (i >= n || s[i] === '\n' || s[i] === '#') fail('「=」後面少了值', i, 'TOML 的值要寫在同一行。TOML 沒有空值（null）：不需要的鍵請直接刪掉，或寫成空字串 ""。');
+    const vAt = i;
+    const v = value(0);
+    let t = table;
+    for (let k = 0; k < ks.length - 1; k++) {
+      const { k: name, at } = ks[k];
+      if (!t.has(name)) { const nt = new Map(); kind.set(nt, 'dotted'); t.set(name, nt); setPos(t, name, at); t = nt; continue; }
+      const x = t.get(name), kd = kind.get(x);
+      if (x instanceof Map && (kd === 'dotted' || kd === 'implicit')) { if (kd === 'implicit') kind.set(x, 'dotted'); t = x; continue; }
+      const p = kpath((table === cur ? curPath : []).concat(ks.slice(0, k + 1)));
+      if (x instanceof Map) fail(`「${p}」已經定義過了，不能再用點號加入鍵`, at, kd === 'inline' ? `第 ${lineOf(posOf(t, name))} 行用 { } 定義了「${p}」，行內表格寫完就不能再擴充。` : `第 ${lineOf(posOf(t, name))} 行已經用 [${p}] 定義了這個表格，請把這個鍵寫到那個表格底下。`);
+      fail(`「${p}」已經是一個值，不能再當成表格`, at, `第 ${lineOf(posOf(t, name))} 行已經設定 ${p} 的值。`);
+    }
+    const L = ks[ks.length - 1];
+    if (t.has(L.k)) fail(`鍵「${kpath(ks)}」重複定義`, L.at, `第 ${lineOf(posOf(t, L.k))} 行已經定義過它，TOML 不允許同一個鍵出現兩次。`);
+    t.set(L.k, v); setPos(t, L.k, L.at);
+    void vAt;
+  }
+  function header() {
+    const at = i, aot = s[i + 1] === '[';
+    i += aot ? 2 : 1; ws();
+    const ks = key(); ws();
+    if (aot) { if (!(s[i] === ']' && s[i + 1] === ']')) fail('[[ 要用 ]] 結束', i, `請寫成 [[${kpath(ks)}]]。`); i += 2; }
+    else { if (s[i] !== ']') fail('表格名稱要用 ] 結束', i, `請寫成 [${kpath(ks)}]。表格名稱有空白或特殊字元時，要用雙引號包起來。`); i++; }
+    eol('表格標題後面多了內容', '表格標題 [名稱] 要單獨寫一行，鍵值從下一行開始寫。');
+    let t = root;
+    for (let k = 0; k < ks.length - 1; k++) {
+      const { k: name, at: kat } = ks[k];
+      if (!t.has(name)) { const nt = new Map(); kind.set(nt, 'implicit'); t.set(name, nt); setPos(t, name, kat); t = nt; continue; }
+      let x = t.get(name); const p = kpath(ks.slice(0, k + 1));
+      if (Array.isArray(x)) { if (kind.get(x) !== 'aot') fail(`「${p}」是一般陣列，不能當成表格`, kat, `第 ${lineOf(posOf(t, name))} 行用 = [ ] 定義了它。`); x = x[x.length - 1]; }
+      if (!(x instanceof Map)) fail(`「${p}」已經是一個值，不能當成表格`, kat, `第 ${lineOf(posOf(t, name))} 行已經設定了它的值。`);
+      if (kind.get(x) === 'inline') fail(`「${p}」是行內表格 { }，寫完就不能再擴充`, kat, `請把內容都寫進第 ${lineOf(posOf(t, name))} 行的 { } 裡，或改成 [${p}] 表格寫法。`);
+      t = x;
+    }
+    const L = ks[ks.length - 1], p = kpath(ks);
+    curPath = ks;
+    if (aot) {
+      let arr = t.get(L.k);
+      if (arr === undefined) { arr = []; kind.set(arr, 'aot'); t.set(L.k, arr); setPos(t, L.k, at); }
+      else if (!Array.isArray(arr) || kind.get(arr) !== 'aot') fail(`「${p}」已經定義過，不能再用 [[${p}]] 加入項目`, at, Array.isArray(arr) ? `第 ${lineOf(posOf(t, L.k))} 行用 = [ ] 定義了一般陣列；[[ ]] 只能接在同樣用 [[ ]] 建立的陣列後面。` : `第 ${lineOf(posOf(t, L.k))} 行已經有同名的鍵或表格。`);
+      const nt = new Map(); kind.set(nt, 'header'); arr.push(nt); setPos(arr, arr.length - 1, at); cur = nt;
+    } else {
+      let x = t.get(L.k);
+      if (x === undefined) { x = new Map(); kind.set(x, 'header'); t.set(L.k, x); setPos(t, L.k, at); }
+      else if (x instanceof Map && kind.get(x) === 'implicit') { kind.set(x, 'header'); setPos(t, L.k, at); }
+      else {
+        const kd = kind.get(x);
+        fail(`表格 [${p}] 重複定義`, at, !(x instanceof Map) ? (Array.isArray(x) && kd === 'aot' ? `「${p}」是用 [[${p}]] 建立的表格陣列，要新增一項請寫 [[${p}]]。` : `第 ${lineOf(posOf(t, L.k))} 行已經設定了「${p}」的值。`) : kd === 'dotted' ? `第 ${lineOf(posOf(t, L.k))} 行已經用點號鍵（例如 ${p}.x = 1）定義了這個表格，不能再用 [ ] 標題重新定義。` : kd === 'inline' ? `第 ${lineOf(posOf(t, L.k))} 行用 { } 定義了它。` : `第 ${lineOf(posOf(t, L.k))} 行已經有 [${p}]。同一個表格只能定義一次，請把鍵值合併到同一段。`);
+      }
+      cur = x;
+    }
+  }
+  const ESC = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' };
+  function esc() {
+    const at = i, e = s[i + 1];
+    if (e !== undefined && has(ESC, e)) { i += 2; return ESC[e]; }
+    if (e === 'u' || e === 'U') {
+      const len = e === 'u' ? 4 : 8, h = s.substr(i + 2, len);
+      if (!new RegExp(`^[0-9a-fA-F]{${len}}$`).test(h)) fail(`「\\${e}」後面要接 ${len} 位十六進位數字`, at);
+      const cp = parseInt(h, 16);
+      if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) fail('這不是有效的 Unicode 字元', at, '\\u 只能表示一般字元，不能是代理字元（D800–DFFF）。');
+      i += 2 + len; return String.fromCodePoint(cp);
+    }
+    fail(`「\\${e === undefined || e === '\n' ? '' : showCh(s, i + 1)}」不是 TOML 的跳脫字元`, at, 'TOML 只支援 \\b \\t \\n \\f \\r \\" \\\\ \\uXXXX \\UXXXXXXXX。要放反斜線本身請寫成 \\\\，或改用單引號字串（單引號裡不處理跳脫，適合 Windows 路徑和正規表示式）。');
+  }
+  const ctrl = (c, ml) => (c < 32 && c !== 9 && !(ml && c === 10)) || c === 127;
+  function basic() {
+    const st = i; i++; let out = '';
+    for (;;) {
+      if (i >= n || s[i] === '\n') fail('字串沒有結束，少了右邊的雙引號 "', i >= n ? st : i, `第 ${lineOf(st)} 行的字串要在同一行結束；需要多行文字請用三個雙引號 """ 包起來。`);
+      const c = s[i];
+      if (c === '"') { i++; return out; }
+      if (c === '\\') { out += esc(); continue; }
+      if (ctrl(c.charCodeAt(0))) fail('字串裡有控制字元', i, 'Tab 以外的控制字元要用跳脫寫法，例如 \\u0001。');
+      out += c; i++;
+    }
+  }
+  function literal() {
+    const st = i; i++; const e = s.indexOf("'", i), nl = s.indexOf('\n', i);
+    if (e < 0 || (nl >= 0 && nl < e)) fail("字串沒有結束，少了右邊的單引號 '", st, `第 ${lineOf(st)} 行的字串要在同一行結束；需要多行文字請用三個單引號 ''' 包起來。`);
+    for (let k = i; k < e; k++) if (ctrl(s.charCodeAt(k))) fail('字串裡有控制字元', k);
+    i = e + 1; return s.slice(st + 1, e);
+  }
+  function mlBasic() {
+    const st = i; i += 3; if (s[i] === '\n') i++; let out = '';
+    for (;;) {
+      if (i >= n) fail('多行字串沒有結束，少了 """', st, `第 ${lineOf(st)} 行開始的 """ 一直沒有結束。`);
+      const c = s[i];
+      if (c === '"' && s.startsWith('"""', i)) {
+        let q = 0; while (s[i + q] === '"') q++;
+        if (q > 5) fail('連續的雙引號太多', i, '多行字串結尾最多只能緊接兩個 "，其他的請寫成 \\"。');
+        out += '"'.repeat(q - 3); i += q; return out;
+      }
+      if (c === '\\') {
+        let k = i + 1; while (isWS(s[k])) k++;
+        if (s[k] === '\n') { i = k; while (i < n && (isWS(s[i]) || s[i] === '\n')) i++; continue; }
+        out += esc(); continue;
+      }
+      if (ctrl(c.charCodeAt(0), true)) fail('字串裡有控制字元', i);
+      out += c; i++;
+    }
+  }
+  function mlLiteral() {
+    const st = i; i += 3; if (s[i] === '\n') i++; const b = i;
+    for (;;) {
+      if (i >= n) fail("多行字串沒有結束，少了 '''", st, `第 ${lineOf(st)} 行開始的 ''' 一直沒有結束。`);
+      if (s.startsWith("'''", i)) {
+        let q = 0; while (s[i + q] === "'") q++;
+        if (q > 5) fail("連續的單引號太多", i);
+        const out = s.slice(b, i) + "'".repeat(q - 3); i += q; return out;
+      }
+      if (ctrl(s.charCodeAt(i), true)) fail('字串裡有控制字元', i);
+      i++;
+    }
+  }
+  function skipAll() {
+    for (;;) { while (i < n && (isWS(s[i]) || s[i] === '\n')) i++; if (s[i] === '#') { comment(); continue; } return; }
+  }
+  function array(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const arr = []; kind.set(arr, 'static');
+    for (;;) {
+      skipAll();
+      if (i >= n) fail('陣列的 [ 沒有對應的 ]', open, `第 ${lineOf(open)} 行的 [ 少了結尾的 ]。`);
+      if (s[i] === ']') { i++; return arr; }
+      if (s[i] === ',') fail('這裡多了一個逗號', i, '兩個逗號之間少了值。');
+      const at = i; arr.push(value(d)); setPos(arr, arr.length - 1, at);
+      skipAll();
+      if (s[i] === ',') { i++; continue; }
+      if (s[i] === ']') { i++; return arr; }
+      if (i >= n) fail('陣列的 [ 沒有對應的 ]', open, `第 ${lineOf(open)} 行的 [ 少了結尾的 ]。`);
+      fail('陣列的值之間少了逗號', i, '陣列的每個值要用逗號「,」分隔，例如 [1, 2, 3]。');
+    }
+  }
+  function freeze(t) { kind.set(t, 'inline'); for (const v of t.values()) if (v instanceof Map && kind.get(v) !== 'inline') freeze(v); }
+  function inlineTable(d) {
+    if (d > MAXD) fail(`巢狀太深（超過 ${MAXD} 層）`, i, DEEP);
+    const open = i; i++; const t = new Map(); kind.set(t, 'building'); let lastComma = -1;
+    ws();
+    if (s[i] === '}') { i++; freeze(t); return t; }
+    for (;;) {
+      ws();
+      if (i >= n || s[i] === '\n') fail('行內表格 { } 要寫在同一行', i, 'TOML 1.0 的行內表格不能換行；內容較多時，請改用 [表格名稱] 的寫法。');
+      if (s[i] === '}' && lastComma >= 0) fail('最後一個項目後面多了逗號', lastComma, 'TOML 1.0 的行內表格不允許尾逗號。');
+      keyval(t);
+      ws();
+      if (s[i] === ',') { lastComma = i; i++; continue; }
+      if (s[i] === '}') { i++; freeze(t); return t; }
+      if (i >= n || s[i] === '\n' || s[i] === '#') fail('行內表格的 { 沒有對應的 }', open, 'TOML 1.0 的行內表格要在同一行用 } 結束。');
+      fail('行內表格的項目之間少了逗號', i, '例如 { x = 1, y = 2 }。');
+    }
+  }
+  const DT = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-](\d{2}):(\d{2}))?)?$/;
+  const TM = /^(\d{2}):(\d{2}):(\d{2})(\.\d+)?$/;
+  function int(raw, base, at) {
+    const b = base === 10 ? BigInt(raw.replace(/^\+/, '')) : BigInt((base === 16 ? '0x' : base === 8 ? '0o' : '0b') + raw);
+    if (b > 9223372036854775807n || b < -9223372036854775808n) fail('整數超出 64 位元範圍', at, 'TOML 的整數只能介於 -9223372036854775808 到 9223372036854775807。更大的數字請加引號當成文字。');
+    return (b <= 9007199254740991n && b >= -9007199254740991n) ? Number(b) : b;
+  }
+  function badValueHint(tok) {
+    if (/^(True|False|TRUE|FALSE|yes|no|Yes|No|on|off)$/.test(tok)) return 'TOML 的布林值只能寫成小寫的 true 或 false。';
+    if (/^(null|nil|None|NULL|Null|~)$/.test(tok)) return 'TOML 沒有空值（null）。不需要的鍵請直接刪掉，或改用空字串 ""。';
+    if (/^[+-]?0x/i.test(tok)) return /^[+-]/.test(tok) ? '十六進位數字不能加正負號。' : /^0X/.test(tok) ? '十六進位要用小寫的 0x 開頭。' : '十六進位數字只能用 0–9、a–f，底線要夾在兩個數字中間。';
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(tok)) return '日期要寫成 YYYY-MM-DD（例如 2024-03-09），月份 01–12、日期要真的存在；時間寫成 HH:MM:SS。';
+    if (/^\d{1,2}:\d{1,2}/.test(tok)) return '時間要寫成 HH:MM:SS，例如 07:30:00。';
+    if (/^[+-]?[0-9._eE+-]+$/.test(tok)) {
+      if (/^[+-]?0\d/.test(tok)) return '數字不能以 0 開頭（0 本身除外）。如果是編號或郵遞區號，請加雙引號當成文字。';
+      if (/_(_|$|\.|e|E)|(^|[.eE+-])_/.test(tok)) return '底線只能夾在兩個數字中間，例如 1_000。';
+      if (/^[+-]?\.|\.($|[eE_])/.test(tok)) return '小數點前後都要有數字，例如 0.5、1.0。';
+      return '數字格式不正確。';
+    }
+    if (/^[+-]?(Infinity|NaN|Inf)$/i.test(tok)) return 'TOML 的無限大寫成 inf，非數字寫成 nan（都是小寫）。';
+    return `文字要加雙引號，例如 "${tok}"。`;
+  }
+  function value(d) {
+    const c = s[i], at = i;
+    if (c === '"') return s.startsWith('"""', i) ? mlBasic() : basic();
+    if (c === "'") return s.startsWith("'''", i) ? mlLiteral() : literal();
+    if (c === '[') return array(d + 1);
+    if (c === '{') return inlineTable(d + 1);
+    if (c === '“' || c === '”' || c === '‘' || c === '’') fail('這是全形（彎）引號', i, 'TOML 只認得半形的直引號 " 或 \'。');
+    const st = i;
+    while (i < n && !/[ \t\n,\]}#]/.test(s[i])) i++;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s.slice(st, i)) && s[i] === ' ' && /^\d{2}:/.test(s.slice(i + 1, i + 4))) { i++; while (i < n && !/[ \t\n,\]}#]/.test(s[i])) i++; }
+    const tok = s.slice(st, i);
+    if (tok === '') fail(`這裡不該出現「${showCh(s, i)}」`, at, '這裡需要一個值，例如字串 "abc"、數字、true/false、日期、陣列 [ ] 或行內表格 { }。');
+    if (tok === 'true') return true;
+    if (tok === 'false') return false;
+    if (/^[+-]?inf$/.test(tok)) return tok[0] === '-' ? -Infinity : Infinity;
+    if (/^[+-]?nan$/.test(tok)) return NaN;
+    if (/^[+-]?(0|[1-9](_?\d)*)$/.test(tok)) return int(tok.replace(/_/g, ''), 10, at);
+    if (/^0x[0-9A-Fa-f](_?[0-9A-Fa-f])*$/.test(tok)) return int(tok.slice(2).replace(/_/g, ''), 16, at);
+    if (/^0o[0-7](_?[0-7])*$/.test(tok)) return int(tok.slice(2).replace(/_/g, ''), 8, at);
+    if (/^0b[01](_?[01])*$/.test(tok)) return int(tok.slice(2).replace(/_/g, ''), 2, at);
+    if (/[.eE]/.test(tok) && /^[+-]?(0|[1-9](_?\d)*)(\.\d(_?\d)*)?([eE][+-]?\d(_?\d)*)?$/.test(tok)) {
+      const v = Number(tok.replace(/_/g, ''));
+      if (!isFinite(v)) fail('數字太大，超出浮點數範圍', at);
+      return mkFloat(v);
+    }
+    let m = DT.exec(tok);
+    if (m) {
+      if (!okDate(+m[1], +m[2], +m[3])) fail(`日期「${tok.slice(0, 10)}」不存在`, at, '月份要在 01–12，日期要真的存在（例如 2 月沒有 30 日）。');
+      if (!m[4]) return new TDate('ld', tok, tok);
+      if (!okTime(+m[4], +m[5], +m[6])) fail('時間超出範圍', at, '小時 00–23、分鐘 00–59、秒 00–59。');
+      if (m[9] && (+m[9] > 23 || +m[10] > 59)) fail('時區超出範圍', at);
+      let norm = tok.slice(0, 10) + 'T' + tok.slice(11);
+      if (!m[8]) return new TDate('ldt', tok, norm);
+      norm = norm.replace(/z$/, 'Z');
+      return new TDate('odt', tok, norm);
+    }
+    m = TM.exec(tok);
+    if (m) { if (!okTime(+m[1], +m[2], +m[3])) fail('時間超出範圍', at, '小時 00–23、分鐘 00–59、秒 00–59。'); return new TDate('lt', tok, tok); }
+    fail(`看不懂的值「${tok.length > 30 ? tok.slice(0, 30) + '…' : tok}」`, at, badValueHint(tok));
+  }
+  for (;;) {
+    ws();
+    if (i >= n) break;
+    if (s[i] === '\n') { i++; continue; }
+    if (s[i] === '#') { comment(); continue; }
+    if (s[i] === '[') { header(); continue; }
+    keyval(cur);
+    eol('值後面多了內容', 'TOML 一行只能寫一組「鍵 = 值」，值後面只能接註解（# 開頭）。如果是一段文字，請整段用雙引號包起來。');
+  }
+  return { docs: [root], warns: [] };
+}
+
+/* ======================= serializers ======================= */
+const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+function entries(m, sort) { const e = [...m]; if (sort) e.sort((a, b) => cmp(a[0], b[0])); return e; }
+function pathStr(path) {
+  let s = '';
+  for (const k of path) {
+    if (typeof k === 'number') s += `[${k}]`;
+    else s += (s ? '.' : '') + (/^[A-Za-z0-9_\-\u3400-\u9fff]+$/.test(k) ? k : JSON.stringify(k));
+  }
+  return s || '（最外層）';
+}
+function budgetErr() { return new CErr('內容展開後太大', [], undefined, 'YAML 的別名（*）互相參照，展開後超過 300 萬個值，可能是「別名炸彈」。請減少別名的使用。'); }
+
+function toJSON(v, o) {
+  const ind = o.minify ? '' : o.indent === 'tab' ? '\t' : ' '.repeat(+o.indent || 2);
+  let budget = LIMIT; const path = [];
+  const nl = ind ? '\n' : '', sep = ind ? ': ' : ':';
+  function rec(v, pad, parent, key) {
+    if (--budget < 0) throw budgetErr();
+    if (v === null) return 'null';
+    switch (typeof v) {
+      case 'boolean': return v ? 'true' : 'false';
+      case 'string': return JSON.stringify(v);
+      case 'bigint': return v.toString();
+      case 'number':
+        if (!isFinite(v)) throw new CErr(`JSON 不支援${isNaN(v) ? '「非數字」NaN' : '無限大'}`, path.slice(), posOf(parent, key), '請在原文把這個值改成一般數字、文字或 null。', null);
+        return Number.isInteger(v) ? String(v === 0 ? 0 : v) : String(v);
+    }
+    if (v instanceof TFloat) { if (!isFinite(v.v)) throw new CErr('JSON 不支援無限大', path.slice(), posOf(parent, key), '請改成一般數字。'); return fmtFloat(v.v); }
+    if (v instanceof TDate) return JSON.stringify(v.raw);
+    const p2 = pad + ind;
+    if (Array.isArray(v)) {
+      if (!v.length) return '[]';
+      const parts = [];
+      for (let k = 0; k < v.length; k++) { path.push(k); parts.push(p2 + rec(v[k], p2, v, k)); path.pop(); }
+      return '[' + nl + parts.join(',' + nl) + nl + pad + ']';
+    }
+    if (!v.size) return '{}';
+    const parts = [];
+    for (const [k, x] of entries(v, o.sort)) { path.push(k); parts.push(p2 + JSON.stringify(k) + sep + rec(x, p2, v, k)); path.pop(); }
+    return '{' + nl + parts.join(',' + nl) + nl + pad + '}';
+  }
+  return rec(v, '', null, null);
+}
+
+/* YAML emitter helpers */
+const Y11 = /^(y|n|yes|no|on|off|true|false|null|~)$/i;
+function yamlPlainOK(str, key, flow) {
+  if (str === '') return false;
+  if (/^[ \t]|[ \t]$/.test(str)) return false;
+  if (/[\x00-\x1f\x7f-\x9f\u2028\u2029\ufeff]|[\ud800-\udfff]/u.test(str)) return false;
+  if (/^[,\[\]{}#&*!|>'"%@`]/.test(str)) return false;
+  if (/^[-?:]/.test(str) && (str.length === 1 || /^.[ \t]/.test(str) || (flow && str[0] !== '-'))) return false;
+  if (/: |:\t|:$| #|\t#/.test(str)) return false;
+  if (flow && /[,\[\]{}]|:[,\[\]{}]/.test(str)) return false;
+  if (/^(---|\.\.\.)/.test(str)) return false;
+  if (typeof yamlResolve(str) !== 'string') return false;
+  if (Y11.test(str)) return false;
+  if (/^[-+]?(0b[01_]+|0x[0-9a-fA-F_]+|0o?[0-7_]+|[0-9][0-9_]*)$/.test(str)) return false;
+  if (/^[-+]?([0-9][0-9_]*)?\.[0-9_]*([eE][-+]?[0-9]+)?$/.test(str)) return false;
+  if (/^[-+]?[0-9][0-9_]*(:[0-5]?[0-9])+(\.[0-9_]*)?$/.test(str)) return false;
+  if (/^[-+]?\.(inf|nan)$/i.test(str)) return false;
+  if (/^\d{4}-\d\d?-\d\d?/.test(str)) return false;
+  if (str === '=' || str === '<<') return false;
+  if (key && str.length > 1000) return false;
+  return true;
+}
+const YESC = { '\0': '\\0', '\x07': '\\a', '\b': '\\b', '\t': '\\t', '\n': '\\n', '\v': '\\v', '\f': '\\f', '\r': '\\r', '\x1b': '\\e', '"': '\\"', '\\': '\\\\', '\x85': '\\N', '\u2028': '\\L', '\u2029': '\\P' };
+function yamlDQ(str) {
+  return '"' + str.replace(/[\x00-\x1f\x7f-\x9f"\\\u2028\u2029\ufeff]|[\ud800-\udfff]/gu, c => YESC[c] || (c.charCodeAt(0) < 0x100 ? '\\x' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0') : '\\u' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'))) + '"';
+}
+function yamlQuote(str) {
+  if (!/[\x00-\x1f\x7f-\x9f\u2028\u2029\ufeff']|[\ud800-\udfff]/u.test(str)) return "'" + str + "'";
+  return yamlDQ(str);
+}
+function yamlStr(str, key, flow) { return yamlPlainOK(str, key, flow) ? str : yamlQuote(str); }
+function yamlScalar(v, flow) {
+  if (v === null) return 'null';
+  switch (typeof v) {
+    case 'boolean': return v ? 'true' : 'false';
+    case 'bigint': return v.toString();
+    case 'string': return yamlStr(v, false, flow);
+    case 'number':
+      if (isNaN(v)) return '.nan';
+      if (v === Infinity) return '.inf';
+      if (v === -Infinity) return '-.inf';
+      return Number.isInteger(v) ? String(v === 0 ? 0 : v) : fmtFloat(v);
+  }
+  if (v instanceof TFloat) return isFinite(v.v) ? fmtFloat(v.v) : yamlScalar(v.v);
+  if (v instanceof TDate) {
+    if (v.kind === 'lt') return yamlQuote(v.raw);
+    if (yamlTimestamp(v.raw)) return v.raw;
+    if (yamlTimestamp(v.norm)) return v.norm;
+    return yamlQuote(v.raw);
+  }
+  return null;
+}
+function blockOK(str) {
+  return str.includes('\n') && /[^\n]/.test(str) && !/[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ufeff]|[\ud800-\udfff]/u.test(str);
+}
+function toYAML(docs, o) {
+  const unit = ' '.repeat(o.indent === 'tab' ? 2 : (+o.indent || 2));
+  let budget = LIMIT;
+  const isColl = v => Array.isArray(v) || v instanceof Map;
+  function flowRec(v) {
+    if (--budget < 0) throw budgetErr();
+    if (Array.isArray(v)) return '[' + v.map(flowRec).join(', ') + ']';
+    if (v instanceof Map) return '{' + entries(v, o.sort).map(([k, x]) => yamlStr(k, true, true) + ': ' + flowRec(x)).join(', ') + '}';
+    return yamlScalar(v, true);
+  }
+  function blockStr(str, pad, top) {
+    // returns header suffix and content lines, or null if block style is unsuitable
+    if (!blockOK(str)) return null;
+    const lead = /^\n*[ \t]/.test(str);
+    if (lead && top) return null;
+    const m = /\n*$/.exec(str)[0].length;
+    const chomp = m === 0 ? '-' : m === 1 ? '' : '+';
+    const body = str.slice(0, str.length - m).split('\n');
+    for (let k = 1; k < m; k++) body.push('');
+    const cp = pad + unit;
+    return { head: '|' + (lead ? unit.length : '') + chomp, lines: body.map(l => l === '' ? '' : cp + l) };
+  }
+  function mapLines(m, pad, out) {
+    for (const [k, v] of entries(m, o.sort)) {
+      if (--budget < 0) throw budgetErr();
+      let ks = yamlStr(k, true, false);
+      if (ks.length > 1000) { out.push(pad + '? ' + ks); ks = ''; }
+      const kp = ks ? pad + ks + ':' : pad + ':';
+      if (Array.isArray(v) && v.length) { out.push(kp); seqLines(v, pad + unit, out); }
+      else if (v instanceof Map && v.size) { out.push(kp); mapLines(v, pad + unit, out); }
+      else if (Array.isArray(v)) out.push(kp + ' []');
+      else if (v instanceof Map) out.push(kp + ' {}');
+      else if (typeof v === 'string' && v.includes('\n')) {
+        const b = blockStr(v, pad, false);
+        if (b) { out.push(kp + ' ' + b.head); for (const l of b.lines) out.push(l); }
+        else out.push(kp + ' ' + yamlDQ(v));
+      } else out.push(kp + ' ' + yamlScalar(v, false));
+    }
+  }
+  function seqLines(a, pad, out) {
+    const p2 = pad + '  ';
+    for (const v of a) {
+      if (--budget < 0) throw budgetErr();
+      if ((Array.isArray(v) && v.length) || (v instanceof Map && v.size)) {
+        const sub = [];
+        if (Array.isArray(v)) seqLines(v, p2, sub); else mapLines(v, p2, sub);
+        sub[0] = pad + '- ' + sub[0].slice(p2.length);
+        for (const l of sub) out.push(l);
+      } else if (Array.isArray(v)) out.push(pad + '- []');
+      else if (v instanceof Map) out.push(pad + '- {}');
+      else if (typeof v === 'string' && v.includes('\n')) {
+        const b = blockStr(v, pad, false);
+        if (b) { out.push(pad + '- ' + b.head); for (const l of b.lines) out.push(l); }
+        else out.push(pad + '- ' + yamlDQ(v));
+      } else out.push(pad + '- ' + yamlScalar(v, false));
+    }
+  }
+  function doc(v) {
+    if (o.minify) return isColl(v) ? flowRec(v) : (typeof v === 'string' ? yamlStr(v, false, true) : yamlScalar(v, true));
+    const out = [];
+    if (Array.isArray(v) && v.length) seqLines(v, '', out);
+    else if (v instanceof Map && v.size) mapLines(v, '', out);
+    else if (Array.isArray(v)) out.push('[]');
+    else if (v instanceof Map) out.push('{}');
+    else if (typeof v === 'string' && v.includes('\n')) {
+      const b = blockStr(v, '', true);
+      if (b) { out.push(b.head); for (const l of b.lines) out.push(l); } else out.push(yamlDQ(v));
+    } else out.push(yamlScalar(v, false));
+    return out.join('\n');
+  }
+  if (!docs.length) return '';
+  if (docs.length === 1) return doc(docs[0]) + '\n';
+  return docs.map(d => '---\n' + doc(d)).join('\n') + '\n';
+}
+
+/* TOML emitter */
+const TESC = { '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r', '"': '\\"', '\\': '\\\\' };
+function tomlBasic(str) {
+  return '"' + str.replace(/[\x00-\x1f\x7f"\\]/g, c => TESC[c] || '\\u' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')) + '"';
+}
+function tomlML(str) {
+  let body = str.replace(/[\x00-\x08\x0b-\x1f\x7f\\]/g, c => TESC[c] || '\\u' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'));
+  body = body.replace(/"+/g, run => { let r = ''; for (let k = 0; k < run.length; k++) r += k % 3 === 2 ? '\\"' : '"'; return r; });
+  // a trailing run of raw quotes is at most 2 long here, which TOML allows right before the closing """
+  return '"""\n' + body + '"""';
+}
+const tomlKey = k => /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlBasic(k);
+function toTOML(docs, o) {
+  if (docs.length > 1) throw new CErr(`TOML 一個檔案只能放一份文件，這裡有 ${docs.length} 份`, [], undefined, '請只留下一份文件（刪掉其他用 --- 分隔的段落），或改轉成 JSON／YAML。');
+  if (!docs.length) return '';
+  const root = docs[0];
+  if (!(root instanceof Map)) throw new CErr('TOML 最外層必須是「鍵 = 值」的表格', [], undefined, Array.isArray(root) ? '目前最外層是清單（陣列）。TOML 沒辦法直接存放清單，可以先在原文把它放到一個鍵底下，例如 items: 後面接這個清單。' : '目前最外層只有單一值。TOML 需要「鍵 = 值」的結構。');
+  let budget = LIMIT; const path = []; const out = []; let dropped = 0;
+  const nullErr = (parent, key) => new CErr(`TOML 沒有空值（null）：「${pathStr(path)}」是 null`, path.slice(), posOf(parent, key), 'TOML 不能表示空值。可以按下方按鈕略過所有 null，或在原文把它改成其他值。', 'dropNull');
+  function num(v, parent, key) {
+    if (typeof v === 'bigint') {
+      if (v > 9223372036854775807n || v < -9223372036854775808n) throw new CErr(`整數 ${v} 超出 TOML 的 64 位元範圍`, path.slice(), posOf(parent, key), 'TOML 的整數只能介於 -9223372036854775808 到 9223372036854775807。請在原文把它改成文字（加引號）。');
+      return v.toString();
+    }
+    const f = v instanceof TFloat ? v.v : v;
+    if (isNaN(f)) return 'nan';
+    if (f === Infinity) return 'inf';
+    if (f === -Infinity) return '-inf';
+    if (v instanceof TFloat || !Number.isInteger(f)) return fmtFloat(f);
+    return String(f === 0 ? 0 : f);
+  }
+  function inl(v, parent, key, top) {
+    if (--budget < 0) throw budgetErr();
+    if (v === null) throw nullErr(parent, key);
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    if (typeof v === 'string') return top && v.includes('\n') ? tomlML(v) : tomlBasic(v);
+    if (typeof v === 'number' || typeof v === 'bigint' || v instanceof TFloat) return num(v, parent, key);
+    if (v instanceof TDate) return v.norm;
+    if (Array.isArray(v)) {
+      const parts = [];
+      for (let k = 0; k < v.length; k++) {
+        if (v[k] === null && o.dropNull) { dropped++; continue; }
+        path.push(k); parts.push(inl(v[k], v, k, false)); path.pop();
+      }
+      if (!parts.length) return '[]';
+      const one = '[' + parts.join(', ') + ']';
+      if (!top || (one.length <= 80 && !parts.some(p => p[0] === '{' && parts.length > 1 && one.length > 60))) return one;
+      const ind = o.indent === 'tab' ? '\t' : ' '.repeat(+o.indent || 2);
+      return '[\n' + parts.map(p => ind + p + ',').join('\n') + '\n]';
+    }
+    const parts = [];
+    for (const [k, x] of entries(v, o.sort)) {
+      if (x === null && o.dropNull) { dropped++; continue; }
+      path.push(k); parts.push(tomlKey(k) + ' = ' + inl(x, v, k, false)); path.pop();
+    }
+    return parts.length ? '{ ' + parts.join(', ') + ' }' : '{}';
+  }
+  const isAOT = v => Array.isArray(v) && v.length > 0 && v.every(x => x instanceof Map);
+  function table(m, hdr, isRoot, isElem) {
+    const simple = [], tabs = [], aots = [];
+    for (const [k, v] of entries(m, o.sort)) {
+      if (v === null) { if (o.dropNull) { dropped++; continue; } path.push(k); throw nullErr(m, k); }
+      if (v instanceof Map && v.size) tabs.push([k, v]);
+      else if (isAOT(v)) aots.push([k, v]);
+      else simple.push([k, v]);
+    }
+    if (isElem || (!isRoot && (simple.length || (!tabs.length && !aots.length)))) {
+      if (out.length) out.push('');
+      out.push(isElem ? `[[${hdr}]]` : `[${hdr}]`);
+    }
+    for (const [k, v] of simple) { path.push(k); out.push(tomlKey(k) + ' = ' + inl(v, m, k, true)); path.pop(); }
+    for (const [k, v] of tabs) { path.push(k); table(v, (hdr ? hdr + '.' : '') + tomlKey(k), false, false); path.pop(); }
+    for (const [k, v] of aots) {
+      path.push(k);
+      for (let x = 0; x < v.length; x++) { path.push(x); table(v[x], (hdr ? hdr + '.' : '') + tomlKey(k), false, true); path.pop(); }
+      path.pop();
+    }
+  }
+  table(root, '', true, false);
+  const text = out.length ? out.join('\n') + '\n' : '';
+  return { text, dropped };
+}
+
+/* ======================= detection & pipeline ======================= */
+function detect(text) {
+  const t = text.replace(/^\uFEFF/, '').trim();
+  if (!t) return null;
+  if (t[0] === '{' || t[0] === '[') {
+    try { parseJSON(t); return 'json'; } catch (e) { /* fallthrough */ }
+  }
+  if (t[0] === '"' ) { try { parseJSON(t); return 'json'; } catch (e) { /* */ } }
+  const lines = t.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  let toml = 0, yaml = 0, json = 0;
+  for (const l of lines.slice(0, 400)) {
+    if (/^\[\[?\s*[A-Za-z0-9_."' -]+\]\]?\s*(#.*)?$/.test(l)) toml += 2;
+    else if (/^[A-Za-z0-9_."'-]+(\s*\.\s*[A-Za-z0-9_"'-]+)*\s*=(?!=)/.test(l)) toml++;
+    if (/^- |^-$|^[^\s=:{}\[\]"'][^=]*?:(\s|$)|^["'][^"']*["']\s*:\s/.test(l)) yaml++;
+    if (/^---(\s|$)/.test(l)) yaml += 2;
+    if (/^"[^"]*"\s*:\s/.test(l) || /^[{}\[\]],?$/.test(l)) json++;
+  }
+  if ((t[0] === '{' || t[0] === '[') && json >= yaml && toml < json + 2) return 'json';
+  if (toml > yaml) return 'toml';
+  return 'yaml';
+}
+function parse(text, fmt) {
+  const src = text.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '');
+  if (fmt === 'json') return parseJSON(src);
+  if (fmt === 'toml') return parseTOML(src);
+  return parseYAML(src);
+}
+function count(docs) {
+  let n = 0, depth = 0; const seen = new Set();
+  (function rec(v, d) {
+    if (n > LIMIT) return;
+    n++; if (d > depth) depth = d;
+    if (Array.isArray(v)) for (const x of v) rec(x, d + 1);
+    else if (v instanceof Map) for (const x of v.values()) rec(x, d + 1);
+  })(docs, 0);
+  void seen;
+  return { values: n - 1, depth: depth - 1 };
+}
+function hasType(docs, test) {
+  let hit = false, n = 0;
+  (function rec(v) { if (hit || ++n > 200000) return; if (test(v)) { hit = true; return; } if (Array.isArray(v)) v.forEach(rec); else if (v instanceof Map) for (const x of v.values()) rec(x); })(docs);
+  return hit;
+}
+function serialize(docs, to, o) {
+  if (to === 'json') return { text: docs.length === 0 ? '' : toJSON(docs.length === 1 ? docs[0] : docs, o), dropped: 0 };
+  if (to === 'yaml') return { text: toYAML(docs, o), dropped: 0 };
+  return toTOML(docs, o);
+}
+/* Full pipeline used by the page. */
+function convert(text, from, to, o) {
+  o = Object.assign({ indent: 2, sort: false, minify: false, dropNull: false }, o || {});
+  const src = text.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '');
+  const res = { from, detected: false, to, ok: false, empty: false, out: '', warns: [], notes: [], error: null, stats: null };
+  if (!src.trim()) { res.empty = true; if (from === 'auto') res.from = null; return res; }
+  if (from === 'auto') { res.from = detect(src); res.detected = true; }
+  const f = res.from;
+  let p;
+  try { p = parse(src, f); }
+  catch (e) {
+    if (!(e instanceof PErr)) throw e;
+    const lc = lineCol(src, e.at);
+    res.error = { stage: 'parse', msg: e.msg, hint: e.hint, at: Math.min(e.at, src.length), line: lc.line, col: lc.col };
+    for (const g of ['yaml', 'json', 'toml']) {
+      if (g === f || (g === 'yaml' && f === 'json' && /^\s*[\[{]/.test(src))) continue;
+      try { const q = parse(src, g); if (q.docs.length && (g !== 'yaml' || q.docs.some(d => d instanceof Map || Array.isArray(d)))) { res.error.suggest = g; break; } } catch (e2) { /* no */ }
+    }
+    return res;
+  }
+  res.warns = p.warns.slice(0, 200).map(w => ({ msg: w.msg, line: lineCol(src, w.at).line }));
+  const c = count(p.docs);
+  res.stats = { docs: p.docs.length, values: c.values, depth: c.depth, root: p.docs.length === 1 ? (p.docs[0] instanceof Map ? 'map' : Array.isArray(p.docs[0]) ? 'seq' : 'scalar') : 'multi' };
+  if (!p.docs.length) { res.ok = true; res.notes.push('文件裡只有註解，沒有資料。'); return res; }
+  try {
+    const r = serialize(p.docs, to, o);
+    res.out = r.text; res.ok = true;
+    if (r.dropped) res.notes.push(`已略過 ${r.dropped} 個 null 值。`);
+  } catch (e) {
+    if (!(e instanceof CErr)) throw e;
+    const lc = e.at !== undefined ? lineCol(src, e.at) : null;
+    res.error = { stage: 'convert', msg: e.msg, hint: e.hint, fix: e.fix, path: e.path && e.path.length ? pathStr(e.path) : '', at: e.at, line: lc ? lc.line : 0, col: lc ? lc.col : 0 };
+    return res;
+  }
+  if (to === 'json' && p.docs.length > 1) res.notes.push(`共 ${p.docs.length} 份文件（以 --- 分隔），已合併成一個 JSON 陣列。`);
+  if (p.aliases) res.notes.push('錨點和別名（& 與 *）已展開成完整內容。');
+  if (f !== 'json' && /(^|\s)#/.test(src) && (f === 'yaml' ? /(^|[ \t])#/m.test(src) : true)) {
+    if (to === 'json') res.notes.push('註解（# 開頭）無法放進 JSON，已略過。');
+    else res.notes.push('註解（# 開頭）不會保留在輸出中。');
+  }
+  if (to === 'json' && hasType(p.docs, v => v instanceof TDate)) res.notes.push('日期時間在 JSON 裡沒有專屬型別，已轉成文字。');
+  res.notes = res.notes.filter(Boolean);
+  return res;
+}
+/* Plain JS view of a value (for tests): Map -> object with ordered keys, bigint -> string 'n' suffix, TFloat -> number, TDate -> {date} */
+function plain(v) {
+  if (v instanceof Map) { const o = {}; for (const [k, x] of v) o[k] = plain(x); return o; }
+  if (Array.isArray(v)) return v.map(plain);
+  if (typeof v === 'bigint') return v.toString() + 'n';
+  if (v instanceof TFloat) return v.v;
+  if (v instanceof TDate) return { [v.kind]: v.norm };
+  if (typeof v === 'number' && !isFinite(v)) return String(v);
+  return v;
+}
+return { parse, parseJSON, parseYAML, parseTOML, toJSON, toYAML, toTOML, serialize, convert, detect, lineCol, plain, yamlTimestamp, fmtFloat, TFloat, TDate, PErr, CErr };
+})();
+/*CORE-END*/</script>
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = 'yaml-json:v1:';
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+};
+const FMTS = ['yaml', 'json', 'toml'];
+const UP = { yaml: 'YAML', json: 'JSON', toml: 'TOML' };
+const EXT = { yaml: '.yaml', json: '.json', toml: '.toml' };
+const SAMPLES = [
+  { t: '服務設定', d: '錨點與合併、多行文字、註解', f: 'yaml', to: 'json', text: `# 咖啡店點餐服務設定
+service: 咖啡點餐 API
+version: 2.3.1
+enabled: true
+release: 2026-10-18
+
+defaults: &defaults
+  timeout: 30
+  retries: 3
+  region: ap-northeast-1
+
+servers:
+  - name: 台北主機
+    host: tpe.example.com
+    <<: *defaults
+  - name: 高雄備援
+    host: khh.example.com
+    <<: *defaults
+    retries: 5
+
+menu:
+  拿鐵: { price: 120, sizes: [M, L] }
+  美式: { price: 90, sizes: [M, L] }
+
+welcome: |
+  歡迎光臨！
+  今日招牌：手沖耶加雪菲
+` },
+  { t: 'API 回應', d: '巢狀物件、陣列、數字與 null', f: 'json', to: 'yaml', text: `{
+  "orderId": "A-20261018-042",
+  "status": "paid",
+  "customer": { "name": "陳大文", "member": true, "points": 1280 },
+  "items": [
+    { "sku": "LATTE-M", "name": "拿鐵", "qty": 2, "price": 120 },
+    { "sku": "SCONE", "name": "司康", "qty": 1, "price": 85, "note": null }
+  ],
+  "total": 325,
+  "discount": 0.1,
+  "paidAt": "2026-10-18T09:42:10+08:00"
+}
+` },
+  { t: '專案設定', d: '表格、表格陣列、行內表格、日期', f: 'toml', to: 'yaml', text: `# 專案設定
+[project]
+name = "pocket-shop"
+version = "1.4.0"
+authors = [{ name = "林小美", email = "mei@example.com" }]
+released = 2026-10-18T09:30:00+08:00
+
+[tool.lint]
+line-length = 100
+ignore = ["E501", "W291"]
+
+[[deploy]]
+target = "staging"
+replicas = 2
+
+[[deploy]]
+target = "production"
+replicas = 6
+` },
+  { t: '多份文件', d: '用 --- 分隔的 Kubernetes 設定', f: 'yaml', to: 'json', text: `apiVersion: v1
+kind: Service
+metadata:
+  name: shop-web
+spec:
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-web
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: web
+          image: shop/web:1.4.0
+          args: ["--port", "8080"]
+` },
+  { t: '有錯誤的 YAML', d: '看看錯誤訊息怎麼指出問題', f: 'yaml', to: 'json', text: `name: 小明
+skills:
+  - 料理
+  - 攝影
+ age: 18
+city: 臺南
+` },
+];
+
+/* ---------- state ---------- */
+const ta = $('src');
+let from = LS.get('from', 'auto'); if (from !== 'auto' && !FMTS.includes(from)) from = 'auto';
+let to = LS.get('to', 'json'); if (!FMTS.includes(to)) to = 'json';
+const opts = Object.assign({ indent: 2, sort: false, minify: false, wrap: false, dropNull: false }, LS.get('opts', {}));
+if (![2, 4, 'tab'].includes(opts.indent)) opts.indent = 2;
+let fileBase = LS.get('name', '') || '';
+let isSample = false, res = null, seq = 0, tooBig = false;
+/* Big input: Chromium lays out a wrap=off textarea in one go, and a huge or very long line (worse with emoji) can freeze
+   the page for seconds or minutes. Past these limits the text goes into a read-only, virtualised preview instead. */
+const BIG_TOTAL = 300000, BIG_LINE = 10000;
+let bigMode = false, bigText = '', bigLong = false;
+const getText = () => bigMode ? bigText : ta.value;
+function longestLine(s, cap) { let p = 0, m = 0; const n = s.length; while (p <= n) { let e = s.indexOf('\n', p); if (e < 0) e = n; if (e - p > m) { m = e - p; if (m > cap) return m; } p = e + 1; } return m; }
+const needsBig = s => s.length > BIG_TOTAL || (s.length > BIG_LINE && longestLine(s, BIG_LINE) > BIG_LINE);
+
+/* ---------- helpers ---------- */
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function bytes(n) { return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; }
+// UTF-8 size. Big strings are measured once (the last one is cached) and the worker measures its own output.
+let u8s = null, u8n = 0;
+const u8len = s => { if (s.length > 50000) { if (s !== u8s) { u8s = s; u8n = u8loop(s); } return u8n; } return u8loop(s); };
+const u8loop = s => { let n = 0; for (let k = 0; k < s.length; k++) { const c = s.charCodeAt(k); n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xD800 && c <= 0xDBFF) ? (k++, 4) : 3; } return n; };
+const lines = s => { let n = 1, k = -1; while ((k = s.indexOf('\n', k + 1)) !== -1) n++; return n; };
+let toastT;
+function toast(msg, action, fn, ms) {
+  const h = $('toastHost'); h.innerHTML = '';
+  const d = document.createElement('div'); d.className = 'toast' + (action ? '' : ' solo');
+  const sp = document.createElement('span'); sp.textContent = msg; d.appendChild(sp);
+  if (action) { const b = document.createElement('button'); b.type = 'button'; b.textContent = action; b.onclick = () => { h.innerHTML = ''; fn(); }; d.appendChild(b); }
+  h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ''; }, ms || (action ? 5000 : 2200));
+}
+const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { /* no haptics */ } };
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+  try {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0;height:1px';
+    document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+  } catch (e) { return false; }
+}
+
+/* ---------- theme ---------- */
+const root = document.documentElement;
+const th = LS.get('theme', null); if (th === 'light' || th === 'dark') root.dataset.theme = th;
+$('themeBtn').onclick = () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark'; LS.set('theme', root.dataset.theme);
+};
+
+/* ---------- editor chrome ---------- */
+let gutN = 0, LH = 21;
+function measureLH() { LH = parseFloat(getComputedStyle(ta).lineHeight) || 21; }
+measureLH();
+function syncGutter() {
+  if (bigMode) { syncScroll(); return; }
+  const n = lines(ta.value);
+  if (n !== gutN) {
+    gutN = n; const shown = Math.min(n, 200000); let s = '';
+    for (let k = 1; k <= shown; k++) s += k + '\n';
+    $('gutPre').textContent = s;
+    $('ed').style.setProperty('--gd', String(Math.max(2, String(n).length)));
+  }
+  syncScroll();
+}
+function syncScroll() {
+  if (bigMode) { inV.paint(); return; }
+  $('gutPre').style.transform = `translateY(${-ta.scrollTop}px)`;
+  paintHLView();
+  placeBand();
+}
+let bandLine = 0;
+function placeBand() {
+  const band = $('band'), mark = $('gut').querySelector('.eline');
+  if (bigMode) { band.hidden = true; if (mark) mark.remove(); const r = bandLine ? inV.rowOfLine(bandLine) : -1; if (r !== inV.mark) { inV.mark = r; inV.paint(true); } return; }
+  if (!bandLine) { band.hidden = true; if (mark) mark.remove(); return; }
+  const lh = LH;
+  const top = 10 + (bandLine - 1) * lh - ta.scrollTop;
+  band.hidden = false; band.style.top = top + 'px';
+  let m = mark; if (!m) { m = document.createElement('div'); m.className = 'eline'; $('gut').appendChild(m); }
+  m.style.top = top + 'px'; m.style.width = '3px';
+}
+ta.addEventListener('scroll', syncScroll, { passive: true });
+let outRaf = 0, inRaf = 0;
+$('out').addEventListener('scroll', () => { cancelAnimationFrame(outRaf); outRaf = requestAnimationFrame(() => outV.paint()); }, { passive: true });
+$('bigv').addEventListener('scroll', () => { cancelAnimationFrame(inRaf); inRaf = requestAnimationFrame(() => inV.paint()); }, { passive: true });
+let hlT = 0, hlFmt = null, hlLines = null, hlFrom = -1, hlTo = -1;
+function paintHL() {
+  cancelAnimationFrame(hlT);
+  hlT = requestAnimationFrame(() => {
+    const v = ta.value, on = !bigMode && v.length > 0 && v.length <= BIG_TOTAL;
+    ta.classList.toggle('hlon', on);
+    if (!on) { hlLines = null; $('hlc').textContent = ''; return; }
+    const f = (res && res.from) || (from !== 'auto' ? from : YJ.detect(v.slice(0, 20000))) || 'yaml';
+    hlFmt = f;
+    hlLines = hlAll(v.split('\n'), f === 'json' ? hlJSON : f === 'toml' ? hlTOML : hlYAML);
+    hlFrom = hlTo = -1;
+    paintHLView();
+  });
+}
+function paintHLView() {
+  if (!hlLines) return;
+  const lh = LH;
+  const first = Math.max(0, Math.floor(ta.scrollTop / lh) - 30), last = Math.min(hlLines.length, Math.ceil((ta.scrollTop + ta.clientHeight) / lh) + 30);
+  const code = $('hlc');
+  if (first !== hlFrom || last !== hlTo) {
+    hlFrom = first; hlTo = last;
+    code.innerHTML = hlLines.slice(first, last).join('\n') + '\n';
+    code.style.paddingTop = (10 + first * lh) + 'px';
+  }
+  code.style.transform = `translate(${-ta.scrollLeft}px,${-ta.scrollTop}px)`;
+}
+function gotoOffset(at, focus) {
+  if (bigMode) { const r = inV.rowOf(at); inV.mark = r; inV.gotoRow(r); scrollCard(); return; }
+  at = Math.max(0, Math.min(at, ta.value.length));
+  const ln = ta.value.slice(0, at).split('\n').length;
+  const lh = LH;
+  ta.scrollTop = Math.max(0, (ln - 1) * lh - ta.clientHeight / 3);
+  const ls = ta.value.lastIndexOf('\n', at - 1) + 1;
+  ta.scrollLeft = 0;
+  if (focus) { try { ta.focus({ preventScroll: true }); ta.setSelectionRange(at, Math.min(at + 1, ta.value.length)); } catch (e) { /* ignore */ } }
+  void ls;
+  scrollCard();
+  syncScroll();
+}
+function scrollCard() { $('inCard').scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+function gotoLine(L) {
+  if (bigMode) { const r = inV.rowOfLine(L); inV.mark = r; inV.gotoRow(r); scrollCard(); return; }
+  let off = 0; const v = ta.value; for (let k = 1; k < L; k++) { const q = v.indexOf('\n', off); if (q < 0) break; off = q + 1; }
+  gotoOffset(off, false);
+}
+
+/* ---------- route UI ---------- */
+function paintRoute() {
+  const actual = from === 'auto' ? (res && res.from) || null : from;
+  const sb = $('srcBtn');
+  sb.style.setProperty('--fc', actual ? `var(--${actual})` : 'var(--line2)');
+  $('srcFmt').textContent = actual ? UP[actual] : '自動';
+  $('srcFmt').style.color = actual ? '' : 'var(--muted)';
+  $('srcSub').textContent = from === 'auto' ? '自動偵測' : '手動指定';
+  sb.setAttribute('aria-label', `來源格式：${actual ? UP[actual] : '尚未判斷'}（${from === 'auto' ? '自動偵測' : '手動指定'}），點一下更改`);
+  $('inCard').style.setProperty('--fc', actual ? `var(--${actual})` : 'var(--line2)');
+  for (const b of $('toSeg').children) b.setAttribute('aria-pressed', String(b.dataset.f === to));
+  $('outCard').style.setProperty('--fc', `var(--${to})`);
+  const tag = $('outTag'); tag.textContent = UP[to]; tag.style.setProperty('--fc', `var(--${to})`); tag.style.setProperty('--fs-soft', `var(--${to}-soft)`);
+  $('out').classList.toggle('wrapon', opts.wrap);
+}
+$('toSeg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.dataset.f === to) return;
+  to = b.dataset.f; LS.set('to', to); paintRoute(); run(true);
+});
+function saveOpts() { LS.set('opts', opts); paintRoute(); run(true); }
+function effIndent() { return to === 'json' ? opts.indent : (opts.indent === 'tab' ? 2 : opts.indent); }
+function optSummary() {
+  const a = [];
+  if (!(to !== 'toml' && opts.minify)) a.push('縮排 ' + (effIndent() === 'tab' ? 'Tab' : effIndent()));
+  if (to !== 'toml' && opts.minify) a.push(to === 'json' ? '壓縮' : '單行');
+  if (opts.sort) a.push('排序');
+  if (to === 'toml' && opts.dropNull) a.push('略過 null');
+  return a.join(' · ');
+}
+$('optBtn').onclick = () => sheet('輸出選項', (sh) => {
+  const box = document.createElement('div'); sh.appendChild(box);
+  const paint = () => {
+    box.innerHTML = '';
+    const row = (title, sub, ctl) => { const r = document.createElement('div'); r.className = 'orow'; r.innerHTML = `<span class="ol"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}</span>`; r.appendChild(ctl); box.appendChild(r); };
+    const sw = (on, label, fn, dis) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'sw'; b.setAttribute('role', 'switch'); b.setAttribute('aria-checked', String(on)); b.setAttribute('aria-label', label); b.disabled = !!dis; b.innerHTML = '<i></i>'; b.onclick = () => { fn(); saveOpts(); paint(); }; return b; };
+    const seg = document.createElement('div'); seg.className = 'mseg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', '縮排');
+    for (const v of to === 'json' ? [2, 4, 'tab'] : [2, 4]) { const b = document.createElement('button'); b.type = 'button'; b.textContent = v === 'tab' ? 'Tab' : v; b.setAttribute('aria-pressed', String(effIndent() === v)); b.disabled = to !== 'toml' && opts.minify; b.onclick = () => { opts.indent = v; saveOpts(); paint(); }; seg.appendChild(b); }
+    row('縮排', to === 'toml' ? '用在多行陣列' : '每一層往內縮幾格', seg);
+    if (to !== 'toml') row(to === 'json' ? '壓縮成一行' : '單行（流式寫法）', to === 'json' ? '去掉所有空白和換行，檔案最小' : '寫成 {a: 1, b: [x]} 的形式', sw(opts.minify, '壓縮', () => { opts.minify = !opts.minify; }));
+    row('鍵依字母排序', '每一層的鍵由 A 到 Z 排列', sw(opts.sort, '鍵排序', () => { opts.sort = !opts.sort; }));
+    if (to === 'toml') row('略過 null', 'TOML 沒有空值，開啟後直接省略', sw(opts.dropNull, '略過 null', () => { opts.dropNull = !opts.dropNull; }));
+    row('結果自動換行', '長的行折到下一行顯示（不影響內容）', sw(opts.wrap, '自動換行', () => { opts.wrap = !opts.wrap; }));
+  };
+  paint();
+});
+
+/* ---------- sheets ---------- */
+function sheet(title, build) {
+  const host = $('sheetHost'); host.innerHTML = '';
+  const scrim = document.createElement('div'); scrim.className = 'scrim';
+  const sh = document.createElement('div'); sh.className = 'sheet'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.setAttribute('aria-label', title);
+  sh.innerHTML = `<div class="grab"></div><h3>${esc(title)}</h3>`;
+  const close = () => { host.innerHTML = ''; document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  build(sh, close);
+  const c = document.createElement('button'); c.type = 'button'; c.className = 'close'; c.textContent = '關閉'; c.onclick = close; sh.appendChild(c);
+  scrim.appendChild(sh); scrim.addEventListener('click', e => { if (e.target === scrim) close(); });
+  host.appendChild(scrim);
+  sh.tabIndex = -1; sh.focus({ preventScroll: true });
+}
+function item(cls, badge, title, sub, pressed, fn) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'mi ' + cls;
+  if (pressed != null) b.setAttribute('aria-pressed', String(pressed));
+  b.innerHTML = `<span class="bdg">${esc(badge)}</span><span class="tx"><b>${esc(title)}</b><span>${esc(sub)}</span></span>`;
+  b.onclick = fn; return b;
+}
+$('srcBtn').onclick = () => sheet('來源格式', (sh, close) => {
+  const det = res && res.detected && res.from ? `目前判斷為 ${UP[res.from]}` : '貼上內容後自動判斷';
+  sh.appendChild(item('f-auto', '自動', '自動偵測', det, from === 'auto', () => { setFrom('auto'); close(); }));
+  const D = { yaml: '設定檔常用，用縮排表示層級', json: 'API 與程式資料最常見', toml: 'Cargo、pyproject 等設定檔' };
+  for (const f of FMTS) sh.appendChild(item('f-' + f, UP[f], UP[f], D[f], from === f, () => { setFrom(f); close(); }));
+});
+function setFrom(f) { from = f; LS.set('from', from); paintRoute(); run(true); }
+$('sampleBtn').onclick = () => sheet('範例', (sh, close) => {
+  SAMPLES.forEach((s, k) => sh.appendChild(item('f-' + s.f, UP[s.f], s.t, s.d, null, () => { close(); loadSample(k); })));
+});
+
+/* ---------- conversion ---------- */
+let worker = null, workerBad = false;
+function getWorker() {
+  if (worker || workerBad) return worker;
+  try {
+    const src = $('yj-core').textContent + '\nself.onmessage=function(e){var d=e.data,r;try{r=YJ.convert(d.text,d.from,d.to,d.o);var s=r.out||"",n=0;for(var k=0;k<s.length;k++){var c=s.charCodeAt(k);n+=c<128?1:c<2048?2:(c>=55296&&c<=56319)?(k++,4):3}r.outBytes=n}catch(err){r={fatal:String(err&&err.message||err)}}self.postMessage({id:d.id,r:r})};';
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    worker = new Worker(url);
+    worker.onmessage = e => { if (e.data.id === 'fmt') { fmtDone(e.data.r); return; } if (e.data.id === seq) { $('busy') && $('busy').remove(); show(e.data.r); } };
+    worker.onerror = e => { e.preventDefault(); workerBad = true; worker = null; run(true); };
+  } catch (e) { workerBad = true; worker = null; }
+  return worker;
+}
+function convOpts() { return { indent: to === 'json' ? opts.indent : (opts.indent === 'tab' ? 2 : opts.indent), sort: opts.sort, minify: to !== 'toml' && opts.minify, dropNull: opts.dropNull }; }
+let runT = 0;
+function run(now) {
+  clearTimeout(runT);
+  const text = getText();
+  const big = text.length > 40000;
+  const busy = () => { if (!$('busy')) { const b = document.createElement('div'); b.className = 'busy'; b.id = 'busy'; b.textContent = '轉換中…'; $('out').appendChild(b); } };
+  if (big) busy();
+  const go = () => {
+    const id = ++seq;
+    if (big && getWorker()) {
+      busy();
+      worker.postMessage({ id, text, from, to, o: convOpts() });
+      return;
+    }
+    $('busy') && $('busy').remove();
+    // Without a background worker a multi-megabyte conversion would freeze the page, so it is not attempted.
+    if (text.length > BIG_TOTAL) { show({ fatal: '這個瀏覽器無法在背景處理這麼大的內容（超過 30 萬字）' }); return; }
+    let r;
+    try { r = YJ.convert(text, from, to, convOpts()); } catch (e) { r = { fatal: String(e && e.message || e) }; }
+    show(r);
+  };
+  // Small documents convert in a few ms, so typing gets a short debounce; medium ones wait a little longer so
+  // fast typing doesn't queue conversions; big ones go to the worker.
+  if (now && !big) go(); else runT = setTimeout(go, text.length > BIG_TOTAL ? 250 : big ? 150 : text.length > 20000 ? 100 : 50);
+}
+function statusIcon(kind) {
+  if (kind === 'ok') return '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="8"/><path d="M6.5 10.3 9 12.7l4.6-5"/></svg>';
+  if (kind === 'bad') return '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 2.8 18.2 17H1.8z" stroke-linejoin="round"/><path d="M10 8v4M10 14.6v.1"/></svg>';
+  if (kind === 'warn') return '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="10" cy="10" r="8"/><path d="M10 6v5M10 13.8v.1"/></svg>';
+  return '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 10h12M11 5l5 5-5 5" stroke-linejoin="round"/></svg>';
+}
+function contextHTML(src, at, line) {
+  // Works on offsets only, so a 10 MB one-line file costs no more than a small one.
+  at = Math.max(0, Math.min(at, src.length));
+  const ls = src.lastIndexOf('\n', at - 1) + 1;
+  let le = src.indexOf('\n', at); if (le < 0) le = src.length;
+  const prev = []; let p = ls;
+  for (let k = 0; k < 2 && p > 0; k++) { const s0 = src.lastIndexOf('\n', p - 2) + 1; prev.unshift(src.slice(s0, Math.min(p - 1, s0 + 200))); p = s0; }
+  const tab = t => t.replace(/\t/g, '→   ');
+  const row = (k, t, cur) => `<span class="cl${cur ? ' cur' : ''}"><span class="cn">${k}</span>${esc(tab(t)) || ' '}</span>`;
+  let h = '';
+  prev.forEach((t, k) => { h += row(line - prev.length + k, t.length > 160 ? t.slice(0, 160) + '…' : t, false); });
+  let ws = ls, lead = '';
+  if (at - ls > 100) { ws = at - 60; const c = src.charCodeAt(ws); if (c >= 0xDC00 && c <= 0xDFFF) ws--; lead = '…'; }
+  let we = Math.min(le, Math.max(ws + 160, at + 1)); { const c = src.charCodeAt(we - 1); if (c >= 0xD800 && c <= 0xDBFF) we++; }
+  h += row(line, lead + src.slice(ws, we) + (we < le ? '…' : ''), true);
+  const pre = Array.from(lead + src.slice(ws, at)).map(c => c === '\t' ? '→   ' : c).join('');
+  const pad = pre.replace(/[^\x00-\x7f\uff61-\uff9f]/g, '　').replace(/[\x00-\x7f]/g, ' ');
+  h += `<span class="cl"><span class="cn"></span>${esc(pad)}<span class="car">^</span></span>`;
+  return h;
+}
+function show(r) {
+  const prevFrom = res && res.from;
+  res = r;
+  if (r.from !== prevFrom || r.from !== hlFmt) paintHL();
+  const st = $('status'); st.innerHTML = '';
+  bandLine = 0;
+  if (r.fatal) {
+    st.innerHTML = `<div class="st bad"><div class="eh">${statusIcon('bad')}<span>處理時發生意外錯誤</span></div><div class="hint">${esc(r.fatal)}。請重新整理後再試，或分成較小的檔案。</div></div>`;
+    renderOut('', '轉換失敗'); placeBand(); paintRoute(); return;
+  }
+  paintRoute();
+  if (r.empty) {
+    st.innerHTML = `<div class="st idle">${statusIcon('idle')}<span>貼上或輸入 YAML、JSON、TOML，會自動判斷格式並即時轉換。</span></div>`;
+    renderOut('', 'empty'); placeBand(); return;
+  }
+  if (r.error) {
+    const e = r.error, raw = getText(), src = /\r|^\uFEFF/.test(raw) ? raw.replace(/\r\n?/g, '\n').replace(/^\uFEFF/, '') : raw;
+    const card = document.createElement('div'); card.className = 'st bad'; card.setAttribute('role', 'alert');
+    const where = e.line ? `<span class="where">第 ${e.line} 行${e.stage === 'parse' ? '第 ' + e.col + ' 欄' : ''}</span>` : '';
+    const title = e.stage === 'parse' ? `${UP[r.from]} 格式錯誤：${e.msg}` : `無法轉成 ${UP[to]}：${e.msg}`;
+    card.innerHTML = `<div class="eh">${statusIcon('bad')}<div class="et">${where}<span>${esc(title)}</span></div></div>` + (e.hint ? `<div class="hint">${esc(e.hint)}</div>` : '') + (e.line && e.at != null ? `<div class="ctx">${contextHTML(src, e.at, e.line)}</div>` : '');
+    const acts = document.createElement('div'); acts.className = 'acts';
+    const btn = (label, fn, pri) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ab' + (pri ? ' pri' : ''); b.textContent = label; b.onclick = fn; acts.appendChild(b); };
+    if (e.fix === 'dropNull') btn('略過所有 null', () => { opts.dropNull = true; saveOpts(); toast('已開啟「略過 null」，可在輸出選項關閉'); }, true);
+    if (e.stage === 'convert' && e.fix !== 'dropNull' && to !== 'json') btn('改轉成 JSON', () => { to = 'json'; LS.set('to', to); paintRoute(); run(true); }, true);
+    if (e.suggest) btn(`改用 ${UP[e.suggest]} 解析`, () => setFrom(e.suggest), true);
+    if (e.line) btn(`跳到第 ${e.line} 行`, () => gotoOffset(e.at, true));
+    if (acts.children.length) card.appendChild(acts);
+    st.appendChild(card);
+    if (e.line) bandLine = e.line;
+    placeBand();
+    renderOut('', e.stage === 'parse' ? 'parse' : 'convert');
+  } else {
+    const s = r.stats;
+    const parts = [`<b>合法的 ${UP[r.from]}</b>`];
+    if (s.docs > 1) parts.push(`${s.docs} 份文件`);
+    if (s.docs) parts.push(`${s.values.toLocaleString('zh-TW')} 個值`);
+    else parts.push('沒有資料');
+    st.innerHTML = `<div class="st ok">${statusIcon('ok')}<span>${parts.join(' · ')}${r.detected ? '<span style="opacity:.75">（自動偵測）</span>' : ''}</span></div>`;
+    placeBand();
+    renderOut(r.out, s.docs ? null : 'nodata');
+  }
+  if (r.warns && r.warns.length) {
+    const d = document.createElement('details'); d.className = 'st warn'; if (r.warns.length <= 2) d.open = true;
+    const nw = r.warns.length, more = nw >= 200 ? '200+' : nw;
+    d.innerHTML = `<summary>${statusIcon('warn')}<span>${more} 個提醒</span></summary><ul>${r.warns.slice(0, 50).map(w => `<li><button type="button" data-l="${w.line}" aria-label="跳到第 ${w.line} 行"><i>L${w.line}</i></button><span>${esc(w.msg)}</span></li>`).join('')}</ul>${nw > 50 ? `<div class="wmore">只列出前 50 個。</div>` : ''}`;
+    d.addEventListener('click', ev => { const b = ev.target.closest('button[data-l]'); if (b) gotoLine(+b.dataset.l); });
+    st.appendChild(d);
+  }
+  const notes = $('notes');
+  const ns = (r.notes || []).slice();
+  if (ns.length && !r.error) { notes.hidden = false; notes.innerHTML = ns.map(n => `<div>${esc(n)}</div>`).join(''); } else notes.hidden = true;
+  paintFmtBtn();
+}
+
+/* ---------- output rendering & highlighting ---------- */
+const NUM = /^[-+]?(?:0x[0-9a-fA-F_]+|0o[0-7_]+|0b[01_]+|(?:\d[\d_]*)?\.?\d[\d_]*(?:[eE][-+]?\d+)?|\.?inf|\.?nan|\.inf|\.nan|\.Inf|\.NaN)$/;
+function hlJSON(l) {
+  return l.replace(/("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d[\d.eE+-]*)|\b(true|false|null)\b|([{}\[\],:])|([^"\d{}\[\],:\-tfn]+|.)/g, (m, str, colon, num, kw, p, other) => {
+    if (str) return colon ? `<span class="k">${esc(str)}</span><span class="p">${esc(colon)}</span>` : `<span class="s">${esc(str)}</span>`;
+    if (num) return `<span class="nm">${esc(num)}</span>`;
+    if (kw) return `<span class="${kw === 'null' ? 'z' : 'b'}">${kw}</span>`;
+    if (p) return `<span class="p">${esc(p)}</span>`;
+    return esc(other || m);
+  });
+}
+function yval(v) {
+  if (!v) return '';
+  const m = /^(.*?)(\s+#.*)?$/.exec(v); let body = m[1]; const cm = m[2] || '';
+  let h;
+  if (/^(&|\*)\S+/.test(body)) { const a = /^([&*]\S+)(.*)$/.exec(body); return `<span class="an">${esc(a[1])}</span>` + yval(a[2]) + (cm ? `<span class="c">${esc(cm)}</span>` : ''); }
+  if (/^[|>][-+0-9]*$/.test(body)) h = `<span class="p">${esc(body)}</span>`;
+  else if (/^["']/.test(body)) h = `<span class="s">${esc(body)}</span>`;
+  else if (/^[\[{]/.test(body)) h = hlFlow(body);
+  else if (/^(true|false|True|False|TRUE|FALSE)$/.test(body)) h = `<span class="b">${esc(body)}</span>`;
+  else if (/^(null|Null|NULL|~)$/.test(body)) h = `<span class="z">${esc(body)}</span>`;
+  else if (NUM.test(body) && /\d|inf|nan/i.test(body)) h = `<span class="nm">${esc(body)}</span>`;
+  else if (/^\d{4}-\d\d?-\d\d?([Tt ]|$)/.test(body)) h = `<span class="dt">${esc(body)}</span>`;
+  else h = esc(body);
+  return h + (cm ? `<span class="c">${esc(cm)}</span>` : '');
+}
+function hlFlow(l) {
+  return l.replace(/("(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(\s*:(?=\s))?|([{}\[\],])|([^\s,\[\]{}"'][^,\[\]{}]*?)(:(?=\s)|(?=\s*[,\]}]|$))|(\s+)|([\s\S])/g, (m, q, qc, p, w, wc, sp, o) => {
+    if (q) return qc ? `<span class="k">${esc(q)}</span><span class="p">${esc(qc)}</span>` : `<span class="s">${esc(q)}</span>`;
+    if (p) return `<span class="p">${p}</span>`;
+    if (w) return wc === ':' ? `<span class="k">${esc(w)}</span><span class="p">:</span>` : yval(w.trim()) + esc(w.slice(w.trimEnd().length));
+    return esc(sp || o || m);
+  });
+}
+function hlYAML(l, st) {
+  const ind = /^ */.exec(l)[0].length;
+  if (st.block >= 0) { if (l.trim() === '' || ind > st.block) return `<span class="bl">${esc(l)}</span>`; st.block = -1; }
+  if (/^(---|\.\.\.)(\s|$)/.test(l)) return `<span class="h">${esc(l)}</span>`;
+  if (/^\s*#/.test(l)) return `<span class="c">${esc(l)}</span>`;
+  let i = ind, h = esc(l.slice(0, ind)), lineInd = ind;
+  for (;;) { const m = /^- /.exec(l.slice(i)) || (/^-$/.test(l.slice(i)) ? ['-'] : null); if (!m) break; h += '<span class="p">-</span>' + (m[0].length > 1 ? ' ' : ''); i += m[0].length; lineInd = i - 2; }
+  const rest = l.slice(i);
+  const km = /^("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s"'#\[{][^#]*?|\? .*?)(:)(\s|$)/.exec(rest);
+  let val = rest;
+  if (km && !/^[\[{]/.test(rest)) { h += `<span class="k">${esc(km[1])}</span><span class="p">:</span>${km[3]}`; val = rest.slice(km[0].length); lineInd = i; }
+  if (/^[|>][-+0-9]*(\s+#.*)?$/.test(val.trim())) st.block = km ? i : Math.max(0, lineInd);
+  return h + yval(val);
+}
+function tval(v) {
+  return v.replace(/("(?:[^"\\]|\\.)*"|'[^']*')|(\d{4}-\d\d-\d\d(?:[Tt ]\d\d:\d\d:\d\d(?:\.\d+)?(?:[Zz]|[+-]\d\d:\d\d)?)?|\d\d:\d\d:\d\d(?:\.\d+)?)|([-+]?(?:0x[\da-fA-F_]+|0o[0-7_]+|0b[01_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][-+]?\d[\d_]*)?|inf|nan))(?![\w"])|\b(true|false)\b|([A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*")(\s*=)|([{}\[\],])|(#.*$)|([\s\S])/g, (m, s, d, n, b, k, eq, p, c, o) => {
+    if (s) return `<span class="s">${esc(s)}</span>`;
+    if (d) return `<span class="dt">${esc(d)}</span>`;
+    if (n) return `<span class="nm">${esc(n)}</span>`;
+    if (b) return `<span class="b">${b}</span>`;
+    if (k) return `<span class="k">${esc(k)}</span><span class="p">${esc(eq)}</span>`;
+    if (p) return `<span class="p">${p}</span>`;
+    if (c) return `<span class="c">${esc(c)}</span>`;
+    return esc(o || m);
+  });
+}
+function hlTOML(l, st) {
+  if (st.ml) { const e = l.indexOf('"""'); if (e < 0) return `<span class="s">${esc(l)}</span>`; st.ml = false; let q = e + 3; while (l[q] === '"') q++; return `<span class="s">${esc(l.slice(0, q))}</span>` + esc(l.slice(q)); }
+  if (/^\s*\[/.test(l) && /^\s*\[\[?[^=]*\]\]?\s*$/.test(l)) return `<span class="h">${esc(l)}</span>`;
+  if (/^\s*#/.test(l)) return `<span class="c">${esc(l)}</span>`;
+  const m = /^(\s*)((?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')(?:\s*\.\s*(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*'))*)(\s*=\s*)(.*)$/.exec(l);
+  if (!m) return tval(l);
+  let v = m[4];
+  if (/^"""/.test(v) && v.indexOf('"""', 3) < 0) { st.ml = true; return esc(m[1]) + `<span class="k">${esc(m[2])}</span><span class="p">${esc(m[3])}</span><span class="s">${esc(v)}</span>`; }
+  return esc(m[1]) + `<span class="k">${esc(m[2])}</span><span class="p">${esc(m[3])}</span>` + tval(v);
+}
+/* Highlight a list of lines; results are memoised per (line, carried state) so retyping one line of a long
+   document only re-highlights that line. */
+const memos = new Map();
+function hlAll(L, fn) {
+  let memo = memos.get(fn); if (!memo) { memo = new Map(); memos.set(fn, memo); }
+  const st = { block: -1, ml: false }, out = new Array(L.length);
+  for (let k = 0; k < L.length; k++) {
+    const line = L[k];
+    if (line.length > 3000) { out[k] = esc(line); st.block = -1; continue; }
+    const key = st.block + (st.ml ? '|1|' : '|0|') + line;
+    let m = memo.get(key);
+    if (!m) { let x; try { x = fn(line, st); } catch (e) { x = esc(line); } m = [x, st.block, st.ml]; if (memo.size > 60000) memo.clear(); memo.set(key, m); }
+    else { st.block = m[1]; st.ml = m[2]; }
+    out[k] = m[0];
+  }
+  return out;
+}
+/* Virtualised line view, used for the output and for the read-only preview of big input. Lines longer than
+   LONG are folded into CH-character rows; only the rows on screen (plus a margin) are in the DOM. */
+const CH = 120, LONG = 4000, HLMAX = 300000, MAXROWS = 3000, HCAP = 12000000;
+function makeView(box, rowsEl, canWrap) {
+  const V = { text: '', rs: [], re: [], rn: [], lines: 0, html: null, fn: null, maxW: 0, from: -1, to: -1, mark: -1, wrapDone: false };
+  V.clear = () => { V.text = ''; V.rs = []; V.re = []; V.rn = []; V.lines = 0; V.html = null; V.mark = -1; V.from = V.to = -1; V.wrapDone = false; };
+  V.set = (text, fn, trimEnd) => {
+    const n = trimEnd && text.endsWith('\n') ? text.length - 1 : text.length;
+    const rs = [], re = [], rn = []; let p = 0, ln = 0, maxLen = 0, folded = false;
+    for (;;) {
+      let e = text.indexOf('\n', p), last = false;
+      if (e < 0 || e >= n) { e = n; last = true; }
+      ln++;
+      let ee = e; if (ee > p && text.charCodeAt(ee - 1) === 13) ee--;
+      if (ee - p <= LONG) { rs.push(p); re.push(ee); rn.push(ln); if (ee - p > maxLen) maxLen = ee - p; }
+      else {
+        folded = true; let q = p, first = true;
+        while (q < ee) { let z = Math.min(ee, q + CH); if (z < ee) { const c = text.charCodeAt(z - 1); if (c >= 0xD800 && c <= 0xDBFF) z++; } rs.push(q); re.push(z); rn.push(first ? ln : -ln); first = false; q = z; }
+        if (CH + 1 > maxLen) maxLen = CH + 1;
+      }
+      if (last) break; p = e + 1;
+    }
+    V.text = text; V.rs = rs; V.re = re; V.rn = rn; V.lines = ln; V.fn = fn; V.mark = -1; V.from = V.to = -1; V.wrapDone = false;
+    // Width in ch: CJK and other wide characters take two columns.
+    const total = rs.length, wide = k => { const t = text.slice(rs[k], re[k]); return t.length + (t.match(/[ᄀ-￿]/g) || []).length; };
+    let w = 0;
+    if (total <= 20000) { for (let k = 0; k < total; k++) if (re[k] - rs[k] > w / 2.2) { const x = wide(k); if (x > w) w = x; } }
+    else { let c = 0; for (let k = 0; k < total && c < 400; k++) if (re[k] - rs[k] >= maxLen * 0.6) { c++; const x = wide(k); if (x > w) w = x; } }
+    V.maxW = Math.max(w, maxLen);
+    // Small documents are highlighted in one pass so multi-line state (block scalars, """ strings) is exact;
+    // big ones are highlighted lazily, row by row, as they scroll into view.
+    V.html = new Array(total);
+    if (fn && text.length < HLMAX && !folded) { const h = hlAll(text.slice(0, n).split('\n').map(l => l.endsWith('\r') ? l.slice(0, -1) : l), fn); for (let k = 0; k < total; k++) V.html[k] = h[k]; }
+    box.style.setProperty('--gd', String(Math.max(2, String(ln).length)));
+  };
+  const rowHTML = k => {
+    let h = V.html[k];
+    if (h === undefined) {
+      const t = V.text.slice(V.rs[k], V.re[k]);
+      if (V.fn && V.rn[k] > 0 && V.re[k] - V.rs[k] <= 3000 && !(k + 1 < V.rn.length && V.rn[k + 1] < 0)) { try { h = V.fn(t, { block: -1, ml: false }); } catch (e) { h = esc(t); } }
+      else h = esc(t);
+      V.html[k] = h;
+    }
+    const n = V.rn[k];
+    return `<div class="r${k === V.mark ? ' cur' : ''}"><span class="n${n < 0 ? ' fold' : ''}">${n < 0 ? '↳' : n}</span><span class="x">${h}</span></div>`;
+  };
+  const geo = () => { const total = V.rs.length, vh = box.clientHeight, full = total * LH, H = Math.min(full, HCAP); return { total, vh, full, H, ratio: full > HCAP ? (full + 50 - vh) / Math.max(1, H + 50 - vh) : 1 }; };
+  V.paint = force => {
+    const total = V.rs.length; if (!total) return;
+    if (canWrap && opts.wrap) {
+      if (V.wrapDone && !force) return;
+      V.wrapDone = true; V.from = V.to = -1;
+      const shown = Math.min(total, MAXROWS);
+      rowsEl.style.height = ''; rowsEl.style.paddingTop = ''; rowsEl.style.minWidth = '';
+      let h = ''; for (let k = 0; k < shown; k++) h += rowHTML(k);
+      rowsEl.innerHTML = h + (total > shown ? `<div class="more">換行模式下預覽只顯示前 ${shown.toLocaleString('zh-TW')} 行（共 ${total.toLocaleString('zh-TW')} 行），關掉換行即可捲動看全部。複製、分享、下載都是完整內容。</div>` : '');
+      return;
+    }
+    V.wrapDone = false;
+    const g = geo(), st = box.scrollTop, v = st * g.ratio;
+    const pad = g.ratio === 1 ? 40 : 2;
+    const first = Math.max(0, Math.floor(v / LH) - pad), last = Math.min(total, Math.ceil((v + g.vh) / LH) + pad);
+    if (!force && g.ratio === 1 && first === V.from && last === V.to) return;
+    V.from = first; V.to = last;
+    rowsEl.style.height = (g.H + 50) + 'px';
+    rowsEl.style.paddingTop = Math.max(0, 10 + st - (v - first * LH)) + 'px';
+    rowsEl.style.minWidth = `calc(${V.maxW}ch + ${String(V.lines).length + 6}ch)`;
+    let h = ''; for (let k = first; k < last; k++) h += rowHTML(k);
+    rowsEl.innerHTML = h;
+  };
+  V.rowOf = at => { let lo = 0, hi = V.rs.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (V.rs[m] <= at) lo = m; else hi = m - 1; } return lo; };
+  V.rowOfLine = L => { let lo = 0, hi = V.rn.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (Math.abs(V.rn[m]) < L) lo = m + 1; else hi = m; } return lo; };
+  V.gotoRow = k => { const g = geo(); box.scrollTop = Math.max(0, (k * LH - g.vh / 3) / g.ratio); V.paint(true); };
+  return V;
+}
+const outV = makeView($('out'), $('rows'), true);
+const inV = makeView($('bigv'), $('bigRows'), false);
+let lastOut = null;
+function renderOut(text, state) {
+  const out = $('out'), rows = $('rows');
+  const was = lastOut;
+  lastOut = text;
+  if (!text) {
+    const msg = state === 'empty' ? `<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13h22l-5-5M34 27H12l5 5"/></svg>轉換結果會出現在這裡`
+      : state === 'parse' ? '先修正上方的錯誤，<br>結果就會出現。' : state === 'convert' ? `這份資料無法用 ${UP[to]} 表示，<br>請看上方的說明。` : state === 'nodata' ? '沒有資料可以輸出。' : '轉換失敗';
+    outV.clear(); rows.style.height = ''; rows.style.paddingTop = ''; rows.style.minWidth = '';
+    rows.innerHTML = `<div class="emp" style="height:var(--edh)"><div>${msg}</div></div>`;
+    $('outMeta').textContent = ''; $('copyBtn').disabled = false; return;
+  }
+  outV.set(text, to === 'json' ? hlJSON : to === 'yaml' ? (opts.minify ? hlFlow : hlYAML) : hlTOML, true);
+  out.scrollTop = Math.min(out.scrollTop, outV.rs.length * LH);
+  outV.paint(true);
+  $('outMeta').innerHTML = `${outV.lines.toLocaleString('zh-TW')} 行<span class="wd"> · ${bytes(res && res.out === text && res.outBytes != null ? res.outBytes : u8len(text))}</span><span class="wd"> · ${esc(optSummary())}</span>`;
+  $('optBtn').setAttribute('aria-label', '輸出選項：' + optSummary());
+  if (was !== text) { out.classList.remove('fresh'); void out.offsetWidth; out.classList.add('fresh'); }
+}
+
+/* ---------- input handling ---------- */
+let saveT = 0;
+function saveNow() {
+  clearTimeout(saveT); saveT = 0;
+  const v = getText();
+  tooBig = v.length > 2500000 || !LS.set('src', v);
+  if (tooBig) LS.set('src', '');
+  LS.set('lost', tooBig);
+  LS.set('sample', isSample);
+}
+function persist() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => { saveNow(); paintMeta(); }, 300);
+}
+// Write pending input at once when the page is hidden or unloaded, so a quick reload or app switch loses nothing.
+const flush = () => { if (saveT) saveNow(); };
+window.addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+function paintMeta() {
+  const v = getText();
+  $('inMeta').innerHTML = v ? `${lines(v).toLocaleString('zh-TW')} 行<span class="wd"> · ${bytes(u8len(v))}</span>${tooBig ? ' · 未自動保存' : ''}` : '';
+  $('sampleChip').hidden = !isSample;
+}
+function onInput() {
+  if (isSample) { isSample = false; }
+  if (needsBig(ta.value)) { setText(ta.value); toast('內容很大，已改成唯讀預覽，避免畫面卡住'); return; }
+  syncGutter(); paintMeta(); persist(); paintHL(); run(false);
+}
+ta.addEventListener('input', onInput);
+// A paste that would make the editor huge goes straight to the read-only preview, never through the textarea.
+ta.addEventListener('paste', e => {
+  const t = e.clipboardData && e.clipboardData.getData('text/plain');
+  if (!t || t.length <= BIG_LINE) return;
+  const v = ta.value, nv = v.slice(0, ta.selectionStart) + t + v.slice(ta.selectionEnd);
+  if (!needsBig(nv)) return;
+  e.preventDefault(); fileBase = ''; LS.set('name', '');
+  setText(nv); toast('內容很大，已改成唯讀預覽', v.trim() ? '復原' : null, () => setText(v));
+});
+function applyText(text) {
+  const big = needsBig(text);
+  const ed = $('ed');
+  if (big) {
+    // Hide the textarea before it gets the text, so the browser never lays the text out.
+    bigMode = true; bigText = text; ed.classList.add('big'); $('bigv').hidden = false;
+    if (document.activeElement === ta) ta.blur();
+    // The hidden textarea still mirrors the text (scripts and form tools read #src), in its own task.
+    ta.value = ''; setTimeout(() => { if (bigMode && bigText === text) ta.value = text; }, 30);
+    hlLines = null; $('hlc').textContent = '';
+    inV.set(text, null, false); $('bigv').scrollTop = 0; $('bigv').scrollLeft = 0; inV.paint(true);
+    const long = bigLong = longestLine(text, BIG_LINE) > BIG_LINE;
+    $('bigMsg').textContent = `${long ? '有很長的一行' : '內容很大'}（${bytes(u8len(text))}），改用唯讀預覽以免卡住；轉換、複製、下載都照常。`;
+    $('bigBar').hidden = false; paintFmtBtn();
+  } else {
+    // Small text goes in before the textarea is shown again.
+    ta.value = text; ta.scrollTop = 0; ta.scrollLeft = 0;
+    if (bigMode) { bigMode = false; bigText = ''; inV.clear(); $('bigRows').innerHTML = ''; }
+    ed.classList.remove('big'); $('bigv').hidden = true; $('bigBar').hidden = true;
+  }
+}
+function paintFmtBtn() { $('fmtBtn').hidden = !(bigMode && res && res.ok && res.from === 'json' && bigLong); }
+function setText(text, opt) {
+  applyText(text);
+  isSample = !!(opt && opt.sample);
+  syncGutter(); paintMeta(); persist(); paintHL(); run(true);
+}
+$('fmtBtn').onclick = () => {
+  const b = $('fmtBtn'); if (b.disabled) return;
+  b.disabled = true; b.textContent = '排版中…';
+  const w = getWorker();
+  if (w) w.postMessage({ id: 'fmt', text: bigText, from: 'json', to: 'json', o: { indent: 2 } });
+  else { let r; try { r = YJ.convert(bigText, 'json', 'json', { indent: 2 }); } catch (e) { r = { fatal: String(e) }; } fmtDone(r); }
+};
+function fmtDone(r) {
+  const b = $('fmtBtn'); b.disabled = false; b.textContent = '展開成多行';
+  if (!r || !r.ok || !r.out) { toast('無法排版，請先修正錯誤'); return; }
+  const prev = getText();
+  setText(r.out);
+  toast(bigMode ? '已展開成多行（仍然很大，維持唯讀預覽）' : '已展開成多行，可以直接編輯', '復原', () => setText(prev));
+}
+function loadSample(k) {
+  const s = SAMPLES[k];
+  from = 'auto'; to = s.to; LS.set('from', from); LS.set('to', to); fileBase = ''; LS.set('name', '');
+  setText(s.text, { sample: true });
+}
+$('pasteBtn').onclick = async () => {
+  let t = null;
+  try { if (navigator.clipboard && navigator.clipboard.readText) t = await navigator.clipboard.readText(); } catch (e) { t = null; }
+  if (t == null) { if (bigMode) toast('無法直接讀取剪貼簿，請先清除，再在輸入框長按並選「貼上」', null, null, 3500); else { ta.focus(); toast('無法直接讀取剪貼簿，請在輸入框長按並選「貼上」', null, null, 3500); } return; }
+  if (!t.trim()) { toast('剪貼簿是空的'); return; }
+  const prev = getText(); fileBase = ''; LS.set('name', '');
+  setText(t); buzz();
+  toast('已貼上', prev.trim() ? '復原' : null, () => setText(prev));
+};
+$('clearBtn').onclick = () => {
+  const prev = getText(), wasSample = isSample;
+  if (!prev) { ta.focus(); return; }
+  setText(''); saveNow(); ta.focus({ preventScroll: true });
+  toast('已清除', '復原', () => setText(prev, { sample: wasSample }));
+};
+function guessFmt(name) { const m = /\.([a-z0-9]+)$/i.exec(name || ''); const e = m ? m[1].toLowerCase() : ''; return e === 'json' ? 'json' : (e === 'yaml' || e === 'yml') ? 'yaml' : (e === 'toml' || e === 'lock') ? 'toml' : null; }
+async function openFile(file) {
+  if (!file) return;
+  if (file.size > 15 * 1048576) { toast('檔案太大（超過 15 MB），請改用較小的檔案'); return; }
+  let text;
+  try { text = await file.text(); } catch (e) { toast('無法讀取這個檔案'); return; }
+  if (/\u0000/.test(text.slice(0, 4096))) { toast('這看起來不是文字檔'); return; }
+  const prev = getText();
+  fileBase = file.name.replace(/\.[^.]*$/, '') || 'converted'; LS.set('name', fileBase);
+  const g = guessFmt(file.name);
+  // Detection on the main thread only looks at the start of a big file; the worker checks the whole thing.
+  if (g) { from = YJ.detect(text.length > 200000 ? text.slice(0, 50000) : text) === g ? 'auto' : g; LS.set('from', from); }
+  if (g && g === to) { to = g === 'json' ? 'yaml' : 'json'; LS.set('to', to); }
+  setText(text);
+  toast(`已開啟 ${file.name}`, prev.trim() ? '復原' : null, () => setText(prev));
+}
+$('openBtn').onclick = () => $('fileIn').click();
+$('fileIn').onchange = e => { openFile(e.target.files[0]); e.target.value = ''; };
+const ed = $('ed');
+ed.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('drop').hidden = false; } });
+ed.addEventListener('dragleave', e => { if (!ed.contains(e.relatedTarget)) $('drop').hidden = true; });
+ed.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) { e.preventDefault(); $('drop').hidden = true; openFile(e.dataTransfer.files[0]); } });
+
+/* ---------- swap / copy / share / download ---------- */
+$('swapBtn').onclick = () => {
+  if (!res || !res.ok || !res.out) { toast(res && res.error ? '先修正錯誤才能對調' : '目前沒有可對調的結果'); return; }
+  const prev = getText(), prevFrom = from, prevTo = to, actual = res.from;
+  const sb = $('swapBtn'); sb.classList.toggle('spin');
+  from = to; to = actual && actual !== from ? actual : FMTS.find(f => f !== from);
+  LS.set('from', from); LS.set('to', to);
+  setText(res.out);
+  toast(`已對調：${UP[from]} → ${UP[to]}`, '復原', () => { from = prevFrom; to = prevTo; LS.set('from', from); LS.set('to', to); setText(prev); });
+};
+function outText() { return res && res.ok && res.out ? res.out : ''; }
+let copyT;
+$('copyBtn').onclick = async () => {
+  const t = outText();
+  if (!t) { toast(res && res.error ? '有錯誤，還沒有結果可以複製' : '目前沒有可複製的結果'); return; }
+  const ok = await copyText(t);
+  const b = $('copyBtn');
+  if (ok) {
+    buzz(); b.classList.add('done'); b.querySelector('.t').textContent = '已複製';
+    clearTimeout(copyT); copyT = setTimeout(() => { b.classList.remove('done'); b.querySelector('.t').textContent = '複製'; }, 1400);
+    toast(`已複製 ${UP[to]}（${bytes(res.outBytes != null ? res.outBytes : u8len(t))}）`);
+  } else toast('無法自動複製，請改用下載');
+};
+const fname = () => (fileBase || 'converted') + EXT[to];
+$('shareBtn').onclick = async () => {
+  const t = outText();
+  if (!t) { toast('目前沒有可分享的結果'); return; }
+  try {
+    if (navigator.share) {
+      const file = typeof File === 'function' ? new File([t], fname(), { type: 'text/plain' }) : null;
+      if (t.length > 20000 && file && navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: fname() });
+      else await navigator.share({ title: fname(), text: t });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const ok = await copyText(t);
+  toast(ok ? '這裡無法直接分享，已改為複製到剪貼簿' : '無法分享，請改用下載');
+};
+let DL = null;
+(async () => { try { DL = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { DL = null; } })();
+$('dlBtn').onclick = async () => {
+  const t = outText();
+  if (!t) { toast('目前沒有可下載的結果'); return; }
+  const name = fname();
+  if (DL) {
+    try { await DL.save({ filename: name, data: t }); toast('已下載 ' + name); }
+    catch (e) { const m = String(e && (e.message || e.name)); toast(/declin|cancel|denied|abort/i.test(m) ? '已取消下載' : '下載失敗，請改用複製'); }
+    return;
+  }
+  try {
+    const u = URL.createObjectURL(new Blob([t], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 60000);
+    toast('已下載 ' + name);
+  } catch (e) { toast('下載失敗，請改用複製'); }
+};
+
+/* ---------- init ---------- */
+// First visit shows a sample; after that the last input comes back exactly, including an empty editor.
+const saved = LS.get('src', null);
+if (typeof saved === 'string') {
+  applyText(saved); isSample = !!saved && !!LS.get('sample', false);
+  syncGutter(); paintMeta(); paintHL(); paintRoute(); run(true);
+  if (!saved && LS.get('lost', false)) toast('上次的內容超過 2.5 MB，沒有自動保存；請重新開啟檔案', null, null, 4000);
+} else loadSample(0);
+window.addEventListener('resize', () => { measureLH(); hlFrom = -1; syncScroll(); outV.from = -1; outV.paint(); inV.from = -1; if (bigMode) inV.paint(); });
+window.__yj = { get res() { return res; }, get big() { return bigMode; }, text: getText, run: () => run(true), YJ };
+window.__yjReady = true;
+})();
+</script>
