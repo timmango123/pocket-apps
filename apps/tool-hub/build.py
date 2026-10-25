@@ -73,6 +73,7 @@ TOOLS = [
     ('chart-maker'       , '簡易圖表產生器', 'dev', '貼上數字就畫出長條、折線、圓餅圖，下載 PNG/SVG。'),
     ('html-playground'   , 'HTML 即時預覽', 'dev', '手機上也能寫 HTML/CSS/JS 並即時看結果。'),
     ('yaml-json'         , 'YAML／JSON／TOML 互轉', 'dev', 'YAML、JSON、TOML 任意互轉並驗證，錯誤標出行列並用白話說明怎麼修。'),
+    ('jwt-decode'        , 'JWT 與網址解析', 'dev', '貼上就自動辨識：JWT 拆成彩色三段、解讀到期時間並驗證簽章；網址拆解參數、解多層編碼。全在本機。'),
     ('pass-forge'        , '密碼產生器', 'secure', '高強度密碼或好記詞組密碼，顯示破解時間估計。'),
     ('secret-note'       , '文字加密便條', 'secure', '用密碼以 AES 加密文字，產生可貼出去的密文。'),
     ('qr-maker'          , 'QR 碼產生器', 'secure', '文字、網址、Wi‑Fi、名片轉 QR 碼，可調顏色並下載。'),

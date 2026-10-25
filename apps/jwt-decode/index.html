@@ -1,0 +1,1893 @@
+<style id="mobile-shim">
+/* Mobile shim: no double-tap zoom on controls, no font boosting in landscape, 16px form fields so iOS doesn't zoom on focus. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, a, label, summary, select, input, [role="button"] { touch-action: manipulation; }
+[hidden] { display: none !important; }
+@media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
+</style>
+<title>JWT 與網址解析</title>
+<style>
+/* Inspection bench: cool graph paper, one ink colour per token part (header vermilion, payload violet, signature teal) */
+:root{
+  --bg:#e8ecf1; --paper:#fbfcfe; --sunk:#f1f4f8; --ink:#111821; --ink2:#36404d; --muted:#586374; --faint:#848e9c;
+  --line:#d5dce5; --line2:#bac4d0; --grid:rgba(38,72,120,.055);
+  --hd:#c2382a; --pl:#7a3dc4; --sg:#0a7a88; --x1:#a36400; --x2:#2c5cc0; --x3:#5b6675;
+  --hd-soft:#fbe5e1; --pl-soft:#efe6fb; --sg-soft:#d9eff1; --x1-soft:#f7ead0; --x2-soft:#e1e9f9;
+  --ok:#157346; --ok-soft:#dbf0e4; --bad:#b3241a; --bad-soft:#fce3df; --warn:#875400; --warn-soft:#faedd3; --info:#36588a; --info-soft:#e4ebf5;
+  --jk:#24529c; --js:#2b6a1d; --jn:#b04500; --jb:#7a3dc4; --jz:#6a7380;
+  --shadow:0 1px 0 rgba(255,255,255,.8) inset,0 1px 2px rgba(20,40,70,.06),0 10px 26px -14px rgba(20,40,70,.22);
+  --pop:0 18px 50px -12px rgba(10,20,40,.4);
+  --sans:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Noto Sans Mono CJK TC",monospace;
+  --fs:14px; --lh:22px; color-scheme:light;
+}
+@media (pointer:coarse){:root{--fs:16px;--lh:24px}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0c1016; --paper:#141a22; --sunk:#10151c; --ink:#e5eaf0; --ink2:#c2cad4; --muted:#97a2b0; --faint:#6c7786;
+  --line:#222a35; --line2:#313b48; --grid:rgba(140,170,220,.045);
+  --hd:#ff8a7a; --pl:#c6a0ff; --sg:#4fd0dc; --x1:#f0b54c; --x2:#88a9ff; --x3:#a3adba;
+  --hd-soft:#3a1c18; --pl-soft:#291f3c; --sg-soft:#0f2f37; --x1-soft:#33270f; --x2-soft:#18233d;
+  --ok:#6fd59b; --ok-soft:#112f1f; --bad:#ff8f85; --bad-soft:#3a1715; --warn:#f1bf62; --warn-soft:#33270f; --info:#9fbbe8; --info-soft:#18233a;
+  --jk:#8fb5ff; --js:#a7d98a; --jn:#ffab70; --jb:#c6a0ff; --jz:#9aa3ad;
+  --shadow:0 1px 0 rgba(255,255,255,.035) inset,0 1px 2px rgba(0,0,0,.35),0 12px 28px -14px rgba(0,0,0,.75);
+  --pop:0 18px 50px -10px rgba(0,0,0,.8); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1016; --paper:#141a22; --sunk:#10151c; --ink:#e5eaf0; --ink2:#c2cad4; --muted:#97a2b0; --faint:#6c7786;
+  --line:#222a35; --line2:#313b48; --grid:rgba(140,170,220,.045);
+  --hd:#ff8a7a; --pl:#c6a0ff; --sg:#4fd0dc; --x1:#f0b54c; --x2:#88a9ff; --x3:#a3adba;
+  --hd-soft:#3a1c18; --pl-soft:#291f3c; --sg-soft:#0f2f37; --x1-soft:#33270f; --x2-soft:#18233d;
+  --ok:#6fd59b; --ok-soft:#112f1f; --bad:#ff8f85; --bad-soft:#3a1715; --warn:#f1bf62; --warn-soft:#33270f; --info:#9fbbe8; --info-soft:#18233a;
+  --jk:#8fb5ff; --js:#a7d98a; --jn:#ffab70; --jb:#c6a0ff; --jz:#9aa3ad;
+  --shadow:0 1px 0 rgba(255,255,255,.035) inset,0 1px 2px rgba(0,0,0,.35),0 12px 28px -14px rgba(0,0,0,.75);
+  --pop:0 18px 50px -10px rgba(0,0,0,.8); color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  padding:0 max(16px,env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:24px 24px;background-position:-1px -1px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+svg{display:block;flex:none}
+.wrap{max-width:1180px;margin:0 auto}
+code,.mono{font-family:var(--mono)}
+/* header */
+.top{display:flex;align-items:center;gap:10px;min-height:60px}
+.mark{width:36px;height:36px;flex:none;border-radius:10px;background:#141b25;outline:1px solid var(--line2);outline-offset:-1px;display:grid;place-items:center;box-shadow:0 2px 0 rgba(0,0,0,.18),inset 0 0 0 1px rgba(255,255,255,.07)}
+.title{flex:1;min-width:0}
+.title h1{margin:0;font-size:19px;font-weight:780;letter-spacing:.02em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title small{display:block;font:600 11px/1.35 var(--mono);letter-spacing:.06em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title small i{font-style:normal;font-weight:700}
+.title .h{color:var(--hd)} .title .p{color:var(--pl)} .title .s{color:var(--sg)}
+.ib{width:44px;height:44px;flex:none;border:1px solid var(--line);background:var(--paper);border-radius:12px;display:grid;place-items:center;cursor:pointer;color:var(--ink2);box-shadow:var(--shadow);transition:transform .12s,border-color .15s}
+.ib svg{width:21px;height:21px}
+.ib:active{transform:scale(.94)}
+@media (hover:hover){.ib:hover,.tb:hover{border-color:var(--line2);color:var(--ink)}}
+/* crumb */
+.crumb{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:4px 4px 4px 4px;border-radius:12px;background:var(--paper);border:1px dashed var(--line2);min-width:0}
+.crumb button{min-height:44px;display:flex;align-items:center;gap:6px;border:0;background:var(--sunk);border-radius:9px;padding:0 12px;font-weight:700;font-size:14px;cursor:pointer;flex:none;color:var(--ink)}
+.crumb button svg{width:18px;height:18px}
+.crumb span{font:12.5px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+/* layout */
+.main{display:flex;flex-direction:column;gap:14px}
+.col{display:contents}
+.o1{order:1}.o2{order:2}.o3{order:3}.o4{order:4}.o5{order:5}.o6{order:6}.o7{order:7}
+@media (min-width:900px){
+  .main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:16px}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .ed textarea,.ed .hl{max-height:none}
+}
+/* cards */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);min-width:0;overflow:hidden;scroll-margin-top:12px}
+.chead{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 14px;min-height:56px;border-bottom:1px solid var(--line)}
+.chead h2{margin:0;font-size:15.5px;font-weight:760;display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}
+.chead .dot{width:10px;height:10px;border-radius:3px;flex:none}
+.chead .meta{font:12px var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.chead .sp{flex:1}
+.tb{width:44px;height:44px;flex:none;border:1px solid transparent;background:transparent;border-radius:11px;display:grid;place-items:center;cursor:pointer;color:var(--ink2);transition:background .15s,transform .12s}
+.tb svg{width:20px;height:20px}
+.tb:active{transform:scale(.92);background:var(--sunk)}
+.tb.lab{width:auto;display:flex;gap:6px;padding:0 12px;font-weight:700;font-size:14px}
+.tb.done{color:var(--ok)}
+.chip{font:700 11.5px/1 var(--sans);letter-spacing:.04em;padding:5px 8px;border-radius:7px;background:var(--x1-soft);color:var(--x1);white-space:nowrap}
+.kind{font:700 12px/1 var(--mono);padding:6px 8px;border-radius:7px;background:var(--sunk);color:var(--ink2);white-space:nowrap;border:1px solid var(--line);overflow:hidden;text-overflow:ellipsis;min-width:0}
+.kind.jwt{background:var(--pl-soft);color:var(--pl);border-color:transparent}
+.kind.jwe{background:var(--x1-soft);color:var(--x1);border-color:transparent}
+.kind.url{background:var(--x2-soft);color:var(--x2);border-color:transparent}
+.kind.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+/* editor with colour overlay */
+.ed{position:relative;background:var(--sunk)}
+.ed textarea,.ed .hl{margin:0;border:0;padding:12px 14px;font:var(--fs)/var(--lh) var(--mono);white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;tab-size:2;letter-spacing:0}
+.ed textarea{position:relative;z-index:1;display:block;width:100%;resize:none;background:transparent;color:transparent;caret-color:var(--ink);outline:none;min-height:calc(var(--lh) * 3 + 24px);max-height:clamp(120px,32vh,340px);overflow-y:auto;scrollbar-width:none}
+.ed textarea::-webkit-scrollbar{display:none}
+.ed textarea::placeholder{color:var(--faint)}
+.ed textarea::selection{background:color-mix(in srgb,var(--x2) 30%,transparent);color:transparent}
+.ed .hl{position:absolute;inset:0;overflow:hidden;color:var(--ink2);pointer-events:none}
+.ed .hl code{display:block;font:inherit}
+.ed.focus{box-shadow:inset 0 0 0 2px var(--x2)}
+.ed.plain textarea{color:var(--ink)} .ed.plain .hl{display:none}
+.ed .more{position:absolute;left:0;right:0;bottom:0;height:26px;background:linear-gradient(transparent,var(--sunk));pointer-events:none;z-index:2;opacity:0;transition:opacity .2s}
+.ed .more.on{opacity:1}
+.hl .h{color:var(--hd)} .hl .p{color:var(--pl)} .hl .s{color:var(--sg)} .hl .k{color:var(--x1)} .hl .v{color:var(--x2)}
+.hl .dt{color:var(--ink);font-weight:800} .hl .dim{color:var(--faint)}
+.hl .u-sc{color:var(--x3)} .hl .u-us{color:var(--x1)} .hl .u-ho{color:var(--hd)} .hl .u-po{color:var(--x1)} .hl .u-pa{color:var(--x2)} .hl .u-qu{color:var(--pl)} .hl .u-fr{color:var(--sg)}
+.hl .u-qk{color:var(--pl);font-weight:700}
+.hl mark{background:color-mix(in srgb,var(--x1) 28%,transparent);color:inherit;border-radius:2px}
+.hl .flash{animation:flash .8s ease-out}
+@keyframes flash{from{background:color-mix(in srgb,var(--pl) 30%,transparent)}to{background:transparent}}
+.legend{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px 12px;border-top:1px solid var(--line);align-items:center}
+.lg{flex:1 1 0;justify-content:center;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 8px;min-width:0;border-radius:11px;border:1px solid var(--line);background:var(--paper);font-size:13.5px;font-weight:650;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.lg i{width:9px;height:9px;border-radius:3px;flex:none}
+.lg small{font:11.5px var(--mono);color:var(--faint)}
+.lg.wide{flex-basis:100%}
+.lg:active{transform:scale(.97)}
+.lnote{flex-basis:100%;font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:flex-start;line-height:1.45}
+.lnote svg{width:15px;height:15px;margin-top:2px;color:var(--ok)}
+/* verdict */
+.verdict{display:flex;flex-direction:column;gap:10px;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{display:flex;flex-direction:column;gap:4px;padding:11px 12px 12px;border-radius:14px;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow);min-width:0;position:relative;overflow:hidden}
+.tile .th{display:flex;align-items:center;gap:8px;min-width:0}
+.tile .ic{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:none;background:var(--sunk);color:var(--muted)}
+.tile .ic svg{width:16px;height:16px}
+.tile b{display:block;font-size:16.5px;font-weight:780;line-height:1.3;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile>span{display:block;font-size:13px;color:var(--muted);line-height:1.4;word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance}
+.tile.ok{background:var(--ok-soft);border-color:transparent}.tile.ok .ic{background:var(--ok);color:var(--paper)}.tile.ok b{color:var(--ok)}
+.tile.bad{background:var(--bad-soft);border-color:transparent}.tile.bad .ic{background:var(--bad);color:var(--paper)}.tile.bad b{color:var(--bad)}
+.tile.warn{background:var(--warn-soft);border-color:transparent}.tile.warn .ic{background:var(--warn);color:var(--paper)}.tile.warn b{color:var(--warn)}
+.tile.lock{background:var(--x1-soft);border-color:transparent}.tile.lock .ic{background:var(--x1);color:var(--paper)}.tile.lock b{color:var(--x1)}
+.tile.pend .ic{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tile.pop{animation:pop .32s cubic-bezier(.2,1.4,.4,1)}
+@keyframes pop{0%{transform:scale(.97)}60%{transform:scale(1.015)}100%{transform:scale(1)}}
+.tile button.tilebtn{all:unset;position:absolute;inset:0;cursor:pointer;border-radius:14px}
+.tile button.tilebtn:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.issues{list-style:none;margin:0;padding:4px 0;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+.issues li{display:flex;gap:10px;align-items:flex-start;padding:9px 14px;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.issues li+li{border-top:1px dashed var(--line)}
+.issues li svg{width:17px;height:17px;margin-top:2px}
+.issues .bad svg{color:var(--bad)} .issues .warn svg{color:var(--warn)} .issues .info svg{color:var(--info)}
+.issues .bad{color:var(--ink)} .issues .bad b{color:var(--bad)}
+.errcard{padding:16px;border-radius:16px;background:var(--bad-soft);border:1px solid color-mix(in srgb,var(--bad) 30%,transparent)}
+.errcard h3{margin:0 0 6px;font-size:16px;color:var(--bad);display:flex;gap:8px;align-items:center}
+.errcard h3 svg{width:20px;height:20px}
+.errcard p{margin:0;font-size:14.5px;line-height:1.55;overflow-wrap:anywhere}
+.errcard ul{margin:10px 0 0;padding-left:20px;font-size:13.5px;color:var(--ink2)}
+/* guide (empty / unknown) */
+.guide{padding:18px 16px}
+.guide h3{margin:0 0 4px;font-size:17px}
+.guide p{margin:0 0 12px;color:var(--muted);font-size:14px}
+.gl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin:0 0 14px;padding:0;list-style:none}
+.gl li{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:var(--sunk);font-size:13.5px;line-height:1.45}
+.gl li b{display:block;font-size:14px}
+.gl li code{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.gl li i{width:8px;height:8px;border-radius:3px;margin-top:6px;flex:none}
+.gbtns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line2);background:var(--paper);font-weight:700;font-size:14.5px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;color:var(--ink)}
+.btn svg{width:18px;height:18px}
+.btn.pri{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn:active{transform:scale(.97)}
+/* rows (claims, structure) */
+.rows{padding:2px 0}
+.row{display:grid;grid-template-columns:minmax(78px,30%) minmax(0,1fr);gap:4px 12px;padding:10px 14px;align-items:start;cursor:pointer;position:relative;transition:background .15s;min-height:44px;border:0;background:none;width:100%;text-align:left;color:inherit;font:inherit}
+.row+.row{border-top:1px solid var(--line)}
+.row:active,.row.copied{background:var(--sunk)}
+.row .lb{min-width:0}
+.row .lb b{display:block;font-size:13.5px;font-weight:700;color:var(--ink2);line-height:1.35}
+.row .lb code{display:block;font-size:12px;color:var(--faint);overflow-wrap:anywhere;line-height:1.35;margin-top:1px}
+.row .lb i{display:inline-block;width:8px;height:8px;border-radius:2.5px;margin-right:6px;vertical-align:1px}
+.row .val{min-width:0;font-size:15px;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
+.row .val.m{font-family:var(--mono);font-size:14px}
+.row .val small{word-break:break-all;display:block;}
+.row .val small .nw{white-space:nowrap}
+.row .val small{font-size:12.5px;color:var(--muted);font-family:var(--mono);margin-top:2px}
+.row .val .alt{display:block;font:13px var(--mono);color:var(--muted);margin-top:3px}
+.row .val .seg{display:inline-block;font:12.5px var(--mono);background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin:3px 4px 0 0}
+.pill{word-break:keep-all;text-wrap:balance;display:inline-flex;align-items:center;gap:5px;margin-top:5px;padding:3px 9px;border-radius:999px;font:700 12.5px/1.35 var(--sans);background:var(--sunk);color:var(--muted)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill svg{width:13px;height:13px}
+.rowsub{grid-column:1/-1;font-size:12.5px;color:var(--muted)}
+.cpy{position:absolute;right:10px;top:10px;font:700 11.5px var(--sans);color:var(--ok);opacity:0;transition:opacity .2s;background:var(--paper);padding:2px 6px;border-radius:6px;pointer-events:none}
+.row.copied .cpy{opacity:1}
+.sub-h{padding:12px 14px 4px;font-size:12px;font-weight:750;color:var(--faint);letter-spacing:.08em}
+/* JSON */
+.json{margin:0;padding:12px 14px 14px;font:13.5px/1.6 var(--mono);white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:var(--sunk);max-height:520px;overflow:auto}
+@media (pointer:coarse){.json{font-size:14px}}
+.jk{color:var(--jk)} .js{color:var(--js)} .jn{color:var(--jn)} .jb{color:var(--jb)} .jz{color:var(--jz)}
+.algline{padding:10px 14px;font-size:14px;line-height:1.5;border-bottom:1px solid var(--line)}
+.algline b{font-family:var(--mono);font-size:14.5px}
+.algline span{color:var(--muted)}
+/* verify */
+.vbody{padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.fl{font-size:12.5px;font-weight:700;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:20px}
+.fl em{font-style:normal;font-weight:500;color:var(--faint)}
+.irow{display:flex;gap:6px;align-items:stretch}
+.inp{flex:1;min-width:0;min-height:46px;border:1px solid var(--line2);background:var(--sunk);border-radius:11px;padding:10px 12px;font:14px var(--mono);outline:none}
+.inp:focus{border-color:var(--sg);box-shadow:0 0 0 3px color-mix(in srgb,var(--sg) 22%,transparent)}
+textarea.inp{resize:vertical;min-height:110px;max-height:240px;line-height:1.45;white-space:pre-wrap;word-break:break-all;overflow:auto}
+.inp.masked{-webkit-text-security:disc}
+.irow .tb{border:1px solid var(--line2);background:var(--paper);height:auto;min-height:46px}
+.segc{display:inline-flex;border:1px solid var(--line2);border-radius:11px;overflow:hidden;background:var(--sunk);max-width:100%}
+.segc button{min-height:44px;min-width:58px;padding:0 12px;border:0;background:transparent;font-weight:700;font-size:13.5px;cursor:pointer;color:var(--muted);white-space:nowrap}
+.segc button+button{border-left:1px solid var(--line2)}
+.segc button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:inset 0 -3px 0 var(--sg)}
+.vres{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--sunk);font-size:14px;line-height:1.5}
+.vres svg{width:20px;height:20px;margin-top:1px}
+.vres.ok{background:var(--ok-soft)} .vres.ok svg,.vres.ok b{color:var(--ok)}
+.vres.bad{background:var(--bad-soft)} .vres.bad svg,.vres.bad b{color:var(--bad)}
+.vres.error{background:var(--warn-soft)} .vres.error svg,.vres.error b{color:var(--warn)}
+.vres ul{margin:6px 0 0;padding-left:18px;color:var(--ink2);font-size:13px}
+.vres .btn{margin-top:8px;min-height:44px;font-size:13.5px}
+.vbtns{display:flex;flex-wrap:wrap;gap:8px}
+.sigbox{font:12.5px/1.5 var(--mono);color:var(--sg);word-break:break-all;background:var(--sunk);border-radius:10px;padding:8px 10px;max-height:calc(4.5em + 16px);overflow:auto}
+.fine{font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:flex-start;line-height:1.45}
+.fine svg{width:14px;height:14px;margin-top:2px;color:var(--ok)}
+/* JWE parts */
+.jparts{list-style:none;margin:0;padding:0}
+.jparts li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:10px;padding:10px 14px;align-items:center}
+.jparts li+li{border-top:1px solid var(--line)}
+.jparts i{width:12px;height:12px;border-radius:4px}
+.jparts b{display:block;font-size:14px}
+.jparts span{display:block;font-size:12.5px;color:var(--muted)}
+.jparts small{font:12px var(--mono);color:var(--faint);text-align:right;white-space:nowrap}
+/* params */
+.plist{padding:6px 0}
+.prow{display:grid;grid-template-columns:minmax(0,34%) minmax(0,1fr) 44px;gap:6px;padding:8px 10px 8px 14px;align-items:center}
+.prow+.prow{border-top:1px solid var(--line)}
+.prow input{min-width:0;width:100%;min-height:44px;border:1px solid var(--line2);background:var(--sunk);border-radius:10px;padding:8px 10px;font:14px var(--mono);outline:none}
+.prow input.pk{color:var(--pl);font-weight:700}
+.prow input:focus{border-color:var(--pl);box-shadow:0 0 0 3px color-mix(in srgb,var(--pl) 20%,transparent);background:var(--paper)}
+.prow .tb{color:var(--faint)}
+.pmeta{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);min-width:0}
+.pmeta:empty{display:none}
+.pmeta code{font-size:12px;background:var(--sunk);border-radius:5px;padding:1px 5px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
+.pmeta .tag{font-weight:700;padding:2px 7px;border-radius:6px;background:var(--info-soft);color:var(--info)}
+.pmeta .tag.w{background:var(--warn-soft);color:var(--warn)}
+.pmeta .mini{min-height:36px;padding:0 10px;border-radius:9px;border:1px solid var(--line2);background:var(--paper);font-weight:700;font-size:12.5px;cursor:pointer;color:var(--ink);display:inline-flex;align-items:center;gap:5px;position:relative}
+.pmeta .mini::after{content:"";position:absolute;inset:-5px -2px}
+.pmeta .mini svg{width:14px;height:14px}
+.layers{grid-column:1/-1;margin:0;padding:0 0 0 2px;list-style:none;font:12.5px/1.5 var(--mono);color:var(--muted)}
+.layers li{display:flex;gap:6px;overflow-wrap:anywhere;word-break:break-all}
+.layers li b{font-family:var(--sans);font-size:11.5px;color:var(--info);white-space:nowrap;flex:none}
+.pfoot{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px 14px;border-top:1px solid var(--line);align-items:center}
+.pfoot .note{font-size:12.5px;color:var(--muted);flex-basis:100%}
+.empty{padding:14px;color:var(--muted);font-size:14px}
+.foot{margin:18px 2px 0;font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;line-height:1.55}
+.foot svg{width:16px;height:16px;margin-top:2px;color:var(--ok)}
+/* sheet + toast */
+.scrim{position:fixed;inset:0;background:rgba(8,12,20,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center;animation:fade .18s ease-out}
+.sheet{background:var(--paper);width:100%;max-width:560px;max-height:min(86vh,720px);overflow:auto;border-radius:20px 20px 0 0;padding:6px 0 calc(12px + env(safe-area-inset-bottom));box-shadow:var(--pop);animation:up .24s cubic-bezier(.2,.9,.3,1)}
+@media (min-width:640px){.scrim{align-items:center}.sheet{border-radius:20px}}
+.sheet header{display:flex;align-items:center;padding:4px 6px 4px 18px;position:sticky;top:0;background:var(--paper);z-index:1}
+.sheet header h3{margin:0;font-size:17px;flex:1}
+.sheet .grp{padding:8px 18px 4px;font-size:12px;font-weight:750;color:var(--faint);letter-spacing:.08em}
+.sheet .it{display:flex;gap:12px;align-items:center;width:100%;min-height:56px;padding:8px 18px;border:0;background:none;text-align:left;cursor:pointer;color:var(--ink)}
+.sheet .it:active{background:var(--sunk)}
+.sheet .it i{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center}
+.sheet .it i svg{width:16px;height:16px}
+.sheet .it b{display:block;font-size:15px}
+.sheet .it span{display:block;font-size:12.5px;color:var(--muted)}
+.sheet .it.cur{background:var(--sunk)}
+@keyframes up{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+#toastHost{position:fixed;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));display:flex;justify-content:center;z-index:60;pointer-events:none;padding:0 16px}
+.toast{background:var(--ink);color:var(--paper);border-radius:12px;padding:6px 6px 6px 16px;font-size:14px;box-shadow:var(--pop);display:flex;align-items:center;gap:10px;pointer-events:auto;min-height:44px;animation:up .22s ease-out;max-width:100%}
+.toast.solo{padding-right:16px}
+.toast button{min-height:40px;border:0;border-radius:8px;background:color-mix(in srgb,var(--paper) 18%,transparent);color:var(--paper);font-weight:700;padding:0 14px;cursor:pointer}
+.enter{animation:enter .26s cubic-bezier(.2,.8,.3,1) both}
+@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (max-width:370px){.title h1{font-size:17.5px}.title small{font-size:10.5px}.row{grid-template-columns:minmax(70px,29%) minmax(0,1fr);gap:4px 10px;padding:10px 12px}.tile{padding:10px}.tile b{font-size:15.5px}}
+@media (orientation:landscape) and (max-height:500px) and (max-width:899px){
+  .top{min-height:52px}.chead{min-height:48px;padding-block:2px}.ed textarea{max-height:calc(var(--lh) * 3 + 24px)}.legend{padding:6px 12px 8px}
+  /* landscape phone: verdict beside the input so both are on the first screen */
+  .main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);align-items:start;gap:12px}
+  .col>*{grid-column:1/-1}
+  #inCard{grid-column:1}#verdict{grid-column:2}
+  .main:has(#verdict:empty) #inCard{grid-column:1/-1}
+  .verdict .tiles{grid-template-columns:minmax(0,1fr);gap:8px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+  <header class="top">
+    <div class="mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24"><defs><clipPath id="lens"><circle cx="10" cy="10" r="6.2"/></clipPath></defs><g clip-path="url(#lens)"><rect x="3" y="3" width="4.7" height="14" fill="#ff8a7a"/><rect x="7.7" y="3" width="4.6" height="14" fill="#c6a0ff"/><rect x="12.3" y="3" width="5" height="14" fill="#4fd0dc"/></g><circle cx="10" cy="10" r="7" fill="none" stroke="#f3f6fa" stroke-width="1.8"/><path d="M15.2 15.2 20.5 20.5" stroke="#f3f6fa" stroke-width="2.6" stroke-linecap="round"/></svg></div>
+    <div class="title"><h1>JWT 與網址解析</h1><small><i class="h">標頭</i>.<i class="p">內容</i>.<i class="s">簽章</i> · 全在本機</small></div>
+    <button class="ib" id="sampleBtn" type="button" aria-label="範例" title="範例"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 12.5h8M8 16h5"/></svg></button>
+    <button class="ib" id="themeBtn" type="button" aria-label="切換深淺色" title="切換深淺色"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+  </header>
+  <nav class="crumb" id="crumb" hidden><button type="button" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span style="font:inherit;color:inherit">回上一層</span></button><span id="crumbTxt"></span></nav>
+  <div class="main">
+    <div class="col">
+      <section class="card o1" id="inCard" aria-label="輸入">
+        <div class="chead">
+          <h2>輸入 <span class="chip" id="sampleChip" hidden>範例</span></h2>
+          <span class="kind" id="kindTag" hidden></span>
+          <span class="sp"></span>
+          <button class="tb" id="pasteBtn" type="button" aria-label="貼上" title="貼上"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.8c0-.7.5-1.3 1.2-1.3h2.6c.7 0 1.2.6 1.2 1.3v.7M9.5 11h5M9.5 14.5h5"/></svg></button>
+          <button class="tb" id="clearBtn" type="button" aria-label="清除" title="清除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V7M6.5 7l.9 12.2c.1.9.8 1.8 1.8 1.8h5.6c1 0 1.7-.9 1.8-1.8L17.5 7"/></svg></button>
+        </div>
+        <div class="ed" id="ed">
+          <pre class="hl" id="hl" aria-hidden="true"><code id="hlc"></code></pre>
+          <textarea id="src" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="要解析的 JWT 或網址" placeholder="貼上 JWT（可含 Bearer 前綴、換行）或網址…"></textarea>
+          <div class="more" id="more"></div>
+        </div>
+        <div class="legend" id="legend" hidden></div>
+      </section>
+      <div class="verdict o2" id="verdict" aria-live="polite"></div>
+      <div id="colA" class="col o3"></div>
+    </div>
+    <div class="col" id="colB"></div>
+  </div>
+  <p class="foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></svg><span>解碼與簽章驗證都在這台裝置上完成（Web Crypto），不連網、不上傳。貼上的內容和公鑰會保存在這台裝置；HMAC 密鑰與私鑰不保存，重新整理後要再輸入一次。</span></p>
+</div>
+<div id="sheetHost"></div>
+<div id="toastHost" aria-live="polite"></div>
+<script id="jd-core">/*CORE-START*/
+const JD = (() => {
+"use strict";
+const te = new TextEncoder();
+const utf8Fatal = new TextDecoder('utf-8', { fatal: true });
+const utf8Loose = new TextDecoder('utf-8');
+let big5 = null; try { big5 = new TextDecoder('big5', { fatal: true }); } catch (e) { big5 = null; }
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const wellFormed = s => s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, (m, p) => (p || '') + '�');
+function cat(...arrs) { let n = 0; for (const a of arrs) n += a.length; const o = new Uint8Array(n); let p = 0; for (const a of arrs) { o.set(a, p); p += a.length; } return o; }
+
+/* ---------- base64 / base64url ---------- */
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const DEC = new Int16Array(128).fill(-1);
+for (let k = 0; k < 62; k++) DEC[B64.charCodeAt(k)] = k;
+DEC[45] = 62; DEC[95] = 63; DEC[43] = 62; DEC[47] = 63; // - _ + /
+class JErr extends Error { constructor(msg, pos) { super(msg); this.pos = pos; } }
+// Accepts base64url (RFC 4648 §5) and, with a note, standard base64 and = padding.
+function b64dec(s) {
+  const notes = [];
+  if (/[+/]/.test(s)) notes.push('std');
+  const pad = s.indexOf('=');
+  if (pad >= 0) {
+    if (!/^=+$/.test(s.slice(pad)) || s.length - pad > 2) throw new JErr(`第 ${pad + 1} 個字元的「=」位置不對`, pad);
+    notes.push('pad'); s = s.slice(0, pad);
+  }
+  for (let k = 0; k < s.length; k++) { const c = s.charCodeAt(k); if (c > 127 || DEC[c] < 0) throw new JErr(`第 ${k + 1} 個字元「${s[k]}」不是 base64url 字元`, k); }
+  if (s.length % 4 === 1) throw new JErr(`長度 ${s.length} 不可能是完整的 base64url（可能被截斷或多了字元）`, s.length);
+  const out = new Uint8Array(Math.floor(s.length * 3 / 4)); let bits = 0, acc = 0, o = 0;
+  for (let k = 0; k < s.length; k++) { acc = (acc << 6) | DEC[s.charCodeAt(k)]; bits += 6; if (bits >= 8) { bits -= 8; out[o++] = (acc >> bits) & 255; } }
+  return { bytes: out, notes };
+}
+const ENC = B64 + '-_';
+function b64urlEnc(bytes) { let s = ''; let k = 0; for (; k + 2 < bytes.length; k += 3) { const n = (bytes[k] << 16) | (bytes[k + 1] << 8) | bytes[k + 2]; s += ENC[n >> 18] + ENC[(n >> 12) & 63] + ENC[(n >> 6) & 63] + ENC[n & 63]; } if (k < bytes.length) { const n = (bytes[k] << 16) | ((bytes[k + 1] || 0) << 8); s += ENC[n >> 18] + ENC[(n >> 12) & 63]; if (k + 1 < bytes.length) s += ENC[(n >> 6) & 63]; } return s; }
+function b64stdEnc(bytes) { const s = b64urlEnc(bytes).replace(/-/g, '+').replace(/_/g, '/'); return s + '='.repeat((4 - s.length % 4) % 4); }
+const utf8 = bytes => { try { return { text: utf8Fatal.decode(bytes), ok: true }; } catch (e) { return { text: utf8Loose.decode(bytes), ok: false }; } };
+
+/* ---------- JSON that keeps number literals and notices duplicate keys ---------- */
+function parseJSON(src) {
+  let i = 0; const dups = []; let unsafe = false;
+  const ws = () => { while (i < src.length) { const c = src.charCodeAt(i); if (c === 32 || c === 9 || c === 10 || c === 13) i++; else break; } };
+  const fail = msg => { throw new JErr(msg, i); };
+  const STR = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
+  const NUM = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  function str() { STR.lastIndex = i; const m = STR.exec(src); if (!m) fail('字串格式不正確（少了結尾引號或含有不合法的跳脫字元）'); i = STR.lastIndex; return JSON.parse(m[0]); }
+  function val(depth) {
+    if (depth > 500) fail('巢狀層數太深');
+    ws(); const c = src[i];
+    if (c === '{') {
+      i++; const e = []; const seen = new Set(); ws();
+      if (src[i] === '}') { i++; return { t: 'o', e }; }
+      for (;;) {
+        ws(); if (src[i] !== '"') fail('這裡應該是用雙引號括起來的鍵');
+        const k = str(); ws(); if (src[i] !== ':') fail('鍵後面少了冒號'); i++;
+        const v = val(depth + 1); if (seen.has(k)) dups.push(k); seen.add(k); e.push([k, v]); ws();
+        if (src[i] === ',') { i++; continue; } if (src[i] === '}') { i++; return { t: 'o', e }; }
+        fail('少了逗號或右大括號');
+      }
+    }
+    if (c === '[') {
+      i++; const v = []; ws();
+      if (src[i] === ']') { i++; return { t: 'a', v }; }
+      for (;;) { v.push(val(depth + 1)); ws(); if (src[i] === ',') { i++; continue; } if (src[i] === ']') { i++; return { t: 'a', v }; } fail('少了逗號或右中括號'); }
+    }
+    if (c === '"') return { t: 's', v: str() };
+    if (c === '-' || (c >= '0' && c <= '9')) {
+      NUM.lastIndex = i; const m = NUM.exec(src); if (!m) fail('數字格式不正確'); i = NUM.lastIndex;
+      const raw = m[0], v = Number(raw);
+      const big = /^-?\d+$/.test(raw) && !Number.isSafeInteger(v);
+      const lossy = !big && String(v) !== raw && raw.replace(/^-?0*|\.|e.*$/gi, '').replace(/0+$/, '').length > 17;
+      if (big || lossy || !isFinite(v)) unsafe = true;
+      return { t: 'n', raw, v };
+    }
+    if (src.startsWith('true', i)) { i += 4; return { t: 'b', v: true }; }
+    if (src.startsWith('false', i)) { i += 5; return { t: 'b', v: false }; }
+    if (src.startsWith('null', i)) { i += 4; return { t: 'z', v: null }; }
+    fail(c === undefined ? '內容提早結束' : `無法辨識的字元「${c}」`);
+  }
+  const node = val(0); ws(); if (i < src.length) fail('JSON 結束後還有多餘的內容');
+  return { node, dups, unsafe };
+}
+const plain = n => n.t === 'o' ? Object.fromEntries(n.e.map(([k, v]) => [k, plain(v)])) : n.t === 'a' ? n.v.map(plain) : n.v;
+// Pretty printer; w(cls, text) wraps tokens (identity for plain text).
+function prettyW(node, w, ind = '  ') {
+  const go = (n, lv) => {
+    const pad = ind.repeat(lv + 1), end = ind.repeat(lv);
+    switch (n.t) {
+      case 'o': return n.e.length ? w('p', '{') + '\n' + n.e.map(([k, v]) => pad + w('k', JSON.stringify(k)) + w('p', ':') + ' ' + go(v, lv + 1)).join(w('p', ',') + '\n') + '\n' + end + w('p', '}') : w('p', '{}');
+      case 'a': return n.v.length ? w('p', '[') + '\n' + n.v.map(v => pad + go(v, lv + 1)).join(w('p', ',') + '\n') + '\n' + end + w('p', ']') : w('p', '[]');
+      case 's': return w('s', JSON.stringify(n.v));
+      case 'n': return w('n', n.raw);
+      case 'b': return w('b', String(n.v));
+      default: return w('z', 'null');
+    }
+  };
+  return go(node, 0);
+}
+const pretty = (node, ind) => prettyW(node, (c, t) => t, ind);
+const prettyHTML = node => prettyW(node, (c, t) => c === 'p' ? esc(t) : `<span class="j${c}">${esc(t)}</span>`);
+const compact = n => n.t === 'o' ? '{' + n.e.map(([k, v]) => JSON.stringify(k) + ':' + compact(v)).join(',') + '}' : n.t === 'a' ? '[' + n.v.map(compact).join(',') + ']' : n.t === 's' ? JSON.stringify(n.v) : n.t === 'n' ? n.raw : String(n.v);
+
+/* ---------- time ---------- */
+const WD = '日一二三四五六';
+const p2 = n => String(n).padStart(2, '0');
+// Taiwan has used UTC+8 without daylight saving since 1980, so a fixed offset is exact for every date a JWT can carry.
+function fmtTW(sec) {
+  if (typeof sec !== 'number' || !isFinite(sec)) return null;
+  const ms = Math.round(sec * 1000); if (Math.abs(ms) > 8.64e15 - 8 * 3600e3) return null;
+  const d = new Date(ms + 8 * 3600e3);
+  const frac = ms % 1000 ? '.' + p2(Math.abs(ms % 1000)).padStart(3, '0') : '';
+  const y = d.getUTCFullYear();
+  return `${y < 0 ? '西元前 ' + (1 - y) : y}/${p2(d.getUTCMonth() + 1)}/${p2(d.getUTCDate())}（${WD[d.getUTCDay()]}）${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}:${p2(d.getUTCSeconds())}${frac}`;
+}
+function fmtUTC(sec) {
+  if (typeof sec !== 'number' || !isFinite(sec)) return null;
+  const ms = Math.round(sec * 1000); if (Math.abs(ms) > 8.64e15) return null;
+  try { return new Date(ms).toISOString().replace('.000Z', 'Z'); } catch (e) { return null; }
+}
+function fmtDur(s) {
+  s = Math.floor(Math.abs(s));
+  if (s < 60) return s + ' 秒';
+  const m = Math.floor(s / 60); if (m < 60) return m + ' 分鐘';
+  const h = Math.floor(m / 60), mm = m % 60; if (h < 24) return h + ' 小時' + (mm ? ' ' + mm + ' 分鐘' : '');
+  const d = Math.floor(h / 24), hh = h % 24; if (d < 60) return d + ' 天' + (hh ? ' ' + hh + ' 小時' : '');
+  if (d < 730) return '約 ' + Math.round(d / 30.436875) + ' 個月';
+  return '約 ' + (Math.round(d / 365.2425 * 10) / 10) + ' 年';
+}
+// Relative wording for a time claim. tone: ok | warn | bad | dim
+function rel(key, t, now) {
+  const d = t - now;
+  if (key === 'exp') {
+    if (d > 0) return { text: `還有 ${fmtDur(Math.ceil(d))}過期`.replace('還有 約', '還有約'), tone: d < 300 ? 'warn' : 'ok' };
+    return { text: -d < 1 ? '剛剛過期' : `已過期 ${fmtDur(-d)}`, tone: 'bad' };
+  }
+  if (key === 'nbf') return d > 0 ? { text: `${fmtDur(Math.ceil(d))}後才生效`, tone: 'warn' } : { text: '已生效', tone: 'ok' };
+  if (d > 60 && key === 'iat') return { text: `在未來（${fmtDur(Math.ceil(d))}後）`, tone: 'warn' };
+  if (d > 0) return { text: `${fmtDur(Math.ceil(d))}後`, tone: 'dim' };
+  return { text: -d < 1 ? '剛剛' : `${fmtDur(-d)}前`, tone: 'dim' };
+}
+
+/* ---------- JWT ---------- */
+const ALG = {
+  HS256: { fam: 'HS', hash: 'SHA-256', len: 32 }, HS384: { fam: 'HS', hash: 'SHA-384', len: 48 }, HS512: { fam: 'HS', hash: 'SHA-512', len: 64 },
+  RS256: { fam: 'RS', hash: 'SHA-256' }, RS384: { fam: 'RS', hash: 'SHA-384' }, RS512: { fam: 'RS', hash: 'SHA-512' },
+  PS256: { fam: 'PS', hash: 'SHA-256', salt: 32 }, PS384: { fam: 'PS', hash: 'SHA-384', salt: 48 }, PS512: { fam: 'PS', hash: 'SHA-512', salt: 64 },
+  ES256: { fam: 'ES', hash: 'SHA-256', crv: 'P-256', size: 32 }, ES384: { fam: 'ES', hash: 'SHA-384', crv: 'P-384', size: 48 }, ES512: { fam: 'ES', hash: 'SHA-512', crv: 'P-521', size: 66 },
+  EdDSA: { fam: 'Ed', crv: 'Ed25519' }, Ed25519: { fam: 'Ed', crv: 'Ed25519' },
+};
+const FAM = { HS: 'HMAC 共用密鑰', RS: 'RSA 簽章（PKCS#1 v1.5）', PS: 'RSA-PSS 簽章', ES: 'ECDSA 橢圓曲線簽章', Ed: 'EdDSA 簽章（Ed25519）' };
+function algInfo(alg) {
+  const a = ALG[alg];
+  if (a) return { ...a, desc: FAM[a.fam] + (a.hash ? ' + ' + a.hash : '') + (a.crv && a.fam === 'ES' ? '（' + a.crv + '）' : '') };
+  if (alg === 'none') return { fam: 'none', desc: '沒有簽章' };
+  if (alg === 'ES256K') return { fam: 'X', desc: 'ECDSA secp256k1（瀏覽器不支援驗證）' };
+  return { fam: 'X', desc: '不認得的演算法' };
+}
+const CLAIMS = {
+  iss: '簽發者', sub: '主體（使用者）', aud: '對象', exp: '到期時間', nbf: '生效時間', iat: '簽發時間', jti: '權杖編號',
+  name: '姓名', given_name: '名', family_name: '姓', nickname: '暱稱', preferred_username: '使用者名稱', email: '電子郵件', email_verified: '信箱已驗證',
+  phone_number: '電話', phone_number_verified: '電話已驗證', picture: '頭像網址', locale: '語系', zoneinfo: '時區', gender: '性別', birthdate: '生日', website: '網站', profile: '個人頁',
+  nonce: '防重放值', auth_time: '登入時間', acr: '驗證等級', amr: '驗證方式', azp: '授權方', sid: '工作階段', at_hash: 'Access Token 雜湊', c_hash: '授權碼雜湊',
+  scope: '權限範圍', scp: '權限範圍', roles: '角色', role: '角色', groups: '群組', permissions: '權限', client_id: '用戶端', cid: '用戶端', uid: '使用者編號', tid: '租戶', oid: '物件編號', upn: '登入名稱',
+  updated_at: '資料更新時間', cnf: '金鑰綁定', act: '代理者', may_act: '可代理者', typ: '類型', ver: '版本', org_id: '組織', tenant: '租戶', username: '使用者名稱', user_id: '使用者編號', sub_jwk: '主體金鑰',
+};
+const HCLAIMS = { alg: '演算法', typ: '類型', kid: '金鑰編號', cty: '內容類型', jku: '金鑰集網址', jwk: '內嵌公鑰', x5u: '憑證網址', x5c: '憑證鏈', x5t: '憑證指紋（SHA-1）', 'x5t#S256': '憑證指紋（SHA-256）', crit: '必須理解的欄位', enc: '內容加密', zip: '壓縮', b64: '是否 base64 編碼內容', epk: '臨時公鑰', apu: '發送方資訊', apv: '接收方資訊', iv: '初始向量', tag: '驗證標籤', p2s: 'PBES2 鹽', p2c: 'PBES2 次數' };
+const TIME_KEYS = new Set(['exp', 'nbf', 'iat', 'auth_time', 'updated_at']);
+const ORDER = ['iss', 'sub', 'aud', 'exp', 'nbf', 'iat', 'jti'];
+
+function decodePart(s, idx, what) {
+  if (s === '') return { bytes: new Uint8Array(0), notes: [] };
+  try { return b64dec(s); } catch (e) { throw new JErr(`${what}（第 ${idx + 1} 段）不是合法的 base64url：${e.message}`, e.pos); }
+}
+function jsonPart(bytes, what) {
+  const u = utf8(bytes); if (!u.ok) throw new JErr(`${what}解碼後不是 UTF-8 文字`);
+  try { return { ...parseJSON(u.text), text: u.text }; } catch (e) { throw new JErr(`${what}不是合法的 JSON：第 ${e.pos + 1} 個字元，${e.message}`); }
+}
+function analyzeJWT(token) {
+  const parts = token.split('.');
+  const res = { parts, kind: parts.length === 5 ? 'jwe' : 'jws', issues: [], notes: [] };
+  if (parts.length !== 3 && parts.length !== 5) { res.error = `有 ${parts.length} 段（${parts.length - 1} 個「.」）。JWT 應該是 3 段（簽章的 JWS）或 5 段（加密的 JWE）。`; res.errorPart = -1; return res; }
+  const push = (lv, msg) => res.issues.push({ lv, msg });
+  try {
+    if (!parts[0]) throw new JErr('標頭（第 1 段）是空的');
+    const hb = decodePart(parts[0], 0, '標頭'); const hj = jsonPart(hb.bytes, '標頭');
+    if (hj.node.t !== 'o') throw new JErr('標頭必須是 JSON 物件 { … }');
+    res.header = { node: hj.node, obj: plain(hj.node), bytes: hb.bytes, notes: hb.notes, dups: hj.dups, text: hj.text };
+  } catch (e) { res.error = e.message; res.errorPart = 0; return res; }
+  const H = res.header.obj; res.alg = typeof H.alg === 'string' ? H.alg : null;
+  const allNotes = [...res.header.notes];
+  if (res.kind === 'jwe') {
+    res.enc = H.enc;
+    res.jwe = parts.map((p, k) => { let n = null; try { n = k ? decodePart(p, k, '').bytes.length : null; } catch (e) { n = -1; } return { len: p.length, bytes: n }; });
+    if (res.jwe.some(x => x.bytes === -1)) { res.error = '有一段不是合法的 base64url'; res.errorPart = res.jwe.findIndex(x => x.bytes === -1); return res; }
+    push('info', '這是加密的 JWE，內容要用接收方的私鑰或共用密鑰才能解開；這裡只顯示標頭和各段結構。');
+    if (H.alg === 'dir') push('info', 'alg 是 dir：直接用共用密鑰加密內容，沒有「加密金鑰」那一段。');
+  } else {
+    // payload
+    try {
+      if (H.b64 === false) { res.payload = { kind: 'text', text: parts[1], bytes: te.encode(parts[1]) }; push('info', 'b64 是 false（RFC 7797）：內容沒有 base64url 編碼，直接放原文。'); }
+      else {
+        const pb = decodePart(parts[1], 1, '內容'); allNotes.push(...pb.notes);
+        const u = utf8(pb.bytes);
+        if (!u.ok) res.payload = { kind: 'hex', bytes: pb.bytes, text: hex(pb.bytes) };
+        else {
+          let pj = null; try { pj = parseJSON(u.text); } catch (e) { pj = { err: e }; }
+          if (pj.node) {
+            res.payload = { kind: 'json', node: pj.node, obj: plain(pj.node), bytes: pb.bytes, text: u.text, dups: pj.dups, unsafe: pj.unsafe };
+            if (pj.node.t !== 'o') push('warn', 'JWT 的內容通常是 JSON 物件 { … }，這裡卻是' + ({ a: '陣列', s: '字串', n: '數字', b: '布林值', z: 'null' }[pj.node.t]) + '。');
+          } else {
+            res.payload = { kind: 'text', text: u.text, bytes: pb.bytes };
+            if (/^eyJ[\w-]*\.[\w-]*\.[\w-]*$/.test(u.text.trim())) { res.payload.nested = u.text.trim(); push('info', '內容本身又是一個 JWT（巢狀 JWT），可以點下方按鈕繼續解析。'); }
+            else if (/^\s*[{[]/.test(u.text)) push('warn', `內容看起來像 JSON 但格式不正確：第 ${pj.err.pos + 1} 個字元，${pj.err.message}`);
+          }
+        }
+      }
+    } catch (e) { res.error = e.message; res.errorPart = 1; return res; }
+    try { const sb = decodePart(parts[2], 2, '簽章'); allNotes.push(...sb.notes); res.sig = { bytes: sb.bytes }; }
+    catch (e) { res.sig = { bytes: new Uint8Array(0) }; res.sigError = e.message; push('bad', e.message + '。內容照樣顯示，但無法驗證簽章。'); }
+    // algorithm checks
+    if (res.alg === null) push('bad', '標頭沒有 alg（演算法），無法判斷怎麼驗證。');
+    else if (res.alg.toLowerCase() === 'none') {
+      push('bad', 'alg 是「' + res.alg + '」：這個權杖沒有簽章，任何人都能改內容。伺服器絕不能接受。');
+      if (res.sig.bytes.length) push('warn', 'alg 是 none 卻帶有簽章，格式不一致。');
+    } else if (!ALG[res.alg]) push('warn', `alg「${res.alg}」${res.alg === 'ES256K' ? '是 secp256k1 曲線，瀏覽器的 Web Crypto 無法驗證' : '不是常見的 JWS 演算法'}。`);
+    else if (!res.sig.bytes.length && !res.sigError) push('bad', '簽章（第 3 段）是空的。');
+    else if (ALG[res.alg].fam === 'ES' && res.sig.bytes.length !== ALG[res.alg].size * 2 && res.sig.bytes[0] !== 0x30) push('warn', `${res.alg} 的簽章應該是 ${ALG[res.alg].size * 2} 位元組，這裡是 ${res.sig.bytes.length} 位元組。`);
+    if (res.payload.kind === 'json') {
+      if (res.payload.dups.length) push('warn', '內容有重複的鍵：' + [...new Set(res.payload.dups)].join('、') + '。不同程式庫可能取到不同的值。');
+      if (res.payload.unsafe) push('info', '有數字超過 JavaScript 能精確表示的範圍，這裡顯示原始寫法，不會被四捨五入。');
+    }
+  }
+  if (res.header.dups.length) push('warn', '標頭有重複的鍵：' + [...new Set(res.header.dups)].join('、') + '。');
+  if (allNotes.includes('std')) push('warn', '用了標準 Base64 的「+」或「/」，JWT 規定要用 base64url（「-」和「_」）。有些伺服器會拒絕。');
+  if (allNotes.includes('pad')) push('warn', '結尾有「=」補位，JWT 規定不加。有些伺服器會拒絕。');
+  if (Array.isArray(H.crit)) push('info', 'crit 列出驗證端必須支援的擴充欄位：' + H.crit.join('、') + '。');
+  for (const k of ['jku', 'x5u']) if (typeof H[k] === 'string') push('info', `${k} 指向外部網址（${H[k]}）。本工具不會連線去取；伺服器也不該信任權杖自己指定的網址。`);
+  if (H.jwk && typeof H.jwk === 'object') push('warn', '標頭內嵌了公鑰（jwk）。驗證時不能直接信任權杖自帶的金鑰。');
+  if (H.typ && typeof H.typ === 'string' && !/^(JWT|at\+jwt|application\/(at\+)?jwt|JOSE|dpop\+jwt|.*\+jwt)$/i.test(H.typ)) push('info', `typ 是「${H.typ}」。`);
+  res.claims = claimList(res);
+  return res;
+}
+function valText(n) {
+  if (n.t === 's') return n.v;
+  if (n.t === 'a' && n.v.every(x => x.t === 's')) return n.v.map(x => x.v).join('、');
+  if (n.t === 'n') return n.raw;
+  if (n.t === 'b' || n.t === 'z') return String(n.v);
+  return compact(n);
+}
+function claimList(res) {
+  if (!res.payload || res.payload.kind !== 'json' || res.payload.node.t !== 'o') return [];
+  const ent = res.payload.node.e;
+  const seen = new Set(); const rows = [];
+  const add = (k, n) => {
+    const row = { key: k, label: CLAIMS[k] || '', value: valText(n), copy: n.t === 's' ? n.v : compact(n), t: null, kind: n.t };
+    const isTimeKey = TIME_KEYS.has(k) || (/(_at|_time|^exp_|_exp$)$/.test(k) && n.t === 'n' && n.v > 1e8 && n.v < 1e11);
+    if (isTimeKey) {
+      if (n.t === 'n') {
+        // NumericDate is seconds; numbers between 1e11 and 1e14 are almost certainly milliseconds, so read them that way everywhere
+        const ms = TIME_KEYS.has(k) && Math.abs(n.v) > 1e11 && Math.abs(n.v) < 1e14, ts = ms ? n.v / 1000 : n.v;
+        if (!isFinite(n.v) || fmtTW(ts) === null) { if (TIME_KEYS.has(k)) { row.badTime = true; row.badWhy = 'range'; } }
+        else { row.t = n.v; row.ts = ts; row.time = true; row.ms = ms; }
+      } else if (TIME_KEYS.has(k)) row.badTime = true;
+    } else if (/(^|_)(expires_in|ttl|max_age|lifetime)$/.test(k) && n.t === 'n' && n.v >= 0) row.dur = fmtDur(n.v);
+    rows.push(row);
+  };
+  for (const k of ORDER) { const f = ent.filter(([kk]) => kk === k).pop(); if (f) { add(k, f[1]); seen.add(k); } }
+  const last = new Map(); ent.forEach(([k, v]) => last.set(k, v));
+  for (const [k, v] of last) if (!seen.has(k)) add(k, v);
+  return rows;
+}
+// Time-dependent verdict for a decoded JWS; recomputed every second by the page.
+function timeStatus(res, now) {
+  const out = { issues: [], exp: null, nbf: null, iat: null, life: null, state: 'none' };
+  if (!res.claims) return out;
+  const get = k => res.claims.find(r => r.key === k);
+  const exp = get('exp'), nbf = get('nbf'), iat = get('iat');
+  for (const [k, r] of [['exp', exp], ['nbf', nbf], ['iat', iat]]) {
+    if (!r) continue;
+    if (r.badTime) { out.issues.push({ lv: 'bad', msg: r.badWhy === 'range' ? `${k} 是 ${r.value}，超出合理的日期範圍，無法換算成時間。` : `${k} 應該是數字（從 1970 年起算的秒數），這裡是 ${r.kind === 's' ? '字串「' + r.value + '」' : r.value}。很多伺服器會因此拒絕。` }); continue; }
+    if (r.ms) out.issues.push({ lv: 'warn', msg: `${k} 是 ${r.value}，看起來是毫秒，這裡一律當成毫秒換算（${fmtTW(r.ts)}）。JWT 規定用秒，照秒解讀的伺服器會當成約西元 ${Math.floor(1970 + r.t / 31556952)} 年。` });
+    out[k] = rel(k, r.ts, now);
+  }
+  if (exp && exp.time) out.state = exp.ts - now > 0 ? 'valid' : 'expired';
+  else if (!exp && res.kind === 'jws' && res.payload && res.payload.kind === 'json') out.issues.push({ lv: 'warn', msg: '沒有到期時間（exp），這個權杖永遠不會過期。' });
+  if (out.exp && out.exp.tone === 'bad') out.issues.unshift({ lv: 'bad', msg: `已經過期：${fmtTW(exp.ts)}（台灣時間），${out.exp.text.replace('已過期 ', '')}前。` });
+  if (nbf && nbf.time && nbf.ts > now) { out.issues.push({ lv: 'warn', msg: `還沒生效：要到 ${fmtTW(nbf.ts)} 才能使用。` }); if (out.state === 'valid') out.state = 'early'; }
+  if (iat && iat.time && iat.ts - now > 60) out.issues.push({ lv: 'warn', msg: '簽發時間在未來，可能是簽發端或這台裝置的時鐘不準。' });
+  if (exp && exp.time && iat && iat.time && exp.ts >= iat.ts) out.life = fmtDur(exp.ts - iat.ts);
+  if (exp && exp.time && iat && iat.time && exp.ts < iat.ts) out.issues.push({ lv: 'bad', msg: '到期時間比簽發時間還早。' });
+  return out;
+}
+
+/* ---------- DER / keys ---------- */
+function derRead(b, p) {
+  if (p + 2 > b.length) throw new JErr('金鑰資料不完整');
+  const tag = b[p]; let len = b[p + 1], q = p + 2;
+  if (len & 0x80) { const n = len & 0x7f; if (n < 1 || n > 4) throw new JErr('金鑰長度欄位不正確'); len = 0; for (let j = 0; j < n; j++) len = len * 256 + b[q++]; }
+  if (q + len > b.length) throw new JErr('金鑰資料長度超出範圍（可能沒有貼完整）');
+  return { tag, start: q, end: q + len, hdr: p };
+}
+function derKids(b, node) { const out = []; let p = node.start; while (p < node.end) { const k = derRead(b, p); out.push(k); p = k.end; } return out; }
+function derLen(n) { if (n < 128) return [n]; const o = []; while (n) { o.unshift(n & 255); n >>= 8; } return [0x80 | o.length, ...o]; }
+const tlv = (tag, c) => cat(new Uint8Array([tag, ...derLen(c.length)]), c);
+const fromHex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
+const OID = { rsa: '2a864886f70d010101', pss: '2a864886f70d01010a', ec: '2a8648ce3d0201', 'P-256': '2a8648ce3d030107', 'P-384': '2b81040022', 'P-521': '2b81040023', secp256k1: '2b8104000a', Ed25519: '2b6570', Ed448: '2b6571', X25519: '2b656e' };
+const OIDNAME = Object.fromEntries(Object.entries(OID).map(([k, v]) => [v, k]));
+const rsaAlgId = () => tlv(0x30, cat(tlv(0x06, fromHex(OID.rsa)), new Uint8Array([5, 0])));
+function spkiInfo(der) {
+  const top = derRead(der, 0); if (top.tag !== 0x30) throw new JErr('不是公鑰（SubjectPublicKeyInfo）');
+  const kids = derKids(der, top); if (kids.length < 2 || kids[0].tag !== 0x30 || kids[1].tag !== 0x03) throw new JErr('公鑰結構不正確');
+  const alg = derKids(der, kids[0]); const oid = hex(der.slice(alg[0].start, alg[0].end));
+  const name = OIDNAME[oid];
+  if (name === 'rsa') return { kty: 'RSA', der };
+  if (name === 'pss') { const bit = der.slice(kids[1].start, kids[1].end); return { kty: 'RSA', der: tlv(0x30, cat(rsaAlgId(), tlv(0x03, bit))), pss: true }; }
+  if (name === 'ec') { const c = alg[1] ? OIDNAME[hex(der.slice(alg[1].start, alg[1].end))] : null; return { kty: 'EC', crv: c || '未知曲線', der }; }
+  if (name === 'Ed25519' || name === 'Ed448' || name === 'X25519') return { kty: 'OKP', crv: name, der };
+  throw new JErr('不認得的公鑰類型');
+}
+function certSpki(der) {
+  const top = derRead(der, 0); const tbs = derKids(der, top)[0]; const k = derKids(der, tbs);
+  const i = k[0].tag === 0xa0 ? 6 : 5; if (!k[i]) throw new JErr('憑證結構不正確');
+  return der.slice(k[i].hdr, k[i].end);
+}
+function pkcs8Info(der) {
+  const top = derRead(der, 0); const kids = derKids(der, top);
+  if (kids.length < 3 || kids[1].tag !== 0x30) throw new JErr('私鑰結構不正確');
+  const alg = derKids(der, kids[1]); const name = OIDNAME[hex(der.slice(alg[0].start, alg[0].end))];
+  if (name === 'rsa' || name === 'pss') return { kty: 'RSA', der: name === 'pss' ? tlv(0x30, cat(new Uint8Array([2, 1, 0]), rsaAlgId(), der.slice(kids[2].hdr, kids[2].end))) : der };
+  if (name === 'ec') return { kty: 'EC', crv: alg[1] ? OIDNAME[hex(der.slice(alg[1].start, alg[1].end))] || '未知曲線' : '未知曲線', der };
+  if (name === 'Ed25519' || name === 'Ed448') return { kty: 'OKP', crv: name, der };
+  throw new JErr('不認得的私鑰類型');
+}
+function sec1ToSpki(der) {
+  const top = derRead(der, 0); const kids = derKids(der, top);
+  const p0 = kids.find(k => k.tag === 0xa0), p1 = kids.find(k => k.tag === 0xa1);
+  if (!p0) throw new JErr('EC 私鑰沒有標示曲線');
+  const oidN = derRead(der, p0.start); const crv = OIDNAME[hex(der.slice(oidN.start, oidN.end))] || '未知曲線';
+  if (!p1) throw new JErr('這把 EC 私鑰沒有附公鑰，請改貼公鑰');
+  const bitN = derRead(der, p1.start);
+  return { kty: 'EC', crv, der: tlv(0x30, cat(tlv(0x30, cat(tlv(0x06, fromHex(OID.ec)), der.slice(oidN.hdr, oidN.end))), der.slice(bitN.hdr, bitN.end))) };
+}
+// Parse pasted key material into a list of candidate verification keys.
+function parseKey(text) {
+  const t = text.trim().replace(/^﻿/, '');
+  if (!t) return { keys: [], empty: true };
+  if (t[0] === '{' || t[0] === '[') {
+    let o; try { o = JSON.parse(t); } catch (e) { throw new JErr('看起來是 JWK，但不是合法的 JSON'); }
+    const list = Array.isArray(o) ? o : Array.isArray(o.keys) ? o.keys : [o];
+    const keys = list.filter(k => k && typeof k === 'object' && typeof k.kty === 'string').map(k => ({ format: 'jwk', jwk: k, kty: k.kty, crv: k.crv, kid: k.kid, private: 'd' in k || (k.kty === 'oct'), oct: k.kty === 'oct' }));
+    if (!keys.length) throw new JErr('JWK 裡沒有 kty 欄位，不像金鑰');
+    return { keys, jwks: list.length > 1 || Array.isArray(o.keys) };
+  }
+  if (/BEGIN OPENSSH PRIVATE KEY|^ssh-(rsa|ed25519|dss)|^ecdsa-sha2-/.test(t)) throw new JErr('這是 OpenSSH 格式。請改用 PEM（例：ssh-keygen -e -m PKCS8 -f 檔名）');
+  const blocks = [...t.matchAll(/-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g)];
+  if (/-----BEGIN/.test(t) && !blocks.length) throw new JErr('PEM 不完整：找不到對應的 -----END … ----- 行');
+  const items = blocks.length ? blocks.map(m => ({ label: m[1], body: m[2] })) : [{ label: null, body: t }];
+  const keys = [];
+  for (const it of items) {
+    if (/Proc-Type:\s*4,ENCRYPTED/.test(it.body) || it.label === 'ENCRYPTED PRIVATE KEY') throw new JErr('這把私鑰有密碼保護，請改貼公鑰');
+    const body = it.body.replace(/^[A-Za-z-]+:.*$/gm, '').replace(/\s+/g, '');
+    let der; try { der = b64dec(body).bytes; } catch (e) { throw new JErr((it.label ? 'PEM 內容' : '金鑰') + '不是合法的 Base64：' + e.message); }
+    if (!der.length) throw new JErr('金鑰內容是空的');
+    const L = it.label;
+    try {
+      if (L === 'PUBLIC KEY') keys.push({ format: 'spki', ...spkiInfo(der) });
+      else if (L === 'RSA PUBLIC KEY') keys.push({ format: 'spki', kty: 'RSA', der: tlv(0x30, cat(rsaAlgId(), tlv(0x03, cat(new Uint8Array([0]), der)))) });
+      else if (L === 'CERTIFICATE' || L === 'X509 CERTIFICATE' || L === 'TRUSTED CERTIFICATE') keys.push({ format: 'spki', cert: true, ...spkiInfo(certSpki(der)) });
+      else if (L === 'PRIVATE KEY') keys.push({ format: 'pkcs8', private: true, ...pkcs8Info(der) });
+      else if (L === 'RSA PRIVATE KEY') keys.push({ format: 'pkcs8', private: true, kty: 'RSA', der: tlv(0x30, cat(new Uint8Array([2, 1, 0]), rsaAlgId(), tlv(0x04, der))) });
+      else if (L === 'EC PRIVATE KEY') keys.push({ format: 'spki', private: true, ...sec1ToSpki(der) });
+      else if (L === 'EC PARAMETERS') continue;
+      else if (L === null) { // bare base64 DER: try SPKI, then certificate
+        try { keys.push({ format: 'spki', ...spkiInfo(der) }); } catch (e) { keys.push({ format: 'spki', cert: true, ...spkiInfo(certSpki(der)) }); }
+      } else throw new JErr(`不支援「${L}」這種 PEM`);
+    } catch (e) { if (e instanceof JErr && /不支援|密碼|沒有附/.test(e.message)) throw e; throw new JErr((L ? `「${L}」` : '貼上的內容') + '無法解讀成金鑰：' + e.message); }
+  }
+  if (!keys.length) throw new JErr('找不到金鑰');
+  return { keys: keys.slice(0, 1).concat(blocks.length > 1 && keys[0].cert ? [] : keys.slice(1)), chain: blocks.length > 1 && keys[0].cert };
+}
+// True when pasted key text is (or looks like) private material, whether or not it can be parsed.
+function isPrivateText(t) {
+  if (typeof t !== 'string' || !t) return false;
+  if (/PRIVATE KEY|OPENSSH|Proc-Type:\s*4,\s*ENCRYPTED|PuTTY-User-Key|BEGIN PGP PRIVATE/i.test(t)) return true;
+  if (/"(d|p|q|dp|dq|qi|k)"\s*:/.test(t)) return true; // JWK private members or an oct (shared secret) key, even in a broken or partial JWKS
+  return false;
+}
+function derSigToRaw(sig, size) {
+  const top = derRead(sig, 0); if (top.tag !== 0x30) return null; const k = derKids(sig, top); if (k.length !== 2) return null;
+  const int = n => { let b = sig.slice(n.start, n.end); while (b.length > size && b[0] === 0) b = b.slice(1); if (b.length > size) return null; const o = new Uint8Array(size); o.set(b, size - b.length); return o; };
+  const r = int(k[0]), s = int(k[1]); return r && s ? cat(r, s) : null;
+}
+function secretBytes(s, enc) {
+  if (enc === 'b64') { const t = s.replace(/\s+/g, ''); return b64dec(t).bytes; }
+  if (enc === 'hex') { const t = s.replace(/\s+|^0x/gi, ''); if (!/^([0-9a-f]{2})*$/i.test(t)) throw new JErr('Hex 只能有 0–9、a–f，而且要成對'); return fromHex(t || ''); }
+  return te.encode(s);
+}
+const KTY = { RS: 'RSA', PS: 'RSA', ES: 'EC', Ed: 'OKP' };
+const KNAME = { RSA: 'RSA', EC: 'EC（橢圓曲線）', OKP: 'EdDSA/OKP', oct: '共用密鑰（oct）' };
+async function importVerifyKey(subtle, k, alg) {
+  const A = ALG[alg], want = KTY[A.fam];
+  if (k.kty !== want) throw new JErr(`這把是 ${KNAME[k.kty] || k.kty} 金鑰，但權杖用 ${alg}，需要 ${KNAME[want]} 金鑰。`);
+  if ((A.fam === 'ES' || A.fam === 'Ed') && k.crv && k.crv !== A.crv) throw new JErr(`金鑰曲線是 ${k.crv}，但 ${alg} 需要 ${A.crv}。`);
+  const imp = A.fam === 'RS' ? { name: 'RSASSA-PKCS1-v1_5', hash: A.hash } : A.fam === 'PS' ? { name: 'RSA-PSS', hash: A.hash } : A.fam === 'ES' ? { name: 'ECDSA', namedCurve: A.crv } : { name: 'Ed25519' };
+  const strip = j => { const o = { kty: j.kty }; for (const f of ['n', 'e', 'crv', 'x', 'y']) if (j[f] != null) o[f] = j[f]; return o; };
+  try {
+    if (k.format === 'jwk') return await subtle.importKey('jwk', strip(k.jwk), imp, false, ['verify']);
+    if (k.format === 'spki') return await subtle.importKey('spki', k.der, imp, false, ['verify']);
+    const priv = await subtle.importKey('pkcs8', k.der, imp, true, ['sign']);
+    const j = await subtle.exportKey('jwk', priv);
+    return await subtle.importKey('jwk', strip(j), imp, false, ['verify']);
+  } catch (e) {
+    if (A.fam === 'Ed' && /NotSupported|Unrecognized|not supported/i.test(e.name + e.message)) throw new JErr('這個瀏覽器不支援 Ed25519 驗證，請換新版瀏覽器。');
+    throw new JErr('金鑰無法匯入：' + (e.message || e.name));
+  }
+}
+async function verifyWith(subtle, key, A, data, sig) {
+  if (A.fam === 'RS') return subtle.verify({ name: 'RSASSA-PKCS1-v1_5' }, key, sig, data);
+  if (A.fam === 'PS') return subtle.verify({ name: 'RSA-PSS', saltLength: A.salt }, key, sig, data);
+  if (A.fam === 'ES') return subtle.verify({ name: 'ECDSA', hash: A.hash }, key, sig, data);
+  return subtle.verify({ name: 'Ed25519' }, key, sig, data);
+}
+async function hmacOk(subtle, A, keyBytes, data, sig) {
+  if (!keyBytes.length) return false; // Web Crypto rejects empty HMAC keys
+  const k = await subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: A.hash }, false, ['verify']);
+  return subtle.verify('HMAC', k, sig, data);
+}
+// opts: { secret, enc: 'text'|'b64'|'hex', key } → { state: ok|bad|need|error|na, msg, notes[], hint }
+async function verify(subtle, res, opts) {
+  const notes = [];
+  if (!res || res.error || res.kind !== 'jws') return { state: 'na', msg: '' };
+  const alg = res.alg, A = ALG[alg];
+  if (!alg) return { state: 'na', msg: '標頭沒有 alg，無法驗證。' };
+  if (alg.toLowerCase() === 'none') return { state: 'na', msg: '沒有簽章可以驗證。' };
+  if (res.sigError) return { state: 'error', msg: res.sigError };
+  if (!A) return { state: 'na', msg: alg === 'ES256K' ? '瀏覽器的 Web Crypto 不支援 secp256k1，無法在這裡驗證。' : `不支援驗證 ${alg}。` };
+  if (!subtle) return { state: 'error', msg: '這個環境沒有 Web Crypto（需要 https 網址），無法驗證簽章。' };
+  const data = te.encode(res.parts[0] + '.' + res.parts[1]);
+  let sig = res.sig.bytes;
+  if (A.fam === 'HS') {
+    let s = opts.secret || '', enc = opts.enc || 'text';
+    if (!s) return { state: 'need', msg: '輸入密鑰就會驗證。' };
+    let keyBytes;
+    const st = s.trim();
+    if (st[0] === '{' && /"kty"\s*:\s*"oct"/.test(st)) {
+      try { const j = JSON.parse(st); const ks = Array.isArray(j.keys) ? j.keys : [j]; const o = ks.find(x => x.kty === 'oct' && (!res.header.obj.kid || x.kid === res.header.obj.kid)) || ks.find(x => x.kty === 'oct'); keyBytes = b64dec(o.k).bytes; notes.push('使用 JWK 的 k 欄位（oct 金鑰）。'); }
+      catch (e) { return { state: 'error', msg: '看起來是 oct JWK，但讀不出 k 欄位。' }; }
+    } else {
+      try { keyBytes = secretBytes(s, enc); } catch (e) { return { state: 'error', msg: (enc === 'b64' ? '密鑰不是合法的 Base64：' : '') + e.message }; }
+      if (/-----BEGIN [A-Z ]*KEY-----/.test(s)) notes.push('你把 PEM 金鑰當成 HMAC 密鑰。這正是「演算法混淆攻擊」的手法；正常的 HS 權杖不會用公鑰簽。');
+    }
+    if (!keyBytes.length) return { state: 'error', msg: '密鑰解碼後是空的。' };
+    const ok = await hmacOk(subtle, A, keyBytes, data, sig);
+    if (keyBytes.length < A.len) notes.push(`密鑰只有 ${keyBytes.length} 位元組，${alg} 建議至少 ${A.len} 位元組（RFC 7518）。太短容易被暴力破解。`);
+    if (ok) return { state: 'ok', msg: '簽章正確：用這把密鑰算出的 HMAC 和權杖相符。', notes };
+    let hint = null;
+    if (st[0] !== '{') for (const alt of ['text', 'b64', 'hex']) {
+      if (alt === enc) continue;
+      let kb; try { kb = secretBytes(s, alt); } catch (e) { continue; }
+      if (kb.length && await hmacOk(subtle, A, kb, data, sig)) { hint = alt; break; }
+    }
+    if (hint) return { state: 'bad', msg: '用目前的編碼算出的簽章不符。', hint, notes };
+    if (s !== s.trim() && await hmacOk(subtle, A, te.encode(s.trim()), data, sig)) return { state: 'bad', msg: '簽章不符：密鑰前後多了空白，去掉空白就正確了。', hint: 'trim', notes };
+    return { state: 'bad', msg: '簽章不符：密鑰不對，或權杖內容被改過。', notes };
+  }
+  // asymmetric
+  let parsed;
+  try { parsed = parseKey(opts.key || ''); } catch (e) { return { state: 'error', msg: e.message }; }
+  if (parsed.empty) return { state: 'need', msg: `貼上${A.fam === 'Ed' ? ' Ed25519 ' : ''}公鑰（PEM、憑證、JWK 或 JWKS）就會驗證。` };
+  if (A.fam === 'ES' && sig.length !== A.size * 2) {
+    const raw = sig[0] === 0x30 ? (() => { try { return derSigToRaw(sig, A.size); } catch (e) { return null; } })() : null;
+    if (raw) { sig = raw; notes.push('簽章是 DER 格式（ASN.1），JWS 規定用 r‖s 原始格式。已自動轉換來驗證，但有些伺服器會拒絕。'); }
+  }
+  let keys = parsed.keys; const kid = res.header.obj.kid;
+  if (parsed.keys.length > 1 && kid != null) { const m = keys.filter(k => k.kid === kid); if (m.length) { keys = m; notes.push(`金鑰集裡依 kid「${kid}」選出第 ${parsed.keys.indexOf(m[0]) + 1} 把。`); } else notes.push(`金鑰集裡沒有 kid「${kid}」，逐一試過每一把。`); }
+  if (keys.some(k => k.private && !k.oct)) notes.push('你貼的是私鑰。驗證只需要公鑰；私鑰不要貼到不信任的地方（這裡不會保存或上傳私鑰）。');
+  if (keys.some(k => k.cert)) notes.push(parsed.chain ? '從憑證鏈的第一張憑證取出公鑰。' : '從憑證取出公鑰。');
+  if (keys.some(k => k.format === 'jwk' && k.jwk.alg && k.jwk.alg !== alg)) notes.push(`金鑰標示的 alg 是 ${keys.find(k => k.jwk && k.jwk.alg).jwk.alg}，和權杖的 ${alg} 不同。`);
+  let lastErr = null, tried = 0;
+  for (const k of keys) {
+    if (k.oct) { lastErr = new JErr(`這是共用密鑰（oct），但權杖用 ${alg}，需要公鑰。`); continue; }
+    let ck; try { ck = await importVerifyKey(subtle, k, alg); } catch (e) { lastErr = e; continue; }
+    tried++;
+    let ok = false; try { ok = await verifyWith(subtle, ck, A, data, sig); } catch (e) { lastErr = e; continue; }
+    if (ok) {
+      if (keys.length > 1 && !kid) notes.push(`第 ${parsed.keys.indexOf(k) + 1} 把金鑰驗證成功。`);
+      return { state: 'ok', msg: '簽章正確：這把公鑰驗證通過，內容沒有被改過。', notes };
+    }
+  }
+  if (!tried) return { state: 'error', msg: lastErr ? lastErr.message : '沒有可用的金鑰。', notes };
+  return { state: 'bad', msg: keys.length > 1 ? `簽章不符：試了 ${tried} 把金鑰都不對。` : '簽章不符：不是這把金鑰簽的，或權杖內容被改過。', notes };
+}
+
+/* ---------- input detection ---------- */
+const JWT_SHAPE = /^[A-Za-z0-9_\-+/=]+(?:\.[A-Za-z0-9_\-+/=]*){2,}$/;
+function headerOk(p) { try { const b = b64dec(p).bytes; const t = utf8Fatal.decode(b); return /^\s*\{/.test(t) && parseJSON(t).node.t === 'o'; } catch (e) { return false; } }
+const ZW = /[\s​-‍⁠﻿]+/g;
+// a short word (1–15 characters, no dot) between two other words means prose or a log line, not a wrapped token;
+// words right next to a lone dot are token pieces ("eyJ… . eyJ… . sig"). Split once, so it stays linear.
+function shortWordInside(s) {
+  const w = s.slice(0, 200000).split(/\s+/);
+  for (let i = 1; i < w.length - 1; i++) {
+    const x = w[i];
+    if (x.length && x.length <= 15 && x.indexOf('.') < 0 && !w[i - 1].endsWith('.') && !w[i + 1].startsWith('.')) return true;
+  }
+  return false;
+}
+function asJWT(s) {
+  // quick rejections before compacting: other characters, or short words between spaces (prose, logs) — keeps multi-MB pastes fast
+  if (/[^A-Za-z0-9_\-+/=.\s​-‍⁠﻿]/.test(s) || shortWordInside(s)) return null;
+  const c = s.replace(ZW, '');
+  if (!JWT_SHAPE.test(c)) return null;
+  const parts = c.split('.');
+  if ((parts.length === 3 || parts.length === 5) && parts[0].length < 65536 && headerOk(parts[0])) return c;
+  if (/^eyJ/.test(c)) return c; // clearly meant as a JWT; analysis will explain what is wrong
+  return null;
+}
+// Linear scans for a JWT or URL inside other text. Regexes that can start at every position and run to the end of a
+// long run (like /[a-z][a-z0-9+.-]*:\/\//g on a 1 MB hex dump) are quadratic, so find anchors with indexOf instead.
+const SCAN = 1000000; // characters searched for an embedded JWT or URL
+const JWT_IN = /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*)?/g;
+const URL_CH = /[^\s<>"'`「」『』（）()，。、；！？　]+/y;
+const SCH = c => (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c === 43 || c === 46 || c === 45;
+const ALPHA = c => (c >= 97 && c <= 122) || (c >= 65 && c <= 90);
+const TRAIL = '.,;:!?]}>\'"';
+function findURLs(t) {
+  const out = []; let from = 0, done = 0;
+  while (true) {
+    const p = t.indexOf('://', from); if (p < 0) break;
+    // scheme: up to 32 characters back, never into the previous URL
+    let j = p; const lo = Math.max(done, p - 32);
+    while (j > lo && SCH(t.charCodeAt(j - 1))) j--;
+    while (j < p && !ALPHA(t.charCodeAt(j))) j++;
+    if (j === p) { from = p + 3; continue; }
+    URL_CH.lastIndex = p + 3; const m = URL_CH.exec(t);
+    let e = m ? p + 3 + m[0].length : p + 3;
+    while (e > p + 3 && TRAIL.indexOf(t[e - 1]) >= 0) e--;
+    const str = t.slice(j, e);
+    if (e > p + 3 && !/^[/?#]/.test(t[p + 3])) out.push({ s: str, i: j });
+    done = m ? p + 3 + m[0].length : p + 3; from = Math.max(done, p + 3);
+  }
+  return out;
+}
+// "example.com/x", "www.例子.tw:8080?a=1": a host with a dot and a letter-only last label, then port/path/query.
+// Same rule as /^[^\s/?#@:]*[^\s/?#@:.\d][^\s/?#@:]*\.[^\s/?#@:.\d]{2,}(:\d+)?([/?#]\S*)?$/ without its backtracking.
+function bareHost(u) {
+  const m = /^[^\s/?#@:]*/.exec(u), h = m[0];
+  if (!/^(:\d+)?([/?#]\S*)?$/.test(u.slice(h.length))) return false;
+  const d = h.lastIndexOf('.'); if (d < 1) return false;
+  const tld = h.slice(d + 1);
+  return tld.length >= 2 && !/\d/.test(tld) && /[^.\d]/.test(h.slice(0, d));
+}
+const URL_MAX = 200000; // longer URLs are parsed up to here; the rest stays in the text untouched
+function detect(text) {
+  const d = detectAll(text);
+  if (d.kind === 'url' && d.end - d.start > URL_MAX) {
+    const n = d.end - d.start; d.end = d.start + URL_MAX; d.urlCut = true;
+    (d.notes || (d.notes = [])).push(`網址有 ${n.toLocaleString('en')} 個字，太長，只解析前 ${URL_MAX / 10000} 萬字`);
+  }
+  return d;
+}
+function detectAll(text) {
+  const lead = text.length - text.replace(/^[\s﻿]+/, '').length;
+  const t = text.trim().replace(/^﻿/, '');
+  if (!t) return { kind: 'empty' };
+  const notes = [];
+  // quotes and common prefixes
+  let s = t, off = lead;
+  const q = /^(["'`])([\s\S]*)\1[,;]?$/.exec(s); if (q) { s = q[2]; off += 1; notes.push('已去掉前後的引號'); }
+  const pre = /^(?:(?:proxy-)?authorization\s*[:=]\s*)?(?:bearer|jwt|token|dpop)\b\s*[:=]?\s*/i.exec(s);
+  if (pre && pre[0].length < s.length) {
+    const tok = asJWT(s.slice(pre[0].length));
+    if (tok) { notes.push(`已去掉前綴「${pre[0].trim()}」`); if (/\s/.test(s.slice(pre[0].length).trim())) notes.push('已去掉中間的換行與空白'); return { kind: 'jwt', token: tok, start: off + pre[0].length, end: lead + t.length, notes }; }
+  }
+  let direct = asJWT(s);
+  // the whole paste only looks like one broken JWT ("eyJ…junk" line, then a real token): prefer a real token inside it
+  const h0 = direct ? direct.slice(0, direct.indexOf('.')) : '';
+  if (direct && !(h0.length < 65536 && headerOk(h0)) && /\s/.test(s)) {
+    JWT_IN.lastIndex = 0; const st = s.length > SCAN ? s.slice(0, SCAN) : s;
+    for (const m of st.matchAll(JWT_IN)) if (m.index > 0 && headerOk(m[0].split('.')[0])) { direct = null; break; }
+  }
+  if (direct) { if (/[\s​-‍⁠]/.test(s)) notes.push('已去掉中間的換行與空白'); return { kind: 'jwt', token: direct, start: off, end: off + s.length, notes }; }
+  // JWS JSON serialization
+  if (s[0] === '{') {
+    try {
+      const o = JSON.parse(s);
+      if (o && typeof o.payload === 'string') {
+        const sg = o.signatures && o.signatures[0] ? o.signatures[0] : o;
+        if (typeof sg.protected === 'string' && typeof sg.signature === 'string') {
+          notes.push('這是 JWS JSON 格式，已轉成精簡格式' + (o.signatures && o.signatures.length > 1 ? `（共 ${o.signatures.length} 個簽章，取第 1 個）` : ''));
+          if (sg.header) notes.push('未受保護的 header 欄位不在簽章範圍內，已略過');
+          return { kind: 'jwt', token: sg.protected + '.' + o.payload + '.' + sg.signature, start: -1, end: -1, notes, fromJson: true };
+        }
+      }
+    } catch (e) { /* not JSON */ }
+  }
+  const one = !/[\r\n]/.test(t);
+  if (one && /^[a-zA-Z][a-zA-Z0-9+.\-]*:\S/.test(t) && !/^[a-zA-Z][a-zA-Z0-9+.\-]*:\d+([/?#]|$)/.test(t)) return { kind: 'url', start: lead, end: lead + t.length };
+  if (one && /^(localhost|\[[0-9a-f:.]+\]|\d{1,3}(\.\d{1,3}){3})(:\d+)?([/?#]\S*)?$/i.test(t)) return { kind: 'url', start: lead, end: lead + t.length };
+  if (one && bareHost(t.replace(/^[^\s/?#@]*@/, '')) && !/^[\w.-]+@[\w.-]+$/.test(t) && !/^eyJ/.test(t)) return { kind: 'url', start: lead, end: lead + t.length };
+  // a JWT or URL somewhere inside other text (JSON response, HTTP headers, logs, chat messages)
+  const scanCut = t.length > SCAN, st = scanCut ? t.slice(0, SCAN) : t;
+  const cutNote = `內容很長，只在前 ${Math.round(SCAN / 10000)} 萬字裡找 JWT 或網址`;
+  JWT_IN.lastIndex = 0;
+  const found = [...st.matchAll(JWT_IN)].filter(m => headerOk(m[0].split('.')[0]));
+  const urls = findURLs(st);
+  const inUrl = found.length && urls.length && found[0].index >= urls[0].i && found[0].index < urls[0].i + urls[0].s.length;
+  if (urls.length && (!found.length || inUrl)) {
+    const u = urls[0];
+    notes.push(`從貼上的文字中找到網址（第 ${u.i + 1} 個字元起）` + (urls.length > 1 ? `，共 ${urls.length} 個，顯示第一個` : ''));
+    if (scanCut) notes.push(cutNote);
+    return { kind: 'url', start: lead + u.i, end: lead + u.i + u.s.length, notes, embedded: true };
+  }
+  if (found.length) {
+    const m = found[0];
+    notes.push(`從貼上的文字中找到 JWT（第 ${m.index + 1} 個字元起）` + (found.length > 1 ? `，共 ${found.length} 個，顯示第一個` : ''));
+    if (scanCut) notes.push(cutNote);
+    return { kind: 'jwt', token: m[0], start: lead + m.index, end: lead + m.index + m[0].length, notes, embedded: true };
+  }
+  if (one && /^\?/.test(t)) return { kind: 'url', queryOnly: true, start: lead, end: lead + t.length };
+  if (one && /^\//.test(t)) return { kind: 'url', start: lead, end: lead + t.length };
+  if (one && /^[^\s=&?#/]+=[^\s&]*(?:&[^\s&=]*(?:=[^\s&]*)?)*$/.test(t)) return { kind: 'url', queryOnly: true, start: lead, end: lead + t.length };
+  return { kind: 'unknown', looks: /^[\w-]+\.[\w-]+$/.test(t) ? 'twoParts' : /^eyJ/.test(t) ? 'jwtish' : null, scanCut, notes: scanCut ? [cutNote] : [] };
+}
+
+/* ---------- punycode (RFC 3492) ---------- */
+const PB = 36, TMIN = 1, TMAX = 26, SKEW = 38, DAMP = 700;
+function adapt(delta, num, first) { delta = first ? Math.floor(delta / DAMP) : delta >> 1; delta += Math.floor(delta / num); let k = 0; while (delta > ((PB - TMIN) * TMAX) >> 1) { delta = Math.floor(delta / (PB - TMIN)); k += PB; } return k + Math.floor((PB - TMIN + 1) * delta / (delta + SKEW)); }
+function pDecode(input) {
+  const out = []; let b = input.lastIndexOf('-'); if (b < 0) b = 0;
+  for (let j = 0; j < b; j++) { const c = input.charCodeAt(j); if (c >= 0x80) throw new JErr('punycode 含有非 ASCII 字元'); out.push(c); }
+  let n = 128, bias = 72, i = 0;
+  for (let idx = b > 0 ? b + 1 : 0; idx < input.length;) {
+    const old = i; let w = 1;
+    for (let k = PB; ; k += PB) {
+      if (idx >= input.length) throw new JErr('punycode 不完整');
+      const c = input.charCodeAt(idx++); const d = c - 48 < 10 ? c - 22 : c - 65 < 26 ? c - 65 : c - 97 < 26 ? c - 97 : PB;
+      if (d >= PB) throw new JErr('punycode 含有不合法的字元');
+      i += d * w; const t = k <= bias ? TMIN : k >= bias + TMAX ? TMAX : k - bias; if (d < t) break; w *= PB - t;
+      if (w > 1e12) throw new JErr('punycode 數值溢位');
+    }
+    const len = out.length + 1; bias = adapt(i - old, len, old === 0); n += Math.floor(i / len); i %= len;
+    if (n > 0x10FFFF) throw new JErr('punycode 數值溢位');
+    out.splice(i++, 0, n);
+  }
+  return String.fromCodePoint(...out);
+}
+function pEncode(str) {
+  const cps = Array.from(str, c => c.codePointAt(0)); let n = 128, delta = 0, bias = 72;
+  let out = cps.filter(c => c < 128).map(c => String.fromCharCode(c)).join(''); const b = out.length; let h = b; if (b) out += '-';
+  const dch = d => String.fromCharCode(d + 22 + 75 * (d < 26));
+  while (h < cps.length) {
+    let m = Infinity; for (const c of cps) if (c >= n && c < m) m = c;
+    delta += (m - n) * (h + 1); n = m;
+    for (const c of cps) {
+      if (c < n) delta++;
+      if (c === n) { let q = delta; for (let k = PB; ; k += PB) { const t = k <= bias ? TMIN : k >= bias + TMAX ? TMAX : k - bias; if (q < t) break; out += dch(t + (q - t) % (PB - t)); q = Math.floor((q - t) / (PB - t)); } out += dch(q); bias = adapt(delta, h + 1, h === b); delta = 0; h++; }
+    }
+    delta++; n++;
+  }
+  return out;
+}
+const DOTS = /[.。．｡]/;
+function toUnicode(host) { return host.split('.').map(l => /^xn--/i.test(l) ? (() => { try { return pDecode(l.slice(4).toLowerCase()); } catch (e) { return l; } })() : l).join('.'); }
+function toASCII(host) { return host.split(DOTS).map(l => /[^\x00-\x7f]/.test(l) ? 'xn--' + pEncode(l.normalize('NFKC').toLowerCase()) : l).join('.'); }
+
+/* ---------- percent-encoding ---------- */
+function pctOnce(s, plus) {
+  if (plus) s = s.replace(/\+/g, ' ');
+  if (s.indexOf('%') < 0 && !/[\uD800-\uDFFF]/.test(s)) return { text: s, errs: [], big5: false, lossy: false }; // nothing to decode
+  const errs = [], bytes = [];
+  const hx = c => c >= 48 && c <= 57 ? c - 48 : c >= 65 && c <= 70 ? c - 55 : c >= 97 && c <= 102 ? c - 87 : -1;
+  for (let i = 0; i < s.length;) {
+    const c = s.charCodeAt(i);
+    if (c === 37) {
+      const h1 = hx(s.charCodeAt(i + 1)), h2 = h1 < 0 ? -1 : hx(s.charCodeAt(i + 2));
+      if (h2 >= 0) { bytes.push(h1 * 16 + h2); i += 3; continue; }
+      if (errs.length < 1000) errs.push({ pos: i, msg: `第 ${i + 1} 個字元的「${s.substr(i, 3)}」不是合法的 %XX 編碼` }); else errs.more = (errs.more || 0) + 1;
+      bytes.push(37); i++; continue;
+    }
+    if (c < 128) { bytes.push(c); i++; continue; }
+    let j = s.indexOf('%', i); if (j < 0) j = s.length; // encode the whole run up to the next % at once
+    const enc = te.encode(s.slice(i, j)); for (let k = 0; k < enc.length; k++) bytes.push(enc[k]); i = j;
+  }
+  const u = new Uint8Array(bytes);
+  try { return { text: utf8Fatal.decode(u), errs, big5: false, lossy: false }; } catch (e) { /* not UTF-8 */ }
+  const runs = [...s.matchAll(/(?:%[0-9a-fA-F]{2})+/g)].map(m => { const rb = new Uint8Array(m[0].length / 3); for (let k = 0; k < rb.length; k++) rb[k] = parseInt(m[0].substr(k * 3 + 1, 2), 16); return rb; });
+  const truncatedUtf8 = runs.every(rb => { try { new TextDecoder('utf-8', { fatal: true }).decode(rb, { stream: true }); return true; } catch (e) { return false; } });
+  if (big5 && !errs.length && !truncatedUtf8 && /^[\x00-\x7f]*$/.test(s)) { try { const t = big5.decode(u); if (/[　-鿿]/.test(t)) return { text: t, errs, big5: true, lossy: false }; } catch (e) { /* not Big5 either */ } }
+  // report each run of %XX that is not valid UTF-8 on its own
+  for (const m of s.matchAll(/(?:%[0-9a-fA-F]{2})+/g)) {
+    const rb = new Uint8Array(m[0].length / 3); for (let k = 0; k < rb.length; k++) rb[k] = parseInt(m[0].substr(k * 3 + 1, 2), 16);
+    try { utf8Fatal.decode(rb); } catch (e) { errs.push({ pos: m.index, msg: `第 ${m.index + 1} 個字元起的「${m[0].length > 30 ? m[0].slice(0, 27) + '…' : m[0]}」不是完整的 UTF-8` }); }
+  }
+  errs.sort((x, y) => x.pos - y.pos);
+  return { text: utf8Loose.decode(u), errs, big5: false, lossy: true };
+}
+function decodePct(s, plus) {
+  const a = pctOnce(s, plus); const layers = [a.text]; let cur = a.text;
+  for (let k = 0; k < 5; k++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(cur)) break;
+    const nx = pctOnce(cur, false); if (nx.errs.length || nx.lossy || nx.text === cur) break;
+    layers.push(nx.text); cur = nx.text;
+  }
+  return { text: a.text, errs: a.errs, big5: a.big5, lossy: a.lossy, layers };
+}
+const encQ = (s, plus) => { const e = encodeURIComponent(wellFormed(s)); return plus ? e.replace(/%20/g, '+') : e; };
+
+/* ---------- URL ---------- */
+const DEFPORT = { http: '80', https: '443', ws: '80', wss: '443', ftp: '21' };
+function parseParams(q, base, plus) {
+  const rows = []; let p = 0;
+  for (const piece of q.split('&')) {
+    const start = base + p; p += piece.length + 1;
+    if (piece === '') { rows.push({ empty: true, raw: '', start }); continue; }
+    const eq = piece.indexOf('=');
+    const rk = eq < 0 ? piece : piece.slice(0, eq), rv = eq < 0 ? null : piece.slice(eq + 1);
+    const dk = decodePct(rk, plus), dv = rv == null ? null : decodePct(rv, plus);
+    rows.push({ raw: piece, rawK: rk, rawV: rv, k: dk.text, v: dv ? dv.text : '', eq: eq >= 0, dk, dv, start, end: start + piece.length });
+  }
+  return rows;
+}
+const looksParams = f => /^[^\s=&/]+=[^\s]*$/.test(f) && !/^[!/]/.test(f);
+function parseURL(s, queryOnly) {
+  const r = { raw: s, scheme: null, assumed: null, user: null, pass: null, host: null, port: null, path: '', query: null, fragment: null, off: {}, issues: [], queryOnly: !!queryOnly };
+  const push = (lv, msg) => r.issues.push({ lv, msg });
+  let i = 0;
+  if (queryOnly) {
+    const st = s[0] === '?' ? 1 : 0; let e = s.indexOf('#'); if (e < 0) e = s.length;
+    r.query = s.slice(st, e); r.off.query = [0, e]; r.qmark = !!st;
+    if (e < s.length) { r.fragment = s.slice(e + 1); r.off.fragment = [e, s.length]; }
+  } else {
+    const sm = /^([a-zA-Z][a-zA-Z0-9+.\-]*):/.exec(s);
+    const hasScheme = !!sm && !/^\d+([/?#]|$)/.test(s.slice(sm[0].length));
+    if (hasScheme) { r.scheme = sm[1]; r.off.scheme = [0, sm[0].length]; i = sm[0].length; }
+    let a0 = -1;
+    if (s.startsWith('//', i) || (hasScheme && /^https?$|^wss?$|^ftp$/i.test(r.scheme) && /^[\\/]{2}/.test(s.slice(i)))) a0 = i + 2;
+    else if (!hasScheme && !/^[/?#]/.test(s)) { a0 = 0; r.assumed = /^(localhost|\[|\d{1,3}(\.\d{1,3}){3}([:/?#]|$))/i.test(s) ? 'http' : 'https'; }
+    if (a0 >= 0) {
+      if (a0 >= 2 && s[a0 - 1] === '\\') push('warn', '網址裡用了反斜線「\\」，應該是「/」。');
+      let e = a0; while (e < s.length && !'/?#\\'.includes(s[e])) e++;
+      const a = s.slice(a0, e); const at = a.lastIndexOf('@'); let hp = a, ho = a0;
+      if (at >= 0) { const ui = a.slice(0, at); r.off.user = [a0, a0 + at + 1]; const c = ui.indexOf(':'); r.user = decodePct(c < 0 ? ui : ui.slice(0, c), false).text; if (c >= 0) r.pass = decodePct(ui.slice(c + 1), false).text; hp = a.slice(at + 1); ho = a0 + at + 1; }
+      let he;
+      if (hp[0] === '[') { const rb = hp.indexOf(']'); he = rb < 0 ? hp.length : rb + 1; if (rb < 0) push('bad', 'IPv6 位址少了右中括號「]」。'); }
+      else { const c = hp.lastIndexOf(':'); he = c < 0 ? hp.length : c; }
+      r.host = hp.slice(0, he); r.off.host = [ho, ho + he];
+      if (he < hp.length) { r.port = hp.slice(he + 1); r.off.port = [ho + he, ho + hp.length]; }
+      i = e;
+    }
+    let e = i; while (e < s.length && s[e] !== '?' && s[e] !== '#') e++;
+    r.path = s.slice(i, e); r.off.path = [i, e]; i = e;
+    if (s[i] === '?') { e = s.indexOf('#', i); if (e < 0) e = s.length; r.query = s.slice(i + 1, e); r.off.query = [i, e]; i = e; }
+    if (s[i] === '#') { r.fragment = s.slice(i + 1); r.off.fragment = [i, s.length]; }
+  }
+  const sch = (r.scheme || r.assumed || '').toLowerCase();
+  r.special = !!DEFPORT[sch] || sch === 'file';
+  // host
+  if (r.host != null) {
+    r.hostUnicode = toUnicode(r.host); r.hostASCII = /[^\x00-\x7f]/.test(r.host) ? toASCII(r.host) : r.host;
+    r.idn = r.hostUnicode !== r.host || r.hostASCII !== r.host;
+    if (/%[0-9a-f]{2}/i.test(r.host)) push('warn', '主機名稱裡有百分比編碼，瀏覽器會先解碼。');
+    const u = r.hostUnicode;
+    for (const label of u.split('.')) {
+      const sc = [/[a-z]/i.test(label) && 'L', /[Ѐ-ӿ]/.test(label) && 'C', /[Ͱ-Ͽ]/.test(label) && 'G'].filter(Boolean);
+      if (sc.length > 1) { push('bad', `主機「${label}」混用了拉丁和${sc.includes('C') ? '西里爾' : '希臘'}字母，可能是假冒網域（同形字攻擊）。`); break; }
+    }
+    if (r.idn) push('info', '這是國際化網域名稱（IDN），瀏覽器實際連線用的是 Punycode：' + r.hostASCII);
+    if (!r.host && r.special && sch !== 'file') push('bad', '少了主機名稱。');
+    if (/\s/.test(r.host)) push('bad', '主機名稱裡不能有空白。');
+  }
+  if (r.port != null) {
+    if (!/^\d*$/.test(r.port)) push('bad', `連接埠「${r.port}」不是數字。`);
+    else if (r.port !== '' && +r.port > 65535) push('bad', `連接埠 ${r.port} 超過 65535。`);
+    else if (DEFPORT[sch] && r.port.replace(/^0+(?=\d)/, '') === DEFPORT[sch]) push('info', `連接埠 ${r.port} 就是 ${sch} 的預設值，可以省略。`);
+  }
+  if (r.pass != null) push('warn', '網址裡有密碼。網址常被記錄在瀏覽紀錄、伺服器日誌和分享連結裡，請勿這樣傳密碼。');
+  else if (r.user != null) push('info', `網址帶有使用者名稱「${r.user}」。`);
+  if (sch === 'http' && !r.assumed) push('info', '用的是未加密的 http，傳輸內容可能被看到或竄改。');
+  if (r.assumed) push('info', `沒有寫協定，當成 ${r.assumed}:// 來解析。`);
+  if (/\s/.test(s)) push('warn', '網址裡有空白或換行，正式網址應該編碼成 %20。');
+  if (/javascript/i.test(sch)) push('bad', '這是 javascript: 網址，點下去會執行程式碼，小心釣魚。');
+  // path
+  r.segs = r.path ? r.path.split('/').map(x => pctOnce(x, false)) : [];
+  const pathDec = r.segs.map(x => x.text).join('/');
+  r.pathDecoded = pathDec;
+  // query
+  r.plus = r.query != null && /\+/.test(r.query);
+  r.params = r.query != null ? parseParams(r.query, r.off.query[0] + (queryOnly && !r.qmark ? 0 : 1), true) : [];
+  r.fragParams = r.fragment != null && looksParams(r.fragment) ? parseParams(r.fragment, r.off.fragment[0] + 1, true) : null;
+  r.fragDecoded = r.fragment != null ? decodePct(r.fragment, false) : null;
+  const allRows = r.params.concat(r.fragParams || []).filter(x => !x.empty);
+  const errs = [];
+  for (const x of allRows) for (const d of [x.dk, x.dv]) if (d && d.errs.length) for (const z of d.errs) errs.push({ ...z, key: x.k });
+  r.segs.forEach(x => x.errs.forEach(z => errs.push({ ...z, key: null })));
+  const errN = errs.length + allRows.concat(r.segs).reduce((n, x) => n + ((x.errs && x.errs.more) || (x.dk && x.dk.errs.more) || 0) + ((x.dv && x.dv.errs.more) || 0), 0);
+  if (errs.length) push('warn', `有 ${errN.toLocaleString('en')} 處百分比編碼不正確（例：${errs[0].key != null ? '參數「' + errs[0].key + '」' : '路徑'}${errs[0].msg}），已盡量解碼。`);
+  if (allRows.some(x => (x.dv && x.dv.big5) || x.dk.big5)) push('info', '有參數不是 UTF-8，以 Big5 編碼解讀成中文（舊式台灣網站常見）。');
+  const multi = allRows.filter(x => x.dv && x.dv.layers.length > 1);
+  if (multi.length) push('info', `有 ${multi.length} 個參數經過多次編碼（例：「${multi[0].k}」編碼了 ${multi[0].dv.layers.length} 次），下方會列出每一層。`);
+  const seen = new Map(); for (const x of allRows) seen.set(x.k, (seen.get(x.k) || 0) + 1); const dupk = [...seen].filter(([, c]) => c > 1).map(([k]) => k);
+  if (dupk.length) push('info', '參數「' + dupk.join('、') + '」出現不只一次，伺服器可能當成陣列或只取其中一個。');
+  if (r.plus) push('info', '查詢字串裡的「+」當作空白解讀（表單編碼慣例）。');
+  const sensitive = allRows.filter(x => /^(access_token|id_token|refresh_token|token|password|passwd|pwd|secret|client_secret|api_?key|code)$/i.test(x.k));
+  if (sensitive.length) push('warn', '網址帶有敏感參數（' + [...new Set(sensitive.map(x => x.k))].join('、') + '），分享前請先移除。');
+  return r;
+}
+function rowsRaw(rows, plus) { return rows.filter(x => !(x.edited && x.k === '' && (x.v == null || x.v === ''))).map(x => x.empty ? '' : x.edited ? encQ(x.k, plus) + (x.eq || x.v ? '=' + encQ(x.v, plus) : '') : x.raw).join('&'); }
+function rebuild(r, qRows, fRows) {
+  const s = r.raw; let out;
+  const qs = qRows ? rowsRaw(qRows, r.plus) : r.query;
+  const qEnd = r.off.query ? r.off.query[1] : r.off.fragment ? r.off.fragment[0] : s.length;
+  const prefix = r.queryOnly ? '' : s.slice(0, r.off.query ? r.off.query[0] : qEnd);
+  out = prefix;
+  if (qs != null && (qs !== '' || (!qRows && r.query != null))) out += (r.queryOnly && !r.qmark ? '' : '?') + qs;
+  if (r.fragment != null) out += '#' + (fRows ? rowsRaw(fRows, /\+/.test(r.fragment)) : r.fragment);
+  return out;
+}
+function readable(r) {
+  let o = '';
+  if (r.scheme) o += r.scheme + ':';
+  if (r.host != null) { o += (r.scheme ? '//' : ''); if (r.user != null) o += r.user + (r.pass != null ? ':' + r.pass : '') + '@'; o += r.hostUnicode; if (r.port != null) o += ':' + r.port; }
+  o += r.pathDecoded;
+  if (r.query != null) o += (r.queryOnly && !r.qmark ? '' : '?') + r.params.map(x => x.empty ? '' : x.k + (x.eq ? '=' + x.v : '')).join('&');
+  if (r.fragment != null) o += '#' + (r.fragParams ? r.fragParams.map(x => x.empty ? '' : x.k + (x.eq ? '=' + x.v : '')).join('&') : r.fragDecoded.text);
+  return o;
+}
+
+return { JErr, b64dec, b64urlEnc, b64stdEnc, utf8, hex, esc, parseJSON, plain, pretty, prettyHTML, compact, fmtTW, fmtUTC, fmtDur, rel, ALG, algInfo, CLAIMS, HCLAIMS, analyzeJWT, timeStatus, parseKey, isPrivateText, derSigToRaw, verify, detect, bareHost, SCAN, pDecode, pEncode, toUnicode, toASCII, pctOnce, decodePct, encQ, parseParams, parseURL, rebuild, readable, rowsRaw, te };
+})();
+/*CORE-END*/
+</script>
+<script>
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const J = JD;
+const KEY = 'jwt-decode:v1:';
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  ok: (() => { try { localStorage.setItem(KEY + 'probe', '1'); localStorage.removeItem(KEY + 'probe'); return true; } catch (e) { return false; } })(),
+  del(k) { try { localStorage.removeItem(KEY + k); } catch (e) { /* storage blocked */ } },
+};
+const subtle = (window.crypto && window.crypto.subtle) || null;
+const esc = J.esc;
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const SAMPLE_DATA = {"rs": {"token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFjYy0yMDI2LTEwIn0.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUuY29tIiwic3ViIjoiMTA3NjkxNTAzNTAwMDYxNTA3MTUiLCJhdWQiOiJwb2NrZXQtYXBwcy5leGFtcGxlLnR3IiwiYXpwIjoicG9ja2V0LWFwcHMuZXhhbXBsZS50dyIsImVtYWlsIjoibWVpLmxpbkBleGFtcGxlLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoi5p6X5bCP576OIiwicGljdHVyZSI6Imh0dHBzOi8vZXhhbXBsZS5jb20vYXZhdGFyL21laS5wbmciLCJsb2NhbGUiOiJ6aC1UVyIsIm5vbmNlIjoibi0wUzZfV3pBMk1qIiwiYXV0aF90aW1lIjoxNzkyODI2NDAwLCJpYXQiOjE3OTI4MjY0MzAsImV4cCI6MTk1MDAwMDAwMH0.KEwwjml-nQPYdRFexA7a0Gr_qC9OfB0QcsYiTazEvvSSn3htxE9yxwg_XsGgV4sdAdjvEasodya0Qpxv2FcgtPHGmvWctXaZxK4hsxH5-oX8-ZI4ZwzuLdGCbP9dtZ4m7S7DTNRZcmkxPVIUN0AFGj1DsYyz2YzDuqqcClNg92xRWbui-h1qUjJSufQDw0O0K2UD9aJ2WLrA7Qxz_y6iug49fY2vuqV9JWZyc93RV-FLkrLyWkZ-ruKknXquCReGDjRTLdupA_RbpI94iESCrWJrIw_SsDHVvM3527vj88OjyRtvR_rXN_eKBjECTJIs2lg5JBKQS8c-4dIJf5A0Fw", "pem": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArVqbqDMvYRaL9PuHdLLM\ngWtUawmgFcQoID9M3AEeNId7vz0mCWw9958wZXSGd2e/4r7FgYyiAx9ilCgcET3C\nDUkSu8fiGiRZhsZ8M2yFYs9mxbeqW4M+laheBdgX96zvObXCDs/5XL10GUZVd7t9\noD4QPmok0XV4fO3WLNKctY/KkiAAERBgbm7NlU/NW7Z68C3rxEhJxl5UiJObWQIP\nuHKLB/IbAcbKYoF98SbMN50tWW/Lec8S4oI32YnhUmLAUrdB+g85KoPOsEADouUD\nYJ4Hp0/2hFIRfxDV/v2MvhPIR7LF5a5197eW3mdAZJ15iBFNYMfoXm6add/4PnTA\ntwIDAQAB\n-----END PUBLIC KEY-----"}, "es": {"token": "eyJhbGciOiJFUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6IjIwMjYtMTAtYiJ9.eyJpc3MiOiJodHRwczovL2FwaS5wb2NrZXQudHciLCJzdWIiOiJzdmMtcmVwb3J0aW5nIiwiY2xpZW50X2lkIjoicmVwb3J0aW5nLWJhdGNoIiwic2NvcGUiOiJvcmRlcnM6cmVhZCByZXBvcnRzOndyaXRlIiwiaWF0IjoxNzkyODMwMDAwLCJleHAiOjE5NTAwMDAwMDAsImp0aSI6IjhmMTRlNDVmLWNlZWEtNDY3Zi1hOGUxLTBlMmZlM2E2YzFkMiJ9.Cjd13kaQXaDFd7UyZQZito306s69GAOxPoQIlmyj3FJ75z3oxpa2ViSdGiV48V43LmZs2y2yDHrBkMuSfhKbOg", "jwks": "{\n  \"keys\": [\n    {\n      \"kty\": \"EC\",\n      \"x\": \"zneeLo0iSa2PIvsQ5-daPq0nakCfeTTIWTEenZKxS0o\",\n      \"y\": \"0R-8XLC93FwLHrdKDzeu7qxRGRlifCWsseD3TQgeufY\",\n      \"crv\": \"P-256\",\n      \"kid\": \"2026-09-a\",\n      \"use\": \"sig\",\n      \"alg\": \"ES256\"\n    },\n    {\n      \"kty\": \"EC\",\n      \"x\": \"PIZ4W7mbq7Tz_55eQKNda85t4kKim01dzWXmhvxgsqw\",\n      \"y\": \"3sHin3RsqEUNkj8GDwbLk4YBq32OKfQCP8N_dwiqLdE\",\n      \"crv\": \"P-256\",\n      \"kid\": \"2026-10-b\",\n      \"use\": \"sig\",\n      \"alg\": \"ES256\"\n    }\n  ]\n}"}, "jwe": "eyJhbGciOiJSU0EtT0FFUC0yNTYiLCJlbmMiOiJBMjU2R0NNIiwia2lkIjoiZW5jLTIwMjYiLCJjdHkiOiJKV1QifQ.irTV2e45iNfjGMttUaICTQC3dvRsRnPYzZpgf1g10PCQLZtKjOH0-2E8plHe2YNHeJGIMiF59iEEHBuGMoF9egbgeM7lDSrFOwA69PLLForVXIbHsN4EhOnhOXR0LjmxVagwdSJrbsuT58fkE_j8pBt2FPrVHUOtLtn1n4piX0YZpH_n_yTg6JE4vD1uSpQy8wzsDHyiGOjFzZuphOWTtLnC-GEFkIn2WGEfRCXUjxdbL12rkKPLJxZWPpH-Lq2_kGG4kxV6BlFX22wASO2AqqqTRjwAZAb8lI14qORZoYIs-ma5xI8ILpkFOjG6ZH1ZzR5RwHCDj3Xi5y3nlNUJEw.AkLw8tIFM-aG8HDP.7vvXIrZ7hwD7pxRWTf3zbI79gAoe7rF00cc8jY_IW9-tVUG7vyTY_waHN1tkGtf2YQdgY4nFq-N8iOJEjS4Zyfum_shT5orZTXNqHBE11Fr4J4gfNU3M1MQxEeRyDrZFUCn72He13lyHvR8VphABGO7a5O8YqEwR35pPtUys4COlI4pPtGcdk5NY2kI40yldnKv4kUlLDANHJcNRGuxBrfClSpNibVud5Fc1ae_s9926T9P-9mZb9z2M3F2_umL6w4KEpXIxFj5S8szAYdnL6rbqYaGki1OAKN9So5A6ltst7n7nP2WaZ_TRBbM1MWSaNb7mnyj4gk39kYiiKjVSuRhUuQC0wLBjq12LOf5RgtyYRlrAdgrM4jGH3MLm2-2XKUhbpvsIzxSXkUENYm11oYnEenOnomML9Gbdg0TdXqZ8g3akr8FmYQcZi-C-a_0M3TPwoNpqJg72JSYLYLVYQXe-HO_IdgWtIfHmXdoIUCwmHTb3I8pCFtCbvmqffvJmrYvaNXoVXs-A5VsTNFvj7q2QdYS9H-uK1_Zqw72cUgkCwwOTK0AmYTLo6rZu4hVhlfGmF7qt5cVjT4CTCLlXyWmHderonHxCOCnyP_JRVtftgYdfZZMfzl5tT0yXn05S5ApRb5W62CUzLl_GB6Wxn31MRsC1ogD_DerMbdOXAE3nnD2ARSqPWXEsrRVYNZQynyhVvBr_gggXVL2CGj6sI-XlQdyV9h9dZP5QjxUQ60wzTxVetVxau3pboEIddPeWPTZlW34-CpuKgOOIvqrTB50ludeZy1lsdsWy-iYQ8Yp-InD0rpyHZs9J5mzmyt9XsW1bAs_iHFNwZm4oOoNWWfEv1XlPW2hV6bV2_KyWbiIfVpnTG_gTXAr2I9m2spFfPtqFF0MExR0wPN3zNx2dovJEjBZw-QIi1JzxdYoGdVW8qHltjgxS1CQhSMgQn5TdCobzN-hEKCpcF5odmKh1hx0tnmhV2MfwG3t8Yvzlrmt9_AbTsqD3qpdnZVdCgvlFf38TBHSBZ7BuCsqdfG-a6AfdjCLae3L-4LLpTpYifOzKHlu60q9E5FWgnii5WNe3GFz0Y__M-rC5wXzwvYMNA7v_o7j41QbWT_Kf5SvLqyej-UDZILDSZabJ2yTBNQx-PtM.g8VO8YhWRh-_PXlrN6esBw"};
+
+/* ---------- icons ---------- */
+const sv = (d, w) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w || 1.9}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I = {
+  copy: sv('<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/>'),
+  check: sv('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 2.3),
+  shOk: sv('<path d="M12 3l7 3v5.5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6z"/><path d="M8.8 12.2l2.2 2.2 4.4-4.6"/>', 2),
+  shX: sv('<path d="M12 3l7 3v5.5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/>', 2),
+  shQ: sv('<path d="M12 3l7 3v5.5c0 4.4-3 8.2-7 9.5-4-1.3-7-5.1-7-9.5V6z"/><path d="M10 10a2 2 0 1 1 2.7 1.9c-.5.2-.7.6-.7 1.1v.4M12 16h.01"/>', 2),
+  clock: sv('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>', 2),
+  lock: sv('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>', 2),
+  warn: sv('<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.2M12 17h.01"/>', 2),
+  info: sv('<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8h.01"/>', 2),
+  bad: sv('<circle cx="12" cy="12" r="8.5"/><path d="M9 9l6 6M15 9l-6 6"/>', 2),
+  eye: sv('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  eyeOff: sv('<path d="M3 3l18 18M10.6 6.1A9.6 9.6 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.2 3.9M6.3 7.6A16.6 16.6 0 0 0 2.5 12S6 18 12 18c1.6 0 3-.4 4.2-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>'),
+  plus: sv('<path d="M12 5v14M5 12h14"/>', 2.2),
+  x: sv('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>', 2),
+  open: sv('<path d="M14 4h6v6M20 4l-8.5 8.5M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>'),
+  paste: sv('<rect x="6" y="4.5" width="12" height="16" rx="2"/><path d="M9.5 4.5V3.8c0-.7.5-1.3 1.2-1.3h2.6c.7 0 1.2.6 1.2 1.3v.7M9.5 11h5M9.5 14.5h5"/>'),
+  globe: sv('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.7 5.4 3.7 8.5s-1.2 5.9-3.7 8.5c-2.5-2.6-3.7-5.4-3.7-8.5S9.5 6.1 12 3.5z"/>'),
+  list: sv('<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.8" cy="6.5" r="1" fill="currentColor"/><circle cx="4.8" cy="12" r="1" fill="currentColor"/><circle cx="4.8" cy="17.5" r="1" fill="currentColor"/>'),
+  key: sv('<circle cx="8" cy="15" r="4"/><path d="M11 12l8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/>'),
+  token: sv('<path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5V10a2 2 0 0 0 0 4v2.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5V14a2 2 0 0 0 0-4z"/><path d="M9.5 6.5v11" stroke-dasharray="1.6 2.2"/>'),
+  link: sv('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+};
+const LVI = { bad: I.bad, warn: I.warn, info: I.info };
+
+/* ---------- helpers ---------- */
+let toastT;
+function toast(msg, action, fn, ms) {
+  const h = $('toastHost'); h.innerHTML = '';
+  const d = document.createElement('div'); d.className = 'toast' + (action ? '' : ' solo');
+  const sp = document.createElement('span'); sp.textContent = msg; d.appendChild(sp);
+  if (action) { const b = document.createElement('button'); b.type = 'button'; b.textContent = action; b.onclick = () => { h.innerHTML = ''; fn(); }; d.appendChild(b); }
+  h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ''; }, ms || (action ? 5000 : 2000));
+}
+const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { /* no haptics */ } };
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+  try {
+    const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0;height:1px';
+    document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok;
+  } catch (e) { return false; }
+}
+async function doCopy(text, what, el) {
+  const ok = await copyText(text);
+  if (!ok) { toast('無法自動複製，請長按文字手動選取'); return; }
+  buzz(); toast('已複製' + (what ? what : ''));
+  if (el) {
+    if (el.classList.contains('row')) { el.classList.add('copied'); setTimeout(() => el.classList.remove('copied'), 900); }
+    else if (el.classList.contains('tb')) { const old = el.innerHTML; el.classList.add('done'); el.innerHTML = I.check + (el.classList.contains('lab') ? '<span>已複製</span>' : ''); setTimeout(() => { el.classList.remove('done'); el.innerHTML = old; }, 1100); }
+  }
+}
+const bytesLabel = n => n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB';
+const nowSec = () => Date.now() / 1000;
+let REG = [];
+const reg = v => (REG.push(String(v)), REG.length - 1);
+const short = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+
+/* ---------- theme ---------- */
+const root = document.documentElement;
+const th = LS.get('theme', null); if (th === 'light' || th === 'dark') root.dataset.theme = th;
+const themeLabel = () => { const t = root.dataset.theme; const l = t === 'light' ? '淺色' : t === 'dark' ? '深色' : '跟隨系統'; $('themeBtn').setAttribute('aria-label', '主題：' + l + '（點一下切換）'); $('themeBtn').title = '主題：' + l; return l; };
+themeLabel();
+$('themeBtn').onclick = () => {
+  // cycle: follow system → the opposite of the system look → the system look pinned → follow system
+  const sysDark = matchMedia('(prefers-color-scheme: dark)').matches, cur = root.dataset.theme || 'auto';
+  const order = sysDark ? ['auto', 'light', 'dark'] : ['auto', 'dark', 'light'];
+  const next = order[(order.indexOf(cur) + 1) % 3];
+  if (next === 'auto') { delete root.dataset.theme; LS.del('theme'); } else { root.dataset.theme = next; LS.set('theme', next); }
+  toast('主題：' + themeLabel());
+};
+
+/* ---------- state ---------- */
+const ta = $('src'), hlc = $('hlc');
+let det = { kind: 'empty' }, an = null, url = null, tstat = null, vres = null, vseq = 0;
+let isSample = false, sampleId = null;
+let secret = '', enc = LS.get('enc', 'text'); if (!['text', 'b64', 'hex'].includes(enc)) enc = 'text';
+let pubKey = LS.get('key', ''); if (typeof pubKey !== 'string') pubKey = '';
+if (J.isPrivateText(pubKey)) { pubKey = ''; LS.del('key'); }
+let showSecret = false;
+let stack = LS.get('stack', []); if (!Array.isArray(stack)) stack = [];
+let qRows = null, fRows = null, lastShape = '', lastTok = null;
+
+let storeWarned = '';
+// Inputs longer than KEEP characters are kept in memory, not in the text box: Chromium needs seconds just to lay out
+// a multi-megabyte textarea. The box then shows a short read-only preview.
+const KEEP = 100000;
+let hugeText = null;
+const srcText = () => hugeText != null ? hugeText : ta.value;
+const mbs = n => n >= 524288 ? (n / 1048576).toFixed(1) + ' MB' : `約 ${Math.round(n / 10000)} 萬字`;
+function saveText() {
+  if (isSample) { LS.set('sample', sampleId); LS.del('text'); }
+  else {
+    if (LS.set('text', srcText())) { storeWarned = ''; LS.del('sample'); return; }
+    LS.del('text'); LS.del('sample');
+    const why = LS.ok ? 'full' : 'blocked';
+    if (storeWarned !== why) { storeWarned = why; toast(why === 'blocked' ? '這個瀏覽器不允許網頁儲存資料，重新整理後輸入的內容會消失' : `內容太大（${mbs(srcText().length)}），超過這台裝置的儲存上限，重新整理後不會保留`, null, null, 4000); }
+  }
+}
+function setBox(t) {
+  if (t.length > KEEP) {
+    hugeText = t; ta.readOnly = true;
+    ta.value = `（內容有 ${mbs(t.length)}，太長不在框內顯示，解析結果在下方。要換內容請先按右上角的垃圾桶清除。）\n\n` + t.slice(0, 1500) + '…';
+  } else { hugeText = null; ta.readOnly = false; ta.value = t; }
+}
+function setText(t, o = {}) {
+  setBox(t); isSample = !!o.sample; sampleId = o.sample || null;
+  saveText(); update(true); autosize();
+  if (!o.keepScroll) { ta.scrollTop = 0; syncScroll(); }
+}
+
+/* ---------- samples ---------- */
+const SAMPLES = [
+  { id: 'login', g: 'jwt', t: '登入權杖', d: 'HS256 · 附密鑰，可直接驗證', c: 'var(--pl)' },
+  { id: 'oidc', g: 'jwt', t: 'OpenID 身分權杖', d: 'RS256 · 附公鑰 PEM', c: 'var(--pl)' },
+  { id: 'api', g: 'jwt', t: 'API 存取權杖', d: 'ES256 · 附 JWKS，依 kid 挑金鑰', c: 'var(--pl)' },
+  { id: 'expired', g: 'jwt', t: '已過期的權杖', d: 'HS256 · 看過期怎麼標示', c: 'var(--hd)' },
+  { id: 'none', g: 'jwt', t: '沒有簽章的權杖', d: 'alg: none · 危險示範', c: 'var(--hd)' },
+  { id: 'jwe', g: 'jwt', t: '加密權杖（JWE）', d: '5 段結構 · RSA-OAEP-256 + A256GCM', c: 'var(--x1)' },
+  { id: 'shop', g: 'url', t: '購物網址', d: '中文參數、雙重編碼的轉址參數', c: 'var(--x2)' },
+  { id: 'oauth', g: 'url', t: 'OAuth 登入回呼', d: '片段（#）裡帶著 id_token', c: 'var(--x2)' },
+  { id: 'idn', g: 'url', t: '中文網域與 Big5', d: 'Punycode 網域、舊式 Big5 編碼參數', c: 'var(--x2)' },
+];
+const SECRET = 'pocket-apps-範例密鑰-請勿用於正式環境';
+const b64j = o => J.b64urlEnc(J.te.encode(JSON.stringify(o)));
+async function hsToken(header, payload, key) {
+  const si = b64j(header) + '.' + b64j(payload);
+  if (!subtle || !/^HS/.test(header.alg)) return si + '.';
+  const k = await subtle.importKey('raw', J.te.encode(key), { name: 'HMAC', hash: 'SHA-' + header.alg.slice(2) }, false, ['sign']);
+  return si + '.' + J.b64urlEnc(new Uint8Array(await subtle.sign('HMAC', k, J.te.encode(si))));
+}
+async function loginToken(now) {
+  const iat = now - 25 * 60;
+  return hsToken({ alg: 'HS256', typ: 'JWT' }, { iss: 'https://auth.pocket.tw', sub: 'user_8a2f61', aud: 'pocket-apps', name: '王小明', email: 'ming@example.com', roles: ['editor', 'viewer'], iat, nbf: iat, exp: iat + 3 * 3600, jti: 'c1f4-7b2e-90ad' }, SECRET);
+}
+async function buildSample(id) {
+  const now = Math.floor(nowSec()); const E = s => encodeURIComponent(s);
+  switch (id) {
+    case 'login': return { text: await loginToken(now), secret: SECRET };
+    case 'oidc': return { text: SAMPLE_DATA.rs.token, key: SAMPLE_DATA.rs.pem };
+    case 'api': return { text: 'Authorization: Bearer ' + SAMPLE_DATA.es.token, key: SAMPLE_DATA.es.jwks };
+    case 'expired': { const iat = now - 3 * 86400 - 2 * 3600; return { text: await hsToken({ alg: 'HS256', typ: 'JWT' }, { sub: 'user_8a2f61', name: '王小明', scope: 'orders:read', iat, exp: iat + 3600 }, SECRET), secret: SECRET }; }
+    case 'none': return { text: b64j({ alg: 'none', typ: 'JWT' }) + '.' + b64j({ sub: 'admin', role: 'superuser', iat: now - 60 }) + '.' };
+    case 'jwe': return { text: SAMPLE_DATA.jwe };
+    case 'shop': { const inner = 'https://m.example.tw/cart?id=7&from=首頁'; return { text: `https://shop.example.tw:8443/${E('訂單')}/${E('查詢')}?keyword=${E('珍珠奶茶')}&size=L&page=2&redirect=${E(E(inner))}&utm_source=line#reviews` }; }
+    case 'oauth': return { text: `https://app.example.tw/auth/callback#state=af0ifjsldkj&token_type=Bearer&expires_in=3600&scope=openid+profile+email&id_token=${await loginToken(now)}`, secret: SECRET };
+    case 'idn': return { text: 'http://xn--fiq228c.xn--kpry57d/%E6%90%9C%E5%B0%8B?q=%A4%A4%A4%E5%A6r%C5%E9&lang=zh-TW&ref=%E5%B0%8E%E8%A6%BD+%E5%88%97' };
+  }
+  return { text: '' };
+}
+async function loadSample(id, announce) {
+  const s = await buildSample(id);
+  stack = []; LS.set('stack', stack);
+  if (s.secret != null) secret = s.secret;
+  if (s.key != null) { pubKey = s.key; LS.set('key', pubKey); }
+  if (s.secret != null && enc !== 'text') { enc = 'text'; LS.set('enc', enc); }
+  setText(s.text, { sample: id });
+  if (announce) toast('已載入範例：' + SAMPLES.find(x => x.id === id).t);
+}
+function openSamples() {
+  const host = $('sheetHost');
+  const item = s => `<button class="it${sampleId === s.id && isSample ? ' cur' : ''}" type="button" data-sid="${s.id}"><i style="background:color-mix(in srgb,${s.c} 16%,transparent);color:${s.c}">${s.g === 'url' ? I.link : I.token}</i><span style="min-width:0"><b>${esc(s.t)}</b><span>${esc(s.d)}</span></span></button>`;
+  host.innerHTML = `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-label="範例"><header><h3>範例</h3><button class="tb" type="button" id="sheetClose" aria-label="關閉">${I.x}</button></header>
+    <div class="grp">JWT</div>${SAMPLES.filter(s => s.g === 'jwt').map(item).join('')}<div class="grp">網址</div>${SAMPLES.filter(s => s.g === 'url').map(item).join('')}</div></div>`;
+  const close = () => { host.innerHTML = ''; $('sampleBtn').focus(); };
+  $('scrim').onclick = e => { if (e.target.id === 'scrim') close(); };
+  $('sheetClose').onclick = close;
+  host.querySelectorAll('[data-sid]').forEach(b => b.onclick = () => { close(); loadSample(b.dataset.sid, true); });
+  const first = host.querySelector('.it'); if (first) first.focus();
+}
+$('sampleBtn').onclick = openSamples;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('scrim')) { $('sheetHost').innerHTML = ''; } });
+
+/* ---------- editor overlay ---------- */
+const BIG = 100000; // above this the coloured mirror is skipped so layout never blocks the page
+function autosize() {
+  if (ta.value.length > BIG) { ta.style.height = '340px'; $('more').classList.add('on'); return; }
+  ta.style.height = 'auto'; ta.style.height = (ta.scrollHeight + 2) + 'px'; moreHint();
+}
+function syncScroll() { if (ta.value.length > BIG) return; hlc.style.transform = `translateY(${-ta.scrollTop}px)`; moreHint(); }
+function moreHint() { if (ta.value.length > BIG) return; $('more').classList.toggle('on', ta.scrollHeight - ta.clientHeight - ta.scrollTop > 4); }
+ta.addEventListener('scroll', syncScroll, { passive: true });
+ta.addEventListener('focus', () => $('ed').classList.add('focus'));
+ta.addEventListener('blur', () => $('ed').classList.remove('focus'));
+// colours the text behind the box; skipped for very long text, and per-key colours only up to 2000 parameters
+function paintOverlay(flash) {
+  const t = ta.value;
+  $('ed').classList.toggle('plain', hugeText != null || t.length > BIG);
+  if (hugeText != null || t.length > BIG) { hlc.textContent = ''; return; }
+  const cls = new Array(t.length).fill('');
+  const fill = (a, b, c) => { for (let k = Math.max(0, a); k < Math.min(b, t.length); k++) cls[k] = c; };
+  if (det.kind === 'jwt' && det.start >= 0) {
+    fill(0, t.length, 'dim');
+    const names = an && an.kind === 'jwe' ? ['h', 'k', 'v', 'p', 's'] : ['h', 'p', 's'];
+    let part = 0;
+    for (let k = det.start; k < det.end; k++) { const c = t[k]; if (c === '.') { cls[k] = 'dt'; part++; } else cls[k] = /\s/.test(c) ? '' : (names[part] || 'dim'); }
+  } else if (det.kind === 'url' && url) {
+    const o = det.start, f = url.off;
+    if (f.scheme) fill(o + f.scheme[0], o + f.scheme[1], 'u-sc');
+    if (url.host != null && f.scheme && t.slice(o + f.scheme[1], o + f.scheme[1] + 2) === '//') fill(o + f.scheme[1], o + f.scheme[1] + 2, 'u-sc');
+    if (f.user) fill(o + f.user[0], o + f.user[1], 'u-us');
+    if (f.host) fill(o + f.host[0], o + f.host[1], 'u-ho');
+    if (f.port) fill(o + f.port[0], o + f.port[1], 'u-po');
+    if (f.path) fill(o + f.path[0], o + f.path[1], 'u-pa');
+    if (f.query) { fill(o + f.query[0], o + f.query[1], 'u-qu'); if (url.params.length <= 2000) url.params.forEach(p => { if (!p.empty) fill(o + p.start, o + p.start + p.rawK.length, 'u-qk'); }); }
+    if (f.fragment) { fill(o + f.fragment[0], o + f.fragment[1], 'u-fr'); if ((url.fragParams || []).length <= 2000) (url.fragParams || []).forEach(p => { if (!p.empty) fill(o + p.start, o + p.start + p.rawK.length, 'u-qk'); }); }
+  }
+  let html = '', k = 0;
+  while (k < t.length) {
+    const c = cls[k]; let e = k + 1; while (e < t.length && cls[e] === c) e++;
+    const seg = esc(t.slice(k, e));
+    html += c ? `<span class="${c}">${seg}</span>` : seg; k = e;
+  }
+  if (flash) html = `<span class="flash">${html}</span>`;
+  hlc.innerHTML = html + '\n';
+}
+
+/* ---------- analysis + render ---------- */
+function update(full) {
+  const text = srcText();
+  det = J.detect(text);
+  an = det.kind === 'jwt' ? J.analyzeJWT(det.token) : null;
+  url = det.kind === 'url' ? J.parseURL(text.slice(det.start, det.end), det.queryOnly) : null;
+  tstat = an && !an.error && an.kind === 'jws' ? J.timeStatus(an, nowSec()) : null;
+  $('sampleChip').hidden = !isSample;
+  paintOverlay(false); paintKind(); paintLegend(); paintCrumb();
+  if (full) { qRows = url ? url.params.map(p => ({ ...p })) : null; fRows = url && url.fragParams ? url.fragParams.map(p => ({ ...p })) : null; }
+  if (!an || det.token !== lastTok) vres = null;
+  lastTok = det.kind === 'jwt' ? det.token : null;
+  paintVerdict();
+  if (full) paintView();
+  runVerify();
+}
+function paintKind() {
+  const k = $('kindTag'); let t = '', c = '';
+  if (det.kind === 'jwt') { if (an.error) { t = 'JWT · 格式錯誤'; c = 'bad'; } else if (an.kind === 'jwe') { t = 'JWE · ' + (an.header.obj.enc || '加密'); c = 'jwe'; } else { t = 'JWT · ' + (an.alg || '無 alg'); c = 'jwt'; } }
+  else if (det.kind === 'url') { t = url.queryOnly ? '查詢字串' : url.scheme ? '網址 · ' + url.scheme.toLowerCase() : url.host != null ? '網址' : '相對網址'; c = 'url'; }
+  else if (det.kind === 'unknown') { t = '無法辨識'; c = 'bad'; }
+  k.hidden = !t; k.textContent = t; k.className = 'kind ' + c;
+}
+function paintCrumb() {
+  $('crumb').hidden = !stack.length;
+  if (stack.length) { const top = stack[stack.length - 1]; $('crumbTxt').textContent = short(top.label || top.text, 80); }
+}
+function paintLegend() {
+  const L = $('legend'); let h = '';
+  const chip = (c, label, sz, target) => `<button class="lg" type="button" data-go="${target}"><i style="background:var(${c})"></i>${label}${sz != null ? ` <small>${sz}</small>` : ''}</button>`;
+  if (det.kind === 'jwt' && an && !an.error) {
+    if (an.kind === 'jws') {
+      h += chip('--hd', '標頭', bytesLabel(an.header.bytes.length), 'sec-head') + chip('--pl', '內容', bytesLabel(an.payload.bytes.length), 'sec-claims') + chip('--sg', '簽章', bytesLabel(an.sig.bytes.length), 'sec-sig');
+    } else h += chip('--hd', '標頭', bytesLabel(an.header.bytes.length), 'sec-head') + chip('--x1', '加密內容', '4 段', 'sec-jwe');
+  } else if (det.kind === 'url' && url) {
+    const has = [[url.scheme, '--x3', '協定'], [url.host, '--hd', '主機'], [url.path, '--x2', '路徑'], [url.query, '--pl', '參數'], [url.fragment, '--sg', '片段']].filter(x => x[0] != null && x[0] !== '');
+    h += has.map(([, c, l]) => chip(c, l, null, l === '參數' ? 'sec-q' : l === '片段' && url.fragParams ? 'sec-f' : 'sec-url')).join('');
+  }
+  const notes = det.notes || [];
+  if (notes.length) h += `<div class="lnote">${I.check}<span>${esc(notes.join('；'))}。</span></div>`;
+  if (det.kind === 'jwt' && (notes.length || det.fromJson)) h += `<button class="lg wide" type="button" data-act="copy-token">${I.copy.replace('<svg', '<svg width="16" height="16"')}複製整理後的權杖</button>`;
+  L.hidden = !h; L.innerHTML = h;
+}
+function tile(tone, icon, big, sub, act) {
+  return `<div class="tile ${tone}" data-tone="${tone}"><div class="th"><span class="ic">${icon}</span><b>${esc(big)}</b></div><span>${esc(sub)}</span>${act ? `<button class="tilebtn" type="button" data-go="${act}" aria-label="${esc(big)}：${esc(sub)}"></button>` : ''}</div>`;
+}
+function sigTile() {
+  if (an.kind === 'jwe') return tile('lock', I.lock, '已加密', [an.header.obj.alg, an.header.obj.enc].filter(Boolean).join(' · ') || 'JWE', 'sec-jwe');
+  const alg = an.alg, A = alg && J.ALG[alg];
+  if (!alg) return tile('bad', I.shX, '無法驗證', '標頭缺少 alg', 'sec-head');
+  if (alg.toLowerCase() === 'none') return tile('bad', I.shX, '沒有簽章', 'alg: none，可被任意偽造', 'sec-sig');
+  if (!A) return tile('warn', I.shQ, '無法驗證', `不支援 ${alg}`, 'sec-sig');
+  if (!vres) return tile('', I.shQ, '驗證中…', alg, 'sec-sig');
+  const fam = A.fam;
+  if (vres.state === 'ok') return tile('ok', I.shOk, '簽章正確', `${alg} · ${fam === 'HS' ? '密鑰相符' : '公鑰驗證通過'}`, 'sec-sig');
+  if (vres.state === 'bad') return tile('bad', I.shX, '簽章不符', `${alg} · ${vres.hint ? '密鑰編碼不對' : fam === 'HS' ? '密鑰不對或內容被改' : '金鑰不對或內容被改'}`, 'sec-sig');
+  if (vres.state === 'need') return tile('', I.shQ, '尚未驗證', fam === 'HS' ? '輸入密鑰就會驗證' : '貼上公鑰就會驗證', 'sec-sig');
+  return tile('warn', I.shQ, '無法驗證', short(vres.msg, 40), 'sec-sig');
+}
+function timeTile() {
+  if (an.kind === 'jwe') return tile('', I.clock, '看不到時效', '內容加密，需要金鑰解開', 'sec-jwe');
+  if (!an.payload || an.payload.kind !== 'json') return tile('', I.clock, '沒有時效資訊', '內容不是 JSON', 'sec-claims');
+  const s = tstat; const exp = an.claims.find(r => r.key === 'exp');
+  if (s.state === 'expired') return tile('bad', I.clock, '已過期', s.exp.text.replace('已過期 ', '').replace('剛剛過期', '剛剛') + (s.exp.text === '剛剛過期' ? '' : '前') + ' · ' + J.fmtTW(exp.ts).slice(5, 10) + ' ' + J.fmtTW(exp.ts).slice(13, 18), 'sec-claims');
+  if (s.state === 'early') return tile('warn', I.clock, '尚未生效', s.nbf.text, 'sec-claims');
+  if (s.state === 'valid') return tile(s.exp.tone === 'warn' ? 'warn' : 'ok', I.clock, '有效中', s.exp.text, 'sec-claims');
+  if (exp && exp.badTime) return tile('bad', I.clock, '時間格式錯', exp.badWhy === 'range' ? 'exp 超出日期範圍' : 'exp 不是數字', 'sec-claims');
+  return tile('warn', I.clock, '永不過期', '沒有 exp 欄位', 'sec-claims');
+}
+function issuesHTML(list) {
+  if (!list.length) return '';
+  const rank = { bad: 0, warn: 1, info: 2 };
+  const sorted = list.map((x, i) => [x, i]).sort((a, b) => rank[a[0].lv] - rank[b[0].lv] || a[1] - b[1]).map(x => x[0]);
+  return `<ul class="issues">${sorted.map(x => `<li class="${x.lv}">${LVI[x.lv]}<span>${esc(x.msg)}</span></li>`).join('')}</ul>`;
+}
+let lastVerdict = '';
+function paintVerdict() {
+  const V = $('verdict'); let h = '';
+  if (det.kind === 'jwt' && an.error) {
+    h = `<div class="errcard"><h3>${I.bad}這個 JWT 讀不出來</h3><p>${esc(an.error)}</p><ul><li>JWT 長這樣：<code>xxxxx.yyyyy.zzzzz</code>，三段都是 base64url，以「.」分隔。</li><li>常見原因：複製時漏了一段、多複製到引號或逗號、被換成全形字元。</li></ul></div>`;
+  } else if (det.kind === 'jwt') {
+    h = `<div class="tiles">${sigTile()}${timeTile()}</div>` + issuesHTML(an.issues.concat(tstat ? tstat.issues : []));
+  } else if (det.kind === 'url') {
+    const sch = (url.scheme || url.assumed || '').toLowerCase();
+    let t1;
+    if (url.queryOnly) t1 = tile('', I.list, '查詢字串', '沒有主機與路徑', 'sec-q');
+    else if (url.host == null) t1 = url.scheme ? tile('', I.globe, url.scheme + ':', '非階層式網址', 'sec-url') : tile('', I.globe, '相對路徑', '沒有協定與主機', 'sec-url');
+    else if (sch === 'https' || sch === 'wss') t1 = tile('ok', I.lock, '加密連線', url.hostUnicode || '（沒有主機）', 'sec-url');
+    else if (sch === 'http' || sch === 'ws') t1 = tile('warn', I.globe, '未加密', url.hostUnicode || '（沒有主機）', 'sec-url');
+    else t1 = tile('', I.globe, sch + '://', url.hostUnicode || '（沒有主機）', 'sec-url');
+    const n = url.params.filter(p => !p.empty).length, fn = url.fragParams ? url.fragParams.filter(p => !p.empty).length : 0;
+    const rows = url.params.concat(url.fragParams || []).filter(p => !p.empty);
+    const ml = Math.max(1, ...rows.map(p => p.dv ? p.dv.layers.length : 1));
+    const bad = rows.some(p => (p.dv && p.dv.errs.length) || p.dk.errs.length);
+    const sub = [n && fn ? `片段另有 ${fn} 個` : '', bad ? '有編碼錯誤' : '', ml > 1 ? `最多編碼 ${ml} 次` : '', rows.some(p => (p.dv && p.dv.big5) || p.dk.big5) ? '含 Big5' : ''].filter(Boolean).join(' · ') || (n || fn ? '都已解碼' : url.query == null ? '網址沒有「?」' : '「?」後面是空的');
+    const t2 = tile(n + fn ? '' : '', I.list, n ? `${n} 個參數` : fn ? `${fn} 個片段參數` : '沒有參數', sub, n ? 'sec-q' : fn ? 'sec-f' : null);
+    h = `<div class="tiles">${t1}${t2}</div>` + issuesHTML(url.issues);
+  }
+  if (h === lastVerdict) return;
+  const prev = {}; V.querySelectorAll('.tile').forEach((t, i) => prev[i] = t.dataset.tone + t.querySelector('b').textContent);
+  V.innerHTML = h; lastVerdict = h;
+  V.querySelectorAll('.tile').forEach((t, i) => { if (prev[i] != null && prev[i] !== t.dataset.tone + t.querySelector('b').textContent) t.classList.add('pop'); });
+}
+
+/* ---------- views ---------- */
+function card(id, order, color, title, meta, actions, body) {
+  return `<section class="card ${order}" id="${id}"><div class="chead"><h2>${color ? `<i class="dot" style="background:var(${color})"></i>` : ''}${title}</h2><span class="meta">${esc(meta || '')}</span>${actions || ''}</div>${body}</section>`;
+}
+const cbtn = (act, label) => `<button class="tb" type="button" data-act="${act}" aria-label="${label}" title="${label}">${I.copy}</button>`;
+function claimRow(r) {
+  let v = '';
+  if (r.time) {
+    const tw = J.fmtTW(r.ts), utc = J.fmtUTC(r.ts);
+    v = `<div class="val m">${tw ? esc(tw) : '超出可表示的日期範圍'}<small>${utc ? '<span class="nw">UTC ' + esc(utc) + '</span> · ' : ''}<span class="nw">${esc(r.value)}${r.ms ? '（毫秒）' : ''}</span></small><span class="pill" data-tk="${esc(r.key)}"></span></div>`;
+  } else {
+    const mono = r.kind !== 's' || /^[\x21-\x7e]+$/.test(r.value);
+    v = `<div class="val${mono ? ' m' : ''}">${r.value === '' ? '<span style="color:var(--faint)">（空字串）</span>' : esc(short(r.value, 600))}${r.value.length > 600 ? `<small>共 ${r.value.length.toLocaleString()} 字元，點一下複製全部</small>` : ''}${r.dur ? `<small>= ${esc(r.dur)}</small>` : ''}${r.badTime ? `<span class="pill bad">${r.badWhy === 'range' ? '超出日期範圍' : '應該是數字'}</span>` : ''}</div>`;
+  }
+  const cv = r.time ? `${J.fmtTW(r.ts)} 台灣時間（${r.value}${r.ms ? ' 毫秒' : ''}）` : r.copy;
+  return `<div class="row" role="button" tabindex="0" data-ci="${reg(cv)}" data-cl="${esc(r.key)}"><div class="lb"><b>${esc(r.label || r.key)}</b>${r.label ? `<code>${esc(r.key)}</code>` : ''}</div>${v}<span class="cpy">已複製</span></div>`;
+}
+function verifyCard() {
+  const alg = an.alg, A = alg && J.ALG[alg];
+  const meta = `${alg || '無 alg'} · ${bytesLabel(an.sig.bytes.length)}`;
+  let body = `<div class="vbody">`;
+  body += an.sig.bytes.length ? `<div class="sigbox" id="sigbox">${esc(an.parts[2])}</div>` : '';
+  if (!A) {
+    body += `<div class="vres error">${I.warn}<div>${esc(alg && alg.toLowerCase() === 'none' ? '這個權杖宣告不需要簽章（alg: none），所以沒有東西可以驗證。真正的系統必須拒絕它。' : alg === 'ES256K' ? 'ES256K（secp256k1）瀏覽器的 Web Crypto 不支援，無法在這裡驗證。' : alg ? `不支援驗證 ${alg}。` : '標頭沒有 alg，無法驗證。')}</div></div>`;
+  } else if (A.fam === 'HS') {
+    body += `<label class="fl" for="secret"><span>密鑰（${esc(alg)}）</span><em>不會保存</em></label>
+      <div class="irow"><input id="secret" class="inp" type="${showSecret ? 'text' : 'password'}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="輸入簽發時用的密鑰" value="${esc(secret)}"><button class="tb" type="button" id="eyeBtn" aria-label="${showSecret ? '隱藏密鑰' : '顯示密鑰'}" aria-pressed="${showSecret}">${showSecret ? I.eyeOff : I.eye}</button></div>
+      <div class="segc" role="group" aria-label="密鑰編碼">${[['text', '文字'], ['b64', 'Base64'], ['hex', 'Hex']].map(([k, l]) => `<button type="button" data-enc="${k}" aria-pressed="${enc === k}">${l}</button>`).join('')}</div>`;
+  } else {
+    const H = an.header.obj;
+    body += `<label class="fl" for="pubkey"><span>公鑰</span><em>PEM、憑證、JWK 或 JWKS</em></label>
+      <textarea id="pubkey" class="inp" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="-----BEGIN PUBLIC KEY-----&#10;MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA…&#10;-----END PUBLIC KEY-----">${esc(pubKey)}</textarea>
+      <div class="vbtns"><button class="btn" type="button" data-act="paste-key">${I.paste}貼上</button>${Array.isArray(H.x5c) && H.x5c.length ? `<button class="btn" type="button" data-act="use-x5c">${I.key}用標頭的 x5c 憑證</button>` : ''}${H.jwk && typeof H.jwk === 'object' ? `<button class="btn" type="button" data-act="use-jwk">${I.key}用標頭的 jwk</button>` : ''}${pubKey ? `<button class="btn" type="button" data-act="clear-key">${I.x}清除</button>` : ''}</div>`;
+  }
+  body += `<div id="vres"></div><p class="fine">${I.lock}<span>${A && A.fam === 'HS' ? '密鑰只在這台裝置上用 Web Crypto 計算，不會上傳，也不會保存。' : '驗證只在這台裝置上用 Web Crypto 計算，不會上傳。公鑰會記在這台裝置，私鑰不會。'}</span></p></div>`;
+  return card('sec-sig', 'o6', '--sg', '簽章驗證', meta, an.sig.bytes.length ? cbtn('copy-sig', '複製簽章') : '', body);
+}
+function paintVRes() {
+  const box = $('vres'); if (!box) return;
+  if (!vres || vres.state === 'na') { box.className = ''; box.innerHTML = ''; return; }
+  const ic = { ok: I.shOk, bad: I.shX, need: I.shQ, error: I.warn }[vres.state] || I.info;
+  const title = { ok: '簽章正確', bad: '簽章不符', need: '等待驗證', error: '無法驗證' }[vres.state];
+  const hintBtn = vres.hint === 'trim' ? `<button class="btn" type="button" data-act="trim-secret">去掉前後空白</button>` : vres.hint ? `<button class="btn" type="button" data-enc="${vres.hint}">改用 ${{ text: '文字', b64: 'Base64', hex: 'Hex' }[vres.hint]} 編碼就正確了</button>` : '';
+  box.className = 'vres ' + vres.state;
+  box.innerHTML = `${ic}<div style="min-width:0"><b>${title}</b>　${esc(vres.msg.replace(/^簽章(正確|不符)：?/, ''))}${vres.notes && vres.notes.length ? `<ul>${vres.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}${hintBtn}</div>`;
+}
+const SHOW_MAX = 30000;
+function bigPre(text, html) {
+  if (text.length <= SHOW_MAX) return `<pre class="json">${html != null ? html : esc(text)}</pre>`;
+  return `<pre class="json">${esc(text.slice(0, SHOW_MAX))}…</pre><div class="pfoot"><span class="note">內容很長（${text.length.toLocaleString()} 字元），這裡只顯示前 ${SHOW_MAX.toLocaleString()} 字元；按右上角複製可取得全部。</span></div>`;
+}
+function jsonCard(id, order, color, title, part, copyAct) {
+  let body = '', meta = '';
+  if (part.kind === 'hex') { body = bigPre(part.text.replace(/(..)/g, '$1 ').trim()); meta = `二進位 · ${bytesLabel(part.bytes.length)}`; }
+  else if (part.kind === 'text') { body = bigPre(part.text) + (part.nested ? `<div class="pfoot"><button class="btn pri" type="button" data-act="open" data-ci="${reg(part.nested)}" data-label="外層 JWT">${I.open}解析內層 JWT</button></div>` : ''); meta = `文字 · ${bytesLabel(part.bytes.length)}`; }
+  else { const txt = J.pretty(part.node); body = bigPre(txt, txt.length <= SHOW_MAX ? J.prettyHTML(part.node) : null); meta = `JSON · ${bytesLabel(part.bytes.length)}`; }
+  return card(id, order, color, title, meta, cbtn(copyAct, '複製' + title), body);
+}
+function headerCard(order) {
+  const H = an.header.obj; const info = J.algInfo(an.alg);
+  const line = `<div class="algline"><b>${esc(an.alg || '（沒有 alg）')}</b>　<span>${esc(an.kind === 'jwe' ? '金鑰管理演算法' : info.desc)}${an.kind === 'jwe' && H.enc ? ' · 內容加密 ' + esc(H.enc) : ''}${H.kid != null ? ' · kid ' + esc(String(H.kid)) : ''}</span></div>`;
+  return card('sec-head', order, '--hd', '標頭 Header', `JSON · ${bytesLabel(an.header.bytes.length)}`, cbtn('copy-head', '複製標頭'), line + `<pre class="json">${J.prettyHTML(an.header.node)}</pre>`);
+}
+const PMAX = 300;
+function paramRowsHTML(w) {
+  const rows = w === 'q' ? qRows : fRows;
+  const all = rows.map((r, i) => [r, i]).filter(([r]) => !r.empty);
+  if (!all.length) return `<div class="empty">沒有參數。按「新增」加一個。</div>`;
+  // thousands of rows would take seconds to lay out: list the first PMAX plus any row added or edited here
+  const vis = all.length > PMAX ? all.filter(([r], k) => k < PMAX || r.edited) : all;
+  const more = all.length - vis.length;
+  return (more > 0 ? `<div class="empty">共 ${all.length.toLocaleString('en')} 個參數，這裡只列出前 ${PMAX} 個；其餘的保留在網址裡，可以直接在上方輸入框修改。</div>` : '') + vis.map(([r, i]) => `<div class="prow" data-w="${w}" data-i="${i}"><input class="pk" data-w="${w}" data-i="${i}" value="${esc(r.k)}" aria-label="參數名稱" placeholder="名稱" autocomplete="off" autocapitalize="off" spellcheck="false"><input class="pv" data-w="${w}" data-i="${i}" value="${esc(r.v)}" aria-label="${esc(r.k || '參數')} 的值" placeholder="值" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="tb" type="button" data-act="del" data-w="${w}" data-i="${i}" aria-label="刪除 ${esc(r.k)}">${I.x}</button><div class="pmeta">${pmetaHTML(r)}</div></div>`).join('');
+}
+function pmetaHTML(r) {
+  let h = '';
+  const dv = r.dv, inner = dv ? dv.layers[dv.layers.length - 1] : r.v;
+  if (dv && r.rawV !== r.v && r.rawV) h += `<span>編碼：</span><code>${esc(short(r.rawV, 42))}</code>`;
+  if (dv && dv.layers.length > 1) h += `<span class="tag">編碼了 ${dv.layers.length} 次</span>`;
+  if (dv && dv.big5) h += `<span class="tag">Big5</span>`;
+  if ((dv && dv.errs.length) || (r.dk && r.dk.errs.length)) h += `<span class="tag w">編碼有誤</span>`;
+  const k = inner ? J.detect(inner) : { kind: 'empty' };
+  if (k.kind === 'jwt') h += `<button class="mini" type="button" data-act="open" data-ci="${reg(inner)}">${I.open}解析 JWT</button>`;
+  else if (k.kind === 'url' && !k.queryOnly && /^[a-z][\w+.-]*:\/\//i.test(inner.trim())) h += `<button class="mini" type="button" data-act="open" data-ci="${reg(inner)}">${I.open}解析網址</button>`;
+  if (h && (r.v !== '' || r.k !== '')) h += `<button class="mini" type="button" data-act="copy-val" data-ci="${reg(inner)}">${I.copy}複製值</button>`;
+  if (dv && dv.layers.length > 1) h += `<ol class="layers">${dv.layers.slice(1).map((l, j) => `<li><b>第 ${j + 2} 層</b><span>${esc(l)}</span></li>`).join('')}</ol>`;
+  return h;
+}
+function urlRow(label, color, value, sub, copy, mono = true) {
+  return `<div class="row" role="button" tabindex="0" data-ci="${reg(copy == null ? value : copy)}" data-cl="${esc(label)}"><div class="lb"><b><i style="background:var(${color})"></i>${esc(label)}</b></div><div class="val${mono ? ' m' : ''}">${value === '' ? '<span style="color:var(--faint)">（空）</span>' : esc(short(value, 800))}${sub || ''}</div><span class="cpy">已複製</span></div>`;
+}
+function urlCard() {
+  const u = url; let rows = '';
+  const sch = (u.scheme || u.assumed || '').toLowerCase();
+  if (u.scheme) rows += urlRow('協定', '--x3', u.scheme);
+  else if (u.assumed) rows += urlRow('協定', '--x3', u.assumed, '<small>未寫，推定</small>');
+  if (u.user != null) rows += urlRow('使用者', '--x1', u.user);
+  if (u.pass != null) rows += urlRow('密碼', '--x1', u.pass, '<span class="pill bad">不該放在網址裡</span>');
+  if (u.host != null) {
+    const sub = u.idn ? `<span class="alt">${u.hostUnicode !== u.host ? 'Punycode：' + esc(u.host) : 'Punycode：' + esc(u.hostASCII)}</span>` : '';
+    rows += urlRow('主機', '--hd', u.hostUnicode, sub);
+  }
+  if (u.port != null) rows += urlRow('連接埠', '--x1', u.port);
+  else if (u.host != null && ({ http: 1, https: 1, ws: 1, wss: 1, ftp: 1 })[sch]) rows += urlRow('連接埠', '--x1', { http: '80', https: '443', ws: '80', wss: '443', ftp: '21' }[sch], '<small>未寫，用預設值</small>');
+  if (!u.queryOnly) {
+    const segs = u.segs.filter(s => s.text !== '');
+    const segH = segs.length > 1 ? `<span style="display:block">${segs.map(s => `<span class="seg">${esc(s.text)}</span>`).join('')}</span>` : '';
+    const rawNote = u.path !== u.pathDecoded ? `<small>原始：${esc(short(u.path, 80))}</small>` : '';
+    rows += urlRow('路徑', '--x2', u.pathDecoded || (u.host != null ? '/' : ''), rawNote + segH, u.pathDecoded);
+  }
+  if (u.fragment != null && !u.fragParams) rows += urlRow('片段', '--sg', u.fragDecoded.text, u.fragDecoded.text !== u.fragment ? `<small>原始：${esc(short(u.fragment, 80))}</small>` : '');
+  const foot = `<div class="pfoot"><button class="btn" type="button" data-act="copy-url">${I.copy}複製網址</button><button class="btn" type="button" data-act="copy-read">${I.copy}複製可讀版</button>${u.idn ? `<button class="btn" type="button" data-act="copy-ascii">${I.copy}複製 Punycode 版</button>` : ''}<span class="note">點任一列可複製該欄位（已解碼）。可讀版會把 %XX 和 Punycode 還原成中文，方便閱讀但不一定能直接連線。</span></div>`;
+  return card('sec-url', 'o3', '--x2', '網址結構', u.queryOnly ? '查詢字串' : (u.host != null ? u.hostASCII : ''), '', `<div class="rows">${rows || '<div class="empty">沒有可拆解的部分。</div>'}</div>` + foot);
+}
+function paramsCard(w) {
+  const rows = w === 'q' ? qRows : fRows, n = rows.filter(r => !r.empty).length;
+  const title = w === 'q' ? '查詢參數' : '片段參數';
+  const add = `<button class="tb lab" type="button" data-act="add" data-w="${w}">${I.plus}<span>新增</span></button>`;
+  const note = w === 'q' ? '直接改名稱或值，上方網址會即時重組並自動編碼。' : '這些參數在「#」後面，不會傳給伺服器，只有網頁的程式讀得到（OAuth 隱式流程常用）。';
+  return card(w === 'q' ? 'sec-q' : 'sec-f', w === 'q' ? 'o4' : 'o5', w === 'q' ? '--pl' : '--sg', title, `${n} 個`, add, `<div class="plist" id="plist-${w}">${paramRowsHTML(w)}</div><div class="pfoot"><span class="note">${note}</span><button class="btn" type="button" data-act="copy-url">${I.copy}複製網址</button><button class="btn" type="button" data-act="copy-qs" data-w="${w}">${I.copy}複製成 JSON</button></div>`);
+}
+function guideCard(unknown) {
+  const items = [
+    ['--pl', 'JWT', 'eyJhbGciOi….eyJzdWIi….SflKx…'],
+    ['--hd', '帶前綴或換行也行', 'Authorization: Bearer eyJ…'],
+    ['--x1', '加密的 JWE、JWS JSON', '5 段權杖、{"payload": …}'],
+    ['--x2', '網址', 'https://例子.tw/路徑?q=%E4%B8%AD'],
+    ['--sg', '只有查詢字串', 'a=1&b=%E4%B8%AD%E6%96%87'],
+    ['--x3', '整段回應或紀錄', '自動從文字裡找出 JWT'],
+  ];
+  const head = unknown ? `<h3>看不出這是 JWT 還是網址</h3><p>${unknown === 'twoParts' ? '只有 2 段：JWT 需要 3 段（標頭.內容.簽章），可能少複製了簽章。' : unknown === 'jwtish' ? '開頭像 JWT，但段數或字元不對，請確認有完整複製。' : '支援以下格式，貼上後會自動辨識：'}</p>` : `<h3>貼上 JWT 或網址</h3><p>自動辨識格式，馬上拆解；全部在這台裝置上處理。</p>`;
+  return `<section class="card o3 guide" id="sec-guide">${head}<ul class="gl">${items.map(([c, b, s]) => `<li><i style="background:var(${c})"></i><span style="min-width:0"><b>${esc(b)}</b><code>${esc(s)}</code></span></li>`).join('')}</ul><div class="gbtns"><button class="btn pri" type="button" data-act="paste">${I.paste}從剪貼簿貼上</button><button class="btn" type="button" data-act="sample" data-sid="login">${I.token}JWT 範例</button><button class="btn" type="button" data-act="sample" data-sid="shop">${I.link}網址範例</button></div></section>`;
+}
+function paintView() {
+  REG = [];
+  const A = $('colA'), B = $('colB'); let a = '', b = '';
+  if (det.kind === 'jwt' && !an.error) {
+    if (an.kind === 'jws') {
+      const P = an.payload;
+      if (P.kind === 'json' && an.claims.length) b += card('sec-claims', 'o3', '--pl', '宣告解讀', `${an.claims.length} 項 · 點一列可複製`, cbtn('copy-report', '複製摘要'), `<div class="rows">${an.claims.map(claimRow).join('')}</div>`);
+      b += jsonCard(P.kind === 'json' && an.claims.length ? 'sec-pay' : 'sec-claims', 'o4', '--pl', '內容 Payload', P, 'copy-pay');
+      b += headerCard('o5');
+      a += verifyCard();
+    } else {
+      const lab = [['標頭', '演算法與加密方式（明文）', '--hd'], ['加密金鑰', an.header.obj.alg === 'dir' ? '直接用共用密鑰，所以是空的' : '用接收方公鑰加密的內容金鑰', '--x1'], ['初始向量 IV', '每次加密隨機產生', '--x2'], ['密文', '真正的內容，已加密', '--pl'], ['驗證標籤', '確保密文沒被改過', '--sg']];
+      b += card('sec-jwe', 'o3', '--x1', '加密結構 JWE', '5 段', '', `<ul class="jparts">${an.jwe.map((p, k) => `<li><i style="background:var(${lab[k][2]})"></i><span><b>${lab[k][0]}</b><span>${lab[k][1]}</span></span><small>${k === 0 ? bytesLabel(an.header.bytes.length) : bytesLabel(p.bytes)}</small></li>`).join('')}</ul>`);
+      b += headerCard('o4');
+    }
+  } else if (det.kind === 'jwt' && an.header) {
+    b += headerCard('o4');
+  } else if (det.kind === 'url') {
+    a += urlCard();
+    if (qRows && (url.query != null || url.queryOnly)) b += paramsCard('q');
+    else if (!url.queryOnly && url.host != null) { qRows = []; b += paramsCard('q'); }
+    if (fRows) b += paramsCard('f');
+  } else if (det.kind === 'empty') a += guideCard(null);
+  else if (det.kind === 'unknown') a += guideCard(det.looks || 'unknown');
+  const shape = det.kind + (an ? an.kind : '') + (url ? 'u' : '');
+  A.innerHTML = a; B.innerHTML = b;
+  if (shape !== lastShape && lastShape) [A, B].forEach(c => c.querySelectorAll('.card').forEach(x => x.classList.add('enter')));
+  lastShape = shape;
+  paintTimes(); paintVRes(); wireVerify();
+}
+function paintTimes() {
+  if (!tstat) return;
+  const now = nowSec();
+  document.querySelectorAll('[data-tk]').forEach(el => {
+    const k = el.dataset.tk, r = an.claims.find(x => x.key === k); if (!r || !r.time) return;
+    const R = J.rel(k, r.ts, now);
+    el.className = 'pill ' + (R.tone === 'dim' ? '' : R.tone);
+    el.innerHTML = I.clock.replace('<svg', '<svg width="13" height="13"') + esc(R.text);
+  });
+}
+setInterval(() => {
+  if (!an || an.error || an.kind !== 'jws' || document.hidden) return;
+  tstat = J.timeStatus(an, nowSec()); paintTimes(); paintVerdict();
+}, 1000);
+
+/* ---------- verification ---------- */
+let vTimer;
+function runVerify(delay) {
+  clearTimeout(vTimer);
+  if (!an || an.error || an.kind !== 'jws') return;
+  const my = ++vseq;
+  const go = async () => {
+    let r; try { r = await J.verify(subtle, an, { secret, enc, key: pubKey }); } catch (e) { r = { state: 'error', msg: '驗證時發生錯誤：' + (e.message || e) }; }
+    if (my !== vseq) return;
+    vres = r; paintVerdict(); paintVRes();
+  };
+  if (delay) vTimer = setTimeout(go, delay); else go();
+}
+function wireVerify() {
+  const s = $('secret');
+  if (s) s.addEventListener('input', () => { secret = s.value; runVerify(120); });
+  const k = $('pubkey');
+  if (k) k.addEventListener('input', () => { pubKey = k.value; saveKey(); runVerify(150); });
+  const eye = $('eyeBtn');
+  if (eye) eye.onclick = () => { showSecret = !showSecret; s.type = showSecret ? 'text' : 'password'; eye.innerHTML = showSecret ? I.eyeOff : I.eye; eye.setAttribute('aria-pressed', showSecret); eye.setAttribute('aria-label', showSecret ? '隱藏密鑰' : '顯示密鑰'); };
+}
+function saveKey() {
+  // decide from the raw text first, so keys we cannot parse (OpenSSH, encrypted PKCS#8, broken JWK) are never stored either
+  let priv = J.isPrivateText(pubKey);
+  if (!priv) { try { priv = J.parseKey(pubKey).keys.some(x => x.private); } catch (e) { priv = false; } }
+  if (priv) LS.del('key'); else LS.set('key', pubKey);
+}
+function setEnc(e) {
+  enc = e; LS.set('enc', enc);
+  document.querySelectorAll('.segc [data-enc]').forEach(b => b.setAttribute('aria-pressed', b.dataset.enc === enc));
+  runVerify();
+}
+
+/* ---------- params editing ---------- */
+function pieceText() { const t = srcText(); return { lead: t.slice(0, det.start), trail: t.slice(det.end) }; }
+function rebuildFromTable(focusFlash) {
+  const { lead, trail } = pieceText();
+  const s = J.rebuild(url, qRows, fRows);
+  setBox(lead + s + trail); isSample = false; saveText();
+  det = J.detect(srcText());
+  url = det.kind === 'url' ? J.parseURL(srcText().slice(det.start, det.end), det.queryOnly) : null;
+  if (!url) { update(true); return; }
+  $('sampleChip').hidden = true;
+  paintOverlay(focusFlash); paintKind(); paintLegend(); paintVerdict(); autosize();
+  const old = $('sec-url'); if (old) { const tmp = document.createElement('div'); tmp.innerHTML = urlCard(); old.replaceWith(tmp.firstElementChild); }
+}
+document.addEventListener('input', e => {
+  const t = e.target; if (!t.matches || !t.matches('.prow input')) return;
+  const w = t.dataset.w, i = +t.dataset.i, rows = w === 'q' ? qRows : fRows, r = rows && rows[i]; if (!r) return;
+  if (t.classList.contains('pk')) r.k = t.value; else { r.v = t.value; if (t.value) r.eq = true; }
+  r.edited = true; r.empty = false;
+  rebuildFromTable(false);
+  // refresh this row's notes from what was just written into the URL
+  r.rawV = r.v === '' && !r.eq ? null : J.encQ(r.v, url.plus); r.dv = r.rawV == null ? null : J.decodePct(r.rawV, true); r.dk = J.decodePct(J.encQ(r.k, url.plus), true);
+  const m = t.closest('.prow').querySelector('.pmeta'); if (m) m.innerHTML = pmetaHTML(r);
+  const meta = t.closest('.card').querySelector('.chead .meta'); if (meta) meta.textContent = rows.filter(x => !x.empty).length + ' 個';
+});
+
+/* ---------- actions ---------- */
+function reportText() {
+  const L = ['JWT 解析結果'];
+  if (an.kind === 'jws') {
+    L.push('簽章：' + (an.alg || '無 alg') + '，' + (vres ? { ok: '已驗證正確', bad: '驗證不符', need: '未驗證', error: '無法驗證', na: '無法驗證' }[vres.state] : '未驗證'));
+    for (const r of an.claims) {
+      if (r.time) { const R = J.rel(r.key, r.ts, nowSec()); L.push(`${r.label || r.key}（${r.key}）：${J.fmtTW(r.ts)}（台灣時間）· ${R.text}${r.ms ? '（原值是毫秒）' : ''}`); }
+      else L.push(`${r.label ? r.label + '（' + r.key + '）' : r.key}：${r.value}`);
+    }
+    L.push('', '標頭：', J.pretty(an.header.node), '', '內容：', an.payload.kind === 'json' ? J.pretty(an.payload.node) : an.payload.text);
+  }
+  return L.join('\n');
+}
+async function pasteInto() {
+  let t = null; try { t = await navigator.clipboard.readText(); } catch (e) { t = null; }
+  if (t == null) { ta.focus(); toast('無法直接讀取剪貼簿，請在輸入框長按並選「貼上」', null, null, 3500); return; }
+  if (!t.trim()) { toast('剪貼簿是空的'); return; }
+  const prev = srcText();
+  if (prev.trim()) pushUndo();
+  stack = []; LS.set('stack', stack);
+  let note = '';
+  if (t.length > HUGE) { const r = takeHuge(t); t = r.text; note = r.msg; }
+  setText(t);
+  if (note) { toast(note, null, null, 4500); return; }
+  if (prev.trim()) undoToast('已貼上'); else toast('已貼上');
+}
+function openNested(src, label) {
+  stack.push({ text: srcText(), sample: isSample ? sampleId : null, label: label || (det.kind === 'url' ? '網址：' + (url.hostUnicode || url.raw) : 'JWT') });
+  if (stack.length > 20) stack.shift();
+  LS.set('stack', stack);
+  setText(src);
+  window.scrollTo({ top: 0, behavior: reduced() ? 'auto' : 'smooth' });
+}
+$('backBtn').onclick = () => { const top = stack.pop(); LS.set('stack', stack); if (top) setText(top.text, { sample: top.sample }); };
+$('pasteBtn').onclick = pasteInto;
+$('clearBtn').onclick = () => {
+  if (!srcText()) { ta.focus(); return; }
+  pushUndo(); setText(''); ta.focus();
+  undoToast('已清除');
+};
+const HUGE = 1000000;
+// Multi-megabyte pastes (logs, HAR files) would freeze the page just laying out the text box,
+// so keep only the JWT or URL found inside and say so.
+// detect() only searches the first J.SCAN characters, so look further window by window, each one starting
+// at the next "eyJ" or "://" (found with indexOf, so the whole paste is still read once).
+function findHuge(t) {
+  let d = J.detect(t);
+  if (d.kind === 'jwt' || d.kind === 'url' || !d.scanCut) return { d, off: 0 };
+  const OVER = 200000;
+  for (let pos = J.SCAN - OVER; pos < t.length;) {
+    const a = t.indexOf('eyJ', pos), b = t.indexOf('://', pos), c = a < 0 ? b : b < 0 ? a : Math.min(a, b);
+    if (c < 0) break;
+    let ws = c;
+    if (c === b) { while (ws > c - 32 && ws > 0 && /[a-zA-Z0-9+.\-]/.test(t[ws - 1])) ws--; }
+    const w = t.slice(ws, ws + J.SCAN); d = J.detect(w);
+    if (d.kind === 'jwt' || d.kind === 'url') return { d, off: ws };
+    pos = ws + J.SCAN - OVER; if (pos <= c) pos = c + 3;
+  }
+  return { d, off: 0 };
+}
+function takeHuge(t) {
+  const { d, off } = findHuge(t), mb = (t.length / 1048576).toFixed(1);
+  if (d.kind === 'jwt' || d.kind === 'url') {
+    const piece = d.kind === 'jwt' && (d.fromJson || d.start < 0) ? d.token : t.slice(off + d.start, off + d.end);
+    if (d.urlCut) return { text: piece, msg: `貼上的文字有 ${mb} MB，網址太長，只保留網址的前 ${piece.length.toLocaleString('en')} 個字` };
+    return { text: piece, msg: piece === t.trim() ? '' : `貼上的文字有 ${mb} MB，只保留裡面找到的${d.kind === 'jwt' ? ' JWT' : '網址'}` };
+  }
+  return { text: '', msg: `貼上的內容有 ${mb} MB，裡面找不到 JWT 或網址` };
+}
+let bigT;
+ta.addEventListener('input', () => {
+  if (ta.value.length > KEEP) { // inserted without our paste handler (drag and drop, autofill)
+    let t = ta.value, msg = ''; if (t.length > HUGE) { const r = takeHuge(t); t = r.text; msg = r.msg; }
+    setText(t); if (msg) toast(msg, null, null, 4500); return;
+  }
+  isSample = false; saveText(); clearTimeout(bigT);
+  // long input: show the typed text at once, re-analyse when typing pauses
+  if (ta.value.length > 4000) { $('ed').classList.toggle('plain', ta.value.length > BIG); hlc.textContent = ta.value.length > BIG ? '' : ta.value + '\n'; autosize(); syncScroll(); bigT = setTimeout(() => { update(true); autosize(); }, 160); return; }
+  update(true); autosize();
+});
+ta.addEventListener('paste', e => {
+  if (stack.length) { stack = []; LS.set('stack', stack); }
+  let t = ''; try { t = e.clipboardData ? e.clipboardData.getData('text') : ''; } catch (err) { t = ''; }
+  // long pastes skip the text box; the read-only preview takes no typing, but a paste replaces it
+  if (t.length > KEEP || (hugeText != null && t)) { e.preventDefault(); const r = t.length > HUGE ? takeHuge(t) : { text: t, msg: '' }; if (srcText().trim()) pushUndo(); setText(r.text); if (r.msg) toast(r.msg, null, null, 4500); }
+});
+const undo = [];
+function pushUndo() { undo.push({ text: srcText(), sample: isSample ? sampleId : null }); if (undo.length > 30) undo.shift(); }
+function undoToast(msg) { toast(msg, '復原', doUndo); }
+function doUndo() {
+  const s = undo.pop(); if (!s) return;
+  setText(s.text, { sample: s.sample });
+  if (undo.length) toast(`已復原，還可以再復原 ${undo.length} 步`, '復原', doUndo); else toast('已復原');
+}
+function goTo(id) {
+  const el = $(id); if (!el) return;
+  el.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'start' });
+  if (id === 'sec-sig') { const f = $('secret') || $('pubkey'); if (f && !f.value) setTimeout(() => f.focus({ preventScroll: true }), reduced() ? 0 : 350); }
+}
+document.addEventListener('click', async e => {
+  const go = e.target.closest('[data-go]'); if (go) { goTo(go.dataset.go); return; }
+  const encB = e.target.closest('[data-enc]'); if (encB) { setEnc(encB.dataset.enc); return; }
+  const row = e.target.closest('.row[data-ci]'); if (row) { doCopy(REG[+row.dataset.ci], ` ${row.dataset.cl}`, row); return; }
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'copy-token') doCopy(det.token, '權杖', b);
+  else if (act === 'copy-sig') doCopy(an.parts[2], '簽章', b);
+  else if (act === 'copy-head') doCopy(J.pretty(an.header.node), '標頭 JSON', b);
+  else if (act === 'copy-pay') doCopy(an.payload.kind === 'json' ? J.pretty(an.payload.node) : an.payload.text, '內容', b);
+  else if (act === 'copy-report') doCopy(reportText(), '解析摘要', b);
+  else if (act === 'copy-url') doCopy(srcText().slice(det.start, det.end), '網址', b);
+  else if (act === 'copy-read') doCopy(J.readable(url), '可讀版網址', b);
+  else if (act === 'copy-ascii') doCopy(url.raw.slice(0, url.off.host[0]) + url.hostASCII + url.raw.slice(url.off.host[1]), 'Punycode 版網址', b);
+  else if (act === 'copy-val') doCopy(REG[+b.dataset.ci], '值', b);
+  else if (act === 'copy-qs') {
+    const rows = (b.dataset.w === 'q' ? qRows : fRows).filter(r => !r.empty), o = {};
+    for (const r of rows) { const v = r.dv ? r.dv.layers[0] : r.v; if (r.k in o) o[r.k] = [].concat(o[r.k], v); else o[r.k] = v; }
+    doCopy(JSON.stringify(o, null, 2), '參數 JSON', b);
+  }
+  else if (act === 'open') openNested(REG[+b.dataset.ci], b.dataset.label);
+  else if (act === 'paste') pasteInto();
+  else if (act === 'sample') loadSample(b.dataset.sid, true);
+  else if (act === 'trim-secret') { secret = secret.trim(); const s = $('secret'); if (s) s.value = secret; runVerify(); }
+  else if (act === 'paste-key') {
+    let t = null; try { t = await navigator.clipboard.readText(); } catch (err) { t = null; }
+    const k = $('pubkey'); if (t == null) { k.focus(); toast('無法直接讀取剪貼簿，請在框內長按並選「貼上」', null, null, 3500); return; }
+    pubKey = t; k.value = t; saveKey(); runVerify(); paintView();
+  }
+  else if (act === 'clear-key') { const prev = pubKey; pubKey = ''; saveKey(); paintView(); runVerify(); toast('已清除公鑰', '復原', () => { pubKey = prev; saveKey(); paintView(); runVerify(); }); }
+  else if (act === 'use-x5c') { const c = an.header.obj.x5c[0]; pubKey = '-----BEGIN CERTIFICATE-----\n' + String(c).replace(/(.{64})/g, '$1\n').trim() + '\n-----END CERTIFICATE-----'; saveKey(); paintView(); runVerify(); toast('已填入標頭的憑證；請確認它來自可信任的來源', null, null, 3500); }
+  else if (act === 'use-jwk') { pubKey = JSON.stringify(an.header.obj.jwk, null, 2); saveKey(); paintView(); runVerify(); toast('已填入標頭的 jwk；權杖自帶的金鑰不能證明身分', null, null, 3500); }
+  else if (act === 'del') {
+    const w = b.dataset.w, i = +b.dataset.i, rows = w === 'q' ? qRows : fRows; const r = rows[i]; if (!r) return;
+    const blank = r.edited && r.k === '' && (r.v == null || r.v === '');
+    if (!blank) pushUndo();
+    rows.splice(i, 1);
+    rebuildFromTable(!blank); update(true); autosize();
+    if (!blank) undoToast(`已刪除參數「${short(r.k || '（無名稱）', 16)}」`);
+  }
+  else if (act === 'add') {
+    const w = b.dataset.w, rows = w === 'q' ? qRows : fRows, list = $('plist-' + w);
+    // only one blank row at a time: more taps just return to it, and the page never scrolls under the finger
+    let idx = rows.findIndex(r => r.edited && !r.empty && r.k === '' && (r.v == null || r.v === ''));
+    if (idx < 0) { rows.push({ k: '', v: '', eq: true, edited: true, raw: '', dv: null, dk: null }); idx = rows.length - 1; list.innerHTML = paramRowsHTML(w); }
+    const inp = list.querySelector(`.prow[data-i="${idx}"] .pk`); if (inp) inp.focus({ preventScroll: true });
+  }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('.row[data-ci]')) { e.preventDefault(); e.target.click(); }
+});
+
+/* ---------- boot ---------- */
+window.__jd = { J, get det() { return det; }, get an() { return an; }, get url() { return url; }, get vres() { return vres; }, get tstat() { return tstat; }, get qRows() { return qRows; }, setText, loadSample, runVerify };
+(async () => {
+  const saved = LS.get('text', null), sid = LS.get('sample', null);
+  if (typeof saved === 'string') { setBox(saved); isSample = false; update(true); }
+  else await loadSample(SAMPLES.some(s => s.id === sid) ? sid : 'login', false);
+  autosize();
+  window.__jdReady = true;
+})();
+window.addEventListener('resize', () => { autosize(); syncScroll(); });
+})();
+</script>
