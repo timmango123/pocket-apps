@@ -116,6 +116,7 @@ GAMES = [
     ("warehouse-command","倉儲指揮所", "world",  False, "派遣堆高機搬貨出貨，衝高倉庫吞吐量。"),
     ("atlantis",         "波塞迪亞",   "world",  False, "在夕陽下的亞特蘭提斯城自由漫步。"),
     ("eco-aquarium", "生態水族箱", "world", False, "餵食、換水、調燈光，養一缸會自己過日子的小生態。"),
+    ("little-shop", "小店經營", "world", False, "進貨、定價、招呼客人，經營巷口柑仔店的四季。"),
     ("clearwater",       "清淺水灣",   "calm",   False, "輕觸卵石淺灘激起漣漪，看光影在水底晃動。"),
     ("rain-on-glass",    "雨窗",       "calm",   False, "雨夜起霧的窗，用手指在玻璃上寫字作畫。"),
     ("zen-sand", "禪意沙畫", "calm", False, "在枯山水沙盤上耙出紋路，線條自動繞過石頭。"),
