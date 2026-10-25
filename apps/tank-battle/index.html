@@ -1,0 +1,1815 @@
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<title>坦克大戰</title>
+<style>
+/* 坦克大戰：沙盤推演風。白天是攤在桌上的卡其色作戰沙盤，夜裡是墨綠色夜戰地圖；玩家是金色戰車，守住老鷹基地。 */
+:root {
+  color-scheme: light;
+  --bg: #ebe4cb; --bg2: #ddd3b0; --ink: #2d3122; --ink2: #6b6a4d; --line: rgba(60, 55, 25, .2);
+  --panel: #f8f3e1; --panel2: #ece4c6; --olive: #56622f; --olive2: #3f4a1f; --gold: #d9a227; --gold2: #a97a12; --red: #c2452d; --red2: #93301d;
+  --btn: #56622f; --btn-ink: #fbf6e3; --ghost: #fbf7e8; --good: #3f8a4a;
+  --pad: rgba(70, 70, 30, .12); --pad2: rgba(70, 70, 30, .3); --knob: #fbf6e3;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+}
+body.dark {
+  color-scheme: dark;
+  --bg: #171b14; --bg2: #10130d; --ink: #ece8d2; --ink2: #aaa78b; --line: rgba(230, 220, 160, .14);
+  --panel: #23291d; --panel2: #2d3424; --olive: #7d8c45; --olive2: #5e6b2f; --gold: #f0bf45; --gold2: #c8951e; --red: #e05a3d; --red2: #a93a22;
+  --btn: #7d8c45; --btn-ink: #10130d; --ghost: #2a3121; --good: #67c27a;
+  --pad: rgba(230, 220, 160, .1); --pad2: rgba(230, 220, 160, .26); --knob: #3a4230;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg2); color: var(--ink); font: 16px/1.45 system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; user-select: none; -webkit-user-select: none; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; touch-action: manipulation; }
+button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; padding: var(--sat) var(--sar) var(--sab) var(--sal); background: var(--bg); }
+#app::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: .55;
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 24px 24px; }
+#app::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0; background: radial-gradient(120% 80% at 50% 40%, transparent 55%, rgba(40, 35, 10, .16)); }
+body.dark #app::after { background: radial-gradient(120% 80% at 50% 40%, transparent 50%, rgba(0, 0, 0, .45)); }
+
+/* HUD */
+#hud { position: relative; z-index: 2; flex: none; height: 46px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 2px; white-space: nowrap; }
+.ibtn { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--ink); }
+.ibtn:active { background: var(--pad); }
+.ibtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#hudLv { display: flex; flex-direction: column; line-height: 1.05; min-width: 0; }
+#hudLv b { font-size: 16px; font-weight: 900; letter-spacing: .02em; }
+#hudLv small { font-size: 11px; color: var(--ink2); font-weight: 700; letter-spacing: .08em; }
+.chips { margin-left: auto; display: flex; gap: 4px; align-items: center; min-width: 0; }
+.chip { display: flex; align-items: center; gap: 3px; height: 30px; padding: 0 7px 0 5px; border-radius: 9px; background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--line); font-weight: 800; font-size: 15px; }
+.chip svg { width: 18px; height: 18px; flex: none; }
+.chip.warn { background: var(--red); color: #fff; box-shadow: none; }
+.chip.ping { animation: ping .35s ease-out; }
+@keyframes ping { 0% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.pips { display: flex; gap: 2px; }
+.pips i { width: 6px; height: 14px; border-radius: 2px; background: var(--gold); }
+.pips i.off { background: var(--pad2); }
+#hudScore { min-width: 46px; justify-content: flex-end; }
+
+#main { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#board { flex: none; min-height: 0; min-width: 0; position: relative; display: grid; place-items: center; padding: 2px 4px; }
+body.land #board { flex: 1; }
+/* landscape: the HUD moves into the side columns above the stick and the fire button, so the board gets the full height */
+body.land #hud { position: absolute; z-index: 3; top: var(--sat); left: var(--sal); right: var(--sar); height: 0; padding: 0; display: block; pointer-events: none; }
+body.land #hud > * { pointer-events: auto; }
+body.land #pauseBtn { position: absolute; left: 6px; top: 6px; }
+body.land #hudLv { position: absolute; left: 54px; top: 10px; }
+body.land .chips { position: absolute; right: 8px; top: 8px; width: 200px; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 0; }
+#reserve { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 6px 20px 0; overflow: hidden; }
+#reserve .lab { font-size: 12px; font-weight: 800; letter-spacing: .2em; color: var(--ink2); }
+#reserve .icons { display: grid; justify-content: center; align-items: end; gap: 8px 6px; }
+#reserve i { width: 16px; height: 17px; border-radius: 3px; background: var(--ink2); opacity: .75; position: relative; }
+#reserve i::after { content: ""; position: absolute; left: 6.5px; top: -4px; width: 3px; height: 8px; border-radius: 1px; background: inherit; }
+#reserve i.k1 { background: #5b7388; } #reserve i.k2 { background: #6a7432; } #reserve i.k3 { background: #78a95e; } #reserve i.k4 { background: var(--red); width: 22px; }
+body.tall #pad, body.tall #fireBtn { width: 148px; height: 148px; } body.tall #fireBtn span { width: 112px; height: 112px; } body.tall #ctrl { height: 164px; }
+#reserve i.c { box-shadow: 0 0 0 2px var(--red); }
+#reserve.compact .icons { display: none; } #reserve.compact { gap: 8px; }
+#reserve .row { display: flex; justify-content: space-between; align-items: baseline; width: 100%; max-width: 300px; }
+#reserve .kl { font-size: 12px; font-weight: 800; color: var(--ink2); font-variant-numeric: tabular-nums; }
+#reserve .bar { width: 100%; max-width: 300px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+#reserve .bar b { display: block; height: 100%; background: var(--olive); border-radius: 3px; transition: width .3s; }
+body.tall #reserve { flex: none; margin: auto 16px; padding: 14px 18px 16px; gap: 10px; border-radius: 18px; background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--line); }
+body.tall #reserve i { width: 20px; height: 21px; } body.tall #reserve i::after { left: 8.5px; } body.tall #reserve i.k4 { width: 27px; }
+body.tall #reserve .icons { gap: 10px 8px; }
+#reserve i.gone { opacity: .16; }
+#ctrlWrap { flex: 1; min-height: 140px; display: flex; flex-direction: column; justify-content: flex-end; }
+body.land #ctrlWrap { display: contents; }
+body.land #reserve { display: none; }
+#cv { display: block; touch-action: none; border-radius: 4px; box-shadow: 0 0 0 3px var(--olive2), 0 0 0 6px var(--panel2), 0 10px 26px rgba(30, 30, 10, .3); }
+#ctrl { flex: none; height: 140px; display: flex; align-items: center; justify-content: space-between; padding: 6px 16px 8px; gap: 8px; position: relative; }
+#pad { position: relative; flex: none; width: 128px; height: 128px; border-radius: 50%; background: var(--pad); touch-action: none; box-shadow: inset 0 0 0 2px var(--pad2); }
+#pad .arr { position: absolute; width: 0; height: 0; border: 9px solid transparent; opacity: .5; transition: opacity .08s; }
+#pad .arr.u { top: 10px; left: 50%; margin-left: -9px; border-bottom: 12px solid var(--ink2); border-top: 0; }
+#pad .arr.d { bottom: 10px; left: 50%; margin-left: -9px; border-top: 12px solid var(--ink2); border-bottom: 0; }
+#pad .arr.l { left: 10px; top: 50%; margin-top: -9px; border-right: 12px solid var(--ink2); border-left: 0; }
+#pad .arr.r { right: 10px; top: 50%; margin-top: -9px; border-left: 12px solid var(--ink2); border-right: 0; }
+#pad .arr.lit { opacity: 1; }
+#pad .arr.u.lit { border-bottom-color: var(--gold2); } #pad .arr.d.lit { border-top-color: var(--gold2); } #pad .arr.l.lit { border-right-color: var(--gold2); } #pad .arr.r.lit { border-left-color: var(--gold2); }
+#knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%; background: var(--knob); box-shadow: 0 3px 8px rgba(0, 0, 0, .25), inset 0 0 0 3px var(--olive); transition: transform .07s; }
+#mid { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); font-weight: 700; text-align: center; }
+#gun { display: flex; gap: 3px; }
+.midlab { font-size: 11px; letter-spacing: .3em; padding-left: .3em; margin-bottom: -3px; }
+#hudGun { display: none; } body.land #hudGun { display: flex; }
+#hudGun i { width: 12px; height: 12px; clip-path: polygon(50% 0, 62% 36%, 100% 38%, 70% 60%, 80% 100%, 50% 77%, 20% 100%, 30% 60%, 0 38%, 38% 36%); background: var(--pad2); }
+#hudGun i.on { background: var(--gold); }
+#gun i { width: 14px; height: 14px; clip-path: polygon(50% 0, 62% 36%, 100% 38%, 70% 60%, 80% 100%, 50% 77%, 20% 100%, 30% 60%, 0 38%, 38% 36%); background: var(--pad2); }
+#gun i.on { background: var(--gold); }
+#fx { min-height: 16px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+#fx span { padding: 1px 6px; border-radius: 6px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 11px; }
+#fireBtn { flex: none; width: 128px; height: 128px; display: grid; place-items: center; border-radius: 50%; touch-action: none; position: relative; }
+#fireBtn span { width: 98px; height: 98px; border-radius: 50%; display: grid; place-items: center; color: #fff8e0; position: relative;
+  background: radial-gradient(circle at 36% 30%, #f28a5f, var(--red) 56%, var(--red2)); box-shadow: 0 6px 0 var(--red2), 0 9px 18px rgba(100, 20, 5, .35), inset 0 0 0 3px rgba(255, 220, 140, .5); transition: transform .05s; }
+#fireBtn span svg { width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
+#fireBtn span b { position: absolute; bottom: 14px; font-size: 13px; letter-spacing: .2em; font-weight: 900; padding-left: .2em; }
+#fireBtn.on span { transform: translateY(5px); box-shadow: 0 1px 0 var(--red2), 0 4px 10px rgba(100, 20, 5, .35), inset 0 0 0 3px rgba(255, 220, 140, .5); }
+#kbd { display: none; flex: none; text-align: center; font-size: 12px; color: var(--ink2); padding: 0 0 6px; position: relative; z-index: 1; }
+body.desk #kbd { display: block; }
+body.land #main { flex-direction: row; }
+body.land #ctrl { display: contents; }
+body.land #pad { order: -1; align-self: center; margin: 0 6px 0 12px; }
+body.land #fireBtn { order: 3; align-self: center; margin: 0 12px 0 6px; }
+body.land #mid { display: none; }
+@media (prefers-reduced-motion: reduce) { #knob, #fireBtn span, #pad .arr { transition: none; } .chip.ping { animation: none; } }
+
+/* overlays */
+.ov { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; padding: 12px; overflow-y: auto; overscroll-behavior: contain; background: rgba(35, 35, 15, .4); -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px); }
+.ov > .panel { margin: auto; flex: none; }
+body.dark .ov { background: rgba(5, 8, 3, .58); }
+.panel { position: relative; width: min(100%, 350px); padding: 20px 18px 16px; border-radius: 16px; background: var(--panel); color: var(--ink); text-align: center;
+  box-shadow: 0 16px 36px rgba(20, 20, 5, .4), inset 0 0 0 2px var(--panel2), inset 0 0 0 5px var(--panel), inset 0 0 0 6px var(--line); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ov:not([hidden]) > .panel { animation: pop .22s cubic-bezier(.2, .9, .3, 1.2); }
+@keyframes pop { from { transform: translateY(10px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ov:not([hidden]) > .panel { animation: none; } }
+.stamp { font-size: 11px; font-weight: 900; letter-spacing: .35em; color: var(--red); border: 2px solid var(--red); border-radius: 4px; padding: 1px 6px 1px 10px; transform: rotate(-3deg); }
+.panel h1 { margin: 0; font-size: 40px; line-height: 1.05; letter-spacing: .12em; padding-left: .12em; font-weight: 900; color: var(--olive2); text-shadow: 0 2px 0 var(--gold); }
+body.dark .panel h1 { color: var(--gold); text-shadow: 0 2px 0 var(--olive2); }
+.panel h1 small { display: block; font-size: 12px; letter-spacing: .5em; color: var(--ink2); margin-top: 6px; text-shadow: none; }
+.panel h2 { margin: 0; font-size: 26px; letter-spacing: .06em; color: var(--olive2); }
+body.dark .panel h2 { color: var(--gold); }
+.panel p { margin: 0; font-size: 15px; color: var(--ink2); line-height: 1.55; }
+.hero { width: 100%; height: 86px; }
+.btn { min-height: 52px; min-width: 150px; padding: 8px 20px; border-radius: 12px; font-size: 19px; font-weight: 900; color: var(--btn-ink); background: var(--btn); box-shadow: 0 4px 0 var(--olive2); letter-spacing: .06em; }
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--olive2); }
+.btn.ghost { background: var(--ghost); color: var(--ink); box-shadow: 0 3px 0 var(--pad2), inset 0 0 0 2px var(--pad2); min-height: 46px; font-size: 16px; }
+.btn.ghost:active { box-shadow: 0 0 0 var(--pad2), inset 0 0 0 2px var(--pad2); }
+.btn.sm { min-width: 0; min-height: 46px; padding: 6px 12px; font-size: 16px; }
+.btn small { font-size: 13px; font-weight: 700; opacity: .85; margin-left: 4px; }
+.row { display: flex; gap: 8px; justify-content: center; width: 100%; }
+.row > .btn { flex: 1; }
+.col { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.toggles { display: flex; gap: 2px; justify-content: center; flex-wrap: wrap; width: 100%; }
+.tg { min-height: 44px; padding: 4px 9px; border-radius: 12px; font-size: 14px; font-weight: 700; color: var(--ink2); display: flex; align-items: center; gap: 6px; }
+.tg i { width: 34px; height: 20px; border-radius: 10px; background: var(--pad2); position: relative; flex: none; transition: background .15s; }
+.tg i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.tg[aria-checked="true"] { color: var(--ink); }
+.tg[aria-checked="true"] i { background: var(--good); }
+.tg[aria-checked="true"] i::after { transform: translateX(14px); }
+@media (prefers-reduced-motion: reduce) { .tg i, .tg i::after { transition: none; } }
+.small { font-size: 14px; color: var(--ink2); }
+.small b { color: var(--ink); font-size: 17px; margin: 0 2px; }
+.stars { display: flex; gap: 8px; justify-content: center; }
+.stars svg { width: 40px; height: 40px; }
+.stars svg.on { animation: starIn .45s cubic-bezier(.2, .9, .3, 1.4) both; }
+.stars svg:nth-child(2).on { animation-delay: .15s; } .stars svg:nth-child(3).on { animation-delay: .3s; }
+@keyframes starIn { from { transform: scale(0) rotate(-40deg); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .stars svg.on { animation: none; } }
+.tally { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; font-size: 14px; align-items: center; text-align: left; }
+.tally canvas { width: 26px; height: 26px; }
+.tally .v { text-align: right; font-weight: 800; }
+.tally .sum { grid-column: 1 / -1; border-top: 1.5px dashed var(--line); margin-top: 4px; padding-top: 4px; display: flex; justify-content: space-between; font-weight: 900; }
+.reason { display: flex; gap: 10px; align-items: flex-start; text-align: left; font-size: 14px; color: var(--ink2); background: var(--panel2); border-radius: 10px; padding: 8px 10px; width: 100%; }
+.reason b { color: var(--red); }
+.howlist { margin: 0; padding: 0; list-style: none; text-align: left; display: flex; flex-direction: column; gap: 8px; width: 100%; font-size: 14px; line-height: 1.5; }
+.howlist li { display: flex; gap: 10px; align-items: flex-start; }
+.howlist canvas, .howlist svg { flex: none; width: 34px; height: 34px; border-radius: 6px; }
+.howlist b { color: var(--ink); }
+.items { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; font-size: 13px; text-align: left; }
+.items div { display: flex; gap: 6px; align-items: center; background: var(--panel2); border-radius: 8px; padding: 4px 6px; }
+.items canvas { width: 26px; height: 26px; flex: none; }
+/* level select */
+.chaps { display: flex; gap: 4px; overflow-x: auto; width: 100%; padding: 2px 2px 6px; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x; }
+.chaps::-webkit-scrollbar { display: none; }
+.chaps button { flex: none; min-height: 44px; padding: 4px 10px; border-radius: 10px; font-size: 14px; font-weight: 800; color: var(--ink2); background: var(--ghost); box-shadow: inset 0 0 0 1.5px var(--line); }
+.chaps button[aria-pressed="true"] { background: var(--olive); color: var(--btn-ink); box-shadow: none; }
+.chaps button small { display: block; font-size: 10px; font-weight: 700; opacity: .8; line-height: 1; }
+.lvgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; }
+.lv { position: relative; min-height: 54px; border-radius: 10px; background: var(--ghost); box-shadow: inset 0 0 0 2px var(--pad2); font-weight: 900; font-size: 18px; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+.lv small { font-size: 10px; letter-spacing: 1px; color: var(--gold2); height: 12px; }
+.lv.done { background: var(--panel2); }
+.lv.next { background: var(--gold); color: #2d2a12; box-shadow: 0 0 0 3px var(--olive); }
+.lv.next small { color: #5a4300; }
+.lv.boss::after { content: ""; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+.lv:disabled { opacity: .45; cursor: not-allowed; }
+.lv:disabled small { color: var(--ink2); }
+.lv .lock { width: 10px; height: 11px; display: block; margin: 1px auto 0; }
+.chapname { width: 100%; display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 800; color: var(--ink2); }
+.chapname b { font-size: 18px; color: var(--ink); }
+@media (max-height: 560px) {
+  .ov { padding: 8px; }
+  .panel { padding: 14px 14px 12px; gap: 7px; }
+  .panel h1 { font-size: 32px; }
+  .hero { height: 60px; }
+  .btn { min-height: 46px; }
+  .hide-short { display: none !important; }
+}
+</style>
+
+<div id="app">
+  <div id="hud">
+    <button class="ibtn" id="pauseBtn" aria-label="暫停"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
+    <div id="hudLv"><b id="hudN">第 1 關</b><small id="hudChap">新兵營</small></div>
+    <div class="chips">
+      <span class="chip" id="hudEnemy" aria-label="剩餘敵車"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="3.5" height="13" rx="1" fill="currentColor" opacity=".55"/><rect x="13.5" y="4" width="3.5" height="13" rx="1" fill="currentColor" opacity=".55"/><rect x="5.5" y="6" width="9" height="10" rx="2" fill="currentColor"/><rect x="9" y="1" width="2" height="8" rx="1" fill="currentColor"/></svg><span class="num" id="hudEn">6</span></span>
+      <span class="chip" id="hudLife" aria-label="戰車"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="3.5" height="13" rx="1" fill="#a97a12"/><rect x="13.5" y="4" width="3.5" height="13" rx="1" fill="#a97a12"/><rect x="5.5" y="6" width="9" height="10" rx="2" fill="#e8b32c"/><rect x="9" y="1" width="2" height="8" rx="1" fill="#a97a12"/></svg><span class="num" id="hudLives">3</span></span>
+      <span class="chip" id="hudBase" aria-label="基地耐久"><svg viewBox="0 0 20 20"><path d="M10 3l2 3 4-1-1 4 3 2-4 1v4l-4-2-4 2v-4l-4-1 3-2-1-4 4 1z" fill="currentColor"/></svg><span class="pips" id="hudPips"><i></i><i></i><i></i></span></span>
+      <span class="chip" id="hudGun" aria-label="火力等級"><i></i><i></i><i></i></span>
+      <span class="chip num" id="hudScore" aria-label="分數">0</span>
+    </div>
+  </div>
+  <div id="main">
+    <div id="board"><canvas id="cv" aria-label="坦克大戰遊戲畫面"></canvas></div>
+    <div id="ctrlWrap">
+    <div id="reserve" aria-label="敵軍預備車隊" hidden></div>
+    <div id="ctrl">
+      <div id="pad" aria-label="方向搖桿"><span class="arr u"></span><span class="arr d"></span><span class="arr l"></span><span class="arr r"></span><div id="knob"></div></div>
+      <div id="mid"><span class="midlab">火力</span><div id="gun" aria-label="火力等級"><i></i><i></i><i></i></div><div id="fx"></div></div>
+      <button id="fireBtn" aria-label="開火"><span><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="10"/><path d="M20 4v8M20 28v8M4 20h8M28 20h8"/></svg><b>開火</b></span></button>
+    </div>
+    </div>
+  </div>
+  <div id="kbd">鍵盤：方向鍵／WASD 移動，空白鍵或 J 開火（按住連發），P 暫停</div>
+
+  <section class="ov" id="ovStart">
+    <div class="panel">
+      <span class="stamp">機密作戰</span>
+      <h1>坦克大戰<small>TANK BATTLE</small></h1>
+      <canvas class="hero hide-short" id="heroCv" aria-hidden="true"></canvas>
+      <p class="hide-short">敵軍戰車從北方三個出口湧入！開著金色戰車擊退每一波攻勢，守住後方的老鷹基地。</p>
+      <div class="col">
+        <button class="btn" id="startBtn"><span id="startVerb">出擊</span><small>第 <span id="startN">1</span> 關</small></button>
+        <div class="row"><button class="btn ghost sm" id="selectBtn">選關</button><button class="btn ghost sm" id="howBtn">玩法</button></div>
+      </div>
+      <div class="toggles">
+        <button class="tg" id="tgSound" role="switch" aria-checked="true"><i></i>音效</button>
+        <button class="tg" id="tgHaptic" role="switch" aria-checked="true"><i></i>震動</button>
+        <button class="tg" id="tgDark" role="switch" aria-checked="false"><i></i>夜戰</button>
+      </div>
+      <div class="small">已過 <b class="num" id="startDone">0</b>/100 關・星星 <b class="num" id="startStars">0</b>/300</div>
+    </div>
+  </section>
+
+  <section class="ov" id="ovSelect" hidden>
+    <div class="panel">
+      <h2>選擇關卡</h2>
+      <div class="chaps" id="chaps"></div>
+      <div class="chapname"><b id="chapTitle">新兵營</b><span id="chapInfo"></span></div>
+      <div class="lvgrid" id="lvgrid"></div>
+      <div class="row"><button class="tg" id="tgUnlock" role="switch" aria-checked="false"><i></i>解鎖全部關卡</button></div>
+      <button class="btn ghost" id="selBack">返回</button>
+    </div>
+  </section>
+
+  <section class="ov" id="ovHow" hidden>
+    <div class="panel">
+      <h2>作戰簡報</h2>
+      <ul class="howlist">
+        <li><svg viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="var(--pad)" stroke="var(--pad2)" stroke-width="2"/><circle cx="17" cy="17" r="6" fill="var(--knob)" stroke="var(--olive)" stroke-width="2"/></svg><span>左邊<b>搖桿</b>開車，右邊<b>開火鈕</b>射擊；連點射得最快，按住會自動連發。</span></li>
+        <li><canvas id="howBase" width="68" height="68"></canvas><span>守住下方的<b>老鷹基地</b>：被敵彈打中 3 次就失守。戰車用完也算失敗。</span></li>
+        <li><canvas id="howWall" width="68" height="68"></canvas><span><b>紅磚</b>打得破，<b>鋼板</b>要三星火力才打得穿；<b>河</b>開不過去但子彈飛得過，<b>樹林</b>會擋住視線，<b>冰面</b>會打滑。</span></li>
+        <li><canvas id="howFlash" width="68" height="68"></canvas><span>閃紅光的敵車被打中會掉<b>補給</b>。子彈對撞會互相抵消，正面對決先開火！</span></li>
+      </ul>
+      <div class="items" id="itemList"></div>
+      <button class="btn ghost" id="howBack">了解</button>
+    </div>
+  </section>
+
+  <section class="ov" id="ovPause" hidden>
+    <div class="panel">
+      <h2>暫停</h2>
+      <div class="small" id="pauseInfo"></div>
+      <div class="small" id="pauseStar"></div>
+      <div class="col">
+        <button class="btn" id="resumeBtn">繼續作戰</button>
+        <div class="row"><button class="btn ghost sm" id="restartBtn">重來</button><button class="btn ghost sm" id="quitBtn">撤退</button></div>
+      </div>
+      <div class="toggles">
+        <button class="tg" id="tgSound2" role="switch" aria-checked="true"><i></i>音效</button>
+        <button class="tg" id="tgHaptic2" role="switch" aria-checked="true"><i></i>震動</button>
+        <button class="tg" id="tgDark2" role="switch" aria-checked="false"><i></i>夜戰</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="ov" id="ovResult" hidden>
+    <div class="panel">
+      <h2 id="resTitle">任務完成</h2>
+      <div class="stars" id="resStars"></div>
+      <div class="small" id="resStarHint"></div>
+      <div class="reason" id="resReason" hidden></div>
+      <div class="tally" id="resTally"></div>
+      <div class="col">
+        <button class="btn" id="resMain">下一關</button>
+        <div class="row"><button class="btn ghost sm" id="resRetry">再打一次</button><button class="btn ghost sm" id="resSelect">選關</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+/*CORE-START*/
+var TB = (function () {
+'use strict';
+/* Map: 26×26 units (one unit = a quarter of a 13×13 tile). Tanks are 2×2 units. */
+var N = 26, DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+var E = 0, BRICK = 1, STEEL = 2, WATER = 3, TREE = 4, ICE = 5, BASE = 6;
+var EPS = 1e-6;
+var KIND = [
+  { name: '輕戰車', speed: 2.9, bullet: 11, hp: 1, pts: 100, fire: 1.0 },
+  { name: '快速車', speed: 5.0, bullet: 11, hp: 1, pts: 200, fire: 1.1 },
+  { name: '火力車', speed: 3.2, bullet: 15, hp: 1, pts: 300, fire: 0.8 },
+  { name: '重裝車', speed: 2.6, bullet: 12, hp: 4, pts: 400, fire: 1.0 },
+  { name: '首領車', speed: 2.4, bullet: 14, hp: 12, pts: 2000, fire: 0.8 }
+];
+var ITEMS = ['star', 'helmet', 'shovel', 'grenade', 'clock', 'tank'];
+var P_SPEED = 5.0, P_BULLET = [13, 20, 20, 21], P_AUTO = [0.34, 0.3, 0.24, 0.22], TAP_COOL = 0.11;
+var BASE_HP = 3, BASE_X = 12, BASE_Y = 24, P_SPAWN = { x: 8, y: 24 }, E_SPAWN = [{ x: 0, y: 0 }, { x: 12, y: 0 }, { x: 24, y: 0 }];
+var RING = []; (function () { for (var y = 23; y <= 25; y++) for (var x = 11; x <= 14; x++) if (!(x >= 12 && x <= 13 && y >= 24)) RING.push(y * N + x); })();
+var CHAPTERS = [
+  { name: '新兵營', style: ['columns', 'blocks'] }, { name: '河岸', style: ['river', 'blocks'] },
+  { name: '密林', style: ['forest', 'columns'] }, { name: '冰原', style: ['ice', 'blocks'] },
+  { name: '鋼鐵要塞', style: ['fortress', 'blocks'] }, { name: '峽谷', style: ['maze', 'columns'] },
+  { name: '沼澤', style: ['river', 'forest'] }, { name: '雪夜', style: ['ice', 'forest'] },
+  { name: '工業區', style: ['fortress', 'maze'] }, { name: '最終防線', style: ['fortress', 'river', 'forest', 'ice', 'maze'] }
+];
+var VARIANT = '4000000000000000000000000000000000000000000000000042202200411033010031002310442322404213134303000104';
+function mulberry(seed) {
+  var a = seed >>> 0;
+  return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function solidMove(v) { return v === BRICK || v === STEEL || v === WATER || v === BASE; }
+function solidShot(v) { return v === BRICK || v === STEEL || v === BASE; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+/* ---------- difficulty ---------- */
+function levelParams(n) {
+  var t = (n - 1) / 99, e = Math.pow(t, 1.15);
+  var p = {
+    n: n, chapter: Math.floor((n - 1) / 10), boss: n % 25 === 0,
+    total: Math.round(lerp(6, 15, Math.min(1, Math.pow(t, 0.85) * 1.15))), lives: n >= 51 ? 4 : 3, baseHp: n <= 6 ? 5 : n <= 14 ? 4 : 3,   // the eagle forgives a slow start in the first levels
+    field: n <= 8 ? 2 : n <= 30 ? 3 : n <= 70 ? 4 : 5,
+    interval: lerp(3.4, 1.8, e), speedMul: lerp(0.9, 1.12, e), shellMul: lerp(0.8, 1.1, e),
+    aggr: lerp(0.2, 0.65, e), baseFocus: lerp(0.35, 0.5, e),
+    hold: lerp(0.5, 0.3, e), notice: lerp(0.7, 0.38, e), fireMin: lerp(2.3, 1.2, e), fireMax: lerp(3.8, 2.2, e), aim: lerp(0.12, 0.6, e), turnFace: lerp(0.0, 0.5, e),
+    weights: [Math.max(1, 10 - n * 0.09), n >= 4 ? 2 + n * 0.05 : 0, n >= 8 ? 1.5 + n * 0.05 : 0, n >= 14 ? 1 + n * 0.055 : 0],
+    carriers: n <= 5 ? 2 : n <= 70 ? 3 : 4, density: lerp(0.5, 0.72, t), steel: lerp(0.15, 1, t)
+  };
+  if (p.boss) p.total = Math.max(6, p.total - 2);   // the boss is a fight of its own: two fewer escorts before it
+  return p;
+}
+/* ---------- level generation ---------- */
+function reserved(x, y) {
+  if (y <= 3 && (x <= 2 || (x >= 11 && x <= 14) || x >= 23)) return true;
+  if (y >= 22 && x >= 6 && x <= 19) return true;
+  return false;
+}
+function genLevel(n, variant) {
+  var v = variant == null ? +VARIANT[n - 1] || 0 : variant;
+  var P = levelParams(n);
+  for (var tries = 0; tries < 80; tries++) {
+    var rng = mulberry(n * 7919 + v * 104729 + tries * 1299721 + 17);
+    var g = buildMap(P, rng);
+    if (validMap(g)) { var L = { n: n, variant: v, grid: g, params: P, queue: buildQueue(P, mulberry(n * 31 + 5)), chapter: P.chapter }; return L; }
+  }
+  throw new Error('no map for level ' + n);
+}
+function buildMap(P, rng) {
+  var g = new Uint8Array(N * N);
+  var set = function (x, y, w, h, v, force) {
+    for (var yy = y; yy < y + h; yy++) for (var xx = x; xx < x + w; xx++) {
+      if (xx < 0 || yy < 0 || xx > 12 || yy >= N) continue;
+      if (!force && reserved(xx, yy)) continue;
+      g[yy * N + xx] = v;
+    }
+  };
+  var ch = CHAPTERS[P.chapter], styles = ch.style;
+  var main = rng() < 0.7 || P.chapter < 9 && styles.length < 3 && rng() < 0.5 ? styles[0] : styles[1 + Math.floor(rng() * (styles.length - 1))], d = P.density;
+  var ri = function (a, b) { return a + Math.floor(rng() * (b - a + 1)); };
+  var even = function (a, b) { return 2 * ri(Math.ceil(a / 2), Math.floor(b / 2)); };
+  // base layer by style
+  if (main === 'columns') {
+    for (var cx = 2; cx <= 10; cx += 4) { var gap = even(8, 16); set(cx, 2, 2, gap - 2, BRICK); set(cx, gap + 2, 2, 20 - gap, BRICK); }
+    if (rng() < 0.6) set(6, 10, 2, 2, rng() < P.steel ? STEEL : BRICK);
+  } else if (main === 'river') {
+    var ry = even(10, 14), rh = rng() < 0.5 ? 2 : 3;
+    set(0, ry, 13, rh, WATER);
+    var br = [even(2, 4), even(8, 10)]; br.forEach(function (bx) { set(bx, ry, 2 + (rng() < 0.4 ? 2 : 0), rh, rng() < 0.3 ? ICE : E); });
+    set(12, ry, 1, rh, rng() < 0.5 ? E : WATER);
+  } else if (main === 'forest') {
+    for (var i = 0; i < 4 + d * 3; i++) set(even(0, 10), even(4, 20), even(2, 4), even(2, 4), TREE);
+  } else if (main === 'ice') {
+    for (var i2 = 0; i2 < 3; i2++) set(even(0, 8), even(4, 18), even(4, 6), even(2, 6), ICE);
+  } else if (main === 'fortress') {
+    for (var i3 = 0; i3 < 2 + Math.round(P.steel * 2); i3++) { var fx = even(0, 10), fy = even(4, 18); set(fx, fy, 2, 2, STEEL); set(fx - 1, fy - 1, 4, 1, BRICK); set(fx - 1, fy + 2, 4, 1, BRICK); }
+  } else if (main === 'maze') {
+    for (var my = 4; my <= 18; my += 4) for (var mx = 0; mx <= 12; mx += 4) {
+      if (rng() < 0.42) set(mx, my, ri(2, 4), 1, rng() < P.steel * 0.35 ? STEEL : BRICK);
+      if (rng() < 0.3) set(mx, my, 1, ri(2, 4), BRICK);
+    }
+  }
+  // scattered brick blocks
+  var blocks = Math.round(3 + d * 6) - (main === 'maze' || main === 'columns' ? 2 : 0);
+  for (var b = 0; b < blocks; b++) {
+    var w = even(2, 4), h = even(2, 4) + (rng() < 0.3 ? 2 : 0), x = even(0, 12), y = even(2, 20);
+    var t = rng() < 0.12 * P.steel ? STEEL : (rng() < 0.08 ? TREE : BRICK);
+    set(x, y, w, h, t);
+    if (rng() < 0.25) set(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2), E);   // hollow
+  }
+  // a few steel pieces for cover later on
+  var steels = Math.floor(P.steel * 3 * rng());
+  for (var s = 0; s < steels; s++) set(even(0, 12), even(4, 18), rng() < 0.5 ? 2 : 1, rng() < 0.5 ? 2 : 1, STEEL);
+  // centre lane cover: something between the centre spawn and the base
+  set(12, even(6, 10), 1, 2, rng() < P.steel * 0.6 ? STEEL : BRICK); set(12, even(13, 16), 1, 2, BRICK);
+  set(11, 19, 2, 2, BRICK); set(9, 21, 2, 1, BRICK);
+  // mirror left → right
+  for (var yy = 0; yy < N; yy++) for (var xx = 0; xx < 13; xx++) g[yy * N + 25 - xx] = g[yy * N + xx];
+  // base and its brick ring
+  RING.forEach(function (c) { g[c] = BRICK; });
+  // outer wall around the base (classic maps keep the eagle in a little brick bunker)
+  for (var oy = 22; oy <= 25; oy++) { g[oy * N + 10] = BRICK; g[oy * N + 15] = BRICK; }
+  for (var ox = 10; ox <= 15; ox++) g[22 * N + ox] = BRICK;
+  // a steel plate on the centre lane: nobody can shell the eagle straight down from the north gate
+  g[18 * N + 12] = g[18 * N + 13] = STEEL; if (g[19 * N + 12] === STEEL) g[19 * N + 12] = g[19 * N + 13] = BRICK;
+  // the player's spawn always has a way out to the north (a new player's first push on the stick should move the tank)
+  for (var ey = 20; ey <= 21; ey++) for (var ex = 8; ex <= 9; ex++) { g[ey * N + ex] = E; g[ey * N + 25 - ex] = E; }
+  for (var by = 24; by <= 25; by++) for (var bx2 = 12; bx2 <= 13; bx2++) g[by * N + bx2] = BASE;
+  return g;
+}
+function footFree(g, x, y, brickOk) {
+  if (x < 0 || y < 0 || x > N - 2 || y > N - 2) return false;
+  for (var yy = y; yy < y + 2; yy++) for (var xx = x; xx < x + 2; xx++) { var v = g[yy * N + xx]; if (v === STEEL || v === WATER || v === BASE || (!brickOk && v === BRICK)) return false; }
+  return true;
+}
+function reach(g, sx, sy, brickOk) {
+  var M = N - 1, seen = new Uint8Array(M * M), q = [sy * M + sx]; seen[q[0]] = 1;
+  while (q.length) { var c = q.pop(), x = c % M, y = (c - x) / M; for (var d = 0; d < 4; d++) { var nx = x + DX[d], ny = y + DY[d], k = ny * M + nx; if (nx < 0 || ny < 0 || nx >= M || ny >= M || seen[k] || !footFree(g, nx, ny, brickOk)) continue; seen[k] = 1; q.push(k); } }
+  return seen;
+}
+function validMap(g) {
+  var M = N - 1, r = reach(g, P_SPAWN.x, P_SPAWN.y, true);
+  for (var i = 0; i < 3; i++) if (!r[E_SPAWN[i].y * M + E_SPAWN[i].x]) return false;
+  if (!r[21 * M + 12]) return false; // in front of the base
+  var tot = 0, opn = 0; for (var k = 0; k < r.length; k++) { if (footFree(g, k % M, (k - k % M) / M, true)) { tot++; if (r[k]) opn++; } }
+  if (opn < tot * 0.85) return false;
+  // central band must have cover between the centre spawn and the ring
+  var cover = 0; for (var y = 4; y < 23; y++) if (solidShot(g[y * N + 12]) || solidShot(g[y * N + 13])) cover++;
+  return cover >= 2;
+}
+function buildQueue(P, rng) {
+  // the mix follows the level's weights exactly (largest remainder), only the order is shuffled
+  var q = [], W = P.weights, sum = W[0] + W[1] + W[2] + W[3], cnt = [], got = 0, rem = [];
+  for (var k = 0; k < 4; k++) { var ex = P.total * W[k] / sum; cnt[k] = Math.floor(ex); got += cnt[k]; rem.push([ex - cnt[k], k]); }
+  rem.sort(function (a, b) { return b[0] - a[0] || a[1] - b[1]; });
+  for (var j = 0; got < P.total; j++, got++) cnt[rem[j][1]]++;
+  for (var k2 = 0; k2 < 4; k2++) for (var c0 = 0; c0 < cnt[k2]; c0++) q.push({ kind: k2, carrier: false });
+  for (var i = q.length - 1; i > 0; i--) { var sw = Math.floor(rng() * (i + 1)), tmp = q[i]; q[i] = q[sw]; q[sw] = tmp; }
+  if (P.n <= 20) q.sort(function (a, b) { return a.kind - b.kind; });   // early on, meet the easy ones first
+  // early levels: show the new kind first
+  var carr = P.carriers, step = Math.max(1, Math.floor((P.total - 2) / carr));
+  for (var c = 0; c < carr; c++) { var idx = Math.min(P.total - 1, 1 + c * step + (c ? 1 : 0)); q[idx].carrier = true; }
+  if (P.boss) q.push({ kind: 4, carrier: true });
+  return q;
+}
+
+/* ---------- simulation ---------- */
+function mkTank(id, side, kind, x, y, dir) {
+  return { id: id, side: side, kind: kind, x: x, y: y, dir: dir, hp: side ? KIND[kind].hp : 1, maxHp: side ? KIND[kind].hp : 1, alive: true, spawnT: side ? 0.9 : 0, shield: side ? 0 : 3,
+    cool: 0, power: 0, carrier: false, moving: false, slide: 0, blockT: 0, turnT: 1, fireT: 1.2, aimT: 0, hold: 0, tread: 0, flash: 0 };
+}
+function createSim(L, opts) {
+  opts = opts || {};
+  var P = L.params || levelParams(L.n || 1);
+  var sim = { n: L.n || 1, params: P, grid: Uint8Array.from(L.grid), base: true, baseHp: opts.baseHp || P.baseHp || BASE_HP, baseMax: opts.baseHp || P.baseHp || BASE_HP, queue: L.queue.map(function (q) { return { kind: q.kind, carrier: q.carrier }; }), total: L.queue.length,
+    tanks: [], bullets: [], item: null, lives: opts.lives || P.lives || 3, livesLost: 0, score: 0, kills: 0, killsBy: [0, 0, 0, 0, 0], status: 'play', reason: '', time: 0,
+    spawnT: 0.4, spawnIdx: 1, freezeT: 0, shovelT: 0, respawnT: 0, nextId: 1, events: [], pressQ: 0, inDir: -1, inFire: false, presses: 0, shots: 0,
+    rs: (opts.seed == null ? (L.n || 1) * 97 + 3 : opts.seed) >>> 0, irs: ((L.n || 1) * 131 + 7) >>> 0 };
+  bindRng(sim);
+  var p = mkTank(0, 0, 0, P_SPAWN.x, P_SPAWN.y, 0); p.power = opts.power || 0; sim.tanks.push(p);
+  return sim;
+}
+function stepRs(a) { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return [a, ((t ^ (t >>> 14)) >>> 0) / 4294967296]; }
+function bindRng(sim) {   // random streams live in the state (rs / irs) so a simulation can be copied exactly
+  sim.rng = function () { var o = stepRs(sim.rs); sim.rs = o[0]; return o[1]; };
+  sim.itemRng = function () { var o = stepRs(sim.irs); sim.irs = o[0]; return o[1]; };
+}
+function cloneSim(sim, reseed) {
+  var c = {};
+  for (var k in sim) { var v = sim[k]; if (typeof v === 'function') continue; c[k] = v; }
+  c.grid = Uint8Array.from(sim.grid); c.queue = sim.queue.map(function (q) { return { kind: q.kind, carrier: q.carrier }; });
+  c.tanks = sim.tanks.map(function (t) { return Object.assign({}, t); });
+  c.bullets = sim.bullets.map(function (b) { return Object.assign({}, b); });
+  c.item = sim.item ? Object.assign({}, sim.item) : null; c.events = []; c.killsBy = sim.killsBy.slice();
+  if (reseed != null) c.rs = reseed >>> 0;
+  bindRng(c); return c;
+}
+function restoreSim(o) {   // a saved (JSON) copy back into a live simulation
+  o.grid = Uint8Array.from(o.grid); o.events = []; o.tanks = o.tanks || []; o.bullets = o.bullets || [];
+  bindRng(o); return o;
+}
+function player(sim) { return sim.tanks[0]; }
+function overlapsTank(a, b) { return a.x < b.x + 2 - EPS && b.x < a.x + 2 - EPS && a.y < b.y + 2 - EPS && b.y < a.y + 2 - EPS; }
+function cellSolid(sim, x, y) { if (x < 0 || y < 0 || x >= N || y >= N) return true; return solidMove(sim.grid[y * N + x]); }
+// furthest distance the tank can move along dir (≤ dist) before hitting the map or another tank
+function moveLimit(sim, t, dir, dist) {
+  var lim = dist, dx = DX[dir], dy = DY[dir];
+  if (dx) {
+    var y0 = Math.floor(t.y + EPS), y1 = Math.ceil(t.y + 2 - EPS) - 1;
+    if (dx > 0) { var edge = t.x + 2, c = Math.ceil(edge - EPS); for (; c < N && c < edge + dist + 1; c++) { var blk = false; for (var yy = y0; yy <= y1; yy++) if (cellSolid(sim, c, yy)) blk = true; if (blk) break; } lim = Math.min(lim, c - edge); }
+    else { var edge2 = t.x, c2 = Math.floor(edge2 + EPS) - 1; for (; c2 >= 0 && c2 > edge2 - dist - 2; c2--) { var blk2 = false; for (var yy2 = y0; yy2 <= y1; yy2++) if (cellSolid(sim, c2, yy2)) blk2 = true; if (blk2) break; } lim = Math.min(lim, edge2 - (c2 + 1)); }
+  } else {
+    var x0 = Math.floor(t.x + EPS), x1 = Math.ceil(t.x + 2 - EPS) - 1;
+    if (dy > 0) { var e3 = t.y + 2, c3 = Math.ceil(e3 - EPS); for (; c3 < N && c3 < e3 + dist + 1; c3++) { var b3 = false; for (var xx = x0; xx <= x1; xx++) if (cellSolid(sim, xx, c3)) b3 = true; if (b3) break; } lim = Math.min(lim, c3 - e3); }
+    else { var e4 = t.y, c4 = Math.floor(e4 + EPS) - 1; for (; c4 >= 0 && c4 > e4 - dist - 2; c4--) { var b4 = false; for (var xx2 = x0; xx2 <= x1; xx2++) if (cellSolid(sim, xx2, c4)) b4 = true; if (b4) break; } lim = Math.min(lim, e4 - (c4 + 1)); }
+  }
+  for (var i = 0; i < sim.tanks.length; i++) {
+    var o = sim.tanks[i]; if (o === t || !o.alive) continue;
+    if (o.spawnT > 0 && t.side === 1) continue;
+    if (overlapsTank(t, o)) continue;   // already overlapping (spawn): let them separate
+    if (dx) { if (t.y < o.y + 2 - EPS && o.y < t.y + 2 - EPS) { var gap = dx > 0 ? o.x - (t.x + 2) : t.x - (o.x + 2); if (gap >= -EPS) lim = Math.min(lim, Math.max(0, gap)); } }
+    else { if (t.x < o.x + 2 - EPS && o.x < t.x + 2 - EPS) { var gap2 = dy > 0 ? o.y - (t.y + 2) : t.y - (o.y + 2); if (gap2 >= -EPS) lim = Math.min(lim, Math.max(0, gap2)); } }
+  }
+  return Math.max(0, lim);
+}
+function turnTank(sim, t, dir) {
+  if (dir === t.dir) return;
+  if ((dir & 1) !== (t.dir & 1)) {   // perpendicular: snap to the half-tile lane
+    if (dir & 1) { var ny = Math.round(t.y); t.y = ny; } else { var nx = Math.round(t.x); t.x = nx; }
+  }
+  t.dir = dir;
+}
+// pushing into a wall corner while a 2-wide gap opens half a tile to one side: ease the tank sideways into it
+// (only when exactly one side opens, so the player never gets dragged somewhere they did not mean)
+function cornerAssist(sim, t, dir, dist) {
+  var cx = DY[dir] ? 1 : 0, cy = DX[dir] ? 1 : 0, ox = t.x, oy = t.y, pick = 0;
+  for (var s = -1; s <= 1; s += 2) {
+    var sd = cx ? (s > 0 ? 1 : 3) : (s > 0 ? 2 : 0);
+    var c0 = cx ? ox : oy, frac = Math.abs(c0 - Math.round(c0)) > 1e-6, lane = frac ? (s > 0 ? Math.ceil(c0) : Math.floor(c0)) : Math.round(c0) + s;
+    var tx = cx ? lane : ox, ty = cy ? lane : oy;
+    if (moveLimit(sim, t, sd, Math.abs(tx - ox) + Math.abs(ty - oy)) < Math.abs(tx - ox) + Math.abs(ty - oy) - 1e-6) continue;
+    t.x = tx; t.y = ty; var free = moveLimit(sim, t, dir, 0.6) > 0.5; t.x = ox; t.y = oy;
+    if (free) { if (pick) return 0; pick = s; }
+  }
+  if (!pick) return 0;
+  var c1 = cx ? ox : oy, sd2 = cx ? (pick > 0 ? 1 : 3) : (pick > 0 ? 2 : 0), tgt = Math.abs(c1 - Math.round(c1)) > 1e-6 ? (pick > 0 ? Math.ceil(c1) : Math.floor(c1)) : Math.round(c1) + pick;
+  var step = Math.min(dist, Math.abs((cx ? tgt - ox : tgt - oy)));
+  step = Math.min(step, moveLimit(sim, t, sd2, step));
+  t.x += DX[sd2] * step; t.y += DY[sd2] * step; t.tread += step;
+  if (Math.abs((cx ? t.x : t.y) - tgt) < 1e-6) { if (cx) t.x = tgt; else t.y = tgt; }   // land exactly on the lane
+  return step;
+}
+function moveTank(sim, t, dir, dist) {
+  turnTank(sim, t, dir);
+  var m = moveLimit(sim, t, dir, dist);
+  t.x += DX[dir] * m; t.y += DY[dir] * m; t.tread += m;
+  return m;
+}
+function onIce(sim, t) { var cx = Math.floor(t.x + 1), cy = Math.floor(t.y + 1); return sim.grid[cy * N + cx] === ICE || sim.grid[(cy - 1) * N + cx - 1] === ICE; }
+function fire(sim, t) {
+  var cx = t.x + 1 + DX[t.dir] * 1, cy = t.y + 1 + DY[t.dir] * 1;
+  var sp = t.side ? KIND[t.kind].bullet * sim.params.shellMul : P_BULLET[t.power];
+  sim.bullets.push({ x: cx, y: cy, dir: t.dir, speed: sp, side: t.side, owner: t.id, power: t.side ? (t.kind === 4 ? 1 : 0) : t.power, alive: true });
+  sim.events.push({ t: 'fire', side: t.side, x: cx, y: cy, dir: t.dir });
+  if (!t.side) sim.shots++;
+}
+function setInput(sim, dir, held, press) {
+  sim.inDir = dir; sim.inFire = !!held;
+  if (press) { sim.pressQ = Math.min(3, sim.pressQ + press); sim.presses += press; }
+}
+function rectHit(t, x, y, pad) { return x > t.x - pad && x < t.x + 2 + pad && y > t.y - pad && y < t.y + 2 + pad; }
+function damageTank(sim, t, b) {
+  if (t.side === 0) {
+    if (t.shield > 0) { sim.events.push({ t: 'shieldHit', x: b.x, y: b.y }); return; }
+    t.alive = false; sim.lives--; sim.livesLost++; sim.events.push({ t: 'die', x: t.x + 1, y: t.y + 1, owner: b.owner, bdir: b.dir, bx: b.x, by: b.y });
+    if (sim.lives <= 0) endGame(sim, 'lost', 'lives'); else sim.respawnT = 1.3;
+    return;
+  }
+  if (t.carrier) { t.carrier = false; spawnItem(sim); }
+  t.hp -= 1; t.flash = 0.15;
+  if (t.kind === 4) { t.hold = Math.max(t.hold || 0, 0.45); t.fireT = Math.max(t.fireT, 0.6); }   // a hit staggers the boss: trading shots head-on can be won
+  if (t.hp > 0) { sim.events.push({ t: 'armor', x: b.x, y: b.y, kind: t.kind }); return; }
+  killEnemy(sim, t, true);
+}
+function killEnemy(sim, t, pts) {
+  t.alive = false; sim.kills++; sim.killsBy[t.kind]++;
+  var p = pts ? KIND[t.kind].pts : 0; sim.score += p;
+  sim.events.push({ t: 'kill', x: t.x + 1, y: t.y + 1, kind: t.kind, pts: p });
+}
+function endGame(sim, st, reason) { if (sim.status !== 'play') return; sim.status = st; sim.reason = reason; sim.events.push({ t: st, reason: reason }); }
+function spawnItem(sim) {
+  var r = sim.itemRng, g = sim.grid, n = sim.n;
+  var w = n <= 20 ? [3, 2, 2, 2, 2, 1] : [3, 2, 2, 2, 2, 1.2];
+  var sum = 0; w.forEach(function (v) { sum += v; });
+  var x = 0, k = r() * sum, ty = 0; while (ty < 5 && k >= w[ty]) { k -= w[ty]; ty++; }
+  for (var tries = 0; tries < 60; tries++) {
+    var px = 2 * Math.floor(r() * 12), py = 2 + 2 * Math.floor(r() * 10);
+    if (footFree(g, px, py, false) && !(py >= 20 && px >= 9 && px <= 15)) { sim.item = { type: ITEMS[ty], x: px, y: py, t: 18 }; sim.events.push({ t: 'item', type: ITEMS[ty] }); return; }
+  }
+}
+function applyItem(sim, it) {
+  var p = player(sim); sim.score += 500;
+  sim.events.push({ t: 'pickup', type: it.type, x: it.x + 1, y: it.y + 1 });
+  if (it.type === 'star') p.power = Math.min(3, p.power + 1);
+  else if (it.type === 'helmet') p.shield = Math.max(p.shield, 10);
+  else if (it.type === 'shovel') { sim.shovelT = 18; RING.forEach(function (c) { sim.grid[c] = STEEL; }); }
+  else if (it.type === 'grenade') { sim.tanks.forEach(function (t) { if (t.side && t.alive && t.spawnT <= 0) { if (t.kind === 4) { t.hp -= 4; t.flash = 0.3; if (t.hp <= 0) killEnemy(sim, t, true); } else killEnemy(sim, t, false); } }); sim.events.push({ t: 'grenade' }); }
+  else if (it.type === 'clock') sim.freezeT = 8;
+  else if (it.type === 'tank') sim.lives++;
+}
+function stepBullets(sim, dt) {
+  var g = sim.grid, bs = sim.bullets;
+  for (var i = 0; i < bs.length; i++) {
+    var b = bs[i]; if (!b.alive) continue;
+    var dist = b.speed * dt, steps = Math.max(1, Math.ceil(dist / 0.25)), st = dist / steps;
+    for (var s = 0; s < steps && b.alive; s++) {
+      b.x += DX[b.dir] * st; b.y += DY[b.dir] * st;
+      var fx = b.x + DX[b.dir] * 0.2, fy = b.y + DY[b.dir] * 0.2;
+      if (fx <= 0 || fy <= 0 || fx >= N || fy >= N) { b.alive = false; sim.events.push({ t: 'hit', kind: 'edge', x: clamp(b.x, 0, N), y: clamp(b.y, 0, N), side: b.side }); break; }
+      // map: the two cells either side of the bullet's line
+      var cells = [];
+      if (DX[b.dir]) { var cx = Math.floor(fx), y0 = Math.floor(b.y - 0.5), y1 = Math.floor(b.y + 0.5 - EPS); for (var yy = y0; yy <= y1; yy++) cells.push([cx, yy]); }
+      else { var cy = Math.floor(fy), x0 = Math.floor(b.x - 0.5), x1 = Math.floor(b.x + 0.5 - EPS); for (var xx = x0; xx <= x1; xx++) cells.push([xx, cy]); }
+      var hit = false, kind = '';
+      for (var c = 0; c < cells.length; c++) { var cxx = cells[c][0], cyy = cells[c][1]; if (cxx < 0 || cyy < 0 || cxx >= N || cyy >= N) continue; var v = g[cyy * N + cxx]; if (solidShot(v)) { hit = true; if (v === BASE) kind = 'base'; else if (!kind || kind === 'brick') kind = v === STEEL ? 'steel' : 'brick'; } }
+      if (hit) {
+        b.alive = false;
+        if (kind === 'base') { if (b.side === 1 && sim.baseHp > 0) { sim.baseHp--; sim.events.push({ t: 'baseHit', x: 13, y: 25, hp: sim.baseHp, owner: b.owner }); if (sim.baseHp <= 0) { sim.base = false; sim.events.push({ t: 'base', x: 13, y: 25 }); endGame(sim, 'lost', 'base'); } } else sim.events.push({ t: 'hit', kind: 'steel', x: b.x, y: b.y, side: b.side }); break; }
+        var depth = b.side === 0 && b.power >= 2 ? 2 : 1, broke = false, steel = false;
+        for (var dd = 0; dd < depth; dd++) for (var c2 = 0; c2 < cells.length; c2++) {
+          var hx = cells[c2][0] + DX[b.dir] * dd, hy = cells[c2][1] + DY[b.dir] * dd;
+          if (hx < 0 || hy < 0 || hx >= N || hy >= N) continue;
+          var k = hy * N + hx, v2 = g[k];
+          if (v2 === BRICK) { g[k] = E; broke = true; }
+          else if (v2 === STEEL) { if (b.side === 0 && b.power >= 3) { g[k] = E; broke = true; } else steel = true; }
+        }
+        sim.events.push({ t: 'hit', kind: broke ? 'brick' : steel ? 'steel' : 'brick', x: b.x, y: b.y, side: b.side, dir: b.dir, broke: broke });
+        if (broke) sim.mapDirty = true;
+        break;
+      }
+      // tanks
+      for (var j = 0; j < sim.tanks.length; j++) {
+        var t = sim.tanks[j]; if (!t.alive || t.spawnT > 0) continue;
+        if (!rectHit(t, b.x, b.y, t.side ? 0.1 : -0.22)) continue;   // the player's tank is a little forgiving
+        if (t.side === b.side) { if (t.id === b.owner) continue; if (b.side === 1) continue; }
+        b.alive = false; damageTank(sim, t, b); break;
+      }
+      if (!b.alive) break;
+      // bullets of the other side cancel each other
+      for (var m = 0; m < bs.length; m++) {
+        var o = bs[m]; if (o === b || !o.alive || o.side === b.side) continue;
+        if (Math.abs(o.x - b.x) < 1.05 && Math.abs(o.y - b.y) < 1.05) { o.alive = false; b.alive = false; sim.events.push({ t: 'clash', x: (o.x + b.x) / 2, y: (o.y + b.y) / 2 }); break; }
+      }
+    }
+  }
+  sim.bullets = bs.filter(function (b) { return b.alive; });
+}
+function spawnFree(sim, sp) { var probe = { x: sp.x, y: sp.y }; for (var i = 0; i < sim.tanks.length; i++) { var t = sim.tanks[i]; if (t.alive && overlapsTank(probe, t)) return false; } return true; }
+function stepSpawner(sim, dt) {
+  if (!sim.queue.length) return;
+  sim.spawnT -= dt; if (sim.spawnT > 0) return;
+  var alive = 0; for (var i = 1; i < sim.tanks.length; i++) if (sim.tanks[i].alive) alive++;
+  var isBoss = sim.queue[0].kind === 4;
+  if (alive >= sim.params.field || (isBoss && alive > 0)) { sim.spawnT = 0.3; return; }
+  for (var k = 0; k < 3; k++) {
+    var idx = isBoss ? (1 + k) % 3 : (sim.spawnIdx + k) % 3, sp = E_SPAWN[idx];   // the boss prefers the centre gate but never waits on a parked player
+    if (spawnFree(sim, sp)) {
+      var q = sim.queue.shift(), t = mkTank(sim.nextId++, 1, q.kind, sp.x, sp.y, 2); t.carrier = q.carrier; t.fireT = 1.2 + sim.rng() * 1.2;
+      sim.tanks.push(t); sim.spawnIdx = idx + 1; sim.spawnT = sim.params.interval; sim.events.push({ t: 'spawn', x: sp.x + 1, y: sp.y + 1, boss: q.kind === 4 });
+      if (sim.tanks.length > 24) sim.tanks = sim.tanks.filter(function (x, i) { return i === 0 || x.alive; });
+      return;
+    }
+  }
+  sim.spawnT = 0.25;
+}
+function aligned(t, tx, ty) {   // returns facing dir if target point lies within this tank's firing band, else -1
+  var cx = t.x + 1, cy = t.y + 1;
+  if (Math.abs(tx - cx) < 1.2) return ty < cy ? 0 : 2;
+  if (Math.abs(ty - cy) < 1.2) return tx < cx ? 3 : 1;
+  return -1;
+}
+function lineClear(sim, x0, y0, x1, y1, allowBrick) {   // straight line along an axis; steel always blocks; bricks block unless allowBrick
+  var g = sim.grid, n = 0;
+  if (Math.abs(x0 - x1) < 1.2) { var c = Math.round(x0), a = Math.floor(Math.min(y0, y1)), b = Math.floor(Math.max(y0, y1)); for (var y = a + 1; y < b; y++) for (var x = c - 1; x <= c; x++) { var v = g[y * N + x]; if (v === STEEL || v === BASE) return -1; if (v === BRICK) { if (!allowBrick) return -1; n++; } } }
+  else { var r = Math.round(y0), a2 = Math.floor(Math.min(x0, x1)), b2 = Math.floor(Math.max(x0, x1)); for (var xx = a2 + 1; xx < b2; xx++) for (var yy = r - 1; yy <= r; yy++) { var v2 = g[yy * N + xx]; if (v2 === STEEL || v2 === BASE) return -1; if (v2 === BRICK) { if (!allowBrick) return -1; n++; } } }
+  return n;
+}
+function enemyChoose(sim, t) {
+  var P = sim.params, r = sim.rng, p = player(sim);
+  var target = (r() < P.baseFocus || !p.alive) ? { x: 13, y: 25 } : { x: p.x + 1, y: p.y + 1 };
+  if (r() < P.aggr) {
+    var dx = target.x - (t.x + 1), dy = target.y - (t.y + 1);
+    var ax = Math.abs(dx) > Math.abs(dy) ? (r() < 0.75 ? 'x' : 'y') : (r() < 0.75 ? 'y' : 'x');
+    if (ax === 'x' && Math.abs(dx) > 0.5) return dx > 0 ? 1 : 3;
+    if (Math.abs(dy) > 0.5) return dy > 0 ? 2 : 0;
+    return dx > 0 ? 1 : 3;
+  }
+  var w = [1, 1.3, 2.2, 1.3], s = w[0] + w[1] + w[2] + w[3], k = r() * s, d = 0; while (d < 3 && k >= w[d]) { k -= w[d]; d++; }
+  return d;
+}
+function stepEnemy(sim, t, dt) {
+  if (t.spawnT > 0) { t.spawnT -= dt; return; }
+  if (t.flash > 0) t.flash -= dt;
+  if (sim.freezeT > 0) return;
+  var P = sim.params, r = sim.rng, K = KIND[t.kind], p = player(sim);
+  t.turnT -= dt; t.fireT -= dt; t.aimT -= dt; if (t.hold > 0) t.hold -= dt;
+  var d0 = t.dir;
+  var seen = p.alive && p.spawnT <= 0 && aligned(t, p.x + 1, p.y + 1) === t.dir; t.seeT = seen ? (t.seeT || 0) + dt : 0;
+  var sp = K.speed * P.speedMul;
+  var m = moveTank(sim, t, t.dir, sp * dt);
+  t.moving = m > 0;
+  if (m < sp * dt * 0.5) {
+    t.blockT += dt;
+    if (t.blockT > 0.12) {
+      // blocked: shoot what is ahead (bricks) sometimes, then pick a new heading
+      if (t.hold <= 0 && t.fireT < (P.fireMax - P.fireMin) && r() < 0.6) { fire(sim, t); t.fireT = lerp(P.fireMin, P.fireMax, r()) * K.fire; }
+      var nd = r() < 0.6 ? enemyChoose(sim, t) : Math.floor(r() * 4); if (nd === t.dir) nd = (nd + 1 + Math.floor(r() * 3)) % 4; turnTank(sim, t, nd);
+      t.blockT = 0; t.turnT = 0.8 + r() * 2;
+    }
+  } else t.blockT = 0;
+  if (t.turnT <= 0) { turnTank(sim, t, enemyChoose(sim, t)); t.turnT = 1 + r() * 2.2; }
+  // aiming: when lined up with the player (or the base), sometimes face and fire
+  if (t.aimT <= 0) {
+    t.aimT = 0.25;
+    var tgts = [{ x: 13, y: 25, base: true }]; if (p.alive && p.spawnT <= 0) tgts.push({ x: p.x + 1, y: p.y + 1 });
+    for (var i = 0; i < tgts.length; i++) {
+      var g = tgts[i], d = aligned(t, g.x, g.y); if (d < 0) continue;
+      var dist = Math.abs(g.x - t.x - 1) + Math.abs(g.y - t.y - 1); if (dist > (g.base ? 12 : 14)) continue;
+      if (lineClear(sim, t.x + 1, t.y + 1, g.x, g.y, true) < 0) continue;
+      if (d !== t.dir && r() < P.turnFace) turnTank(sim, t, d);
+      if (d === t.dir && t.hold <= 0 && d0 === t.dir && (g.base || t.seeT >= P.notice) && r() < P.aim && t.fireT < (g.base ? 0.3 : P.fireMax * 0.5)) { fire(sim, t); t.fireT = lerp(P.fireMin, P.fireMax, r()) * K.fire; }
+      break;
+    }
+  }
+  if (t.dir !== d0) t.hold = P.hold;   // a tank that just turned settles its turret before it can shoot
+  if (t.fireT <= 0 && t.hold <= 0 && p.alive && p.spawnT <= 0) {
+    // point-blank shots at the player are an aimed decision (P.aim), not a random one: green crews flinch
+    var ad = aligned(t, p.x + 1, p.y + 1), pd = Math.abs(p.x - t.x) + Math.abs(p.y - t.y);
+    if (ad === t.dir && pd < 6 && (t.seeT < P.notice || r() > P.aim)) t.fireT = 0.2 + r() * 0.5;
+  }
+  if (t.fireT <= 0 && t.hold <= 0) { fire(sim, t); t.fireT = lerp(P.fireMin, P.fireMax, r()) * K.fire; }
+}
+function stepPlayer(sim, p, dt) {
+  if (!p.alive) {
+    if (sim.respawnT > 0) { sim.respawnT -= dt; if (sim.respawnT <= 0 && sim.status === 'play') { var np = mkTank(0, 0, 0, P_SPAWN.x, P_SPAWN.y, 0); np.power = Math.max(0, p.power - 1); sim.tanks[0] = np; sim.events.push({ t: 'respawn' }); } }
+    sim.pressQ = 0; return;
+  }
+  if (p.shield > 0) p.shield -= dt;
+  p.cool -= dt;
+  var d = sim.inDir;
+  if (d >= 0) { var m = moveTank(sim, p, d, P_SPEED * dt); if (m < 1e-6) m = cornerAssist(sim, p, d, P_SPEED * dt); p.moving = m > 0; p.slide = onIce(sim, p) ? 0.32 : 0; }
+  else if (p.slide > 0) { p.slide -= dt; var m2 = moveLimit(sim, p, p.dir, P_SPEED * 0.8 * dt); p.x += DX[p.dir] * m2; p.y += DY[p.dir] * m2; p.moving = m2 > 0; if (!m2) p.slide = 0; }
+  else p.moving = false;
+  if (p.cool <= 0) {
+    if (sim.pressQ > 0) { sim.pressQ--; fire(sim, p); p.cool = TAP_COOL; p.autoT = P_AUTO[p.power]; }
+    else if (sim.inFire) { p.autoT = (p.autoT || 0) - dt; if (p.autoT <= 0) { fire(sim, p); p.cool = TAP_COOL; p.autoT = P_AUTO[p.power]; } }
+  } else if (sim.inFire && p.autoT > 0) p.autoT -= dt;
+  // pick up
+  var it = sim.item; if (it && overlapsTank(p, it)) { sim.item = null; applyItem(sim, it); }
+}
+function tick(sim, dt) {
+  if (sim.status !== 'play') { stepBullets(sim, dt); return; }
+  sim.time += dt;
+  if (sim.freezeT > 0) sim.freezeT -= dt;
+  if (sim.shovelT > 0) { sim.shovelT -= dt; if (sim.shovelT <= 0) { RING.forEach(function (c) { sim.grid[c] = BRICK; }); sim.mapDirty = true; sim.events.push({ t: 'shovelEnd' }); } }
+  if (sim.item) { sim.item.t -= dt; if (sim.item.t <= 0) sim.item = null; }
+  stepPlayer(sim, sim.tanks[0], dt);
+  for (var i = 1; i < sim.tanks.length; i++) if (sim.tanks[i].alive) stepEnemy(sim, sim.tanks[i], dt);
+  stepSpawner(sim, dt);
+  stepBullets(sim, dt);
+  if (sim.status === 'play' && !sim.queue.length) {
+    var any = false; for (var j = 1; j < sim.tanks.length; j++) if (sim.tanks[j].alive) any = true;
+    if (!any) endGame(sim, 'won', 'clear');
+  }
+}
+function stars(sim) { return sim.status !== 'won' ? 0 : sim.livesLost === 0 ? 3 : sim.livesLost === 1 ? 2 : 1; }
+function remaining(sim) { var n = sim.queue.length; for (var i = 1; i < sim.tanks.length; i++) if (sim.tanks[i].alive) n++; return n; }
+
+/* ---------- the built-in player brain (used by demo mode and the test bots) ---------- */
+var M = N - 1;
+function nodeTypes(sim) {   // 0 free, 1 has bricks (shoot through), 2 blocked
+  var g = sim.grid, out = new Uint8Array(M * M);
+  for (var y = 0; y < M; y++) for (var x = 0; x < M; x++) {
+    var t = 0;
+    for (var yy = y; yy < y + 2; yy++) for (var xx = x; xx < x + 2; xx++) { var v = g[yy * N + xx]; if (v === STEEL || v === WATER || v === BASE) t = 2; else if (v === BRICK && t < 1) t = 1; }
+    out[y * M + x] = t;
+  }
+  return out;
+}
+function dijkstra(sim, nt, sx, sy, power) {
+  var dist = new Float32Array(M * M).fill(1e9), prev = new Int32Array(M * M).fill(-1), done = new Uint8Array(M * M);
+  var start = sy * M + sx; dist[start] = 0;
+  var heap = [start];   // simple binary heap on dist
+  function push(k) { heap.push(k); var i = heap.length - 1; while (i > 0) { var pr = (i - 1) >> 1; if (dist[heap[pr]] <= dist[heap[i]]) break; var tmp = heap[pr]; heap[pr] = heap[i]; heap[i] = tmp; i = pr; } }
+  function pop() { var top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; var i = 0; for (;;) { var l = 2 * i + 1, r = l + 1, m = i; if (l < heap.length && dist[heap[l]] < dist[heap[m]]) m = l; if (r < heap.length && dist[heap[r]] < dist[heap[m]]) m = r; if (m === i) break; var tmp = heap[m]; heap[m] = heap[i]; heap[i] = tmp; i = m; } } return top; }
+  while (heap.length) {
+    var c = pop(); if (done[c]) continue; done[c] = 1;
+    var x = c % M, y = (c - x) / M;
+    for (var d = 0; d < 4; d++) {
+      var nx = x + DX[d], ny = y + DY[d]; if (nx < 0 || ny < 0 || nx >= M || ny >= M) continue;
+      var k = ny * M + nx, ty = nt[k]; if (ty === 2) continue;
+      var nd = dist[c] + 1 + (ty === 1 ? 2.2 : 0);
+      if (nd < dist[k]) { dist[k] = nd; prev[k] = c; push(k); }
+    }
+  }
+  return { dist: dist, prev: prev };
+}
+function bulletStop(sim, b) {   // distance until the bullet meets a wall
+  var x = b.x, y = b.y, d = 0, g = sim.grid;
+  for (; d < 30; d += 0.5) {
+    var fx = x + DX[b.dir] * (d + 0.2), fy = y + DY[b.dir] * (d + 0.2);
+    if (fx <= 0 || fy <= 0 || fx >= N || fy >= N) return d;
+    if (DX[b.dir]) { var cx = Math.floor(fx); if (solidShot(g[Math.floor(y - 0.5) * N + cx]) || solidShot(g[Math.floor(y + 0.5 - EPS) * N + cx])) return d; }
+    else { var cy = Math.floor(fy); if (solidShot(g[cy * N + Math.floor(x - 0.5)]) || solidShot(g[cy * N + Math.floor(x + 0.5 - EPS)])) return d; }
+  }
+  return d;
+}
+// earliest time (s) an enemy bullet would hit the player if it follows action a (-1 stay, 0..3 move) for the horizon
+function dangerOf(sim, p, a, H, extra, virt) {
+  var bs = sim.bullets, best = 99, dt = 1 / 30;
+  var ghost = { id: p.id, side: 0, x: p.x, y: p.y, dir: p.dir, alive: true, spawnT: 0 };
+  var info = [];
+  for (var i = 0; i < bs.length; i++) { var b = bs[i]; if (b.side !== 1) continue; info.push({ b: b, stop: bulletStop(sim, b), t0: 0 }); }
+  if (virt) for (var vi = 0; vi < virt.length; vi++) info.push(virt[vi]);
+  if (!info.length && !extra) return 99;
+  for (var s = 1; s * dt <= H; s++) {
+    if (a >= 0) { if (a !== ghost.dir && (a & 1) !== (ghost.dir & 1)) { if (a & 1) ghost.y = Math.round(ghost.y); else ghost.x = Math.round(ghost.x); } ghost.dir = a; var m = moveLimit(sim, ghost, a, P_SPEED * dt); ghost.x += DX[a] * m; ghost.y += DY[a] * m; }
+    var t = s * dt;
+    for (var j = 0; j < info.length; j++) {
+      var I = info[j], tr = I.b.speed * (t - I.t0); if (tr <= 0 || tr > I.stop + 0.3) continue;
+      var bx = I.b.x + DX[I.b.dir] * tr, by = I.b.y + DY[I.b.dir] * tr;
+      // swept check over the last step
+      var pbx = bx - DX[I.b.dir] * I.b.speed * dt, pby = by - DY[I.b.dir] * I.b.speed * dt;
+      var mnx = Math.min(bx, pbx), mxx = Math.max(bx, pbx), mny = Math.min(by, pby), mxy = Math.max(by, pby);
+      var pad = extra ? extra : 0.3;
+      if (mxx > ghost.x - pad && mnx < ghost.x + 2 + pad && mxy > ghost.y - pad && mny < ghost.y + 2 + pad) { if (t < best) best = t; }
+    }
+    if (best < 99) break;
+  }
+  return best;
+}
+function canCancel(sim, p, b) {   // bullet b comes straight at the player's muzzle along the facing line
+  if (b.side !== 1 || b.dir !== (p.dir + 2) % 4) return false;
+  var cx = p.x + 1, cy = p.y + 1;
+  if (DX[p.dir]) { if (Math.abs(b.y - cy) > 1.0) return false; return DX[p.dir] > 0 ? b.x > cx : b.x < cx; }
+  if (Math.abs(b.x - cx) > 1.0) return false; return DY[p.dir] > 0 ? b.y > cy : b.y < cy;
+}
+function shotWorth(sim, p) {   // something worth shooting straight ahead
+  var cx = p.x + 1, cy = p.y + 1, d = p.dir, g = sim.grid;
+  // first solid along the facing line
+  var en = null, ed = 99;
+  for (var i = 1; i < sim.tanks.length; i++) {
+    var t = sim.tanks[i]; if (!t.alive) continue;
+    var tx = t.x + 1, ty = t.y + 1, along = DX[d] * (tx - cx) + DY[d] * (ty - cy), cross = DX[d] ? Math.abs(ty - cy) : Math.abs(tx - cx);
+    if (along > 0 && cross < 1.9 && along < ed) { ed = along; en = t; }
+  }
+  var wd = 99, hd = 99, ringHit = false, steelHit = false;
+  for (var s = 1.2; s < 27; s += 0.5) {
+    var fx = cx + DX[d] * s, fy = cy + DY[d] * s; if (fx <= 0 || fy <= 0 || fx >= N || fy >= N) { if (wd === 99) wd = s; hd = s; break; }
+    var hitc = [];
+    if (DX[d]) hitc = [[Math.floor(fx), Math.floor(cy - 0.5)], [Math.floor(fx), Math.floor(cy + 0.5 - EPS)]]; else hitc = [[Math.floor(cx - 0.5), Math.floor(fy)], [Math.floor(cx + 0.5 - EPS), Math.floor(fy)]];
+    var stop = false, first = wd === 99;
+    for (var k = 0; k < 2; k++) { var c = hitc[k][1] * N + hitc[k][0], v = g[c]; if (solidShot(v)) { if (first) { wd = s; if (RING.indexOf(c) >= 0 || v === BASE) ringHit = true; } if ((v === STEEL && p.power < 3) || v === BASE) { stop = true; if (first) steelHit = true; } } }
+    if (stop) { hd = s; break; }
+  }
+  return { enemy: en && ed < hd + 1 ? en : null, enemyD: ed, wallD: wd, ring: ringHit, steel: steelHit };
+}
+function brainDecide(sim, opts) {
+  opts = opts || {};
+  var p = player(sim); if (!p.alive) return { dir: -1, fire: false };
+  var nt = nodeTypes(sim), px = Math.round(p.x), py = Math.round(p.y);
+  px = clamp(px, 0, M - 1); py = clamp(py, 0, M - 1);
+  // enemy tanks occupy nodes
+  var enemies = [];
+  for (var i = 1; i < sim.tanks.length; i++) { var t = sim.tanks[i]; if (t.alive) enemies.push(t); }
+  var D = dijkstra(sim, nt, px, py, p.power);
+  // goals: firing spots on enemies (priority to the ones nearest the base), items, guard spot
+  var best = -1, bestCost = 1e9, bestFace = -1, bestTgt = null, crowd = opts.crowd == null ? 0.6 : opts.crowd;
+  var baseX = 13, baseY = 25;
+  for (var e = 0; e < enemies.length; e++) {
+    var en = enemies[e], ex = en.x + 1, ey = en.y + 1;
+    var threat = Math.abs(ex - baseX) + Math.abs(ey - baseY);
+    var tq = Math.max(0, 26 - threat), prio = (opts.guard == null ? 1.4 : opts.guard) * tq * tq / 26 + (en.carrier ? 2 : 0) + (en.spawnT > 0 ? -3 : 0);
+    // column spots (same x) and row spots (same y)
+    for (var axis = 0; axis < 2; axis++) {
+      for (var off = 0; off < M; off++) {
+        var nx = axis === 0 ? Math.round(en.x) : off, ny = axis === 0 ? off : Math.round(en.y);
+        if (nx < 0 || ny < 0 || nx >= M || ny >= M) continue;
+        var k = ny * M + nx; if (nt[k] === 2 || D.dist[k] >= 1e9) continue;
+        var along = axis === 0 ? Math.abs(ny - en.y) : Math.abs(nx - en.x); if (along < (opts.minAlong || 2.5) || along > 22) continue;
+        var bricks = lineClear(sim, nx + 1, ny + 1, ex, ey, true); if (bricks < 0) continue;
+        var face = axis === 0 ? (en.y < ny ? 0 : 2) : (en.x < nx ? 3 : 1);
+        var cost = D.dist[k] + bricks * 0.7 + along * 0.08 - prio + (nt[k] === 1 ? 2 : 0) + (opts.home == null ? 0.3 : opts.home) * (Math.abs(nx - 12) * 0.5 + Math.abs(ny - 20));
+        if (crowd) for (var ce = 0; ce < enemies.length; ce++) { var cd = Math.abs(enemies[ce].x - nx) + Math.abs(enemies[ce].y - ny); if (cd < 5) cost += (5 - cd) * crowd; }
+        if (cost < bestCost) { bestCost = cost; best = k; bestFace = face; bestTgt = en; }
+      }
+    }
+  }
+  if (sim.item && opts.items !== false) {
+    var ik = Math.round(sim.item.y) * M + Math.round(sim.item.x);
+    if (D.dist[ik] < 1e9) { var ic = D.dist[ik] - (sim.item.type === 'star' || sim.item.type === 'grenade' || sim.item.type === 'tank' ? 12 : 8); if (ic < bestCost && D.dist[ik] < 26) { bestCost = ic; best = ik; bestFace = -1; bestTgt = null; } }
+  }
+  if (best < 0) { var gk = 18 * M + 12; if (D.dist[gk] < 1e9) { best = gk; bestFace = 0; } else best = py * M + px; }
+  // hysteresis: keep the previous goal if it is nearly as good
+  if (opts.prev && opts.prev.goal != null && opts.prev.goal !== best && D.dist[opts.prev.goal] < 1e9) {
+    var pt = opts.prev.tgt, pgx = opts.prev.goal % M, pgy = (opts.prev.goal - pgx) / M;
+    var still = pt && pt.alive && bestTgt && pt.id === bestTgt.id && (Math.abs(Math.round(pt.x) - pgx) < 1 || Math.abs(Math.round(pt.y) - pgy) < 1);
+    if (still && D.dist[opts.prev.goal] <= D.dist[best] + 2) { best = opts.prev.goal; bestFace = opts.prev.face; }
+  }
+  // path → next step
+  var path = [], c = best; while (c >= 0 && c !== py * M + px) { path.push(c); c = D.prev[c]; } path.reverse();
+  var dir = -1, wantFire = false;
+  var sw = shotWorth(sim, p);
+  if (path.length === 1 && bestFace >= 0) { var gx0 = best % M, gy0 = (best - gx0) / M; if (Math.abs(p.x - gx0) + Math.abs(p.y - gy0) < 0.75) { path = []; px = gx0; py = gy0; } }
+  if (path.length) {
+    var nk = path[0], nx2 = nk % M, ny2 = (nk - nx2) / M;
+    dir = nx2 > px ? 1 : nx2 < px ? 3 : ny2 > py ? 2 : 0;
+    if (nt[nk] === 1 && p.dir === dir) wantFire = true;   // bricks ahead: shoot through
+  } else {
+    var offA = (p.dir & 1) ? p.x - px : p.y - py;   // finish the move along the current axis onto the node
+    if (bestFace >= 0 && (bestFace & 1) !== (p.dir & 1)) dir = bestFace;   // turning snaps onto the lane
+    else if (Math.abs(offA) > 0.2) dir = (p.dir & 1) ? (offA < 0 ? 1 : 3) : (offA < 0 ? 2 : 0);
+    else if (bestFace >= 0 && p.dir !== bestFace) dir = bestFace;
+  }
+  if (sw.enemy && sw.enemy.spawnT <= 0) wantFire = true;
+  // suppressive fire: an enemy roughly ahead will soon be in our line (and its shells will meet ours)
+  if (!wantFire && opts.spam !== false) {
+    var fdir = dir >= 0 ? dir : p.dir;
+    if (fdir === p.dir) for (var si = 0; si < enemies.length; si++) {
+      var se = enemies[si], ax = se.x - p.x, ay = se.y - p.y, al = DX[fdir] * ax + DY[fdir] * ay, cr = DX[fdir] ? Math.abs(ay) : Math.abs(ax);
+      if (al > 1 && al < 13 && cr < 3.2) { wantFire = true; break; }
+    }
+  }
+  if (sw.enemy && sw.enemy.spawnT > 0 && sw.enemyD < 6) wantFire = true;
+  // dodge / cancel incoming fire
+  var H = opts.horizon || 0.7;
+  var cancel = false, cancelDir = -1;
+  for (var bi = 0; bi < sim.bullets.length; bi++) if (canCancel(sim, p, sim.bullets[bi])) { var bb = sim.bullets[bi], dd = Math.abs(bb.x - p.x - 1) + Math.abs(bb.y - p.y - 1); if (dd > 1.3) { cancel = true; cancelDir = p.dir; } }
+  // an enemy shell on its way to the base, in our line: turn to it and shoot it down
+  if (!cancel && opts.intercept !== false) {
+    for (var bj = 0; bj < sim.bullets.length; bj++) {
+      var tb = sim.bullets[bj]; if (tb.side !== 1) continue;
+      var stp = bulletStop(sim, tb), ex2 = tb.x + DX[tb.dir] * (stp + 0.7), ey2 = tb.y + DY[tb.dir] * (stp + 0.7);
+      var cell = Math.floor(ey2) * N + Math.floor(ex2); if (!(sim.grid[cell] === BASE || RING.indexOf(cell) >= 0) && !(Math.abs(ex2 - 13) < 2.5 && ey2 > 22)) continue;
+      var fd = (tb.dir + 2) % 4, pcx = p.x + 1, pcy = p.y + 1;
+      var inBand = DX[fd] ? Math.abs(tb.y - pcy) <= 1 && (DX[fd] > 0 ? tb.x > pcx + 1 : tb.x < pcx - 1) : Math.abs(tb.x - pcx) <= 1 && (DY[fd] > 0 ? tb.y > pcy + 1 : tb.y < pcy - 1);
+      if (inBand) { dir = p.dir === fd ? -1 : fd; wantFire = p.dir === fd; cancel = true; cancelDir = fd; break; }
+    }
+  }
+  var virt = null, info0 = [];
+  if (opts.sides && sim.freezeT <= 0) {
+    virt = [];
+    for (var vi = 0; vi < enemies.length; vi++) {
+      var ve = enemies[vi]; if (ve.spawnT > 0) continue;
+      if (Math.abs(ve.x - p.x) + Math.abs(ve.y - p.y) > 11) continue;
+      for (var vd = 0; vd < 4; vd++) {
+        var head = sw.enemy && sw.enemy.id === ve.id && vd === (p.dir + 2) % 4;   // the one we are already shooting at
+        if (head) continue;
+        var vb = { x: ve.x + 1 + DX[vd], y: ve.y + 1 + DY[vd], dir: vd, speed: KIND[ve.kind].bullet * sim.params.shellMul, side: 1 };
+        info0.push({ b: vb, stop: bulletStop(sim, vb), t0: vd === ve.dir ? Math.max(0.04, ve.hold) : sim.params.hold + 0.03 });
+      }
+    }
+    virt = info0;
+  }
+  if (opts.dodge !== false) {
+    var keep = dir === -1 ? -1 : dir;
+    var dKeep = Math.min(dangerOf(sim, p, keep, H), dangerOf(sim, p, keep, H, 0, virt) + (opts.sideBias || 0.15));
+    if (cancel && p.cool <= 0.05) {
+      if (p.dir === cancelDir) { wantFire = true; if (dangerOf(sim, p, -1, 0.15) >= 0.12) { dir = -1; dKeep = 99; } }
+      else { dir = cancelDir; dKeep = 99; }
+    }
+    if (dKeep < H) {
+      var cands = [-1, 0, 1, 2, 3], bestA = keep, bestD = dKeep;
+      for (var ci = 0; ci < cands.length; ci++) { var a = cands[ci]; if (a === keep) continue; var da = Math.min(dangerOf(sim, p, a, H), virt ? dangerOf(sim, p, a, H, 0, virt) + (opts.sideBias || 0.15) : 99); if (da > bestD + 0.02) { bestD = da; bestA = a; } }
+      dir = bestA;
+    }
+  }
+  if (wantFire && sw.ring && !(sw.enemy && sw.enemyD < sw.wallD) && !(cancel && p.dir === cancelDir)) wantFire = false;   // never chip our own base wall
+  if (wantFire && sw.steel && !sw.enemy && !cancel) wantFire = false;
+  return { dir: dir, fire: wantFire, goal: best, cost: bestCost, face: bestFace, tgt: bestTgt };
+}
+
+/* look-ahead planner: tries a few short commitments, plays each forward with the brain, keeps the safest */
+function rollout(sim, act, frames, H, every) {
+  var s = sim, dt = 1 / 60, prev = null, dec = act, p0 = s.livesLost, b0 = s.baseHp, k0 = s.kills, f = 0, tot = Math.round(H * 60);
+  for (; f < tot && s.status === 'play'; f++) {
+    if (f >= frames && (f - frames) % every === 0) { dec = brainDecide(s, { prev: prev }); prev = dec; }
+    setInput(s, dec.dir, false, dec.fire ? 1 : 0);
+    tick(s, dt); s.events.length = 0;
+    if (s.livesLost > p0) break;
+  }
+  var sc = (s.kills - k0) * 40 - (s.livesLost - p0) * 1000 - (b0 - s.baseHp) * 700 + (s.status === 'won' ? 500 : 0) + (s.status === 'lost' ? -3000 : 0);
+  if (s.livesLost > p0) sc += f;   // later death is better
+  return sc;
+}
+function planDecide(sim, opts) {
+  opts = opts || {};
+  var base = brainDecide(sim, { prev: opts.prev });
+  var p = player(sim); if (!p.alive || sim.status !== 'play') return base;
+  var H = opts.horizon || 1.6, hold = opts.hold || 12, every = opts.every || 4, samples = opts.samples || 1, seed = opts.seed || 1;
+  var cands = [{ dir: base.dir, fire: base.fire, brain: true }];
+  for (var d = -1; d < 4; d++) for (var f = 0; f < 2; f++) if (!(d === base.dir && !!f === !!base.fire)) cands.push({ dir: d, fire: !!f });
+  var score = function (c) {
+    var tot = 0;
+    for (var k = 0; k < samples; k++) {
+      var cs = cloneSim(sim, opts.exact ? null : seed * 7 + k * 131 + 1);
+      tot += rollout(cs, c, c.brain ? 0 : hold, H, every);
+    }
+    return tot / samples;
+  };
+  var s0 = score(cands[0]);
+  if (s0 > -50) return base;   // the brain's own move is safe enough
+  var best = cands[0], bs = s0;
+  for (var i = 1; i < cands.length; i++) { var sc = score(cands[i]); if (sc > bs + 1) { bs = sc; best = cands[i]; } }
+  if (best === cands[0]) return base;
+  return { dir: best.dir, fire: best.fire, goal: base.goal, cost: base.cost, face: base.face, tgt: base.tgt, planned: true };
+}
+
+return { N: N, DX: DX, DY: DY, E: E, BRICK: BRICK, STEEL: STEEL, WATER: WATER, TREE: TREE, ICE: ICE, BASE: BASE, KIND: KIND, ITEMS: ITEMS, CHAPTERS: CHAPTERS, RING: RING,
+  P_SPAWN: P_SPAWN, BASE_HP: BASE_HP, E_SPAWN: E_SPAWN, P_SPEED: P_SPEED, P_AUTO: P_AUTO, TAP_COOL: TAP_COOL, VARIANT: VARIANT,
+  mulberry: mulberry, levelParams: levelParams, genLevel: genLevel, validMap: validMap, createSim: createSim, setInput: setInput, tick: tick, stars: stars, remaining: remaining,
+  moveTank: moveTank, moveLimit: moveLimit, fire: fire, applyItem: applyItem, spawnItem: spawnItem, brainDecide: brainDecide, planDecide: planDecide, cloneSim: cloneSim, restoreSim: restoreSim, dangerOf: dangerOf, aligned: aligned, lineClear: lineClear, killEnemy: killEnemy, player: player };
+})();
+/*CORE-END*/
+</script>
+<script>
+(function () {
+'use strict';
+var ID = 'tank-battle:v1:';
+function sget(k, d) { try { var v = localStorage.getItem(ID + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function sset(k, v) { try { localStorage.setItem(ID + k, JSON.stringify(v)); } catch (e) {} }
+var $ = function (id) { return document.getElementById(id); };
+var cv = $('cv'), ctx = cv.getContext('2d');
+var reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+var N = TB.N, DX = TB.DX, DY = TB.DY, KIND = TB.KIND;
+
+/* ---------- saved state ---------- */
+var prog = sget('progress', {}); if (!prog || typeof prog !== 'object' || Array.isArray(prog)) prog = {};
+var best = sget('best', {}); if (!best || typeof best !== 'object' || Array.isArray(best)) best = {};
+var unlockAll = !!sget('unlockAll', false);
+var muted = !!sget('mute', false);
+var haptic = sget('haptic', true) !== false;
+var themePref = sget('theme', 'auto'); if (['auto', 'light', 'dark'].indexOf(themePref) < 0) themePref = 'auto';
+var played = !!sget('played', false);
+var mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+var dark = false;
+function doneCount() { var n = 0; for (var k in prog) if (prog[k] > 0) n++; return n; }
+function starCount() { var n = 0; for (var k in prog) n += Math.min(3, prog[k] | 0); return n; }
+function unlocked() { var m = 0; for (var k in prog) if (prog[k] > 0 && +k > m) m = +k; return Math.min(100, m + 1); }
+function isOpen(n) { return unlockAll || n <= unlocked(); }
+
+/* ---------- audio (generated) ---------- */
+var AC = null, master = null, noiseBuf = null;
+function audio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = 0.45; master.connect(AC.destination); } catch (e) { AC = null; } }
+  if (AC && AC.state === 'suspended') { try { AC.resume(); } catch (e) {} }
+  return AC;
+}
+function tone(f, dur, type, vol, f2, delay) {
+  if (muted || !AC) return;
+  var t = AC.currentTime + (delay || 0), o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+}
+function noise(dur, vol, f1, f2, q, delay, ftype) {
+  if (muted || !AC) return;
+  if (!noiseBuf) { noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  var t = AC.currentTime + (delay || 0), s = AC.createBufferSource(), fl = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; fl.type = ftype || 'lowpass'; fl.Q.value = q || 1; fl.frequency.setValueAtTime(f1, t); if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+}
+var sfxGate = {};
+function gate(k, ms) { var n = performance.now(); if (sfxGate[k] && n - sfxGate[k] < ms) return false; sfxGate[k] = n; return true; }
+var SFX = {
+  fire: function () { if (!gate('f', 40)) return; tone(190, 0.08, 'square', 0.07, 90); noise(0.07, 0.12, 2400, 600, 1); },
+  efire: function () { if (!gate('ef', 70)) return; tone(150, 0.07, 'square', 0.035, 80); },
+  brick: function () { if (!gate('b', 45)) return; noise(0.12, 0.13, 1200, 300, 0.8); },
+  steel: function () { if (!gate('s', 60)) return; tone(1500, 0.06, 'triangle', 0.06, 1100); tone(2300, 0.05, 'sine', 0.03); },
+  clash: function () { tone(1900, 0.07, 'square', 0.05, 900); },
+  armor: function () { tone(700, 0.08, 'square', 0.06, 500); noise(0.06, 0.08, 3000, 1500, 2, 0, 'bandpass'); },
+  kill: function () { noise(0.5, 0.42, 1500, 90); tone(85, 0.4, 'sawtooth', 0.11, 40); },
+  die: function () { noise(0.9, 0.5, 1800, 70); tone(240, 0.8, 'sawtooth', 0.12, 40); },
+  baseHit: function () { for (var i = 0; i < 2; i++) { tone(880, 0.16, 'square', 0.07, 0, i * 0.2); tone(660, 0.16, 'square', 0.07, 0, i * 0.2 + 0.1); } noise(0.3, 0.3, 900, 120); },
+  base: function () { noise(1.4, 0.55, 1400, 50); tone(160, 1.2, 'sawtooth', 0.14, 30); },
+  item: function () { [988, 1319, 988, 1319].forEach(function (f, i) { tone(f, 0.09, 'triangle', 0.07, 0, i * 0.08); }); },
+  pickup: function () { [523, 659, 784, 1047, 1319].forEach(function (f, i) { tone(f, 0.14, 'triangle', 0.11, 0, i * 0.06); }); },
+  tick: function () { if (!gate('tk', 45)) return; tone(1250, 0.03, 'square', 0.025); },
+  spawn: function () { if (!gate('sp', 200)) return; tone(300, 0.35, 'sine', 0.04, 900); },
+  boss: function () { [196, 185, 175, 165].forEach(function (f, i) { tone(f, 0.3, 'sawtooth', 0.08, 0, i * 0.22); }); },
+  start: function () { [392, 523, 659, 784, 659, 784].forEach(function (f, i) { tone(f, 0.16, 'square', 0.05, 0, i * 0.11); }); },
+  win: function () { [523, 659, 784, 1047, 784, 1047, 1319].forEach(function (f, i) { tone(f, 0.18, 'triangle', 0.13, 0, i * 0.1); }); },
+  lose: function () { [392, 370, 349, 294].forEach(function (f, i) { tone(f, 0.38, 'triangle', 0.12, 0, i * 0.26); }); },
+  click: function () { tone(720, 0.05, 'triangle', 0.06); },
+  tick: function () { tone(1200, 0.03, 'square', 0.025); }
+};
+function buzz(ms) { if (haptic && navigator.vibrate) try { navigator.vibrate(ms); } catch (e) {} }
+
+/* ---------- state ---------- */
+var sim = null, mode = 'attract', stageN = 1, playing = false, paused = false, manual = false, auto = false, autoPrev = null;
+var combo = 0, comboT = -9;
+var U = 12, DPR = 1, land = false, hold = 0, endT = 0, demoPrev = null, demoN = 1;
+var parts = [], pops = [], shake = 0, flashBase = 0, banner = null, tAll = 0, hintT = 0, moved = false, shot = false;
+var padDir = -1, keys = {}, keyStack = [], fireHeld = false, keyFire = false, firePresses = 0, fireDowns = 0, pendingPress = 0;
+var layer = null, layerCtx = null, trees = null, treesCtx = null, waterCells = [], mapKey = '';
+
+/* ---------- palette ---------- */
+var CH_TINT = [
+  ['#d8cda4', '#2b3322'], ['#d5cfa6', '#26302a'], ['#c9cc9a', '#223020'], ['#e3e6e2', '#283039'], ['#cfc8b2', '#2a2c2a'],
+  ['#dbc39b', '#33291d'], ['#bfc493', '#1f2b1e'], ['#e8ecef', '#252c38'], ['#cbc6b8', '#2b2b2e'], ['#d6c39c', '#2e2419']
+];
+var C = {};
+function palette() {
+  var ch = sim ? sim.params.chapter : 0;
+  C = dark ? {
+    ground: CH_TINT[ch][1], speck: 'rgba(255,255,220,.05)', grid: 'rgba(255,255,220,.05)',
+    brick: '#9c4a2c', brick2: '#7b3820', mortar: '#3b2618', brickHi: 'rgba(255,190,140,.25)',
+    steel: '#7f8c96', steel2: '#4f5960', steelHi: '#c5d0d8', water: '#1f5a73', water2: '#2d7896', waveA: 'rgba(170,230,255,.5)',
+    tree: '#2f5a2a', tree2: '#1f3f1d', treeHi: '#4b7e3c', ice: '#8fb2c4', ice2: '#b9d6e3', shadow: 'rgba(0,0,0,.35)'
+  } : {
+    ground: CH_TINT[ch][0], speck: 'rgba(80,60,20,.08)', grid: 'rgba(80,70,30,.07)',
+    brick: '#c0613b', brick2: '#9c4626', mortar: '#e7d6b4', brickHi: 'rgba(255,220,180,.35)',
+    steel: '#a3adb5', steel2: '#6c7780', steelHi: '#eef3f6', water: '#3f8fb0', water2: '#5aaccc', waveA: 'rgba(235,250,255,.65)',
+    tree: '#4f8a3a', tree2: '#356a27', treeHi: '#7cb35a', ice: '#cfe6ef', ice2: '#f4fbff', shadow: 'rgba(60,45,10,.22)'
+  };
+}
+var TANKC = [
+  { hull: '#c3c7bb', dark: '#757a6c', tread: '#4a4d44' },
+  { hull: '#a9c0d2', dark: '#5b7388', tread: '#3d4a55' },
+  { hull: '#b3bd78', dark: '#6a7432', tread: '#454a27' },
+  null,
+  { hull: '#b5503a', dark: '#5e2016', tread: '#3a1610' }
+];
+var ARMORC = ['#c9553a', '#dc8a37', '#d4b343', '#78a95e'];
+var PLAYERC = { hull: '#e8b32c', dark: '#a37310', tread: '#5b4614' };
+
+/* ---------- layout ---------- */
+function layout() {
+  var vw = innerWidth, vh = innerHeight;
+  land = vw > vh && vh < 600;
+  document.body.classList.toggle('land', land);
+  document.body.classList.toggle('desk', vw >= 700 && vh >= 640);
+  var bd = $('board'), bw, bh;
+  if (land) { bd.style.height = ''; var r = bd.getBoundingClientRect(); bw = Math.max(80, r.width - 14); bh = Math.max(80, r.height - 14); }
+  else { var m = $('main').getBoundingClientRect(); bw = Math.max(80, m.width - 14); bh = Math.max(80, m.height - 140 - 14); }
+  U = Math.max(6, Math.floor(Math.min(bw, bh) / N * 2) / 2);
+  DPR = Math.min(2.5, window.devicePixelRatio || 1);
+  var px = U * N;
+  cv.style.width = px + 'px'; cv.style.height = px + 'px';
+  cv.width = Math.round(px * DPR); cv.height = Math.round(px * DPR);
+  if (!land) bd.style.height = (px + 14) + 'px';
+  var chips = document.querySelector('.chips');
+  if (land) { var br = bd.getBoundingClientRect(), side = vw - (br.left + br.width / 2 + px / 2 + 7); chips.style.width = Math.max(110, Math.floor(side - 14)) + 'px'; } else chips.style.width = '';
+  var room = land ? 0 : $('main').getBoundingClientRect().height - px - 14 - 140;
+  $('reserve').hidden = room < 40; $('reserve').classList.toggle('compact', room < 124); hudCache.res = '';
+  document.body.classList.toggle('tall', room > 170);
+  mapKey = ''; draw();
+}
+addEventListener('resize', layout);
+if ('ResizeObserver' in window) new ResizeObserver(function () { layout(); }).observe($('board'));
+
+/* ---------- terrain layers ---------- */
+function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function hash(x, y) { var h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function drawBrick(g, x, y, u, c) {
+  g.fillStyle = C.brick; g.fillRect(x, y, u, u);
+  var h = u / 2;
+  for (var r = 0; r < 2; r++) {
+    var yy = y + r * h, off = ((c.x + r + c.y * 2) & 1) ? u * 0.5 : 0;
+    g.fillStyle = r ? C.brick2 : C.brick; g.fillRect(x, yy, u, h);
+    g.fillStyle = C.brickHi; g.fillRect(x, yy, u, Math.max(1, u * 0.08));
+    g.fillStyle = C.mortar; g.fillRect(x, yy + h - Math.max(1, u * 0.09), u, Math.max(1, u * 0.09));
+    g.fillRect(x + off - Math.max(0.5, u * 0.045), yy, Math.max(1, u * 0.09), h);
+  }
+}
+function drawSteel(g, x, y, u) {
+  g.fillStyle = C.steel2; g.fillRect(x, y, u, u);
+  var b = Math.max(1, u * 0.14);
+  g.fillStyle = C.steel; g.fillRect(x + b * 0.5, y + b * 0.5, u - b, u - b);
+  g.fillStyle = C.steelHi; g.fillRect(x + b, y + b, u - b * 2.4, u - b * 2.4);
+  g.fillStyle = C.steel; g.fillRect(x + b * 1.6, y + b * 1.6, u - b * 3.2, u - b * 3.2);
+}
+function drawIce(g, x, y, u, c) {
+  g.fillStyle = C.ice; g.fillRect(x, y, u, u);
+  g.strokeStyle = C.ice2; g.lineWidth = Math.max(1, u * 0.1); g.beginPath();
+  var o = hash(c.x, c.y) * u * 0.6;
+  g.moveTo(x + o, y + u); g.lineTo(x + u, y + o); g.moveTo(x, y + o * 0.6); g.lineTo(x + o * 0.6, y); g.stroke();
+}
+function drawEagle(g, x, y, s, hp, max) {
+  // the base: a golden eagle crest on a sandbag pad
+  g.save(); g.translate(x + s / 2, y + s / 2);
+  var alive = hp > 0;
+  g.fillStyle = dark ? '#3b3a2b' : '#bfb28a'; g.beginPath(); g.arc(0, 0, s * 0.48, 0, Math.PI * 2); g.fill();
+  if (!alive) {
+    g.fillStyle = '#555'; for (var i = 0; i < 7; i++) { var a = i * 0.9; g.beginPath(); g.arc(Math.cos(a) * s * 0.2, Math.sin(a) * s * 0.2 + s * 0.05, s * (0.08 + hash(i, 3) * 0.08), 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = '#222'; g.lineWidth = s * 0.05; g.beginPath(); g.moveTo(-s * 0.15, s * 0.3); g.lineTo(s * 0.05, -s * 0.35); g.stroke();
+    g.restore(); return;
+  }
+  var gold = '#e8b32c', gd = '#9a6a0c';
+  g.fillStyle = gd; g.beginPath();
+  g.moveTo(0, -s * 0.36); g.lineTo(s * 0.12, -s * 0.18); g.lineTo(s * 0.42, -s * 0.24); g.lineTo(s * 0.3, -s * 0.02); g.lineTo(s * 0.38, s * 0.06); g.lineTo(s * 0.14, s * 0.1);
+  g.lineTo(s * 0.18, s * 0.36); g.lineTo(0, s * 0.24); g.lineTo(-s * 0.18, s * 0.36); g.lineTo(-s * 0.14, s * 0.1); g.lineTo(-s * 0.38, s * 0.06); g.lineTo(-s * 0.3, -s * 0.02); g.lineTo(-s * 0.42, -s * 0.24); g.lineTo(-s * 0.12, -s * 0.18); g.closePath(); g.fill();
+  g.fillStyle = gold; g.scale(0.82, 0.82); g.fill(); g.setTransform(1, 0, 0, 1, 0, 0);
+  g.restore();
+  g.save(); g.translate(x + s / 2, y + s / 2);
+  g.fillStyle = '#fff4d0'; g.beginPath(); g.arc(0, -s * 0.12, s * 0.06, 0, Math.PI * 2); g.fill();
+  if (hp < max) { g.strokeStyle = 'rgba(40,20,0,.75)'; g.lineWidth = Math.max(1, s * 0.035); g.beginPath(); g.moveTo(-s * 0.3, -s * 0.1); g.lineTo(-s * 0.08, s * 0.04); g.lineTo(-s * 0.16, s * 0.25); if (hp < max - 1) { g.moveTo(s * 0.32, -s * 0.18); g.lineTo(s * 0.1, -s * 0.02); g.lineTo(s * 0.2, s * 0.2); } g.stroke(); }
+  g.restore();
+}
+var painted = null;   // the grid the terrain layer currently shows
+function paintTerrain(g, u, px, grid, x0, y0, x1, y1) {   // repaint cells x0..x1, y0..y1 (inclusive) exactly as a full build would
+  var full = !x0 && !y0 && x1 === N - 1 && y1 === N - 1;
+  if (!full) { g.save(); g.beginPath(); g.rect(x0 * u, y0 * u, (x1 - x0 + 1) * u, (y1 - y0 + 1) * u); g.clip(); }
+  g.fillStyle = C.ground; g.fillRect(x0 * u, y0 * u, (x1 - x0 + 1) * u, (y1 - y0 + 1) * u);
+  for (var i = 0; i < 260; i++) { g.fillStyle = C.speck; var sx = hash(i, 11) * px, sy = hash(i, 29) * px; g.fillRect(sx, sy, u * (0.1 + hash(i, 5) * 0.25), u * 0.12); }
+  g.fillStyle = C.grid; for (var k = 2; k < N; k += 2) { g.fillRect(k * u, 0, Math.max(1, DPR * 0.6), px); g.fillRect(0, k * u, px, Math.max(1, DPR * 0.6)); }
+  for (var y = Math.max(0, y0 - 1); y <= Math.min(N - 1, y1 + 1); y++) for (var x = Math.max(0, x0 - 1); x <= Math.min(N - 1, x1 + 1); x++) {
+    var v = grid[y * N + x], X = x * u, Y = y * u;
+    if (v === TB.BRICK) drawBrick(g, X, Y, u, { x: x, y: y });
+    else if (v === TB.STEEL) drawSteel(g, X, Y, u);
+    else if (v === TB.WATER) { g.fillStyle = C.water; g.fillRect(X, Y, u + 0.5, u + 0.5); if (full) waterCells.push(y * N + x); }
+    else if (v === TB.ICE) drawIce(g, X, Y, u, { x: x, y: y });
+  }
+  // brick shadows (a little depth)
+  g.fillStyle = C.shadow;
+  for (var y2 = Math.max(0, y0 - 1); y2 <= Math.min(N - 2, y1); y2++) for (var x2 = Math.max(0, x0 - 1); x2 <= Math.min(N - 1, x1 + 1); x2++) { var v2 = grid[y2 * N + x2], b2 = grid[(y2 + 1) * N + x2]; if ((v2 === TB.BRICK || v2 === TB.STEEL) && !(b2 === TB.BRICK || b2 === TB.STEEL || b2 === TB.WATER || b2 === TB.BASE)) g.fillRect(x2 * u, (y2 + 1) * u, u, u * 0.2); }
+  if (x1 >= 11 && x0 <= 14 && y1 >= 23) drawEagle(g, 12 * u, 24 * u, 2 * u, sim.baseHp, sim.baseMax);
+  if (!full) g.restore();
+}
+function buildLayers() {
+  if (!sim) return;
+  var px = Math.round(U * N * DPR);
+  if (!layer || layer.width !== px) { layer = mkCanvas(px, px); layerCtx = layer.getContext('2d'); trees = mkCanvas(px, px); treesCtx = trees.getContext('2d'); painted = null; }
+  var g = layerCtx, u = U * DPR, grid = sim.grid, key = U + ':' + dark + ':' + sim.baseHp;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (painted && mapKey === key && painted.length === grid.length) {
+    // only a few cells changed (a brick broke, the shovel ring): repaint just those tiles and their neighbours
+    for (var c = 0; c < grid.length; c++) if (grid[c] !== painted[c]) { var cx0 = c % N, cy0 = (c / N) | 0; paintTerrain(g, u, px, grid, Math.max(0, cx0 - 1), Math.max(0, cy0 - 1), Math.min(N - 1, cx0 + 1), Math.min(N - 1, cy0 + 1)); }
+    painted = Uint8Array.from(grid); sim.mapDirty = false; return;
+  }
+  waterCells = [];
+  paintTerrain(g, u, px, grid, 0, 0, N - 1, N - 1);
+  // trees
+  var t = treesCtx; t.setTransform(1, 0, 0, 1, 0, 0); t.clearRect(0, 0, px, px);
+  for (var y3 = 0; y3 < N; y3++) for (var x3 = 0; x3 < N; x3++) if (grid[y3 * N + x3] === TB.TREE) {
+    var cx = (x3 + 0.5) * u, cy = (y3 + 0.5) * u;
+    t.fillStyle = C.tree2; t.beginPath(); t.arc(cx, cy + u * 0.08, u * 0.66, 0, Math.PI * 2); t.fill();
+  }
+  for (var y4 = 0; y4 < N; y4++) for (var x4 = 0; x4 < N; x4++) if (grid[y4 * N + x4] === TB.TREE) {
+    var cx2 = (x4 + 0.5) * u, cy2 = (y4 + 0.5) * u, h = hash(x4, y4);
+    t.fillStyle = C.tree; t.beginPath(); t.arc(cx2 - u * 0.12, cy2 - u * 0.05, u * 0.5, 0, Math.PI * 2); t.fill();
+    t.fillStyle = C.treeHi; t.beginPath(); t.arc(cx2 - u * 0.2 + h * u * 0.2, cy2 - u * 0.22, u * 0.2, 0, Math.PI * 2); t.fill();
+  }
+  painted = Uint8Array.from(grid); sim.mapDirty = false; mapKey = key;
+}
+
+/* ---------- sprites ---------- */
+function rrect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function tankColors(t) {
+  if (!t.side) return PLAYERC;
+  if (t.kind === 3) { var c = ARMORC[Math.max(0, Math.min(3, t.hp - 1))]; return { hull: c, dark: '#4a4030', tread: '#38342a' }; }
+  return TANKC[t.kind];
+}
+function drawTankShape(g, cx, cy, s, dir, col, tread, opts) {
+  // s = half size (one unit). Drawn facing up, then rotated.
+  g.save(); g.translate(cx, cy); g.rotate(dir * Math.PI / 2);
+  var boss = opts && opts.boss;
+  g.fillStyle = 'rgba(0,0,0,.18)'; rrect(g, -s * 0.92, -s * 0.86, s * 1.9, s * 1.9, s * 0.25); g.fill();
+  g.fillStyle = 'rgba(22,22,12,.55)'; rrect(g, -s * 1.04, -s * 1.0, s * 2.08, s * 2.0, s * 0.2); g.fill();   // crisp outline: readable on snow and sand
+  // treads
+  for (var side = -1; side <= 1; side += 2) {
+    var tx = side < 0 ? -s * 0.98 : s * 0.5;
+    g.fillStyle = col.tread; rrect(g, tx, -s * 0.94, s * 0.48, s * 1.88, s * 0.14); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.18)';
+    var ph = ((tread || 0) * 3) % 1;
+    for (var k = -3; k <= 3; k++) { var ly = (k + ph) * s * 0.3; if (ly > -s * 0.88 && ly < s * 0.84) g.fillRect(tx + s * 0.06, ly, s * 0.36, s * 0.08); }
+  }
+  // hull
+  g.fillStyle = col.dark; rrect(g, -s * 0.62, -s * 0.78, s * 1.24, s * 1.6, s * 0.22); g.fill();
+  g.fillStyle = col.hull; rrect(g, -s * 0.54, -s * 0.7, s * 1.08, s * 1.4, s * 0.18); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(-s * 0.46, -s * 0.62, s * 0.92, s * 0.12);
+  // barrel(s)
+  g.fillStyle = col.dark;
+  if (boss) { g.fillRect(-s * 0.3, -s * 1.06, s * 0.18, s * 0.9); g.fillRect(s * 0.12, -s * 1.06, s * 0.18, s * 0.9); }
+  else g.fillRect(-s * 0.1, -s * 1.08, s * 0.2, s * 0.95);
+  g.fillStyle = col.hull; if (!boss) g.fillRect(-s * 0.05, -s * 1.04, s * 0.1, s * 0.7);
+  // turret
+  g.fillStyle = col.dark; g.beginPath(); g.arc(0, s * 0.08, s * (boss ? 0.52 : 0.42), 0, Math.PI * 2); g.fill();
+  g.fillStyle = col.hull; g.beginPath(); g.arc(0, s * 0.08, s * (boss ? 0.42 : 0.33), 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(-s * 0.1, -s * 0.02, s * 0.11, 0, Math.PI * 2); g.fill();
+  if (opts && opts.star) { g.fillStyle = col.dark; starPath(g, 0, s * 0.08, s * 0.2); g.fill(); }
+  g.restore();
+}
+function starPath(g, x, y, r) { g.beginPath(); for (var i = 0; i < 10; i++) { var a = -Math.PI / 2 + i * Math.PI / 5, rr = i & 1 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); }
+function drawItemIcon(g, type, x, y, s) {   // s = size in px
+  g.save(); g.translate(x, y);
+  var bg = { star: '#e8b32c', helmet: '#4a90c2', shovel: '#8a6a3c', grenade: '#c2452d', clock: '#6a5bb5', tank: '#3f8a4a' }[type];
+  g.fillStyle = 'rgba(0,0,0,.25)'; rrect(g, s * 0.06, s * 0.1, s * 0.92, s * 0.92, s * 0.2); g.fill();
+  g.fillStyle = bg; rrect(g, 0, 0, s * 0.92, s * 0.92, s * 0.2); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.25)'; rrect(g, s * 0.08, s * 0.06, s * 0.76, s * 0.22, s * 0.1); g.fill();
+  g.fillStyle = '#fff'; g.strokeStyle = '#fff'; g.lineWidth = s * 0.08; g.lineCap = 'round';
+  var c = s * 0.46;
+  if (type === 'star') { starPath(g, c, c, s * 0.32); g.fill(); }
+  else if (type === 'helmet') { g.beginPath(); g.arc(c, c + s * 0.08, s * 0.28, Math.PI, 0); g.lineTo(c + s * 0.34, c + s * 0.12); g.lineTo(c - s * 0.34, c + s * 0.12); g.closePath(); g.fill(); }
+  else if (type === 'shovel') { g.beginPath(); g.moveTo(c, c - s * 0.3); g.lineTo(c, c + s * 0.08); g.stroke(); g.beginPath(); g.moveTo(c - s * 0.16, c + s * 0.04); g.lineTo(c + s * 0.16, c + s * 0.04); g.lineTo(c + s * 0.12, c + s * 0.28); g.lineTo(c, c + s * 0.36); g.lineTo(c - s * 0.12, c + s * 0.28); g.closePath(); g.fill(); g.beginPath(); g.moveTo(c - s * 0.1, c - s * 0.3); g.lineTo(c + s * 0.1, c - s * 0.3); g.stroke(); }
+  else if (type === 'grenade') { g.beginPath(); g.arc(c, c + s * 0.06, s * 0.24, 0, Math.PI * 2); g.fill(); g.beginPath(); g.moveTo(c + s * 0.12, c - s * 0.14); g.quadraticCurveTo(c + s * 0.22, c - s * 0.32, c + s * 0.34, c - s * 0.3); g.stroke(); }
+  else if (type === 'clock') { g.beginPath(); g.arc(c, c, s * 0.28, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.moveTo(c, c - s * 0.16); g.lineTo(c, c); g.lineTo(c + s * 0.12, c + s * 0.08); g.stroke(); }
+  else if (type === 'tank') { g.fillRect(c - s * 0.3, c - s * 0.02, s * 0.6, s * 0.24); g.fillRect(c - s * 0.16, c - s * 0.18, s * 0.32, s * 0.18); g.fillRect(c, c - s * 0.12, s * 0.32, s * 0.07); }
+  g.restore();
+}
+
+/* ---------- drawing ---------- */
+function draw() {
+  var g = ctx, px = U * N;
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (!sim) { g.fillStyle = '#888'; g.fillRect(0, 0, px, px); return; }
+  if (sim.mapDirty || !layer || mapKey !== U + ':' + dark + ':' + sim.baseHp) buildLayers();
+  var sx = 0, sy = 0;
+  if (shake > 0.05 && !reduce) { sx = (Math.random() - 0.5) * shake * U * 0.5; sy = (Math.random() - 0.5) * shake * U * 0.5; }
+  g.save(); g.translate(sx, sy);
+  g.drawImage(layer, 0, 0, px, px);
+  // water shimmer
+  if (waterCells.length) {
+    g.strokeStyle = C.waveA; g.lineWidth = Math.max(1, U * 0.09); g.beginPath();
+    var tt = reduce ? 0 : tAll;
+    for (var i = 0; i < waterCells.length; i++) {
+      var c = waterCells[i], x = c % N, y = (c - x) / N, ph = (Math.sin(tt * 2 + x * 0.9 + y * 1.7) + 1) / 2;
+      var wy = y * U + U * (0.3 + 0.4 * ph);
+      if ((x + y) % 2 === 0) { g.moveTo(x * U + U * 0.15, wy); g.quadraticCurveTo(x * U + U * 0.5, wy - U * 0.18, x * U + U * 0.85, wy); }
+    }
+    g.stroke();
+  }
+  // shovel steel ring highlight
+  if (sim.shovelT > 0 && sim.shovelT < 3 && Math.floor(tAll * 6) % 2) { g.fillStyle = 'rgba(255,255,255,.35)'; TB.RING.forEach(function (k) { var x = k % N, y = (k - x) / N; g.fillRect(x * U, y * U, U, U); }); }
+  // base alarm glow
+  if (flashBase > 0) { g.fillStyle = 'rgba(230,50,30,' + (0.35 * flashBase).toFixed(3) + ')'; g.beginPath(); g.arc(13 * U, 25 * U, U * 3.2, 0, Math.PI * 2); g.fill(); }
+  // item
+  var it = sim.item;
+  if (it && (it.t > 4 || Math.floor(tAll * 6) % 2 === 0)) { var bob = reduce ? 0 : Math.sin(tAll * 5) * U * 0.08; drawItemIcon(g, it.type, it.x * U + U * 0.08, it.y * U + U * 0.06 + bob, U * 2); }
+  // tanks
+  for (var k = 0; k < sim.tanks.length; k++) {
+    var t = sim.tanks[k]; if (!t.alive) continue;
+    if (t.spawnT > 0) { drawSpawn(g, t); continue; }
+    var col = tankColors(t);
+    if (t.carrier && Math.floor(tAll * 5) % 2 === 0) col = { hull: '#e0503a', dark: '#8f2414', tread: col.tread };
+    if (t.flash > 0) col = { hull: '#ffffff', dark: '#bbbbbb', tread: col.tread };
+    var frozen = t.side && sim.freezeT > 0;
+    drawTankShape(g, (t.x + 1) * U, (t.y + 1) * U, U, t.dir, col, t.tread / 2, { boss: t.kind === 4 && t.side, star: !t.side && t.power > 0 });
+    if (frozen) { g.fillStyle = 'rgba(180,220,255,.35)'; rrect(g, t.x * U + 1, t.y * U + 1, U * 2 - 2, U * 2 - 2, U * 0.3); g.fill(); }
+    if (!t.side && t.shield > 0) drawShield(g, t);
+    if (t.kind === 4 && t.side) { var w = U * 2.4; g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(t.x * U - U * 0.2, t.y * U - U * 0.55, w, U * 0.3); g.fillStyle = '#e8503a'; g.fillRect(t.x * U - U * 0.2, t.y * U - U * 0.55, w * t.hp / t.maxHp, U * 0.3); }
+  }
+  // bullets
+  for (var b = 0; b < sim.bullets.length; b++) {
+    var bl = sim.bullets[b], bx = bl.x * U, by = bl.y * U;
+    g.save(); g.translate(bx, by); g.rotate(bl.dir * Math.PI / 2);
+    if (dark) { g.fillStyle = bl.side ? 'rgba(255,90,60,.22)' : 'rgba(255,220,90,.22)'; g.beginPath(); g.ellipse(0, U * 0.15, U * 0.3, U * 0.6, 0, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = bl.side ? '#e5482c' : '#ffd84a'; rrect(g, -U * 0.17, -U * 0.32, U * 0.34, U * 0.6, U * 0.16); g.fill();
+    g.fillStyle = bl.side ? '#7a1c0c' : '#8a5a00'; g.fillRect(-U * 0.17, U * 0.12, U * 0.34, U * 0.14);
+    g.restore();
+  }
+  // trees on top; the player's outline shows through faintly
+  g.drawImage(trees, 0, 0, px, px);
+  var p = sim.tanks[0];
+  if (p && p.alive && p.spawnT <= 0 && underTree(p)) { g.globalAlpha = 0.35; drawTankShape(g, (p.x + 1) * U, (p.y + 1) * U, U, p.dir, PLAYERC, 0); g.globalAlpha = 1; }
+  // particles
+  for (var q = 0; q < parts.length; q++) {
+    var pa = parts[q], a = Math.max(0, pa.life / pa.max);
+    if (pa.ring) { g.strokeStyle = pa.col; g.globalAlpha = a; g.lineWidth = U * 0.3 * a; g.beginPath(); g.arc(pa.x * U, pa.y * U, pa.r * U * (1.6 - a), 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1; continue; }
+    g.globalAlpha = pa.fade ? a : 1; g.fillStyle = pa.col; g.beginPath(); g.arc(pa.x * U, pa.y * U, Math.max(0.5, pa.r * U * (pa.grow ? (1.3 - a * 0.5) : a)), 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+  }
+  g.restore();
+  // pops (score text)
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (var o = 0; o < pops.length; o++) {
+    var po = pops[o], al = Math.min(1, po.life * 2);
+    g.globalAlpha = al; g.font = '900 ' + Math.round(U * (po.big ? 1.3 : 0.95)) + 'px system-ui, sans-serif';
+    // keep the whole word on the board (a kill in a corner must not clip 「雙殺！」)
+    var fs = U * (po.big ? 1.3 : 0.95), mt = g.measureText(po.text), hw = (mt && mt.width ? mt.width : po.text.length * fs) / 2 + U * 0.3;
+    var tx = Math.max(hw, Math.min(px - hw, po.x * U)), ty = Math.max(fs * 0.7, Math.min(px - fs * 0.6, (po.y - (1 - po.life / po.max) * 1.2) * U));
+    g.lineWidth = U * 0.25; g.strokeStyle = 'rgba(30,25,5,.8)'; g.strokeText(po.text, tx, ty);
+    g.fillStyle = po.col || '#fff3c4'; g.fillText(po.text, tx, ty); g.globalAlpha = 1;
+  }
+  if (banner) drawBanner(g, px);
+  if (mode === 'stage' && hintT > 0 && hold <= 0 && sim.status === 'play') drawHint(g, px);
+}
+function underTree(t) { var g = sim.grid; for (var y = Math.floor(t.y); y < t.y + 2; y++) for (var x = Math.floor(t.x); x < t.x + 2; x++) if (g[y * N + x] === TB.TREE) return true; return false; }
+function drawSpawn(g, t) {
+  var cx = (t.x + 1) * U, cy = (t.y + 1) * U, k = reduce ? 0.8 : 0.55 + 0.45 * Math.abs(Math.sin(tAll * 14));
+  g.save(); g.translate(cx, cy); g.rotate(reduce ? 0 : tAll * 3);
+  g.fillStyle = t.kind === 4 ? 'rgba(230,70,40,.9)' : 'rgba(255,240,170,.95)'; starPath(g, 0, 0, U * 0.95 * k); g.fill();
+  g.fillStyle = '#fff'; starPath(g, 0, 0, U * 0.45 * k); g.fill();
+  g.restore();
+}
+function drawShield(g, t) {
+  var cx = (t.x + 1) * U, cy = (t.y + 1) * U;
+  g.save(); g.strokeStyle = 'rgba(120,210,255,.9)'; g.lineWidth = U * 0.16; g.setLineDash([U * 0.35, U * 0.25]); g.lineDashOffset = reduce ? 0 : -tAll * U * 4;
+  g.beginPath(); g.arc(cx, cy, U * 1.3, 0, Math.PI * 2); g.stroke(); g.restore();
+}
+function drawBanner(g, px) {
+  var b = banner, k = Math.min(1, b.t / 0.25, (b.dur - b.t) / 0.3);
+  if (k <= 0) return;
+  var h = U * (b.sub2 ? 6 : 4.6), y = px * 0.42 - h / 2;
+  g.globalAlpha = k;
+  g.fillStyle = 'rgba(25,28,14,.82)'; g.fillRect(0, y, px, h);
+  g.fillStyle = '#e8b32c'; g.fillRect(0, y, px, U * 0.22); g.fillRect(0, y + h - U * 0.22, px, U * 0.22);
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#fff6da'; g.font = '900 ' + Math.round(U * 1.9) + 'px system-ui, sans-serif'; g.fillText(b.text, px / 2, y + h * (b.sub2 ? 0.32 : b.sub ? 0.4 : 0.5));
+  if (b.sub) { g.fillStyle = '#e8c86a'; g.font = '800 ' + Math.round(U * 0.95) + 'px system-ui, sans-serif'; g.fillText(b.sub, px / 2, y + h * (b.sub2 ? 0.6 : 0.76)); }
+  if (b.sub2) { g.fillStyle = '#d8d2b4'; g.font = '700 ' + Math.round(U * 0.8) + 'px system-ui, sans-serif'; g.fillText(b.sub2, px / 2, y + h * 0.8); }
+  g.globalAlpha = 1;
+}
+function drawHint(g, px) {
+  var a = Math.min(1, hintT);
+  var txt = !moved ? '拖動左下搖桿開車' : !shot ? '點右下紅鈕開火' : '守住下方的老鷹基地！';
+  g.globalAlpha = a; g.font = '800 ' + Math.round(U * 1.05) + 'px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  var mt = g.measureText(txt), w = (mt && mt.width ? mt.width : txt.length * U) + U * 2, x = px / 2, y = U * 15.2;
+  g.fillStyle = 'rgba(25,28,14,.78)'; rrect(g, x - w / 2, y - U * 1.1, w, U * 2.2, U * 0.6); g.fill();
+  g.fillStyle = '#fff6da'; g.fillText(txt, x, y);
+  if (shot) { // arrow to the base
+    var by = 22.6 * U + (reduce ? 0 : Math.sin(tAll * 6) * U * 0.3);
+    g.fillStyle = '#e8b32c'; g.beginPath(); g.moveTo(13 * U, by + U * 0.9); g.lineTo(13 * U - U * 0.8, by - U * 0.2); g.lineTo(13 * U + U * 0.8, by - U * 0.2); g.closePath(); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+/* ---------- effects from simulation events ---------- */
+function burst(x, y, n, cols, spd, r, life) {
+  if (reduce) n = Math.ceil(n / 3);
+  for (var i = 0; i < n; i++) { var a = Math.random() * Math.PI * 2, v = spd * (0.3 + Math.random()); parts.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: life || 0.5, max: life || 0.5, r: r || 0.18, col: cols[i % cols.length], fade: true }); }
+}
+function boom(x, y, big) {
+  parts.push({ x: x, y: y, vx: 0, vy: 0, life: 0.35, max: 0.35, r: big ? 2.2 : 1.5, col: '#fff2b0', grow: true, fade: true });
+  parts.push({ x: x, y: y, vx: 0, vy: 0, life: 0.5, max: 0.5, r: big ? 2.6 : 1.7, col: 'rgba(255,170,60,.9)', ring: true });
+  burst(x, y, big ? 22 : 14, ['#ffcf4a', '#ff7a2a', '#d63a1a', '#5a4a3a'], big ? 7 : 5, 0.32, 0.6);
+  for (var i = 0; i < (big ? 6 : 3); i++) parts.push({ x: x + (Math.random() - 0.5), y: y + (Math.random() - 0.5), vx: (Math.random() - 0.5) * 0.8, vy: -0.6 - Math.random() * 0.5, life: 1.1, max: 1.1, r: 0.7, col: dark ? 'rgba(90,90,80,.5)' : 'rgba(80,70,60,.35)', grow: true, fade: true });
+}
+function handleEvents() {
+  var ev = sim.events, live = mode === 'stage';
+  for (var i = 0; i < ev.length; i++) {
+    var e = ev[i];
+    if (e.t === 'fire') { parts.push({ x: e.x + DX[e.dir] * 0.4, y: e.y + DY[e.dir] * 0.4, vx: 0, vy: 0, life: 0.08, max: 0.08, r: 0.55, col: '#fff3b0', grow: true, fade: true }); if (live) { if (e.side) SFX.efire(); else { SFX.fire(); shot = true; } } }
+    else if (e.t === 'hit') { if (e.kind === 'brick') { burst(e.x, e.y, 6, [C.brick, C.brick2, C.mortar], 3, 0.16, 0.4); if (live && !e.side) SFX.brick(); } else { burst(e.x, e.y, 4, ['#fff', '#ffe08a'], 3, 0.1, 0.25); if (live && !e.side) SFX.steel(); } }
+    else if (e.t === 'clash') { burst(e.x, e.y, 8, ['#fff', '#ffd84a', '#ff8a4a'], 4, 0.13, 0.3); if (live) SFX.clash(); }
+    else if (e.t === 'armor') { burst(e.x, e.y, 6, ['#fff', '#ccc'], 3, 0.12, 0.3); if (live) SFX.armor(); }
+    else if (e.t === 'kill') { boom(e.x, e.y, e.kind === 4); if (e.pts) { pops.push({ x: e.x, y: e.y, text: String(e.pts), life: 0.9, max: 0.9 });
+      combo = sim.time - comboT < 2.2 ? combo + 1 : 1; comboT = sim.time;
+      if (combo >= 2) pops.push({ x: e.x, y: e.y - 1.3, text: combo === 2 ? '雙殺！' : combo === 3 ? '三連殺！' : combo + ' 連殺！', life: 1.3, max: 1.3, col: '#ffd34d', big: true }); } if (live) { SFX.kill(); buzz(18); shake = Math.max(shake, e.kind === 4 ? 1.2 : 0.5); } }
+    else if (e.t === 'die') { boom(e.x, e.y, true); if (live) { SFX.die(); buzz([50, 40, 60]); shake = 1.4; } }
+    else if (e.t === 'baseHit') { flashBase = 1; burst(13, 25, 12, ['#ff7a2a', '#ffd84a', '#555'], 5, 0.25, 0.6); if (live) { SFX.baseHit(); buzz(70); shake = 1; showBanner(e.hp > 0 ? '基地遭受攻擊！' : '基地失守', e.hp > 0 ? '耐久剩 ' + e.hp : '', 1.2); ping('hudBase'); } }
+    else if (e.t === 'base') { boom(13, 25, true); boom(12.4, 24.6, true); if (live) { SFX.base(); shake = 2; } }
+    else if (e.t === 'item') { if (live) SFX.item(); }
+    else if (e.t === 'pickup') { pops.push({ x: e.x, y: e.y - 0.5, text: ITEM_NAME[e.type], life: 1.2, max: 1.2, col: '#ffe48a', big: true }); burst(e.x, e.y, 14, ['#fff', '#ffe48a', '#9ee6ff'], 5, 0.16, 0.5); if (live) { SFX.pickup(); buzz(20); } if (e.type === 'grenade') shake = 1.6; if (e.type === 'tank') ping('hudLife'); }
+    else if (e.t === 'spawn') { if (live) { if (e.boss) { SFX.boss(); showBanner('首領戰車出現', '集中火力擊破！', 1.6); } else SFX.spawn(); } }
+    else if (e.t === 'respawn') { if (live) ping('hudLife'); }
+    else if (e.t === 'won') { if (live) { SFX.win(); showBanner('任務完成', '', 1.4); } }
+    else if (e.t === 'lost') { if (live) { SFX.lose(); showBanner(e.reason === 'base' ? '基地失守' : '戰車全毀', '', 1.6); } }
+  }
+  ev.length = 0;
+}
+var ITEM_NAME = { star: '火力升級', helmet: '防護罩', shovel: '鋼鐵城牆', grenade: '全滅炸彈', clock: '時間凍結', tank: '戰車 +1' };
+var ITEM_DESC = { star: '火力升級：彈速、破牆，三星可打穿鋼板', helmet: '防護罩：10 秒內不怕子彈', shovel: '鏟子：基地圍牆變鋼板 18 秒', grenade: '炸彈：畫面上敵車全滅', clock: '時鐘：敵車凍結 8 秒', tank: '戰車：多一輛備用戰車' };
+function showBanner(text, sub, dur, sub2) { banner = { text: text, sub: sub, sub2: sub2, t: 0, dur: dur || 1.4 }; }
+function ping(id) { var el = $(id); el.classList.remove('ping'); void el.offsetWidth; el.classList.add('ping'); }
+
+/* ---------- HUD ---------- */
+var hudCache = {};
+function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; $(id).textContent = v; } }
+function updateHud() {
+  if (!sim) return;
+  var n = mode === 'stage' ? stageN : demoN;
+  setText('hudN', '第 ' + n + ' 關'); setText('hudChap', TB.CHAPTERS[sim.params.chapter].name + (sim.params.boss ? '・首領' : ''));
+  setText('hudEn', String(TB.remaining(sim))); setText('hudLives', String(Math.max(0, sim.lives)));
+  setText('hudScore', String(sim.score));
+  var pk = sim.baseHp + '/' + sim.baseMax;
+  if (hudCache.pips !== pk) { hudCache.pips = pk; var h = ''; for (var i = 0; i < sim.baseMax; i++) h += '<i' + (i < sim.baseHp ? '' : ' class="off"') + '></i>'; $('hudPips').innerHTML = h; $('hudBase').classList.toggle('warn', sim.baseHp < sim.baseMax && sim.baseHp <= 1); }
+  var p = sim.tanks[0], pw = p ? p.power : 0;
+  if (hudCache.gun !== pw) { hudCache.gun = pw; ['gun', 'hudGun'].forEach(function (id) { var gs = $(id).children; for (var j = 0; j < 3; j++) gs[j].classList.toggle('on', j < pw); }); }
+  var rk = sim.queue.length + ':' + sim.total + ':' + sim.kills;
+  if (hudCache.res !== rk && !$('reserve').hidden) {
+    hudCache.res = rk; var rh = '';
+    for (var r = 0; r < sim.total; r++) { var q = r < sim.queue.length ? sim.queue[r] : null; rh += '<i class="' + (q ? 'k' + q.kind + (q.carrier ? ' c' : '') : 'gone') + '"></i>'; }
+    $('reserve').innerHTML = '<span class="row"><span class="lab">敵軍預備 ' + sim.queue.length + '</span><span class="kl">擊毀 ' + sim.kills + ' / ' + sim.total + '</span></span><span class="icons" style="grid-template-columns:repeat(' + Math.ceil(sim.total / Math.ceil(sim.total / 10)) + ',auto)">' + rh + '</span><span class="bar"><b style="width:' + Math.round(100 * sim.kills / Math.max(1, sim.total)) + '%"></b></span>';
+  }
+  var fx = [];
+  if (p && p.alive && p.shield > 0 && sim.time > 3.5) fx.push('防護 ' + Math.ceil(p.shield));
+  if (sim.shovelT > 0) fx.push('鋼牆 ' + Math.ceil(sim.shovelT));
+  if (sim.freezeT > 0) fx.push('凍結 ' + Math.ceil(sim.freezeT));
+  var fk = fx.join('|');
+  if (hudCache.fx !== fk) { hudCache.fx = fk; $('fx').innerHTML = fx.map(function (s) { return '<span>' + s + '</span>'; }).join(''); }
+}
+
+/* ---------- flow ---------- */
+var ovs = ['ovStart', 'ovSelect', 'ovHow', 'ovPause', 'ovResult'];
+function show(id) { ovs.forEach(function (o) { $(o).hidden = o !== id; }); ['hud', 'main', 'kbd'].forEach(function (x) { $(x).inert = !!id; }); }   // the game under a sheet is not reachable by touch or Tab
+function newSim(n, seed) {
+  sim = TB.createSim(TB.genLevel(n), { seed: seed });
+  parts = []; pops = []; banner = null; shake = 0; flashBase = 0; hudCache = {}; painted = null; combo = 0; comboT = -9;
+  palette(); buildLayers(); updateHud();
+}
+function startAttract() {
+  mode = 'attract'; playing = false; paused = false;
+  demoN = [1, 3, 12, 25, 34, 41, 63, 72][Math.floor(Math.random() * 8)];
+  newSim(demoN, (Math.random() * 1e9) >>> 0); demoPrev = null; hold = 0.3; endT = 0;
+}
+function startStage(n) {
+  clearResume();
+  n = Math.max(1, Math.min(100, n | 0)); stageN = n; mode = 'stage'; playing = true; paused = false; endT = 0;
+  newSim(n, (Math.random() * 1e9) >>> 0); autoPrev = null; resetInput();
+  hold = 1.5; showBanner('第 ' + n + ' 關', TB.CHAPTERS[sim.params.chapter].name + '・敵車 ' + sim.total + ' 輛' + (sim.params.boss ? '・首領' : ''), 1.5, '★★★ 不損失戰車、基地不受損');
+  moved = false; shot = false; hintT = (n === 1 && !played) ? 9 : 0;
+  show(null); SFX.start();
+  if (!played) { played = true; sset('played', true); }
+}
+function finishStage() {
+  playing = false; clearResume();
+  var won = sim.status === 'won', st = TB.stars(sim);
+  if (won && st === 3 && sim.baseHp < sim.baseMax) st = 2;   // three stars: no tank lost and the base untouched
+  var prevStars = prog[stageN] | 0, prevBest = best[stageN] | 0;
+  var bonus = won ? sim.lives * 500 + sim.baseHp * 300 : 0, total = sim.score + bonus;
+  if (won) { if (st > prevStars) prog[stageN] = st; if (total > prevBest) best[stageN] = total; sset('progress', prog); sset('best', best); }
+  $('resTitle').textContent = won ? (stageN === 100 ? '全線告捷！' : '任務完成') : '任務失敗';
+  var sh = ''; for (var i = 0; i < 3; i++) sh += '<svg viewBox="0 0 40 40" class="' + (won && i < st ? 'on' : '') + '"><path d="M20 3l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="' + (won && i < st ? 'var(--gold)' : 'var(--pad2)') + '" stroke="' + (won && i < st ? 'var(--gold2)' : 'none') + '" stroke-width="2" stroke-linejoin="round"/></svg>';
+  $('resStars').innerHTML = sh; $('resStars').hidden = !won;
+  $('resStarHint').textContent = won ? (st === 3 ? '零損失、基地完好，滿分！' : st === 2 ? '三星條件：不損失戰車、基地不受損' : '少損失戰車就能拿更多星') : '';
+  $('resStarHint').hidden = !won;
+  var rs = $('resReason');
+  if (!won) {
+    rs.hidden = false;
+    rs.innerHTML = sim.reason === 'base' ? '<span><b>基地被摧毀。</b>敵車從側邊或正上方打穿圍牆時，回防比追擊重要；吃到鏟子能讓圍牆變鋼板。</span>' : '<span><b>戰車全部被擊毀。</b>和敵車正面對決時先開火，子彈會互相抵消；側面被瞄準時記得閃開。</span>';
+  } else rs.hidden = true;
+  var tl = '';
+  for (var k = 0; k < 5; k++) { if (!sim.killsBy[k]) continue; tl += '<canvas data-k="' + k + '" width="52" height="52"></canvas><span>' + KIND[k].name + ' × ' + sim.killsBy[k] + '</span><span class="v num">' + (sim.killsBy[k] * KIND[k].pts) + '</span>'; }
+  if (won) tl += '<span></span><span>剩餘戰車與基地加分</span><span class="v num">' + bonus + '</span>';
+  tl += '<div class="sum"><span>總分</span><span class="num">' + total + (won && total > prevBest && prevBest ? '　新紀錄！' : '') + '</span></div>';
+  $('resTally').innerHTML = tl;
+  var cs = $('resTally').querySelectorAll('canvas');
+  for (var c = 0; c < cs.length; c++) { var kk = +cs[c].dataset.k, g2 = cs[c].getContext('2d'); drawTankShape(g2, 26, 26, 12, 0, kk === 3 ? { hull: ARMORC[3], dark: '#4a4030', tread: '#38342a' } : TANKC[kk], 0, { boss: kk === 4 }); }
+  $('resMain').textContent = won ? (stageN < 100 ? '下一關' : '回到選關') : '再打一次';
+  $('resRetry').textContent = won ? '再打一次' : '換一關';
+  show('ovResult');
+  countUp();
+}
+// the classic stage-clear tally: each line counts up in turn with a little tick
+var countTok = 0;
+function countUp() {
+  var els = [].slice.call($('resTally').querySelectorAll('.num')), tok = ++countTok;
+  if (reduce || !els.length) return;
+  var vals = els.map(function (e) { var m = e.textContent.match(/^\d+/); return m ? +m[0] : 0; }), rest = els.map(function (e) { return e.textContent.replace(/^\d+/, ''); });
+  els.forEach(function (e) { e.textContent = '0'; });
+  var i = 0, t0 = 0;
+  function step(ts) {
+    if (tok !== countTok || $('ovResult').hidden) { els.forEach(function (e, j) { e.textContent = vals[j] + rest[j]; }); return; }
+    if (!t0) t0 = ts;
+    var k = Math.min(1, (ts - t0) / 380), v = Math.round(vals[i] * k);
+    els[i].textContent = String(v) + (k >= 1 ? rest[i] : ''); if (vals[i] && k < 1) SFX.tick();
+    if (k >= 1) { i++; t0 = 0; if (i >= els.length) return; }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+function pauseGame() { if (!playing || paused || !sim || sim.status !== 'play') return; paused = true; resetInput(); $('pauseInfo').textContent = '第 ' + stageN + ' 關・已擊毀 ' + sim.kills + '／' + sim.total + ' 輛'; $('pauseStar').textContent = '三星條件：不損失戰車、基地不受損' + (sim.livesLost || sim.baseHp < sim.baseMax ? '（這局已無法三星）' : '（目前保持中）'); show('ovPause'); }
+function resumeGame() { paused = false; show(null); last = 0; }
+function quitToStart() { clearResume(); playing = false; paused = false; refreshStart(); show('ovStart'); startAttract(); }
+
+/* ---------- input ---------- */
+var pad = $('pad'), knob = $('knob'), padPid = -1, firePid = -1, fireBtn = $('fireBtn');
+function setKnob(d, dx, dy) {
+  var arrs = pad.querySelectorAll('.arr');
+  for (var i = 0; i < arrs.length; i++) arrs[i].classList.toggle('lit', d === ['u', 'r', 'd', 'l'].indexOf(arrs[i].classList[1]));
+  knob.style.transform = d < 0 ? '' : 'translate(' + dx + 'px,' + dy + 'px)';
+}
+function padMove(e) {
+  var r = pad.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  var dx = e.clientX - cx, dy = e.clientY - cy, m = Math.hypot(dx, dy);
+  if (m < 10) { padDir = -1; setKnob(-1); return; }
+  var nd = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+  // a little hysteresis on the diagonals so the tank does not flicker between two headings
+  if (padDir >= 0 && nd !== padDir && (padDir & 1) !== (nd & 1)) { var ax = Math.abs(dx), ay = Math.abs(dy); if ((padDir & 1) ? ax * 1.25 > ay : ay * 1.25 > ax) nd = padDir; }
+  padDir = nd; moved = true;
+  var k = Math.min(1, m / (r.width * 0.4)) * r.width * 0.28;
+  setKnob(padDir, dx / m * k, dy / m * k);
+}
+pad.addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); padPid = e.pointerId; try { pad.setPointerCapture(e.pointerId); } catch (x) {} padMove(e); });
+pad.addEventListener('pointermove', function (e) { if (e.pointerId === padPid) padMove(e); });
+function padUp(e) { if (e.pointerId === padPid) { padPid = -1; padDir = -1; setKnob(-1); } }
+pad.addEventListener('pointerup', padUp); pad.addEventListener('pointercancel', padUp); pad.addEventListener('lostpointercapture', padUp);
+function pressFire() { fireDowns++; pendingPress++; shot = true; }
+fireBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); firePid = e.pointerId; try { fireBtn.setPointerCapture(e.pointerId); } catch (x) {} fireHeld = true; fireBtn.classList.add('on'); pressFire(); });
+function fireUp(e) { if (e.pointerId === firePid) { firePid = -1; fireHeld = false; fireBtn.classList.remove('on'); } }
+fireBtn.addEventListener('pointerup', fireUp); fireBtn.addEventListener('pointercancel', fireUp); fireBtn.addEventListener('lostpointercapture', fireUp);
+var KEYD = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3, w: 0, d: 1, s: 2, a: 3, W: 0, D: 1, S: 2, A: 3 };
+function isFireKey(k) { return k === ' ' || k === 'j' || k === 'J' || k === 'z' || k === 'Z' || k === 'Enter'; }
+addEventListener('keydown', function (e) {
+  if (e.target && e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter') && e.target !== fireBtn) return;
+  var d = KEYD[e.key];
+  if (d != null) { if (playing) e.preventDefault(); if (!keys[e.key]) { keys[e.key] = true; keyStack.push(d); moved = true; } return; }
+  if (isFireKey(e.key)) { if (playing && !paused) { e.preventDefault(); audio(); if (!keyFire) { keyFire = true; pressFire(); } } return; }
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { if (playing) { if (paused) resumeGame(); else pauseGame(); } }
+});
+addEventListener('keyup', function (e) {
+  var d = KEYD[e.key];
+  if (d != null) { keys[e.key] = false; keyStack = keyStack.filter(function (k) { return k !== d; }); for (var k in KEYD) if (keys[k] && KEYD[k] === d) { keyStack.push(d); break; } }
+  if (isFireKey(e.key)) keyFire = false;
+});
+addEventListener('blur', resetInput);
+function resetInput() { keys = {}; keyStack = []; padDir = -1; padPid = -1; fireHeld = false; keyFire = false; pendingPress = 0; firePid = -1; fireBtn.classList.remove('on'); setKnob(-1); }
+function currentDir() { if (padDir >= 0) return padDir; return keyStack.length ? keyStack[keyStack.length - 1] : -1; }
+
+/* ---------- loop ---------- */
+var last = 0, raf = 0, acc = 0, STEP = 1 / 60;
+function step(dt) {
+  tAll += dt;
+  if (banner) { banner.t += dt; if (banner.t >= banner.dur) banner = null; }
+  if (hintT > 0 && shot && moved) hintT = Math.min(hintT, 3.5);
+  if (hintT > 0 && hold <= 0) hintT -= dt;
+  for (var i = parts.length - 1; i >= 0; i--) { var p = parts[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; if (p.life <= 0) parts.splice(i, 1); }
+  for (var j = pops.length - 1; j >= 0; j--) { pops[j].life -= dt; if (pops[j].life <= 0) pops.splice(j, 1); }
+  if (shake > 0) shake *= Math.pow(0.004, dt);
+  if (flashBase > 0) flashBase = Math.max(0, flashBase - dt * 1.5);
+  if (hold > 0 && mode === 'stage' && !auto && (currentDir() >= 0 || pendingPress > 0 || fireHeld || keyFire)) {
+    // the player is already driving or shooting: the intro card gets out of the way at once
+    hold = 0; if (banner) banner.t = Math.max(banner.t, banner.dur - 0.3);
+  }
+  if (hold > 0) { hold -= dt; pendingPress = 0; return; }
+  if (mode === 'attract') {
+    var dec = TB.brainDecide(sim, { prev: demoPrev }); demoPrev = dec;
+    TB.setInput(sim, dec.dir, false, dec.fire ? 1 : 0);
+  } else if (auto) {
+    var d2 = TB.brainDecide(sim, { prev: autoPrev }); autoPrev = d2;
+    TB.setInput(sim, d2.dir, false, d2.fire ? 1 : 0);
+  } else {
+    TB.setInput(sim, currentDir(), fireHeld || keyFire, pendingPress); firePresses += pendingPress; pendingPress = 0;
+  }
+  if (mode === 'stage' && (saveT += dt) > 3) saveResume();
+  var wasDirty = sim.mapDirty;
+  TB.tick(sim, dt);
+  handleEvents();
+  if (sim.status !== 'play') {
+    endT += dt;
+    if (mode === 'attract') { if (endT > 2.5) startAttract(); }
+    else if (playing && endT > (sim.status === 'won' ? 1.8 : 2.2)) finishStage();
+  }
+  updateHud();
+}
+function frame(now) {
+  raf = 0;
+  if (!last) last = now;
+  var dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!manual && !paused && sim) { acc += dt; var n = 0; while (acc >= STEP - 1e-6 && n < 6) { step(STEP); acc -= STEP; n++; } if (n === 6) acc = 0; }
+  draw();
+  if (!document.hidden) raf = requestAnimationFrame(frame);
+}
+addEventListener('pagehide', saveResume);
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) { saveResume(); if (playing && !paused && sim && sim.status === 'play') pauseGame(); if (raf) cancelAnimationFrame(raf); raf = 0; }
+  else { last = 0; if (!raf) raf = requestAnimationFrame(frame); }
+});
+
+/* ---------- menus ---------- */
+/* ---------- an unfinished level survives a refresh ---------- */
+var resumeData = (function () { var r = sget('resume', null); return r && r.v === 1 && r.n >= 1 && r.n <= 100 && r.sim && r.sim.grid && r.sim.status === 'play' ? r : null; })(), saveT = 0;
+function saveResume() {
+  if (mode !== 'stage' || !playing || auto || !sim || sim.status !== 'play') return;
+  var c = TB.cloneSim(sim); c.grid = Array.prototype.slice.call(c.grid); resumeData = { v: 1, n: stageN, sim: c }; sset('resume', resumeData); saveT = 0;
+}
+function clearResume() { if (resumeData) { resumeData = null; sset('resume', null); } }
+function resumeStage() {
+  var o = resumeData; if (!o) return startStage(unlocked());
+  try { sim = TB.restoreSim(JSON.parse(JSON.stringify(o.sim))); } catch (e) { clearResume(); return startStage(unlocked()); }
+  stageN = o.n; mode = 'stage'; playing = true; paused = false; endT = 0; autoPrev = null; resetInput();
+  parts = []; pops = []; banner = null; shake = 0; flashBase = 0; hudCache = {}; painted = null; combo = 0; comboT = -9; hold = 0; hintT = 0; moved = shot = true;
+  palette(); buildLayers(); updateHud(); show(null); pauseGame();   // back exactly where it was, on the pause sheet
+}
+function refreshStart() { $('startVerb').textContent = resumeData ? '繼續' : '出擊'; $('startN').textContent = resumeData ? resumeData.n : unlocked(); $('startDone').textContent = doneCount(); $('startStars').textContent = starCount(); }
+var selChap = 0;
+function buildChaps() {
+  var h = '';
+  for (var c = 0; c < 10; c++) {
+    var done = 0; for (var n = c * 10 + 1; n <= c * 10 + 10; n++) if (prog[n] > 0) done++;
+    h += '<button data-c="' + c + '" aria-pressed="' + (c === selChap) + '"' + (isOpen(c * 10 + 1) ? '' : ' disabled') + '>' + TB.CHAPTERS[c].name + '<small>' + (c * 10 + 1) + '–' + (c * 10 + 10) + '・' + done + '/10</small></button>';
+  }
+  $('chaps').innerHTML = h;
+}
+function buildSelect() {
+  buildChaps();
+  var u = unlocked(), h = '', st = 0, dn = 0;
+  for (var n = selChap * 10 + 1; n <= selChap * 10 + 10; n++) {
+    var s = prog[n] | 0, open = isOpen(n); st += s; if (s) dn++;
+    h += '<button class="lv' + (s ? ' done' : '') + (n === u && !s ? ' next' : '') + (n % 25 === 0 ? ' boss' : '') + '" data-n="' + n + '"' + (open ? '' : ' disabled') + ' aria-label="第 ' + n + ' 關' + (s ? '，' + s + ' 星' : open ? '' : '，未解鎖') + (n % 25 === 0 ? '，首領關' : '') + '">' + n + '<small>' + (s ? '★★★'.slice(0, s) + '☆☆☆'.slice(0, 3 - s) : (open ? '' : '<svg class="lock" viewBox="0 0 12 13" aria-hidden="true"><rect x="1.5" y="5.5" width="9" height="7" rx="1.5" fill="currentColor"/><path d="M3.6 5.5V4a2.4 2.4 0 0 1 4.8 0v1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>')) + '</small></button>';
+  }
+  $('lvgrid').innerHTML = h;
+  $('chapTitle').textContent = TB.CHAPTERS[selChap].name;
+  $('chapInfo').textContent = '星星 ' + st + '/30';
+  $('tgUnlock').setAttribute('aria-checked', String(unlockAll));
+}
+$('chaps').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b || b.disabled) return; SFX.click(); selChap = +b.dataset.c; buildSelect(); });
+$('lvgrid').addEventListener('click', function (e) { var b = e.target.closest('button.lv'); if (!b || b.disabled) return; audio(); SFX.click(); startStage(+b.dataset.n); });
+$('tgUnlock').addEventListener('click', function () { unlockAll = !unlockAll; sset('unlockAll', unlockAll); SFX.click(); buildSelect(); });
+function openSelect() { selChap = Math.floor((Math.min(100, unlocked()) - 1) / 10); buildSelect(); show('ovSelect'); var c = $('chaps').querySelector('[aria-pressed="true"]'); if (c && c.scrollIntoView) try { c.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (x) {} }
+$('startBtn').addEventListener('click', function () { audio(); SFX.click(); if (resumeData) resumeStage(); else startStage(unlocked()); });
+$('selectBtn').addEventListener('click', function () { audio(); SFX.click(); openSelect(); });
+$('selBack').addEventListener('click', function () { SFX.click(); refreshStart(); show('ovStart'); });
+$('howBtn').addEventListener('click', function () { audio(); SFX.click(); show('ovHow'); });
+$('howBack').addEventListener('click', function () { SFX.click(); show('ovStart'); });
+$('pauseBtn').addEventListener('click', function () { audio(); if (!playing) return; if (paused) resumeGame(); else pauseGame(); });
+$('resumeBtn').addEventListener('click', function () { SFX.click(); resumeGame(); });
+$('restartBtn').addEventListener('click', function () { SFX.click(); startStage(stageN); });
+$('quitBtn').addEventListener('click', function () { SFX.click(); quitToStart(); });
+$('resMain').addEventListener('click', function () { SFX.click(); if (sim.status === 'won') { if (stageN < 100) startStage(stageN + 1); else { openSelect(); startAttract(); } } else startStage(stageN); });
+$('resRetry').addEventListener('click', function () { SFX.click(); if (sim.status === 'won') startStage(stageN); else { openSelect(); startAttract(); } });
+$('resSelect').addEventListener('click', function () { SFX.click(); openSelect(); startAttract(); });
+function bindToggle(ids, get, set) {
+  function sync() { ids.forEach(function (id) { $(id).setAttribute('aria-checked', String(get())); }); }
+  ids.forEach(function (id) { $(id).addEventListener('click', function () { set(); sync(); }); });
+  sync(); return sync;
+}
+bindToggle(['tgSound', 'tgSound2'], function () { return !muted; }, function () { muted = !muted; sset('mute', muted); audio(); SFX.click(); });
+bindToggle(['tgHaptic', 'tgHaptic2'], function () { return haptic; }, function () { haptic = !haptic; sset('haptic', haptic); buzz(20); });
+var syncDark = bindToggle(['tgDark', 'tgDark2'], function () { return dark; }, function () { themePref = dark ? 'light' : 'dark'; sset('theme', themePref); applyTheme(); SFX.click(); });
+function applyTheme() {
+  dark = themePref === 'dark' || (themePref === 'auto' && !!(mq && mq.matches));
+  document.body.classList.toggle('dark', dark);
+  if (syncDark) syncDark();
+  palette(); mapKey = ''; drawHowArt();
+}
+if (mq && mq.addEventListener) mq.addEventListener('change', function () { if (themePref === 'auto') applyTheme(); });
+cv.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+
+/* ---------- small illustrations (start screen, how-to) ---------- */
+function drawHowArt() {
+  var save = sim; palette();
+  var hb = $('howBase').getContext('2d'); hb.clearRect(0, 0, 68, 68); hb.fillStyle = C.ground; hb.fillRect(0, 0, 68, 68);
+  for (var i = 0; i < 4; i++) { drawBrick(hb, i * 17, 0, 17, { x: i, y: 0 }); }
+  drawBrick(hb, 0, 17, 17, { x: 0, y: 1 }); drawBrick(hb, 51, 17, 17, { x: 3, y: 1 }); drawBrick(hb, 0, 34, 17, { x: 0, y: 2 }); drawBrick(hb, 51, 34, 17, { x: 3, y: 2 });
+  drawEagle(hb, 17, 17, 34, 3, 3);
+  var hw = $('howWall').getContext('2d'); hw.fillStyle = C.ground; hw.fillRect(0, 0, 68, 68);
+  drawBrick(hw, 0, 0, 17, { x: 0, y: 0 }); drawBrick(hw, 17, 0, 17, { x: 1, y: 0 }); drawSteel(hw, 34, 0, 17); drawSteel(hw, 51, 0, 17);
+  hw.fillStyle = C.water; hw.fillRect(0, 17, 34, 17); drawIce(hw, 34, 17, 17, { x: 2, y: 1 }); drawIce(hw, 51, 17, 17, { x: 3, y: 1 });
+  hw.fillStyle = C.tree; for (var t = 0; t < 4; t++) { hw.beginPath(); hw.arc(8 + t * 17, 50, 10, 0, Math.PI * 2); hw.fill(); }
+  var hf = $('howFlash').getContext('2d'); hf.clearRect(0, 0, 68, 68); hf.fillStyle = C.ground; hf.fillRect(0, 0, 68, 68);
+  drawTankShape(hf, 22, 40, 13, 0, { hull: '#e0503a', dark: '#8f2414', tread: '#4a4d44' }, 0);
+  drawItemIcon(hf, 'star', 40, 6, 26);
+  var il = ''; TB.ITEMS.forEach(function (k) { il += '<div><canvas data-i="' + k + '" width="52" height="52"></canvas><span>' + ITEM_DESC[k] + '</span></div>'; });
+  $('itemList').innerHTML = il;
+  var cs = $('itemList').querySelectorAll('canvas'); for (var c = 0; c < cs.length; c++) drawItemIcon(cs[c].getContext('2d'), cs[c].dataset.i, 1, 1, 52);
+  var hero = $('heroCv'), r = hero.getBoundingClientRect(), w = Math.max(200, Math.round(r.width || 300)), h = Math.max(50, Math.round(r.height || 86)), d = Math.min(2, window.devicePixelRatio || 1);
+  hero.width = w * d; hero.height = h * d; var g = hero.getContext('2d'); g.scale(d, d);
+  var s = Math.min(h / 4.2, 18);
+  for (var bx = 0; bx < w; bx += s) { drawBrick(g, bx, h - s, s, { x: Math.round(bx / s), y: 0 }); }
+  drawTankShape(g, w * 0.22, h - s * 2.3, s, 1, PLAYERC, 0, { star: true });
+  g.fillStyle = '#ffd84a'; rrect(g, w * 0.36, h - s * 2.45, s * 0.6, s * 0.3, s * 0.15); g.fill();
+  drawTankShape(g, w * 0.62, h - s * 2.3, s, 3, TANKC[0], 0);
+  drawTankShape(g, w * 0.84, h - s * 2.6, s, 3, { hull: ARMORC[3], dark: '#4a4030', tread: '#38342a' }, 0);
+  g.fillStyle = 'rgba(255,200,80,.6)'; starPath(g, w * 0.5, h * 0.25, s * 0.5); g.fill();
+  sim = save; palette();
+}
+
+/* ---------- boot ---------- */
+applyTheme();
+refreshStart();
+startAttract();
+layout();
+show('ovStart');
+raf = requestAnimationFrame(frame);
+
+function layerDiff() {   // test hook: pixels where the patched terrain layer differs from a full repaint
+  buildLayers(); var w = layer.width, a = layerCtx.getImageData(0, 0, w, w).data.slice();
+  painted = null; buildLayers(); var b = layerCtx.getImageData(0, 0, w, w).data, d = 0;
+  for (var i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8 || Math.abs(a[i + 1] - b[i + 1]) > 8 || Math.abs(a[i + 2] - b[i + 2]) > 8) d++;
+  return d;
+}
+window.__game = {
+  layerDiff: layerDiff,
+  sim: function () { return sim; },
+  state: function () {
+    if (!sim) return null; var p = sim.tanks[0];
+    return { mode: mode, level: mode === 'stage' ? stageN : demoN, status: sim.status, reason: sim.reason, time: sim.time, lives: sim.lives, livesLost: sim.livesLost, baseHp: sim.baseHp, kills: sim.kills, total: sim.total, remaining: TB.remaining(sim), score: sim.score,
+      playing: playing, paused: paused, hold: hold, bullets: sim.bullets.length, player: { x: p.x, y: p.y, dir: p.dir, alive: p.alive, power: p.power, shield: p.shield },
+      enemies: sim.tanks.filter(function (t, i) { return i && t.alive; }).length };
+  },
+  manual: function (on) { manual = !!on; },
+  tick: function (ms) { var left = Math.round(ms / (1000 / 60)); while (left-- > 0) step(STEP); draw(); },
+  auto: function (on) { auto = !!on; },
+  startStage: startStage,
+  progress: function () { return { prog: prog, best: best }; },
+  inputStats: function () { return { fireDowns: fireDowns, presses: firePresses, shots: sim ? sim.shots : 0, simPresses: sim ? sim.presses : 0 }; },
+  quit: quitToStart
+};
+})();
+</script>

@@ -1,0 +1,1590 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<title>大富翁</title>
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<style>
+:root{--bg:#ece2cc;--bg2:#f7f0e1;--ink:#2b241b;--ink2:#76695a;--card:#fffaf0;--card2:#f2e8d3;--line:#e0d1b3;--cell:#fbf5e8;--frame:#1d6a55;--frame2:#15503f;--center:#e4eee0;--land:#cfe0c6;--sea:#d6e6e6;--acc:#d6402c;--acc2:#a92d1d;--gold:#e0a12a;--ok:#2f9e5b;--sh:0 3px 12px #6b4a2a24;--sh2:0 10px 34px #3a271544;
+ --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1117;--bg2:#171e29;--ink:#f2ece1;--ink2:#a69c8c;--card:#1c2330;--card2:#273041;--line:#323c4e;--cell:#212937;--frame:#0d4a3d;--frame2:#08332a;--center:#132824;--land:#1f3d35;--sea:#11211f;--acc:#ff6a4d;--acc2:#d9472d;--gold:#f2bd4c;--ok:#3fbf73;--sh:0 3px 14px #0009;--sh2:0 12px 40px #000b}}
+:root[data-theme="dark"]{--bg:#0d1117;--bg2:#171e29;--ink:#f2ece1;--ink2:#a69c8c;--card:#1c2330;--card2:#273041;--line:#323c4e;--cell:#212937;--frame:#0d4a3d;--frame2:#08332a;--center:#132824;--land:#1f3d35;--sea:#11211f;--acc:#ff6a4d;--acc2:#d9472d;--gold:#f2bd4c;--ok:#3fbf73;--sh:0 3px 14px #0009;--sh2:0 12px 40px #000b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;color:var(--ink);background:var(--bg);font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-user-select:none;user-select:none}
+body{background:radial-gradient(130% 90% at 50% 35%,var(--bg2),var(--bg))}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+button:focus{outline:none}button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+#app{position:fixed;inset:0;display:grid;justify-content:center;align-content:center;gap:7px;padding:calc(var(--sat) + 6px) calc(var(--sar) + 8px) calc(var(--sab) + 6px) calc(var(--sal) + 8px);grid-template-columns:var(--B);grid-template-areas:"chips" "board" "bar"}
+body.plog #app{grid-template-areas:"chips" "board" "log" "bar"}
+body.land #app{grid-template-columns:var(--B) var(--R);grid-template-rows:auto 1fr auto;grid-template-areas:"board chips" "board log" "board bar";column-gap:14px;align-content:center}
+#chips{grid-area:chips;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+body.land #chips{grid-template-columns:1fr 1fr;gap:7px;align-self:start}
+.chip{position:relative;height:48px;border-radius:13px;background:var(--card);box-shadow:var(--sh);display:flex;align-items:center;gap:5px;padding:0 6px;min-width:0;border:2px solid transparent;transition:border-color .25s,box-shadow .25s,opacity .3s,transform .25s}
+.chip.on{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 28%,transparent),var(--sh)}
+.chip.out{opacity:.42;filter:grayscale(.8)}
+.chip .tk{width:20px;height:20px;flex:none;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:900;box-shadow:inset 0 -2px 0 #0003,0 1px 3px #0003}
+.chip .tx{flex:1;min-width:0;line-height:1.12}
+.chip .nm{font-size:12px;font-weight:700;color:var(--ink2);white-space:nowrap;display:flex;gap:3px;align-items:center}
+.chip .nm i{font-style:normal;font-size:10px;font-weight:800;color:var(--c)}
+.chip .cs{font-size:14px;font-weight:900;white-space:nowrap;letter-spacing:-.4px}
+.chip .cs small{font-size:9px;font-weight:800;color:var(--ink2);margin-right:1px}
+body.land .chip{height:52px}
+.chip .jl{position:absolute;left:4px;top:12px;width:20px;height:20px;border-radius:50%;background:repeating-linear-gradient(90deg,transparent 0 4px,#2b2622d0 4px 6.5px);box-shadow:inset 0 0 0 2px #2b2622b0;pointer-events:none}
+body.tall #chips{grid-template-columns:1fr 1fr;gap:7px}
+body.tall .chip{height:54px;padding:0 10px;gap:9px}
+body.tall .chip .tk{width:28px;height:28px;font-size:14px}
+body.tall .chip .jl{left:9px;top:12px;width:28px;height:28px}
+body.tall .chip .nm{font-size:13px}body.tall .chip .cs{font-size:18px}
+#boardBox{grid-area:board;position:relative;width:var(--B);height:var(--B);justify-self:center}
+#board{position:absolute;inset:0;border-radius:16px;background:var(--frame);box-shadow:var(--sh2),inset 0 0 0 2px var(--frame2);touch-action:manipulation}
+.cell{position:absolute;background:var(--cell);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--ink);transition:background-color .35s;cursor:pointer}
+.cell .bd{position:absolute;background:var(--g);border-radius:2px}
+.b-bottom .bd{left:0;right:0;top:0;height:var(--bh)}
+.b-top .bd{left:0;right:0;bottom:0;height:var(--bh)}
+.b-left .bd{top:0;bottom:0;right:0;width:var(--bh)}
+.b-right .bd{top:0;bottom:0;left:0;width:var(--bh)}
+/* text leans to the inner (band) side so a token standing on the outer edge never covers the name or the toll */
+.b-bottom{padding-top:calc(var(--bh) + 1px);justify-content:flex-start}.b-top{padding-bottom:calc(var(--bh) + 1px);justify-content:flex-end}.b-left{padding-right:calc(var(--bh) + 2px);align-items:flex-end}.b-right{padding-left:calc(var(--bh) + 2px);align-items:flex-start}
+.cell.corner{justify-content:center;align-items:center}
+.cell .nm{font-size:var(--fs);font-weight:800;line-height:1.05;white-space:nowrap;letter-spacing:-.3px}
+.cell .pr{font-size:var(--fs2);font-weight:700;color:var(--ink2);line-height:1;white-space:nowrap}
+.cell.owned{background:color-mix(in srgb,var(--o) 20%,var(--cell))}
+.cell.owned .pr{color:color-mix(in srgb,var(--o) 75%,var(--ink));font-weight:900}
+.cell.mort{background:repeating-linear-gradient(135deg,var(--cell) 0 4px,color-mix(in srgb,var(--ink2) 22%,var(--cell)) 4px 6px)}
+.cell.mort .nm{opacity:.55}
+.cell .ob{position:absolute;width:var(--ob);height:var(--ob);border-radius:50%;background:var(--o);box-shadow:0 0 0 1.5px var(--cell)}
+/* owner dot in the outer corner, clear of the text */
+.b-bottom .ob{bottom:2px;right:2px}.b-top .ob{top:2px;right:2px}.b-left .ob{left:2px;top:2px}.b-right .ob{right:2px;top:2px}
+.hs{position:absolute;display:flex;gap:1px;align-items:center;justify-content:center;pointer-events:none}
+.b-bottom .hs{left:0;right:0;top:0;height:var(--bh)}.b-top .hs{left:0;right:0;bottom:0;height:var(--bh)}
+.b-left .hs,.b-right .hs{top:0;bottom:0;width:var(--bh);flex-direction:column}.b-left .hs{right:0}.b-right .hs{left:0}
+.hs i{width:var(--hw);height:var(--hw);background:#fff;border-radius:1.5px;box-shadow:0 0 0 1px #0004}
+.hs b{font-size:calc(var(--bh) - 2px);line-height:1;color:#fff;background:var(--acc2);border-radius:3px;padding:0 2px;font-weight:900;box-shadow:0 0 0 1px #fff8}
+.cell .ic{width:var(--icw);height:var(--icw);display:block}
+.cell.corner .ic{width:calc(var(--icw) * 1.35);height:calc(var(--icw) * 1.35)}
+.cell.corner .nm{font-size:calc(var(--fs) * 1.02)}
+.cell.flash{animation:flash .7s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 0 var(--o,var(--gold))}40%{box-shadow:0 0 0 4px var(--o,var(--gold))}100%{box-shadow:0 0 0 0 transparent}}
+.cell.here{box-shadow:inset 0 0 0 2.5px var(--hc),0 0 10px color-mix(in srgb,var(--hc) 60%,transparent);z-index:1}
+#stage{position:absolute;border-radius:10px;background:var(--center);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:8px 8px 9px;box-shadow:inset 0 2px 10px #0002}
+#map{position:absolute;inset:4% 3% 3%;width:94%;height:93%;pointer-events:none;opacity:.95}
+#map .isl{fill:var(--land);stroke:color-mix(in srgb,var(--frame) 40%,transparent);stroke-width:.012}
+#map circle{stroke:var(--center);stroke-width:.012;transition:fill .4s,r .3s}
+#sHead{position:relative;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:var(--ink2);width:100%;justify-content:space-between}
+#sRound{background:var(--card);border-radius:9px;padding:3px 8px;box-shadow:var(--sh)}
+#sWho{display:flex;align-items:center;gap:5px;background:var(--card);border-radius:9px;padding:3px 8px 3px 4px;box-shadow:var(--sh);color:var(--ink);min-width:0}
+#sWho i{width:16px;height:16px;border-radius:50%;background:var(--c);color:#fff;font-style:normal;font-size:9px;display:grid;place-items:center;font-weight:900}
+#diceBtn{position:relative;display:flex;gap:calc(var(--dz) * .32);align-items:center;justify-content:center;padding:10px 14px;border-radius:20px;min-height:44px}
+#diceBtn::before{content:"";position:absolute;inset:-4px -10px;border-radius:26px;background:radial-gradient(closest-side,color-mix(in srgb,var(--gold) 55%,transparent),transparent);opacity:0;transition:opacity .3s}
+#diceBtn.ready::before{opacity:1;animation:pulse 1.3s ease-in-out infinite}
+#diceBtn:active .cube{scale:.94}
+@keyframes pulse{50%{transform:scale(1.1);opacity:.45}}
+.cube.gone{display:none}
+.cube{width:var(--dz);height:var(--dz);position:relative;transform-style:preserve-3d;transition:transform .62s cubic-bezier(.2,.8,.25,1.08);transform:perspective(320px) rotateX(0deg) rotateY(0deg)}
+.face{position:absolute;inset:0;border-radius:22%;outline:1px solid transparent;background:radial-gradient(circle at 30% 25%,#fff,#efe9df 70%,#e1d8c8);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:16%;box-shadow:inset 0 -3px 6px #0002,inset 0 0 0 1px #0001;backface-visibility:hidden}
+.face i{width:72%;aspect-ratio:1;border-radius:50%;background:#2a2622;place-self:center;visibility:hidden;box-shadow:inset 0 1px 2px #000c}
+.face i.v{visibility:visible}
+.face.r i{background:#d62f22}
+.f1{transform:translateZ(calc(var(--dz) / 2))}.f6{transform:rotateY(180deg) translateZ(calc(var(--dz) / 2))}.f2{transform:rotateY(90deg) translateZ(calc(var(--dz) / 2))}
+.f5{transform:rotateY(-90deg) translateZ(calc(var(--dz) / 2))}.f3{transform:rotateX(90deg) translateZ(calc(var(--dz) / 2))}.f4{transform:rotateX(-90deg) translateZ(calc(var(--dz) / 2))}
+#diceBtn .sum{position:absolute;right:-6px;top:-4px;min-width:26px;height:26px;border-radius:13px;background:var(--acc);color:#fff;font-weight:900;font-size:14px;display:grid;place-items:center;padding:0 6px;box-shadow:0 2px 6px #0003;transform:scale(0);transition:transform .25s cubic-bezier(.3,1.6,.5,1)}
+#diceBtn .sum.show{transform:scale(1)}
+#sMsg{position:relative;text-align:center;font-size:clamp(13px,calc(var(--c) * .4),17px);font-weight:800;line-height:1.3;min-height:2.6em;display:flex;align-items:center;justify-content:center;padding:0 4px;text-shadow:0 1px 0 color-mix(in srgb,var(--center) 80%,transparent)}
+#sMsg em{font-style:normal;color:var(--acc)}
+#sHint{position:relative;font-size:12px;font-weight:700;color:var(--ink2);text-align:center;min-height:16px}
+#sAct{position:relative;display:flex;gap:6px;width:100%;justify-content:center}
+#sAct:empty{display:none}
+.sb{min-height:44px;padding:0 12px;border-radius:13px;background:var(--card);box-shadow:0 2px 0 var(--line),var(--sh);font-weight:800;font-size:14px;flex:1;max-width:170px;white-space:nowrap}
+.sb.pri{background:var(--acc);color:#fff;box-shadow:0 3px 0 var(--acc2)}
+.sb:active{filter:brightness(.9);box-shadow:none}
+.sb:disabled{opacity:.45}
+#skip{position:absolute;right:6px;bottom:6px;min-height:44px;padding:0 12px;border-radius:13px;background:var(--card);box-shadow:var(--sh);font-size:13px;font-weight:800;display:flex;align-items:center;gap:4px}
+#skip svg{width:16px;height:16px;fill:currentColor}
+/* deed / card pop inside the board centre */
+#pop{position:absolute;inset:6px;border-radius:12px;background:var(--card);box-shadow:var(--sh2);display:flex;flex-direction:column;overflow:hidden;transform-origin:50% 60%}
+/* opacity only: the buttons sit at their final place from the first frame, so a quick tap always lands */
+#pop.in{animation:popIn .2s ease-out}
+@keyframes popIn{from{opacity:0}}
+#pop .ph{background:var(--g);color:#fff;padding:7px 10px 6px;text-align:center;text-shadow:0 1px 2px #0004}
+#pop .ph small{display:block;font-size:11px;font-weight:700;opacity:.9}
+#pop .ph b{display:block;font-size:22px;letter-spacing:2px;line-height:1.15}
+#pop .pb{flex:1;padding:6px 10px;display:flex;flex-direction:column;gap:4px;justify-content:center;min-height:0;font-size:13px}
+#pop .row{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-weight:700}
+#pop .row span{color:var(--ink2);font-size:12px}
+#pop .row b{font-size:15px}
+#pop .rents{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;text-align:center;font-size:10px;color:var(--ink2);font-weight:700}
+#pop .rents div{background:var(--card2);border-radius:5px;padding:2px 0;line-height:1.2}
+#pop .rents div b{display:block;font-size:11px;color:var(--ink)}
+#pop .rents div.cur{background:color-mix(in srgb,var(--g) 30%,var(--card2));outline:1.5px solid var(--g)}
+#pop .pa{display:flex;gap:6px;padding:0 8px 8px}
+#pop .pa .sb{max-width:none}
+#pop .note{font-size:12px;color:var(--ink2);text-align:center;font-weight:600;line-height:1.35}
+#pop .note b{color:var(--acc)}
+#pop .note b.okc{color:var(--ok)}
+#pop.card .ph{padding:9px}
+#pop.card .pb{align-items:center;text-align:center;font-size:clamp(14px,calc(var(--c) * .44),18px);font-weight:800;line-height:1.45;padding:8px 14px}
+#pop.card .cic{width:42px;height:42px;margin:0 auto 2px}
+#pop.flip{animation:flip .3s ease-out}
+#pop.flip .cic{animation:cardIc .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes flip{from{opacity:0}}
+@keyframes cardIc{from{transform:rotateY(90deg) scale(.6)}}
+#stage:has(#pop:not([hidden])) #diceBtn,#stage:has(#pop:not([hidden])) #skip,#stage:has(#pop:not([hidden])) #sAct{visibility:hidden}
+#toks{position:absolute;inset:0;pointer-events:none}
+.tok{position:absolute;left:0;top:0;width:var(--tz);height:var(--tz);margin:calc(var(--tz) / -2) 0 0 calc(var(--tz) / -2);border-radius:50%;background:var(--c);color:#fff;font-size:calc(var(--tz) * .55);font-weight:900;display:grid;place-items:center;box-shadow:0 0 0 1.5px #fff,0 2px 4px #0006;will-change:transform;z-index:2}
+.tok.mv{z-index:5}
+.tok.out{display:none}
+.tok::after{content:"";position:absolute;left:50%;bottom:calc(var(--tz) * -.38);width:70%;height:22%;margin-left:-35%;border-radius:50%;background:#0003;filter:blur(1px);z-index:-1;opacity:var(--sh0,0)}
+.fl{position:fixed;z-index:9;pointer-events:none;font-weight:900;font-size:15px;padding:2px 7px;border-radius:9px;background:var(--card);box-shadow:var(--sh);white-space:nowrap;animation:fl 1.1s ease-out forwards}
+.fl.p{color:var(--ok)}.fl.m{color:var(--acc)}
+@keyframes fl{0%{transform:translate(-50%,4px) scale(.8);opacity:0}15%{transform:translate(-50%,-6px) scale(1.05);opacity:1}100%{transform:translate(-50%,-34px);opacity:0}}
+#log{grid-area:log;display:none;overflow:auto;background:var(--card);border-radius:14px;box-shadow:var(--sh);padding:8px 10px;font-size:13px;line-height:1.5;min-height:0}
+body.land #log{display:block}
+body.plog #log{display:flex;flex-direction:column;height:var(--LH);overflow:hidden;padding:5px 10px 4px;cursor:pointer;text-align:left;width:100%;color:inherit;font:inherit;font-size:13px}
+#log .lh{display:none;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;color:var(--ink2);min-height:16px;flex:none}
+body.plog #log .lh{display:flex}
+#log .lh i{font-style:normal;color:var(--acc)}
+body.plog #log p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:2px 0;line-height:1.35}
+body.plog #log.one .lh{display:none}body.plog #log.one{justify-content:center}
+#log p.sum{color:var(--ink);font-weight:800}
+#logList p{margin:0;padding:6px 0;border-bottom:1px dashed var(--line);font-size:14px;line-height:1.45;color:var(--ink2);font-weight:600}
+#logList p b{color:var(--ink)}#logList em{font-style:normal;color:var(--acc)}#logList p.sum{color:var(--ink);font-weight:800}
+.achl{display:flex;flex-direction:column;gap:6px;margin-top:6px}.ach{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--card2);font-size:14px;font-weight:800}
+.ach small{display:block;font-size:12px;color:var(--ink2);font-weight:600}.ach i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:17px;background:var(--line);color:var(--ink2)}
+.ach.on i{background:var(--gold);color:#3a2600}.ach:not(.on){opacity:.7}
+.rec{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:6px 0}.rec div{background:var(--card2);border-radius:12px;padding:7px 4px;text-align:center;font-size:12px;color:var(--ink2);font-weight:700;line-height:1.35}.rec b{display:block;font-size:15px;color:var(--ink)}
+.dnav{margin-top:2px}.dnav .big{min-height:46px;font-size:15px}
+#rAch{font-size:13px;text-align:center;color:var(--ink);font-weight:800;margin:4px 0 0}#rAch:empty{display:none}
+#log p{margin:0;padding:3px 0;border-bottom:1px dashed var(--line);color:var(--ink2);font-weight:600}
+#log p b{color:var(--ink)}
+#log em{font-style:normal;color:var(--acc)}
+#log p:first-child{color:var(--ink)}
+#bar{grid-area:bar;display:flex;gap:6px;justify-content:center}
+.tb{flex:1;max-width:110px;height:48px;border-radius:14px;background:var(--card);box-shadow:var(--sh);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:700;position:relative}
+.tb svg{width:21px;height:21px;stroke:var(--ink);fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.tb b{font-size:16px;line-height:21px;font-weight:900}
+.tb:active{filter:brightness(.92)}
+.tb .bdg{position:absolute;top:4px;right:calc(50% - 22px);min-width:16px;height:16px;border-radius:8px;background:var(--acc);color:#fff;font-size:10px;font-weight:900;display:grid;place-items:center;padding:0 4px}
+#toast{position:fixed;left:50%;top:calc(var(--sat) + 8px);z-index:30;transform:translate(-50%,-10px);background:var(--ink);color:var(--bg2);border-radius:13px;padding:9px 14px;font-size:14px;font-weight:700;max-width:min(92vw,420px);text-align:center;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;line-height:1.4}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+.ov{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:#1a120a6b;padding:calc(var(--sat) + 10px) 10px calc(var(--sab) + 10px);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);animation:fade .2s}
+@keyframes fade{from{opacity:0}}
+.panel{background:var(--card);border-radius:22px;box-shadow:var(--sh2);width:min(440px,100%);max-height:100%;overflow:auto;padding:16px 15px 15px;position:relative;overscroll-behavior:contain;animation:rise .22s ease-out}
+@keyframes rise{from{opacity:0}}
+.panel h2{margin:0 0 4px;font-size:21px;text-align:center}
+.panel h3{margin:12px 0 6px;font-size:13px;color:var(--ink2)}
+.panel p,.panel li{font-size:14px;line-height:1.6;margin:4px 0}
+.panel ul{padding-left:20px;margin:4px 0}
+.x{position:absolute;right:8px;top:8px;width:44px;height:44px;border-radius:50%;font-size:24px;color:var(--ink2);display:grid;place-items:center}
+.big{display:block;width:100%;min-height:50px;border-radius:15px;background:var(--acc);color:#fff;font-size:17px;font-weight:800;margin-top:10px;box-shadow:0 3px 0 var(--acc2)}
+.big:active{filter:brightness(.92);box-shadow:none}
+.big.alt{background:var(--card2);color:var(--ink);box-shadow:0 3px 0 var(--line)}
+.big:disabled{opacity:.45}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns .big{font-size:15px}
+.seg{display:flex;background:var(--card2);border-radius:13px;padding:3px;gap:3px}
+.seg button{flex:1;min-height:44px;border-radius:10px;font-weight:800;font-size:14px;color:var(--ink2);line-height:1.15;padding:2px 2px}
+.seg button small{display:block;font-size:10px;font-weight:700;opacity:.8}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px #0002}
+.desc{font-size:12px;color:var(--ink2);margin:5px 2px 0;line-height:1.45;min-height:2.9em}
+.foot{position:sticky;bottom:-15px;margin:6px -15px -15px;padding:2px 15px 15px;background:linear-gradient(transparent,var(--card) 10px)}
+.foot .big{margin-top:8px}
+.logo{display:block;margin:0 auto 2px;width:150px;height:76px}
+.tag{text-align:center;color:var(--ink2);font-size:13px;margin:0 0 6px}
+.meta{font-size:12px;color:var(--ink2);text-align:center;margin-top:9px}
+.alist{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.ar{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 6px 6px 0;border-radius:12px;background:var(--card2)}
+.ar>i{align-self:stretch;border-radius:4px 0 0 4px;background:var(--g)}
+.ar .an{font-weight:800;font-size:15px;line-height:1.2}
+.ar .an small{display:block;font-size:11px;color:var(--ink2);font-weight:600}
+.ar .ab{display:flex;gap:4px}
+.ar .ab button{min-width:56px;min-height:44px;border-radius:10px;background:var(--card);font-size:12px;font-weight:800;line-height:1.15;box-shadow:0 1px 3px #0002;padding:0 6px}
+.ar .ab button small{display:block;font-size:10px;color:var(--ink2);font-weight:700}
+.ar .ab button.up{background:var(--ok);color:#fff}.ar .ab button.up small{color:#fffc}
+.ar.m .an{opacity:.6}
+.empty{text-align:center;color:var(--ink2);font-size:14px;padding:18px 0}
+.sum3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 4px}
+.sum3 div{background:var(--card2);border-radius:12px;padding:7px 4px;text-align:center;font-size:11px;color:var(--ink2);font-weight:700}
+.sum3 b{display:block;font-size:17px;color:var(--ink)}
+.debtbox{background:color-mix(in srgb,var(--acc) 12%,var(--card2));border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.55;font-weight:600;margin:6px 0}
+.debtbox b{color:var(--acc)}
+.rk{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:13px;background:var(--card2);margin:6px 0;font-weight:800}
+.rk .m{width:26px;text-align:center;font-size:18px;color:var(--ink2)}
+.rk .t{width:28px;height:28px;border-radius:50%;background:var(--c);color:#fff;display:grid;place-items:center;font-size:14px}
+.rk .w{margin-left:auto;font-size:15px}
+.rk.me{outline:2px solid var(--c)}
+.rk:first-of-type .m{color:var(--gold)}
+#confetti{position:fixed;inset:0;z-index:12;pointer-events:none}
+.help h3{color:var(--ink)}
+.help .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.grp{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 10px;font-size:13px;margin:4px 0}
+@media (max-height:640px){.logo{display:none}.panel h2{font-size:19px}.desc{min-height:0}.panel h3{margin:9px 0 5px}}
+.btns:has(>[hidden]){grid-template-columns:1fr}
+@media (hover:hover){.tb:hover,.big:hover,.sb:hover{filter:brightness(1.05)}.cell:hover{filter:brightness(1.04)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important}.cube{transition-duration:.12s}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="chips"></div>
+  <div id="boardBox">
+    <div id="board"></div>
+    <div id="stage">
+      <svg id="map" viewBox="0 0 3.6 4.5" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+      <div id="sHead"><span id="sRound" class="num">第 1／20 輪</span><span id="sWho"><i>你</i><span>你的回合</span></span></div>
+      <button id="diceBtn" aria-label="擲骰"><div class="cube" id="cube0"></div><div class="cube" id="cube1"></div><span class="sum num" id="dSum">7</span></button>
+      <div id="sMsg">點骰子開始環島</div>
+      <div id="sHint"></div>
+      <div id="sAct"></div>
+      <button id="skip" hidden aria-label="跳過電腦回合"><svg viewBox="0 0 24 24"><path d="M4 5l8 7-8 7zM12 5l8 7-8 7z"/></svg>跳過</button>
+      <div id="pop" hidden></div>
+    </div>
+    <div id="toks"></div>
+  </div>
+  <div id="log" role="button" tabindex="0" aria-label="最近動態，點一下看全部"><div class="lh"><span>最近動態</span><i>全部 ›</i></div><div id="logLines"></div></div>
+  <div id="bar">
+    <button class="tb" id="bMenu" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>選單</button>
+    <button class="tb" id="bAssets" aria-label="我的資產"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg>資產<span class="bdg" id="upBdg" hidden></span></button>
+    <button class="tb" id="bSpeed" aria-label="電腦速度"><b id="spd" class="num">1×</b>電腦速度</button>
+    <button class="tb" id="bSnd" aria-label="音效"><svg viewBox="0 0 24 24" id="sndIco"></svg>音效</button>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<canvas id="confetti" hidden></canvas>
+
+<div class="ov" id="menu" hidden><div class="panel">
+  <svg class="logo" viewBox="0 0 150 76" aria-hidden="true" id="logo"></svg>
+  <h2>大富翁・台灣環島</h2>
+  <p class="tag">從綠島買到信義區，和三位電腦拚身家</p>
+  <button class="big" id="mResume" hidden>繼續這一局</button>
+  <h3>局長</h3>
+  <div class="seg" id="mLen"><button data-v="12">快速<small>12 輪</small></button><button data-v="20">標準<small>20 輪</small></button><button data-v="30">長局<small>30 輪</small></button><button data-v="0">拚到底<small>破產為止</small></button></div>
+  <p class="desc" id="lenDesc"></p>
+  <h3>電腦難度</h3>
+  <div class="seg" id="mDiff"><button data-v="0">新手</button><button data-v="1">普通</button><button data-v="2">高手</button></div>
+  <p class="desc" id="diffDesc"></p>
+  <h3>外觀</h3>
+  <div class="seg" id="mTheme"><button data-v="auto">跟隨系統</button><button data-v="light">淺色</button><button data-v="dark">夜市深色</button></div>
+  <p class="meta num" id="mStats"></p>
+  <div class="btns"><button class="big alt" id="mAch">成就與戰績</button><button class="big alt" id="mLog">最近動態</button></div>
+  <div class="foot"><button class="big" id="mStart">開始新的一局</button>
+  <div class="btns"><button class="big alt" id="mHelp">玩法說明</button><button class="big alt" id="mClose">回到棋盤</button></div></div>
+</div></div>
+
+<div class="ov" id="help" hidden><div class="panel help"><button class="x" data-close aria-label="關閉">×</button><h2>玩法說明</h2><div id="helpBody"></div><button class="big" data-close>知道了</button></div></div>
+<div class="ov" id="assets" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><h2>資產</h2><div class="seg" id="aTabs"></div><div id="aBody"></div></div></div>
+<div class="ov" id="logOv" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><h2>最近動態</h2><div id="logList"></div><button class="big alt" data-close>關閉</button></div></div>
+<div class="ov" id="ach" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><h2>成就與戰績</h2><div id="achBody"></div><button class="big alt" data-close>關閉</button></div></div>
+<div class="ov" id="deed" hidden><div class="panel"><button class="x" data-close aria-label="關閉">×</button><div id="dBody"></div><button class="big alt" data-close>關閉</button></div></div>
+<div class="ov" id="debt" hidden><div class="panel"><h2>現金不足</h2><div id="debtBody"></div></div></div>
+<div class="ov" id="result" hidden><div class="panel"><h2 id="rTitle">你贏了！</h2><p class="tag" id="rSub"></p><div id="rList"></div><div class="sum3" id="rKv"></div><p id="rAch"></p>
+  <div class="btns"><button class="big alt" id="rMenu">回選單</button><button class="big" id="rAgain">再來一局</button></div></div></div>
+<script>
+/*CORE-START*/
+var MP = (function () {
+  'use strict';
+  // ---------- board ----------
+  // groups: 0 brown … 7 navy. rent: [base, 1棟, 2棟, 3棟, 4棟, 大樓]
+  const G = [
+    { n: '離島', c: '#9a6a4a' }, { n: '外島', c: '#4fb3d9' }, { n: '東部', c: '#d9628e' }, { n: '南投嘉屏', c: '#ee8a2c' },
+    { n: '府城港都', c: '#d8433a' }, { n: '中部竹苗', c: '#e8bf26' }, { n: '北北桃', c: '#2f9e5b' }, { n: '台北精華', c: '#2e4fa8' }
+  ];
+  const P = (n, g, price, house, rent) => ({ t: 'prop', n, g, price, house, rent });
+  const SQ = [
+    { t: 'go', n: '起點' },
+    P('綠島', 0, 600, 500, [40, 200, 600, 1800, 3200, 4500]),
+    { t: 'chance', n: '機會' },
+    P('蘭嶼', 0, 600, 500, [60, 300, 900, 2700, 4000, 5500]),
+    { t: 'tax', n: '所得稅', amt: 1500 },
+    P('澎湖', 1, 1000, 500, [60, 300, 900, 2700, 4000, 5500]),
+    P('金門', 1, 1000, 500, [60, 300, 900, 2700, 4000, 5500]),
+    P('馬祖', 1, 1200, 500, [80, 400, 1000, 3000, 4500, 6000]),
+    { t: 'jail', n: '監獄' },
+    P('台東', 2, 1400, 1000, [100, 500, 1500, 4500, 6250, 7500]),
+    P('花蓮', 2, 1400, 1000, [100, 500, 1500, 4500, 6250, 7500]),
+    { t: 'fate', n: '命運' },
+    P('宜蘭', 2, 1600, 1000, [120, 600, 1800, 5000, 7000, 9000]),
+    P('屏東', 3, 1800, 1000, [140, 700, 2000, 5500, 7500, 9500]),
+    P('嘉義', 3, 1800, 1000, [140, 700, 2000, 5500, 7500, 9500]),
+    P('南投', 3, 2000, 1000, [160, 800, 2200, 6000, 8000, 10000]),
+    { t: 'park', n: '夜市' },
+    P('台南', 4, 2200, 1500, [180, 900, 2500, 7000, 8750, 10500]),
+    { t: 'chance', n: '機會' },
+    P('高雄', 4, 2400, 1500, [200, 1000, 3000, 7500, 9250, 11000]),
+    { t: 'rail', n: '高鐵', price: 2000 },
+    P('彰化', 5, 2600, 1500, [220, 1100, 3300, 8000, 9750, 11500]),
+    P('新竹', 5, 2600, 1500, [220, 1100, 3300, 8000, 9750, 11500]),
+    P('台中', 5, 2800, 1500, [240, 1200, 3600, 8500, 10250, 12000]),
+    { t: 'gojail', n: '警察局' },
+    P('桃園', 6, 3000, 2000, [260, 1300, 3900, 9000, 11000, 12750]),
+    P('新北', 6, 3200, 2000, [280, 1500, 4500, 10000, 12000, 14000]),
+    { t: 'fate', n: '命運' },
+    { t: 'rail', n: '機場', price: 2000 },
+    P('大安', 7, 3500, 2000, [350, 1750, 5000, 11000, 13000, 15000]),
+    { t: 'tax', n: '奢侈稅', amt: 1000 },
+    P('信義', 7, 4000, 2000, [500, 2000, 6000, 14000, 17000, 20000])
+  ];
+  const MAXR = 60, N = SQ.length, JAIL = 8, GO_PAY = 2000, START = 15000, BAIL = 500, RAIL_RENT = [400, 1000];
+  const GROUP_SQ = G.map((_, g) => SQ.map((s, i) => s.g === g && s.t === 'prop' ? i : -1).filter(i => i >= 0));
+  const RAILS = SQ.map((s, i) => s.t === 'rail' ? i : -1).filter(i => i >= 0);
+  const buyable = i => SQ[i].t === 'prop' || SQ[i].t === 'rail';
+  // ---------- cards ----------
+  // k: kind. mv: advance to square; back: steps back; jail; free; cash; each (+ from each player, - to each); rep: per house / per tower
+  const CH = [
+    { tx: '環島一圈回到起點，領取 $2,000', k: 'mv', to: 0 },
+    { tx: '搭高鐵出差：前進到高鐵站', k: 'mv', to: 20 },
+    { tx: '受邀到信義區開會：前進到信義', k: 'mv', to: 31 },
+    { tx: '去台南吃小吃：前進到台南', k: 'mv', to: 17 },
+    { tx: '走錯路，後退三格', k: 'back', n: 3 },
+    { tx: '闖紅燈被抓：直接入獄', k: 'jail' },
+    { tx: '出獄許可證：留著，下次入獄可免費出獄', k: 'free' },
+    { tx: '統一發票中二獎，領取 $1,000', k: 'cash', v: 1000 },
+    { tx: '年終獎金入帳，領取 $1,500', k: 'cash', v: 1500 },
+    { tx: '房屋修繕：每棟房子 $250，每座大樓 $1,000', k: 'rep', h: 250, t: 1000 },
+    { tx: '飛去開會：前進到機場', k: 'mv', to: 28 },
+    { tx: '超速罰單，繳 $500', k: 'cash', v: -500 }
+  ];
+  const FA = [
+    { tx: '健保退費，領取 $500', k: 'cash', v: 500 },
+    { tx: '生日快樂！每位玩家包紅包 $300 給你', k: 'each', v: 300 },
+    { tx: '過年發紅包：給每位玩家 $200', k: 'each', v: -200 },
+    { tx: '股票大漲，獲利 $1,000', k: 'cash', v: 1000 },
+    { tx: '颱風災損：每棟房子 $400，每座大樓 $1,150', k: 'rep', h: 400, t: 1150 },
+    { tx: '夜市逛太久錢包掉了，損失 $500', k: 'cash', v: -500 },
+    { tx: '去綠島浮潛：前進到綠島', k: 'mv', to: 1 },
+    { tx: '逃漏稅被查：直接入獄', k: 'jail' },
+    { tx: '出獄許可證：留著，下次入獄可免費出獄', k: 'free' },
+    { tx: '刮刮樂中獎，領取 $2,000', k: 'cash', v: 2000 },
+    { tx: '繳學費 $1,000', k: 'cash', v: -1000 },
+    { tx: '賞花季到了：前進到花蓮', k: 'mv', to: 10 }
+  ];
+  // ---------- rng (mulberry32 on a uint32 kept in state, so saves resume the same stream) ----------
+  function rnd(st, k) { let a = st[k] = (st[k] + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+  function shuffle(st, n) { const a = []; for (let i = 0; i < n; i++) a.push(i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(rnd(st, 'ds') * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  const NAMES = ['你', '阿財', '美玲', '金伯'];
+  function newGame(o) {
+    o = o || {};
+    const seed = (o.seed == null ? (Date.now() ^ (Math.random() * 1e9)) : o.seed) >>> 0;
+    const st = {
+      v: 1, seed, rounds: o.rounds == null ? 20 : o.rounds, diff: o.diff == null ? 1 : o.diff, round: 1, turn: 0, turnNo: 0,
+      phase: 'roll', actor: 0, pend: null, dbl: 0, again: false, dq: [], last: null,
+      P: NAMES.map((nm, i) => ({ nm: (o.names && o.names[i]) || nm, cpu: i > 0, cash: START + (i > 0 ? DIFF_BONUS[o.diff == null ? 1 : o.diff] : 0), pos: 0, jail: 0, card: 0, out: 0 })),
+      own: SQ.map(() => -1), lvl: SQ.map(() => 0), mort: SQ.map(() => 0),
+      ds: seed ^ 0x51ed27, cs: (seed * 7 + 13) ^ 0x2c1b3, deck: null, over: null, outOrder: [],
+      st: NAMES.map(() => ({ rentIn: 0, rentOut: 0, laps: 0, buys: 0, builds: 0 }))
+    };
+    st.deck = { chance: shuffle(st, CH.length), fate: shuffle(st, FA.length) };
+    return st;
+  }
+  const clone = st => JSON.parse(JSON.stringify(st));
+  const alive = st => st.P.map((p, i) => p.out ? -1 : i).filter(i => i >= 0);
+  function hasSet(st, p, g) { return GROUP_SQ[g].every(i => st.own[i] === p); }
+  function rentOf(st, i, dice) {
+    const s = SQ[i], o = st.own[i]; if (o < 0 || st.mort[i]) return 0;
+    if (s.t === 'rail') { const n = RAILS.filter(r => st.own[r] === o).length; return RAIL_RENT[n - 1]; }
+    const l = st.lvl[i]; if (l > 0) return s.rent[l];
+    return s.rent[0] * (hasSet(st, o, s.g) ? 2 : 1);
+  }
+  function priceOf(i) { return SQ[i].price; }
+  function houseCost(i) { return SQ[i].house; }
+  function redeemCost(i) { return Math.ceil(SQ[i].price * 0.55 / 10) * 10; }
+  function netWorth(st, p) {
+    let w = st.P[p].cash;
+    for (let i = 0; i < N; i++) if (st.own[i] === p) { w += st.mort[i] ? SQ[i].price / 2 : SQ[i].price; if (SQ[i].t === 'prop') w += st.lvl[i] * SQ[i].house; }
+    return w;
+  }
+  // money the player could raise by selling every building and mortgaging every lot
+  function raisable(st, p) {
+    let w = st.P[p].cash;
+    for (let i = 0; i < N; i++) if (st.own[i] === p) { if (SQ[i].t === 'prop') w += st.lvl[i] * SQ[i].house / 2; if (!st.mort[i]) w += SQ[i].price / 2; }
+    return w;
+  }
+  function owned(st, p) { const a = []; for (let i = 0; i < N; i++) if (st.own[i] === p) a.push(i); return a; }
+  // ---------- core actions ----------
+  function addCash(st, p, v, why, ev) { st.P[p].cash += v; ev.push({ t: 'cash', p, v, why }); }
+  function sendJail(st, p, ev) {
+    const pl = st.P[p]; pl.pos = JAIL; pl.jail = 1; st.again = false; st.dbl = 0; ev.push({ t: 'jail', p });
+  }
+  function moveTo(st, p, to, ev, collect) {
+    const pl = st.P[p], from = pl.pos; let steps = (to - from + N) % N;
+    const path = []; for (let k = 1; k <= steps; k++) path.push((from + k) % N);
+    pl.pos = to; ev.push({ t: 'move', p, path });
+    if (collect !== false && steps > 0 && from + steps >= N) { addCash(st, p, GO_PAY, 'go', ev); st.st[p].laps++; }
+  }
+  function moveSteps(st, p, n, ev) { moveTo(st, p, (st.P[p].pos + n) % N, ev); }
+  function drawCard(st, p, kind, ev) {
+    const d = st.deck[kind], id = d.shift(), card = (kind === 'chance' ? CH : FA)[id];
+    ev.push({ t: 'card', p, kind, id, tx: card.tx });
+    if (card.k === 'free') { st.P[p].card = (st.P[p].card || 0) + 1; (st.P[p].cards = st.P[p].cards || []).push(kind + ':' + id); return; }
+    d.push(id);
+    switch (card.k) {
+      case 'mv': moveTo(st, p, card.to, ev); return land(st, p, ev);
+      case 'back': { const pl = st.P[p], to = (pl.pos - card.n + N) % N, path = []; for (let k = 1; k <= card.n; k++) path.push((pl.pos - k + N) % N); pl.pos = to; ev.push({ t: 'move', p, path, back: true }); return land(st, p, ev); }
+      case 'jail': sendJail(st, p, ev); return;
+      case 'cash': if (card.v > 0) addCash(st, p, card.v, 'card', ev); else st.dq.push({ from: p, to: -1, amt: -card.v, why: 'card' }); return;
+      case 'each':
+        for (const q of alive(st)) if (q !== p) { if (card.v > 0) st.dq.push({ from: q, to: p, amt: card.v, why: 'gift' }); else st.dq.push({ from: p, to: q, amt: -card.v, why: 'gift' }); }
+        return;
+      case 'rep': { let h = 0, t = 0; for (const i of owned(st, p)) if (SQ[i].t === 'prop') { if (st.lvl[i] === 5) t++; else h += st.lvl[i]; }
+        const amt = h * card.h + t * card.t; if (amt > 0) st.dq.push({ from: p, to: -1, amt, why: 'repair' }); else ev.push({ t: 'msg', p, tx: 'nohouse' }); return; }
+    }
+  }
+  // resolve the square the player stands on. Sets phase to buy/build when a decision is needed.
+  function land(st, p, ev) {
+    const i = st.P[p].pos, s = SQ[i];
+    if (buyable(i)) {
+      const o = st.own[i];
+      if (o < 0) { st.phase = 'buy'; st.actor = p; st.pend = { sq: i }; return; }
+      if (o === p) { if (s.t === 'prop' && st.lvl[i] < 5 && !st.mort[i]) { st.phase = 'build'; st.actor = p; st.pend = { sq: i }; } return; }
+      if (st.mort[i]) { ev.push({ t: 'msg', p, tx: 'mort', sq: i }); return; }
+      const r = rentOf(st, i); st.dq.push({ from: p, to: o, amt: r, why: 'rent', sq: i, offer: 1 }); return;
+    }
+    if (s.t === 'chance' || s.t === 'fate') return drawCard(st, p, s.t, ev);
+    if (s.t === 'tax') { st.dq.push({ from: p, to: -1, amt: s.amt, why: 'tax', sq: i }); return; }
+    if (s.t === 'gojail') { sendJail(st, p, ev); return; }
+  }
+  function doRoll(st, p, ev, one) {
+    const pl = st.P[p], d = [1 + Math.floor(rnd(st, 'ds') * 6), 1 + Math.floor(rnd(st, 'ds') * 6)];
+    if (one && !pl.jail) { // 只擲一顆: a slow, careful step. No doubles.
+      st.last = [d[0]]; ev.push({ t: 'roll', p, d: [d[0]] }); st.again = false;
+      moveSteps(st, p, d[0], ev); return land(st, p, ev);
+    }
+    const dbl = d[0] === d[1];
+    st.last = d; ev.push({ t: 'roll', p, d });
+    if (pl.jail) {
+      if (dbl) { pl.jail = 0; st.again = false; ev.push({ t: 'free', p, how: 'dbl' }); moveSteps(st, p, d[0] + d[1], ev); return land(st, p, ev); }
+      if (pl.jail >= 3) { pl.jail = 0; st.again = false; st.dq.push({ from: p, to: -1, amt: BAIL, why: 'bail' }); ev.push({ t: 'free', p, how: 'forced' }); moveSteps(st, p, d[0] + d[1], ev); return land(st, p, ev); }
+      pl.jail++; st.again = false; ev.push({ t: 'stay', p }); return;
+    }
+    if (dbl) { st.dbl++; if (st.dbl >= 3) { ev.push({ t: 'msg', p, tx: 'triple' }); sendJail(st, p, ev); return; } st.again = true; } else st.again = false;
+    moveSteps(st, p, d[0] + d[1], ev); return land(st, p, ev);
+  }
+  function bankrupt(st, p, to, ev) {
+    const pl = st.P[p];
+    // sell what is left: buildings to the bank at half price go to the creditor via cash
+    for (const i of owned(st, p)) { if (SQ[i].t === 'prop' && st.lvl[i]) { pl.cash += st.lvl[i] * SQ[i].house / 2; st.lvl[i] = 0; } }
+    if (to >= 0) { st.P[to].cash += Math.max(0, pl.cash); ev.push({ t: 'cash', p: to, v: Math.max(0, pl.cash), why: 'take' }); }
+    for (const i of owned(st, p)) { if (to >= 0) st.own[i] = to; else { st.own[i] = -1; st.mort[i] = 0; st.lvl[i] = 0; } }
+    if (pl.cards) for (const c of pl.cards) { const [k, id] = c.split(':'); st.deck[k].push(+id); }
+    pl.cards = []; pl.card = 0; pl.cash = 0; pl.out = 1; pl.jail = 0; st.outOrder.push(p);
+    st.dq = st.dq.filter(d => d.from !== p);
+    ev.push({ t: 'bankrupt', p, to });
+    if (p === 0 || alive(st).length <= 1) finish(st, p === 0 ? 'bankrupt' : 'last', ev);
+  }
+  function ranking(st) {
+    const a = alive(st).sort((x, y) => netWorth(st, y) - netWorth(st, x) || x - y);
+    return a.concat(st.outOrder.slice().reverse());
+  }
+  function finish(st, reason, ev) { st.phase = 'over'; st.actor = -1; st.pend = null; st.over = { reason, rank: ranking(st), worth: st.P.map((_, i) => netWorth(st, i)) }; ev.push({ t: 'over', reason }); }
+  function pay(st, d, ev) {
+    st.P[d.from].cash -= d.amt; if (d.to >= 0) { st.P[d.to].cash += d.amt; st.st[d.to].rentIn += d.why === 'rent' ? d.amt : 0; st.st[d.from].rentOut += d.why === 'rent' ? d.amt : 0; }
+    ev.push({ t: 'pay', from: d.from, to: d.to, amt: d.amt, why: d.why, sq: d.sq });
+  }
+  // run the queue of payments, then hand the turn on. Stops for a human who must raise money.
+  function proceed(st, ev) {
+    for (let guard = 0; guard < 50; guard++) {
+      if (st.phase === 'over') return;
+      if (st.dq.length) {
+        const d = st.dq[0];
+        if (st.P[d.from].out) { st.dq.shift(); continue; }
+        if (d.to >= 0 && st.P[d.to].out) { st.dq.shift(); continue; }
+        if (st.P[d.from].cash >= d.amt) { st.dq.shift(); pay(st, d, ev); if (offerTake(st, d)) return; continue; }
+        if (st.P[d.from].cpu) {
+          liquidate(st, d.from, d.amt, cpuLevel(st, d.from), ev);
+          if (st.P[d.from].cash >= d.amt) { st.dq.shift(); pay(st, d, ev); if (offerTake(st, d)) return; continue; }
+          st.dq.shift(); bankrupt(st, d.from, d.to, ev); continue;
+        }
+        st.phase = 'debt'; st.actor = d.from; st.pend = { amt: d.amt, to: d.to, why: d.why, sq: d.sq }; return;
+      }
+      const p = st.turn;
+      if (st.again && !st.P[p].out && !st.P[p].jail) { st.phase = 'roll'; st.actor = p; st.pend = null; ev.push({ t: 'again', p }); return; }
+      nextTurn(st, ev); return;
+    }
+  }
+  // 收購: after paying rent on a bare lot, the visitor may buy it from the owner at 1.5× price, unless it is part of the owner's full set
+  function takeCost(i) { return SQ[i].price * 3 / 2; } // exactly 1.5× (every price is a multiple of 100)
+  function canTake(st, p, i) { const o = st.own[i]; return o >= 0 && o !== p && !st.P[o].out && !st.P[p].out && !st.mort[i] && !st.lvl[i] && !(SQ[i].t === 'prop' && hasSet(st, o, SQ[i].g)) && mortCash(st, p) >= takeCost(i); }
+  // cash plus what mortgaging every unbuilt lot would raise: a 收購 is offered when the visitor could fund it
+  function mortCash(st, p) { let w = st.P[p].cash; for (let i = 0; i < N; i++) if (st.own[i] === p && !st.mort[i] && !st.lvl[i]) w += SQ[i].price / 2; return w; }
+  function offerTake(st, d) { if (!d.offer || !canTake(st, d.from, d.sq)) return false; st.phase = 'take'; st.actor = d.from; st.pend = { sq: d.sq, cost: takeCost(d.sq), to: d.to }; return true; }
+  function nextTurn(st, ev) {
+    st.again = false; st.dbl = 0; let p = st.turn;
+    for (let k = 0; k < 4; k++) {
+      p = (p + 1) % 4;
+      if (p === 0) { st.round++; if (st.round > (st.rounds || MAXR)) { finish(st, 'rounds', ev); return; } ev.push({ t: 'round', n: st.round }); }
+      if (!st.P[p].out) break;
+    }
+    st.turn = p; st.actor = p; st.phase = 'roll'; st.pend = null; st.turnNo++; ev.push({ t: 'turn', p });
+  }
+  // ---------- asset management ----------
+  function canSell(st, p, i) { return st.own[i] === p && SQ[i].t === 'prop' && st.lvl[i] > 0; }
+  function canMort(st, p, i) { return st.own[i] === p && !st.mort[i] && !(SQ[i].t === 'prop' && st.lvl[i] > 0); }
+  function canUp(st, p, i) { if (st.own[i] !== p || SQ[i].t !== 'prop' || st.lvl[i] >= 5 || st.mort[i] || st.P[p].cash < SQ[i].house) return false;
+    const g = SQ[i].g; return hasSet(st, p, g) && GROUP_SQ[g].every(j => !st.mort[j]); }
+  function canRedeem(st, p, i) { return st.own[i] === p && st.mort[i] && st.P[p].cash >= redeemCost(i); }
+  function sell(st, p, i, ev) { st.lvl[i]--; const v = SQ[i].house / 2; st.P[p].cash += v; ev.push({ t: 'sell', p, sq: i, v, lvl: st.lvl[i] }); }
+  function mortgage(st, p, i, ev) { st.mort[i] = 1; const v = SQ[i].price / 2; st.P[p].cash += v; ev.push({ t: 'mortgage', p, sq: i, v }); }
+  function redeem(st, p, i, ev) { const v = redeemCost(i); st.mort[i] = 0; st.P[p].cash -= v; ev.push({ t: 'redeem', p, sq: i, v }); }
+  // raise cash up to `need`. lv>=1 mortgages bare lots before selling buildings and keeps sets intact as long as possible.
+  function liquidate(st, p, need, lv, ev) {
+    const val = i => SQ[i].t === 'rail' ? 1500 : SQ[i].rent[0] * 10 * (hasSet(st, p, SQ[i].g) ? 3 : 1);
+    for (let guard = 0; guard < 200 && st.P[p].cash < need; guard++) {
+      const lots = owned(st, p);
+      let opts = [];
+      for (const i of lots) { if (canMort(st, p, i)) opts.push({ k: 'm', i, score: lv ? val(i) : rnd(st, 'cs') }); if (canSell(st, p, i)) opts.push({ k: 's', i, score: lv ? 1e6 + SQ[i].rent[st.lvl[i]] : rnd(st, 'cs') }); }
+      if (!opts.length) return;
+      if (!lv) { const s = opts.filter(o => o.k === 's'); if (s.length) opts = s; }
+      opts.sort((a, b) => a.score - b.score);
+      const o = opts[0]; if (o.k === 'm') mortgage(st, p, o.i, ev); else sell(st, p, o.i, ev);
+    }
+  }
+  // ---------- legal actions ----------
+  function legal(st) {
+    const out = []; if (st.phase === 'over') return out;
+    const p = st.actor, pl = st.P[p];
+    if (st.phase === 'roll') { out.push({ a: 'roll' }); if (!pl.jail) out.push({ a: 'roll1' }); if (pl.jail) { if (pl.cash >= BAIL) out.push({ a: 'bail' }); if (pl.card) out.push({ a: 'card' }); } }
+    if (st.phase === 'buy') { if (pl.cash >= priceOf(st.pend.sq)) out.push({ a: 'buy' }); out.push({ a: 'skip' }); }
+    if (st.phase === 'take') { if (pl.cash >= st.pend.cost) out.push({ a: 'take' }); out.push({ a: 'skip' }); }
+    if (st.phase === 'build') { if (pl.cash >= houseCost(st.pend.sq)) out.push({ a: 'build' }); out.push({ a: 'skip' }); }
+    if (st.phase === 'debt') { if (pl.cash >= st.pend.amt) out.push({ a: 'pay' }); else if (raisable(st, p) < st.pend.amt) out.push({ a: 'bankrupt' }); else out.push({ a: 'auto' }); }
+    for (const i of owned(st, p)) { if (canSell(st, p, i)) out.push({ a: 'sell', sq: i }); if (canMort(st, p, i)) out.push({ a: 'mortgage', sq: i }); if (st.phase !== 'debt' && canRedeem(st, p, i)) out.push({ a: 'redeem', sq: i }); if (st.phase === 'roll' && canUp(st, p, i)) out.push({ a: 'up', sq: i }); }
+    return out;
+  }
+  function isLegal(st, a) { return legal(st).some(x => x.a === a.a && (x.sq == null || x.sq === a.sq)); }
+  function act(st, a) {
+    const ev = [];
+    if (!a || !isLegal(st, a)) return null;
+    const p = st.actor, pl = st.P[p];
+    switch (a.a) {
+      case 'sell': sell(st, p, a.sq, ev); return ev;
+      case 'mortgage': mortgage(st, p, a.sq, ev); return ev;
+      case 'redeem': redeem(st, p, a.sq, ev); return ev;
+      case 'up': { const i = a.sq; pl.cash -= houseCost(i); st.lvl[i]++; st.st[p].builds++; ev.push({ t: 'build', p, sq: i, v: houseCost(i), lvl: st.lvl[i] }); return ev; }
+      case 'roll': st.phase = 'cont'; doRoll(st, p, ev); break;
+      case 'roll1': st.phase = 'cont'; doRoll(st, p, ev, true); break;
+      case 'bail': pl.cash -= BAIL; pl.jail = 0; ev.push({ t: 'pay', from: p, to: -1, amt: BAIL, why: 'bail' }); ev.push({ t: 'free', p, how: 'bail' }); return ev;
+      case 'card': { pl.card--; const c = pl.cards.pop(); const [k, id] = c.split(':'); st.deck[k].push(+id); pl.jail = 0; ev.push({ t: 'free', p, how: 'card' }); return ev; }
+      case 'buy': { const i = st.pend.sq; pl.cash -= priceOf(i); st.own[i] = p; st.st[p].buys++; ev.push({ t: 'buy', p, sq: i, v: priceOf(i) }); st.phase = 'cont'; break; }
+      case 'build': { const i = st.pend.sq; pl.cash -= houseCost(i); st.lvl[i]++; st.st[p].builds++; ev.push({ t: 'build', p, sq: i, v: houseCost(i), lvl: st.lvl[i] }); st.phase = 'cont'; break; }
+      case 'take': { const i = st.pend.sq, o = st.own[i], c = st.pend.cost; pl.cash -= c; st.P[o].cash += c; st.own[i] = p; ev.push({ t: 'take', p, from: o, sq: i, v: c }); st.phase = 'cont'; break; }
+      case 'skip': ev.push({ t: 'skip', p, sq: st.pend.sq }); st.phase = 'cont'; break;
+      case 'pay': { const d = st.dq.shift(); pay(st, d, ev); st.phase = 'cont'; st.pend = null; if (offerTake(st, d)) return ev; break; }
+      case 'auto': { liquidate(st, p, st.pend.amt, 2, ev); return ev; }
+      case 'bankrupt': { const d = st.dq.shift(); bankrupt(st, p, d.to, ev); if (st.phase !== 'over') st.phase = 'cont'; break; }
+    }
+    if (st.phase === 'cont') { st.pend = null; proceed(st, ev); }
+    return ev;
+  }
+  // ---------- computer players ----------
+  const DIFF_LV = [0, 2, 3], DIFF_BONUS = [0, 0, 2000];
+  function cpuLevel(st, p) { return st.P[p].cpu ? DIFF_LV[st.diff] : 2; }
+  // highest rent the player could owe on the next lap: what a careful player keeps in hand
+  function danger(st, p) {
+    let m = 0; for (let i = 0; i < N; i++) { const o = st.own[i]; if (o >= 0 && o !== p) m = Math.max(m, rentOf(st, i)); } return m;
+  }
+  function unownedLeft(st) { let n = 0; for (let i = 0; i < N; i++) if (buyable(i) && st.own[i] < 0) n++; return n; }
+  function setPull(st, p, i) { // how much buying lot i helps p (or blocks others)
+    if (SQ[i].t === 'rail') return RAILS.some(r => st.own[r] === p) ? 2 : 1;
+    const g = GROUP_SQ[SQ[i].g], mine = g.filter(j => st.own[j] === p).length, theirs = g.filter(j => st.own[j] >= 0 && st.own[j] !== p);
+    if (mine === g.length - 1) return 3;
+    const block = theirs.length && theirs.every(j => st.own[j] === st.own[theirs[0]]) && theirs.length === g.length - 1 ? 2 : 0;
+    return 1 + (mine ? 1 : 0) + block;
+  }
+  // value of standing on square j for player p (what a careful player sees on the board)
+  function sqValue(st, p, j) {
+    const s = SQ[j], o = st.own[j], pl = st.P[p], V = EXP ? XK.sv : SV0;
+    if (buyable(j)) {
+      if (o < 0) return (EXP ? mortCash(st, p) : pl.cash) > priceOf(j) + 500 ? (s.t === 'rail' ? V.rail : s.price * V.buy) * (setPull(st, p, j) >= 3 ? V.set : setPull(st, p, j) >= 2 ? V.two : 1) : 0;
+      if (o === p) return s.t === 'prop' && st.lvl[j] < 5 && pl.cash > s.house + 1000 ? s.house * V.own : 0;
+      if (st.mort[j]) return 0;
+      const r = rentOf(st, j); let v = -r * V.rent * (pl.cash < r ? V.short : 1);
+      if (EXP && s.t === 'prop' && !st.lvl[j] && !hasSet(st, o, s.g) && setPull(st, p, j) >= 3 && mortCash(st, p) - r >= takeCost(j) && roundsLeft(st) >= 3) v += s.price * XK.vTake;
+      return v;
+    }
+    if (s.t === 'tax') return -s.amt;
+    if (s.t === 'gojail') return EXP && unownedLeft(st) <= V.jailSafe ? V.jailLate : -600;
+    if (s.t === 'chance' || s.t === 'fate') return V.card;
+    return 0;
+  }
+  const SV0 = { rail: 250, buy: 0.25, set: 2, two: 1, own: 0.3, rent: 1, short: 1.6, card: 120, jailSafe: -1, jailLate: 0, step: 1, dbl: 150, disc: 0.8 };
+  function bestNext(st, p, pos) {
+    const step = GO_PAY / N * XK.sv.step; let e1 = 0, e2 = 0;
+    for (let a = 1; a <= 6; a++) { e1 += (sqValue(st, p, (pos + a) % N) + a * step) / 6; for (let b = 1; b <= 6; b++) e2 += (sqValue(st, p, (pos + a + b) % N) + (a + b) * step) / 36; }
+    return Math.max(e1, e2);
+  }
+  function pickOne2(st, p) {
+    const V = XK.sv, pos = st.P[p].pos, step = GO_PAY / N * V.step, memo = {}; let e1 = 0, e2 = 0;
+    const nx = q => memo[q] != null ? memo[q] : (memo[q] = bestNext(st, p, q));
+    for (let a = 1; a <= 6; a++) { const q = (pos + a) % N; e1 += (sqValue(st, p, q) + a * step + V.disc * nx(q)) / 6;
+      for (let b = 1; b <= 6; b++) { const r = (pos + a + b) % N; e2 += (sqValue(st, p, r) + (a + b) * step + (a === b ? V.dbl : 0) + V.disc * nx(r)) / 36; } }
+    return e1 > e2 + XK.one;
+  }
+  function pickOne(st, p) {
+    const pos = st.P[p].pos, step = GO_PAY / N;
+    let e1 = 0, e2 = 0;
+    for (let a = 1; a <= 6; a++) { e1 += (sqValue(st, p, (pos + a) % N) + a * step) / 6; for (let b = 1; b <= 6; b++) e2 += (sqValue(st, p, (pos + a + b) % N) + (a + b) * step + (a === b ? 150 : 0)) / 36; }
+    return e1 > e2 + 150;
+  }
+  // policy lv: 0 random-ish, 1 fixed reserve, 2 danger-aware heuristic, 3 aggressive heuristic with two-turn dice lookahead
+  const T3 = { buy: 0, build: 0, up: 0, take: 0, one: 0 }, XK = { noOne: 0, k1: 0.55, k2: 3, cap: 4000, base: 300, bAgg: 0.5, take2: 8, jailOut: 5, tk: 0.5, buyAll: 0, upAgg: 1, vTake: 0, one: 0,
+    sv: { rail: 250, buy: 0.25, set: 2, two: 1, own: 0.3, rent: 1, short: 1.6, card: 120, jailSafe: -1, jailLate: 0, step: 1, dbl: 150, disc: 0.8 } };
+  // ---------- expert brain (lv 3) ----------
+  // Plays for final net worth: buying and building are free in net worth (land and houses count at cost) and earn rent,
+  // mortgaging is free too (only the rent is lost), selling houses loses half and a 收購 hands the owner half the price.
+  // So it spends hard, funds houses on its sets by mortgaging loose lots, blocks colour sets, and keeps only the cash
+  // that the next lap's rents (minus what it could mortgage) really call for.
+  let EXP = 0;
+  const roundsLeft = st => st.rounds ? st.rounds - st.round : 99;
+  function rentAhead(st, p, from, lo, hi) { // highest and expected rent on the squares lo..hi ahead
+    let mx = 0, ex = 0;
+    for (let k = lo; k <= hi; k++) { const j = (from + k) % N, o = st.own[j]; if (o < 0 || o === p || !buyable(j) || st.mort[j]) continue; const r = rentOf(st, j); mx = Math.max(mx, r); ex += r * (k <= 7 ? k - 1 : 13 - k) / 36; }
+    return { mx, ex };
+  }
+  function needsLot(st, q, i) { // would lot i finish (or nearly finish) player q's colour set?
+    if (SQ[i].t !== 'prop') return 0; const g = GROUP_SQ[SQ[i].g], have = g.filter(j => st.own[j] === q).length;
+    if (have === g.length - 1 && st.own[i] !== q) return 2; if (have && g.length === 3 && g.every(j => st.own[j] === q || st.own[j] < 0 || j === i)) return 1; return 0;
+  }
+  function blocksAny(st, p, i) { let b = 0; for (const q of alive(st)) if (q !== p) b = Math.max(b, needsLot(st, q, i)); return b; }
+  // loose lots: unbuilt, unmortgaged lots outside the player's own sets, cheapest-to-lose first
+  function looseLots(st, p) {
+    return owned(st, p).filter(i => !st.mort[i] && !(SQ[i].t === 'prop' && (st.lvl[i] || hasSet(st, p, SQ[i].g))))
+      .map(i => ({ i, v: (SQ[i].t === 'rail' ? 500 : SQ[i].rent[0] * 3) + (SQ[i].t === 'prop' && needsLot(st, p, i) ? 1200 : 0) - (blocksAny(st, p, i) ? 900 : 0) }))
+      .sort((a, b) => a.v - b.v).map(x => x.i);
+  }
+  const softCash = (st, p) => st.P[p].cash + looseLots(st, p).reduce((s, i) => s + SQ[i].price / 2, 0);
+  function reserveFor(st, p) { // cash to keep against the next lap
+    const pos = st.P[p].pos, a = rentAhead(st, p, pos, 2, 12), dz = Math.max(a.mx * XK.k1, a.ex * XK.k2);
+    return Math.min(XK.cap, XK.base + dz);
+  }
+  function upTargets(st, p) { // set lots worth building on, best return first
+    const out = [];
+    for (let g = 0; g < G.length; g++) {
+      if (!hasSet(st, p, g)) continue; const gs = GROUP_SQ[g];
+      const minL = Math.min(...gs.map(j => st.lvl[j]));
+      for (const j of gs) { const l = st.lvl[j]; if (l >= 5 || l > minL) continue; const gain = SQ[j].rent[l + 1] - SQ[j].rent[l] * (l === 0 ? 2 : 1); out.push({ j, l, roi: gain / SQ[j].house, mort: gs.some(x => st.mort[x]) }); }
+    }
+    return out.sort((a, b) => b.roi - a.roi);
+  }
+  function expert(st) {
+    const p = st.actor, pl = st.P[p], L = legal(st), has = a => L.some(x => x.a === a), left = roundsLeft(st);
+    if (st.phase === 'debt') return has('pay') ? { a: 'pay' } : has('auto') ? { a: 'auto' } : { a: 'bankrupt' };
+    const keep = reserveFor(st, p), soft = softCash(st, p), loose = looseLots(st, p);
+    const mortFor = need => { // mortgage a loose lot to reach `need` cash
+      if (pl.cash >= need || soft < need) return null;
+      for (const i of loose) if (L.some(x => x.a === 'mortgage' && x.sq === i)) return { a: 'mortgage', sq: i };
+      return null;
+    };
+    if (st.phase === 'roll') {
+      // 1. houses on sets (evenly, best return first); unlock a set by redeeming its mortgaged lot
+      for (const t of upTargets(st, p)) {
+        if (t.mort) { const m = GROUP_SQ[SQ[t.j].g].find(x => st.mort[x]), c = redeemCost(m); if (L.some(x => x.a === 'redeem' && x.sq === m) && pl.cash - c >= 300 && soft - c >= keep) return { a: 'redeem', sq: m }; const mm = mortFor(c + 300); if (mm) return mm; continue; }
+        const cost = SQ[t.j].house;
+        if (soft - cost < (left <= 1 ? 300 : keep * XK.upAgg)) break;
+        if (L.some(x => x.a === 'up' && x.sq === t.j) && pl.cash - cost >= 300) return { a: 'up', sq: t.j };
+        const mm = mortFor(cost + 300); if (mm) return mm;
+        break;
+      }
+      // 2. redeem when flush (not in the last rounds: redeeming costs 5% of the price)
+      if (left >= 3) for (const x of L) if (x.a === 'redeem' && pl.cash - redeemCost(x.sq) > keep + 2500) return x;
+      // 3. jail: get out while land is still for sale, sit tight once the board is built up
+      if (pl.jail) {
+        const out = unownedLeft(st) > XK.jailOut || rentAhead(st, p, JAIL, 2, 12).ex < 250;
+        if (out && has('card')) return { a: 'card' };
+        if (out && has('bail') && pl.cash > 2000) return { a: 'bail' };
+        return { a: 'roll' };
+      }
+      EXP = 1; const one = !XK.noOne && has('roll1') && pickOne2(st, p); EXP = 0;
+      if (one) return { a: 'roll1' };
+      return { a: 'roll' };
+    }
+    if (st.phase === 'buy') {
+      const i = st.pend.sq, price = priceOf(i), pull = setPull(st, p, i), blk = blocksAny(st, p, i);
+      const want = XK.buyAll ? XK.buyAll : pull >= 3 || blk >= 2 ? keep * 0.3 : st.round <= 5 ? Math.min(keep, 500) : keep;
+      const ok = soft - price + price / 2 >= want; // the new lot is itself mortgageable
+      if (has('buy') && pl.cash - price >= 200 && ok) return { a: 'buy' };
+      if (ok && (pull >= 2 || blk || st.round <= 8)) { const mm = mortFor(price + 200); if (mm) return mm; }
+      return { a: 'skip' };
+    }
+    if (st.phase === 'take') {
+      const i = st.pend.sq, cost = st.pend.cost, pull = setPull(st, p, i), blk = blocksAny(st, p, i);
+      if (left < 3) return { a: 'skip' };
+      if (pull >= 3 && soft - cost >= keep * XK.tk) { if (pl.cash - cost >= 200) return { a: 'take' }; const mm = mortFor(cost + 200); if (mm) return mm; }
+      if (blk >= 2 && left >= 5 && has('take') && pl.cash - cost >= keep + 1500) return { a: 'take' };
+      if (!has('take')) return { a: 'skip' };
+      if (XK.take2 && pull >= 2 && st.round <= XK.take2 && pl.cash - cost >= keep + 500) return { a: 'take' };
+      return { a: 'skip' };
+    }
+    if (st.phase === 'build') {
+      if (!has('build')) return { a: 'skip' };
+      const i = st.pend.sq, cost = houseCost(i);
+      if (XK.bAgg && pl.cash - cost >= 300 && soft - cost >= keep * XK.bAgg) return { a: 'build' };
+      if (pl.cash - cost >= (left <= 1 ? 300 : keep)) return { a: 'build' };
+      return { a: 'skip' };
+    }
+    return L[0];
+  }
+  function think(st, lv) {
+    if (lv > 3) lv = 3;
+    if (lv === 3) return expert(st);
+    const T = lv >= 3 ? T3 : { buy: 0.3, build: 0.35, up: 0.35, take: 0.45 };
+    const p = st.actor, pl = st.P[p], L = legal(st), has = a => L.some(x => x.a === a);
+    const r = () => rnd(st, 'cs');
+    if (!L.length) return null;
+    if (st.phase === 'debt') return has('pay') ? { a: 'pay' } : has('auto') ? { a: 'auto' } : { a: 'bankrupt' };
+    const dz = danger(st, p);
+    if (st.phase === 'roll') {
+      if (lv >= 1) { // redeem mortgages when flush
+        const keep = lv >= 2 ? Math.max(1500, dz * 0.7) : 3000;
+        for (const x of L) if (x.a === 'redeem' && pl.cash - redeemCost(x.sq) > keep + 1000) return x;
+      }
+      const ups = L.filter(x => x.a === 'up');
+      if (ups.length) {
+        if (lv === 0) { if (r() < .5) { const x = ups[Math.floor(r() * ups.length)]; if (pl.cash - houseCost(x.sq) >= 500) return x; } }
+        else {
+          const keep = lv >= 2 ? Math.min(3500, dz * T.up + 200) : 2500;
+          ups.sort((a, b) => st.lvl[a.sq] - st.lvl[b.sq] || (SQ[b.sq].rent[st.lvl[b.sq] + 1] - SQ[b.sq].rent[st.lvl[b.sq]]) / SQ[b.sq].house - (SQ[a.sq].rent[st.lvl[a.sq] + 1] - SQ[a.sq].rent[st.lvl[a.sq]]) / SQ[a.sq].house);
+          if (pl.cash - houseCost(ups[0].sq) >= keep) return ups[0];
+        }
+      }
+      if (pl.jail) {
+        if (has('card') && (lv < 2 || unownedLeft(st) > 4)) return { a: 'card' };
+        if (has('bail')) {
+          if (lv === 0) return r() < .5 ? { a: 'bail' } : { a: 'roll' };
+          if (lv === 1 && st.round <= 8 && pl.cash > 2500) return { a: 'bail' };
+          if (lv >= 2 && unownedLeft(st) > 5 && pl.cash > 2500) return { a: 'bail' };
+        }
+      }
+      if (lv >= 2 && has('roll1') && (lv >= 3 ? pickOne2(st, p) : pickOne(st, p))) return { a: 'roll1' };
+      return { a: 'roll' };
+    }
+    if (st.phase === 'buy') {
+      if (!has('buy')) return { a: 'skip' };
+      const i = st.pend.sq, left = pl.cash - priceOf(i);
+      if (lv === 0) return (left >= 0 && r() < .75) ? { a: 'buy' } : { a: 'skip' };
+      if (lv === 1) return left >= 1500 ? { a: 'buy' } : { a: 'skip' };
+      const pull = setPull(st, p, i), early = st.round <= 4;
+      const keep = pull >= 3 ? 0 : early ? 0 : Math.min(3000, dz * T.buy + 200);
+      return left >= keep ? { a: 'buy' } : { a: 'skip' };
+    }
+    if (st.phase === 'take') {
+      if (!has('take')) return { a: 'skip' };
+      const i = st.pend.sq, left = pl.cash - st.pend.cost, pull = setPull(st, p, i);
+      if (lv === 0) return left >= 2000 && r() < .2 ? { a: 'take' } : { a: 'skip' };
+      if (lv === 1) return pull >= 3 && left >= 1500 ? { a: 'take' } : { a: 'skip' };
+      const keep = Math.min(4000, dz * T.take + 400);
+      return (pull >= 3 && left >= keep * 0.5) || (pull >= 2 && left >= keep + 1500) ? { a: 'take' } : { a: 'skip' };
+    }
+    if (st.phase === 'build') {
+      if (!has('build')) return { a: 'skip' };
+      const i = st.pend.sq, left = pl.cash - houseCost(i);
+      if (lv === 0) return (left >= 0 && r() < .6) ? { a: 'build' } : { a: 'skip' };
+      if (lv === 1) return left >= 2500 ? { a: 'build' } : { a: 'skip' };
+      const keep = Math.min(3500, dz * T.build + 200);
+      return left >= keep ? { a: 'build' } : { a: 'skip' };
+    }
+    return L[0];
+  }
+  return { T3, XK, DIFF_LV, DIFF_BONUS, cpuLevel, canUp, canTake, takeCost, SQ, G, N, CH, FA, GROUP_SQ, RAILS, JAIL, GO_PAY, START, BAIL, RAIL_RENT, NAMES,
+    newGame, clone, act, legal, isLegal, think, rentOf, netWorth, raisable, owned, hasSet, redeemCost, ranking, alive, danger, buyable, rnd };
+})();
+/*CORE-END*/
+
+</script>
+<script>
+(function () {
+'use strict';
+const $ = id => document.getElementById(id);
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem('monopoly:v1:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('monopoly:v1:' + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem('monopoly:v1:' + k); } catch (e) {} }
+};
+const S = Object.assign({ rounds: 20, diff: 1, speed: 1, snd: true, theme: 'auto' }, LS.get('set', {}));
+const ST = Object.assign({ played: 0, wins: 0, best: 0, bust: 0, top3: 0, quit: 0, streak: 0, by: {} }, LS.get('stats', {}));
+if (!ST.by || typeof ST.by !== 'object') ST.by = {};
+const ACH = Object.assign({}, LS.get('ach', {}));
+const DIFF_N = ['新手', '普通', '高手'];
+// long-term goals: [id, mark, name, how]
+const ACHS = [
+  ['first', '1', '第一次當大富翁', '贏得任何一局'],
+  ['norm', '普', '普通過關', '在普通難度獲勝'],
+  ['hard', '高', '高手剋星', '在高手難度獲勝'],
+  ['long', '長', '長期抗戰', '在 30 輪或拚到底的局獲勝'],
+  ['sweep', '光', '全部破產', '讓三位電腦全部破產'],
+  ['streak', '3', '三連勝', '連續贏三局（放棄也會中斷連勝）'],
+  ['tower', '樓', '第一棟大樓', '把一塊地改建成大樓'],
+  ['sets', '組', '三組地主', '同時擁有三組整組的地'],
+  ['taipei', '北', '台北精華', '同時擁有大安和信義'],
+  ['rent', '租', '收租王', '一局收到 $20,000 以上的過路費'],
+  ['rich', '萬', '身家十萬', '結算時總資產 $100,000 以上']
+];
+const recOf = d => ST.by[d] || (ST.by[d] = { p: 0, w: 0, best: 0 });
+function unlock(id) {
+  if (ACH[id]) return; ACH[id] = Date.now(); LS.set('ach', ACH);
+  const a = ACHS.find(x => x[0] === id); if (G) (G.newAch = G.newAch || []).push(id);
+  if (a) setTimeout(() => toast(`★ 成就解鎖：${a[2]}`, 2400), 300);
+}
+// achievements that can happen mid-game
+function checkLive() {
+  if (!G || G.P[0].out) return;
+  if (G.lvl.some((l, i) => l === 5 && G.own[i] === 0)) unlock('tower');
+  if (MP.G.filter((_, g) => MP.hasSet(G, 0, g)).length >= 3) unlock('sets');
+  if (MP.hasSet(G, 0, 7)) unlock('taipei');
+  if (G.st[0].rentIn >= 20000) unlock('rent');
+}
+// leaving a game that is still going counts as a loss, so the record cannot be padded by quitting
+function recordQuit() {
+  if (!G || G.recorded || G.phase === 'over') return;
+  G.recorded = 1; ST.played++; ST.quit++; ST.streak = 0; recOf(G.diff).p++; LS.set('stats', ST); LS.del('game');
+}
+const saveSet = () => LS.set('set', S);
+const PC = ['#e5484d', '#2f7fe0', '#9b5de5', '#e8930c'], GLY = ['你', '財', '玲', '金'];
+const SQ = MP.SQ, N = MP.N;
+const RM = matchMedia('(prefers-reduced-motion: reduce)');
+const fmt = v => (v < 0 ? '-' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US');
+const money = v => Math.abs(v) >= 1e6 ? (v / 1e4).toFixed(0) + '萬' : Math.round(v).toLocaleString('en-US');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const EVC = {};
+let G = null, V = null, busy = false, skipping = false, runId = 0, animP = 0, logLines = [], skipSum = null;
+const nm = p => G.P[p].nm;
+const gcol = i => SQ[i].t === 'prop' ? MP.G[SQ[i].g].c : SQ[i].t === 'rail' ? '#5b6472' : '#888';
+
+// ---------- theme ----------
+function applyTheme() { const r = document.documentElement; if (S.theme === 'auto') delete r.dataset.theme; else r.dataset.theme = S.theme; }
+applyTheme();
+
+// ---------- sound & haptics ----------
+let AC = null;
+function warmAudio() { if (AC || !S.snd) return; try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+(window.requestIdleCallback || (f => setTimeout(f, 600)))(warmAudio, { timeout: 1500 });
+document.addEventListener('pointerdown', () => { if (AC && AC.state === 'suspended') AC.resume().catch(() => {}); }, { capture: true, passive: true });
+function ac() { if (!S.snd) return null; if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } } if (AC.state === 'suspended') AC.resume().catch(() => {}); return AC; }
+function tone(f, d, o) {
+  const c = ac(); if (!c) return; o = o || {}; const t = c.currentTime + (o.at || 0);
+  const os = c.createOscillator(), g = c.createGain(); os.type = o.type || 'sine'; os.frequency.setValueAtTime(f, t);
+  if (o.to) os.frequency.exponentialRampToValueAtTime(o.to, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(o.v || 0.18, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  os.connect(g).connect(c.destination); os.start(t); os.stop(t + d + 0.02);
+}
+function noise(d, o) {
+  const c = ac(); if (!c) return; o = o || {}; const t = c.currentTime + (o.at || 0), n = Math.floor(c.sampleRate * d), b = c.createBuffer(1, n, c.sampleRate), a = b.getChannelData(0);
+  for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, o.k || 2);
+  const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(); s.buffer = b; f.type = o.ft || 'bandpass'; f.frequency.value = o.f || 2400; f.Q.value = o.q || 1.2; g.gain.value = o.v || 0.25;
+  s.connect(f).connect(g).connect(c.destination); s.start(t);
+}
+const SND = {
+  roll() { for (let k = 0; k < 6; k++) noise(0.05, { at: k * 0.075 + Math.random() * 0.03, f: 1800 + Math.random() * 1600, v: 0.22, q: 3 }); },
+  land() { noise(0.08, { f: 900, v: 0.3, q: 2 }); tone(180, 0.09, { type: 'triangle', v: 0.12 }); },
+  hop(k) { tone(520 + k * 28, 0.05, { type: 'triangle', v: 0.07 }); },
+  coin() { tone(1318, 0.09, { type: 'square', v: 0.05 }); tone(1760, 0.22, { type: 'square', v: 0.05, at: 0.07 }); },
+  pay() { tone(523, 0.12, { type: 'triangle', v: 0.14 }); tone(392, 0.2, { type: 'triangle', v: 0.13, at: 0.1 }); },
+  buy() { tone(880, 0.08, { type: 'square', v: 0.05 }); tone(1175, 0.08, { type: 'square', v: 0.05, at: 0.07 }); tone(1568, 0.28, { type: 'triangle', v: 0.12, at: 0.14 }); noise(0.12, { at: 0.02, f: 5000, v: 0.08 }); },
+  build() { noise(0.05, { f: 700, v: 0.35, q: 4 }); noise(0.05, { at: 0.13, f: 760, v: 0.35, q: 4 }); tone(660, 0.18, { type: 'triangle', v: 0.1, at: 0.26 }); tone(990, 0.24, { type: 'triangle', v: 0.1, at: 0.33 }); },
+  card() { noise(0.22, { f: 3200, v: 0.16, q: 0.7, k: 1 }); tone(740, 0.12, { type: 'sine', v: 0.08, at: 0.12 }); },
+  jail() { tone(150, 0.3, { type: 'sawtooth', v: 0.09, to: 90 }); noise(0.12, { f: 400, v: 0.3 }); },
+  tick() { tone(1200, 0.03, { type: 'square', v: 0.035 }); },
+  bad() { tone(392, 0.18, { type: 'triangle', v: 0.12 }); tone(330, 0.18, { type: 'triangle', v: 0.12, at: 0.16 }); tone(262, 0.36, { type: 'triangle', v: 0.12, at: 0.32 }); },
+  win() { [523, 659, 784, 1047, 784, 1047].forEach((f, k) => tone(f, k === 5 ? 0.5 : 0.16, { type: 'triangle', v: 0.13, at: k * 0.12 })); }
+};
+const snd = k => { try { SND[k] && SND[k](); } catch (e) {} };
+const buzz = p => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} };
+
+// ---------- icons ----------
+const IC = {
+  go: '<svg class="ic" viewBox="0 0 24 24"><path d="M20 12H5M11 5l-7 7 7 7" fill="none" stroke="#d6402c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  jail: '<svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="#f2b84b"/><path d="M7 4v16M11 4v16M15 4v16M19 4v16" stroke="#3b3a3a" stroke-width="1.8"/><circle cx="12" cy="12" r="2.3" fill="#3b3a3a"/></svg>',
+  park: '<svg class="ic" viewBox="0 0 24 24"><path d="M12 2v3" stroke="#7a4b22" stroke-width="1.6"/><ellipse cx="12" cy="12.5" rx="7" ry="8" fill="#e5402f"/><path d="M8 6.5c-1.6 3.6-1.6 8.4 0 12M16 6.5c1.6 3.6 1.6 8.4 0 12M12 4.5v16" stroke="#ffcf5b" stroke-width="1.1" fill="none"/><rect x="9" y="3.6" width="6" height="2" rx="1" fill="#f2b84b"/><rect x="9" y="19.4" width="6" height="2" rx="1" fill="#f2b84b"/></svg>',
+  gojail: '<svg class="ic" viewBox="0 0 24 24"><path d="M4 9l8-5 8 5v2H4z" fill="#2c4f8f"/><rect x="5" y="11" width="14" height="7" rx="1.5" fill="#3b67b3"/><path d="M12 6.3l1 2 2.1.2-1.6 1.4.5 2-2-1.1-2 1.1.5-2-1.6-1.4 2.1-.2z" fill="#f6c548"/><rect x="3" y="18" width="18" height="2.4" rx="1" fill="#2c4f8f"/></svg>',
+  chance: '<svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#f08a24"/><path d="M9.2 9.3a2.9 2.9 0 1 1 4.4 2.5c-1 .6-1.6 1.2-1.6 2.4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.4" fill="#fff"/></svg>',
+  fate: '<svg class="ic" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15" rx="2" transform="rotate(45 12 12)" fill="#d6402c"/><text x="12" y="16.3" text-anchor="middle" font-size="11" font-weight="900" fill="#ffd45e" font-family="serif">福</text></svg>',
+  tax: '<svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="#e0a12a"/><circle cx="12" cy="12" r="6.6" fill="none" stroke="#fff6" stroke-width="1.2"/><text x="12" y="16" text-anchor="middle" font-size="10.5" font-weight="900" fill="#fff">稅</text></svg>',
+  rail0: '<svg class="ic" viewBox="0 0 24 24"><path d="M5 15c0-6 3-10 9-10h2c2 0 3 1 3 3v7c0 1.7-1.3 3-3 3H8c-1.7 0-3-1.3-3-3z" fill="#e8e6e1" stroke="#5b6472" stroke-width="1.4"/><path d="M8 10.5c1-2.6 2.8-3.8 5.5-3.8H17v4.3z" fill="#2c6fd1"/><path d="M5.5 15.5h13.5" stroke="#e5484d" stroke-width="1.6"/><path d="M7 20l2-2M17 20l-2-2" stroke="#5b6472" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  rail1: '<svg class="ic" viewBox="0 0 24 24"><path d="M21 4.5c-.8-.8-2.2-.6-3.1.3L14.6 8 5.8 5.7 4.4 7.1l7.1 3.8-3.4 3.5-2.7-.4-1.1 1.1 3.2 1.6 1.6 3.2 1.1-1.1-.4-2.7 3.5-3.4 3.8 7.1 1.4-1.4L16 9.4l3.2-3.3c.9-.9 1.1-2.3.3-3.1z" fill="#2c6fd1"/></svg>'
+};
+const iconFor = i => { const s = SQ[i]; if (s.t === 'rail') return i === 20 ? IC.rail0 : IC.rail1; return IC[s.t] || ''; };
+const NAME_SHOW = { '所得稅': '所得稅', '奢侈稅': '奢侈稅' };
+
+// ---------- board geometry ----------
+let B = 360, K = 48, C = 37;
+function cellRect(i) {
+  // 0 bottom-right corner, 1..7 bottom row leftwards, 8 bottom-left, 9..15 left column upwards, 16 top-left, 17..23 top row rightwards, 24 top-right, 25..31 right column downwards
+  if (i === 0) return [B - K, B - K, K, K, 'corner b-bottom'];
+  if (i < 8) return [B - K - i * C, B - K, C, K, 'b-bottom'];
+  if (i === 8) return [0, B - K, K, K, 'corner b-bottom'];
+  if (i < 16) return [0, B - K - (i - 8) * C, K, C, 'b-left'];
+  if (i === 16) return [0, 0, K, K, 'corner b-top'];
+  if (i < 24) return [K + (i - 17) * C, 0, C, K, 'b-top'];
+  if (i === 24) return [B - K, 0, K, K, 'corner b-top'];
+  return [B - K, K + (i - 25) * C, K, C, 'b-right'];
+}
+const cellEls = [];
+function buildBoard() {
+  const bd = $('board'); bd.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const s = SQ[i], el = document.createElement('div'); el.dataset.i = i;
+    let h = '';
+    if (s.t === 'prop') h = `<i class="bd"></i><b class="nm">${s.n}</b><span class="pr num">${s.price.toLocaleString('en-US')}</span><span class="hs"></span>`;
+    else if (s.t === 'rail') h = `${iconFor(i)}<b class="nm">${s.n}</b><span class="pr num">${s.price.toLocaleString('en-US')}</span>`;
+    else if (s.t === 'tax') h = `${iconFor(i)}<b class="nm">${s.n}</b><span class="pr num">${s.amt.toLocaleString('en-US')}</span>`;
+    else if (s.t === 'go') h = `${IC.go}<b class="nm">起點</b><span class="pr num">+2,000</span>`;
+    else h = `${iconFor(i)}<b class="nm">${s.n}</b>`;
+    el.innerHTML = h; if (s.t === 'prop') el.style.setProperty('--g', MP.G[s.g].c);
+    bd.appendChild(el); cellEls[i] = el;
+  }
+  bd.addEventListener('click', e => { const c = e.target.closest('.cell'); if (c) showDeed(+c.dataset.i); });
+  const tk = $('toks'); tk.innerHTML = '';
+  for (let p = 0; p < 4; p++) { const t = document.createElement('div'); t.className = 'tok'; t.id = 'tok' + p; t.style.setProperty('--c', PC[p]); t.textContent = GLY[p]; tk.appendChild(t); }
+}
+function placeCells() {
+  for (let i = 0; i < N; i++) {
+    const [x, y, w, h, cls] = cellRect(i), el = cellEls[i];
+    el.className = 'cell ' + cls + (el.classList.contains('owned') ? ' owned' : '') + (el.classList.contains('mort') ? ' mort' : '');
+    el.style.left = (x + 1) + 'px'; el.style.top = (y + 1) + 'px'; el.style.width = (w - 2) + 'px'; el.style.height = (h - 2) + 'px';
+  }
+  const st = $('stage'); st.style.left = (K + 1) + 'px'; st.style.top = (K + 1) + 'px'; st.style.width = (B - 2 * K - 2) + 'px'; st.style.height = (B - 2 * K - 2) + 'px';
+}
+function tokXY(p, i) {
+  const [x, y, w, h] = cellRect(i), cx = x + w / 2, cy = y + h / 2;
+  if (G && G.P[p] && G.P[p].jail && i === MP.JAIL && V && V.jail[p]) { // inside the bars
+    return [x + w * 0.62 + (p % 2) * w * 0.18 - w * 0.09, y + h * 0.36 + (p >> 1) * h * 0.2];
+  }
+  const tz = Math.max(14, Math.round(C * 0.4)), el = cellEls[i], r = tz / 2 + 1.5;
+  if (i % 8 === 0) { const span = Math.max(0, Math.min(w - tz * 1.15, tz * 1.9)); return [cx - span / 2 + span * p / 3, y + h * 0.24]; }
+  // squares with an icon (機會、命運、稅、高鐵、機場): tokens stand on the icon, which is only decoration
+  const icn = el && SQ[i].t !== 'prop' && el.querySelector('.ic');
+  if (icn && icn.getBoundingClientRect().height) { const er = el.getBoundingClientRect(), q = icn.getBoundingClientRect(), span = Math.max(0, Math.min(w - tz * 1.15, tz * 1.9));
+    return [cx - span / 2 + span * p / 3, y + 1 + q.top - er.top + q.height / 2]; }
+  // tokens stand on the outer edge of the square, in the room the text leaves free (the text leans to the inner side)
+  const side = i < 8 ? 'b' : i < 16 ? 'l' : i < 24 ? 't' : 'r';
+  let free = side === 'b' || side === 't' ? h * 0.32 : w * 0.3;
+  if (el && el.offsetWidth) {
+    const er = el.getBoundingClientRect(); let lo = Infinity, hi = -Infinity;
+    for (const c of el.children) { if (/\b(bd|hs|ob)\b/.test(c.getAttribute('class') || '')) continue; const q = c.getBoundingClientRect(); if (!q.width) continue;
+      if (side === 'b') hi = Math.max(hi, q.bottom - er.top); else if (side === 't') lo = Math.min(lo, q.top - er.top); else if (side === 'l') lo = Math.min(lo, q.left - er.left); else hi = Math.max(hi, q.right - er.left); }
+    if (side === 'b' && hi > -Infinity) free = er.height - hi; if (side === 't' && lo < Infinity) free = lo;
+    if (side === 'l' && lo < Infinity) free = lo; if (side === 'r' && hi > -Infinity) free = er.width - hi;
+  }
+  let room = 0; // how far a token may hang over the board's outer edge without leaving the screen
+  if (el && el.offsetWidth) { const er = el.getBoundingClientRect(); room = side === 'l' ? er.left : side === 'r' ? innerWidth - er.right : side === 't' ? er.top : innerHeight - er.bottom; }
+  const inw = Math.max(r - room + 1, 1.5, Math.min(r + 1, free - r - 1)); // distance of the token centre in from the outer edge (the centre stays on the square)
+  if (side === 'b' || side === 't') { const span = Math.max(0, Math.min(w - tz * 1.15, tz * 1.9)), sx = cx - span / 2 + span * p / 3; return [sx, side === 'b' ? y + h - inw : y + inw]; }
+  const span = Math.max(0, Math.min(h - tz * 1.1, tz * 1.6)), sy = cy - span / 2 + span * p / 3; return [side === 'l' ? x + inw : x + w - inw, sy];
+}
+function setTok(p, i) { const t = $('tok' + p), [x, y] = tokXY(p, i); t.style.transform = `translate(${x}px,${y}px)`; }
+
+// ---------- layout ----------
+function layout() {
+  const W = innerWidth, H = innerHeight, land = W > H * 1.18 && H < 760;
+  document.body.classList.toggle('land', land);
+  const padX = 16, padY = 12;
+  if (land) {
+    B = Math.floor(Math.min(H - padY - 4, W * 0.56, 760));
+    const R = Math.max(240, Math.min(460, W - B - padX - 14));
+    document.body.style.setProperty('--R', R + 'px');
+    document.body.classList.remove('plog', 'tall');
+  } else {
+    const chipH = 48, barH = 48, gap = 7 * 2;
+    B = Math.floor(Math.min(W - padX, H - padY - chipH - barH - gap, 640));
+    // spare height below the board: big 2×2 player cards first, then a strip of recent events (at least 44 px)
+    const spare = H - padY - chipH - barH - gap - Math.max(260, B), big = W < 700 && spare - 67 - 7 >= 44, lh = Math.min(230, spare - (big ? 67 : 0) - 7);
+    const plog = lh >= 44;
+    document.body.classList.toggle('tall', big || (W < 700 && !plog && spare >= 67));
+    document.body.classList.toggle('plog', plog);
+    if (plog) document.body.style.setProperty('--LH', Math.floor(lh) + 'px');
+  }
+  B = Math.max(260, B);
+  K = Math.round(B * 0.145); C = (B - 2 * K) / 7;
+  const app = document.documentElement.style;
+  app.setProperty('--B', B + 'px'); app.setProperty('--c', C + 'px');
+  const bd = $('boardBox').style;
+  bd.setProperty('--bh', Math.max(6, Math.round(C * 0.2)) + 'px');
+  bd.setProperty('--fs', Math.max(10, Math.min(16, C * 0.31)).toFixed(1) + 'px');
+  bd.setProperty('--fs2', Math.max(8.5, Math.min(13, C * 0.24)).toFixed(1) + 'px');
+  bd.setProperty('--ob', Math.max(6, Math.round(C * 0.2)) + 'px');
+  bd.setProperty('--hw', Math.max(4, Math.round(C * 0.14)) + 'px');
+  bd.setProperty('--icw', Math.max(15, Math.round(C * 0.46)) + 'px');
+  bd.setProperty('--tz', Math.max(14, Math.round(C * 0.4)) + 'px');
+  bd.setProperty('--dz', Math.max(34, Math.min(64, Math.round(C * 1.02))) + 'px');
+  placeCells();
+  if (G && V) for (let p = 0; p < 4; p++) setTok(p, V.pos[p]);
+  renderLog();
+}
+
+// ---------- Taiwan map in the centre ----------
+const COAST = [[121.51, 25.30], [121.64, 25.22], [121.75, 25.15], [121.92, 25.10], [122.00, 25.01], [121.87, 24.85], [121.82, 24.65], [121.86, 24.58], [121.70, 24.30], [121.62, 24.00], [121.55, 23.70], [121.48, 23.40], [121.38, 23.10], [121.20, 22.85], [121.03, 22.65], [120.90, 22.35], [120.86, 22.10], [120.84, 21.90], [120.74, 21.93], [120.68, 22.10], [120.60, 22.33], [120.45, 22.48], [120.30, 22.58], [120.22, 22.75], [120.12, 23.00], [120.10, 23.25], [120.15, 23.45], [120.20, 23.70], [120.32, 23.90], [120.43, 24.10], [120.55, 24.30], [120.70, 24.55], [120.90, 24.80], [121.02, 24.95], [121.20, 25.05], [121.40, 25.18]];
+const CITY = { 1: [121.49, 22.66], 3: [121.55, 22.05], 5: [119.58, 23.57], 6: [118.35, 24.44], 7: [119.95, 26.16], 9: [121.14, 22.76], 10: [121.60, 23.98], 12: [121.75, 24.75], 13: [120.49, 22.67], 14: [120.45, 23.48], 15: [120.68, 23.90], 17: [120.20, 23.00], 19: [120.31, 22.63], 21: [120.54, 24.08], 22: [120.97, 24.80], 23: [120.68, 24.15], 25: [121.30, 24.99], 26: [121.44, 25.06], 29: [121.54, 25.02], 31: [121.60, 25.04] };
+const pj = ([lo, la]) => [((lo - 118.2) * 0.91).toFixed(3), (26.3 - la).toFixed(3)];
+function buildMap() {
+  const m = $('map');
+  let h = `<path class="isl" d="M${COAST.map(pj).map(a => a.join(',')).join('L')}Z"/>`;
+  for (const k of [5, 6, 7, 1, 3]) { const [x, y] = pj(CITY[k]); h += `<ellipse class="isl" cx="${x}" cy="${y}" rx="${k === 5 ? .09 : .06}" ry="${k === 5 ? .1 : .05}"/>`; }
+  for (const k in CITY) { const [x, y] = pj(CITY[k]); h += `<circle id="dot${k}" cx="${x}" cy="${y}" r=".045" fill="var(--ink2)" opacity=".55"/>`; }
+  m.innerHTML = h;
+}
+
+// ---------- dice ----------
+const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+const ROT = { 1: [0, 0], 6: [0, 180], 2: [0, -90], 5: [0, 90], 3: [-90, 0], 4: [90, 0] };
+const dieRot = [[0, 0], [0, 0]];
+function buildDice() {
+  for (const k of [0, 1]) { const c = $('cube' + k); let h = ''; for (let f = 1; f <= 6; f++) { h += `<div class="face f${f}${f === 1 ? ' r' : ''}">`; for (let j = 0; j < 9; j++) h += `<i${PIPS[f].includes(j) ? ' class="v"' : ''}></i>`; h += '</div>'; } c.innerHTML = h; }
+  showDice([3, 4], false);
+}
+function showDice(d, spin) {
+  $('cube1').classList.toggle('gone', d.length < 2);
+  for (const k of [0, 1]) {
+    if (k >= d.length) continue;
+    const c = $('cube' + k), [rx, ry] = ROT[d[k]];
+    if (spin) { dieRot[k][0] += 360 * (2 + k); dieRot[k][1] += 360 * (1 + (k ? 2 : 1)); }
+    const bx = dieRot[k][0] + rx, by = dieRot[k][1] + ry;
+    c.style.transitionDuration = spin && !RM.matches ? (0.55 + k * 0.08) / speedK() + 's' : '0s';
+    c.style.transform = `perspective(320px) rotateX(${bx}deg) rotateY(${by}deg)`;
+  }
+}
+
+// ---------- view state ----------
+function syncView() { V = { pos: G.P.map(p => p.pos), cash: G.P.map(p => p.cash), jail: G.P.map(p => p.jail), out: G.P.map(p => p.out), own: G.own.slice(), lvl: G.lvl.slice(), mort: G.mort.slice() }; }
+function renderChips() {
+  const box = $('chips');
+  if (!box.children.length) for (let p = 0; p < 4; p++) { const d = document.createElement('div'); d.className = 'chip'; d.id = 'chip' + p; d.style.setProperty('--c', PC[p]); d.innerHTML = `<span class="tk">${GLY[p]}</span><span class="tx"><span class="nm"></span><span class="cs num"></span></span><span class="jl" hidden aria-label="在監獄"></span>`; box.appendChild(d); }
+  for (let p = 0; p < 4; p++) {
+    const d = $('chip' + p), lots = V.own.filter(o => o === p).length;
+    d.classList.toggle('on', G.phase !== 'over' && G.turn === p); d.classList.toggle('out', !!V.out[p]);
+    d.querySelector('.nm').innerHTML = `${G.P[p].nm}<i>${V.out[p] ? '破產' : lots + ' 地'}</i>`;
+    d.querySelector('.cs').innerHTML = `<small>$</small>${money(V.cash[p])}`;
+    d.querySelector('.jl').hidden = !(V.jail[p] && !V.out[p]);
+  }
+}
+function renderCell(i) {
+  const el = cellEls[i], o = V.own[i];
+  el.classList.toggle('owned', o >= 0); el.classList.toggle('mort', !!V.mort[i]);
+  if (o >= 0) el.style.setProperty('--o', PC[o]); else el.style.removeProperty('--o');
+  let ob = el.querySelector('.ob'); if (o >= 0 && !ob) { ob = document.createElement('i'); ob.className = 'ob'; el.appendChild(ob); } if (o < 0 && ob) ob.remove();
+  const pr = el.querySelector('.pr');
+  if (MP.buyable(i) && pr) pr.textContent = o >= 0 ? (V.mort[i] ? '抵押' : rentNow(i).toLocaleString('en-US')) : SQ[i].price.toLocaleString('en-US');
+  const hs = el.querySelector('.hs'); if (hs) { const l = V.lvl[i]; hs.innerHTML = l === 5 ? '<b>樓</b>' : '<i></i>'.repeat(l); }
+  const dot = document.getElementById('dot' + i); if (dot) { dot.setAttribute('fill', o >= 0 ? PC[o] : 'var(--ink2)'); dot.setAttribute('opacity', o >= 0 ? '1' : '.5'); dot.setAttribute('r', o >= 0 ? '.07' : '.045'); }
+}
+function rentNow(i) { const tmp = { own: V.own, lvl: V.lvl, mort: V.mort }; return MP.rentOf(tmp, i); }
+function renderAll() { renderChips(); for (let i = 0; i < N; i++) renderCell(i); for (let p = 0; p < 4; p++) { setTok(p, V.pos[p]); $('tok' + p).classList.toggle('out', !!V.out[p]); } renderHead(); upBadge(); }
+function renderHead() {
+  $('sRound').textContent = G.rounds ? `第 ${Math.min(G.round, G.rounds)}／${G.rounds} 輪` : `第 ${G.round} 輪`;
+  const p = G.phase === 'over' ? -1 : G.turn, w = $('sWho');
+  if (p < 0) { w.innerHTML = '<span>本局結束</span>'; return; }
+  w.style.setProperty('--c', PC[p]); w.innerHTML = `<i>${GLY[p]}</i><span>${p === 0 ? '你的回合' : nm(p) + ' 的回合'}</span>`;
+}
+function upBadge() { const n = G && G.phase === 'roll' && G.actor === 0 ? MP.legal(G).filter(a => a.a === 'up').length : 0; const b = $('upBdg'); b.hidden = !n; b.textContent = n; }
+function msg(h) { $('sMsg').innerHTML = h; }
+function hint(h) { $('sHint').innerHTML = h || ''; }
+function log(h, cls) { logLines.unshift(cls ? `<p class="${cls}">${h}</p>` : `<p>${h}</p>`); if (logLines.length > 60) logLines.pop(); if (skipping) return; renderLog(); }
+function renderLog() {
+  const box = $('logLines'), l = $('log'), b = document.body;
+  if (!b.classList.contains('land') && !b.classList.contains('plog')) { box.innerHTML = ''; return; }
+  const n = b.classList.contains('land') ? 40 : Math.max(1, Math.floor((parseFloat(getComputedStyle(b).getPropertyValue('--LH')) - 25) / 21.5));
+  l.classList.toggle('one', b.classList.contains('plog') && n <= 1);
+  box.innerHTML = logLines.length ? logLines.slice(0, n).join('') : '<p>擲骰後，大家買地、付過路費都會記在這裡</p>';
+  if (!$('logOv').hidden) $('logList').innerHTML = logLines.join('') || '<p>還沒有動態</p>';
+}
+function openLog() { $('logList').innerHTML = logLines.join('') || '<p>還沒有動態</p>'; show('logOv'); }
+let toastT = 0;
+function toast(t, ms) { const e = $('toast'); e.textContent = t; e.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('show'), ms || 1600); }
+function floatAt(p, v) {
+  if (skipping) return; const c = $('chip' + p).getBoundingClientRect(), f = document.createElement('div');
+  f.className = 'fl num ' + (v >= 0 ? 'p' : 'm'); f.textContent = (v >= 0 ? '+' : '−') + '$' + Math.abs(v).toLocaleString('en-US');
+  f.style.left = (c.left + c.width / 2) + 'px'; f.style.top = (c.top + c.height * 0.45) + 'px'; document.body.appendChild(f); setTimeout(() => f.remove(), 1150);
+}
+function landRing(i, p) { const el = cellEls[i]; el.style.setProperty('--hc', PC[p]); el.classList.add('here'); clearTimeout(el._hr); el._hr = setTimeout(() => el.classList.remove('here'), 1400); }
+function flashCell(i) { const el = cellEls[i]; el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+// ---------- timing ----------
+function speedK() { return animP > 0 && G && G.P[animP] && G.P[animP].cpu ? S.speed : (animP === 0 ? 1 : S.speed); }
+function T(ms) { if (skipping) return 0; return ms / speedK() * (RM.matches ? 0.5 : 1); }
+const wait = ms => { const t = T(ms); return t > 4 ? sleep(t) : Promise.resolve(); };
+function hopTo(p, i, k, n, dur) {
+  const t = $('tok' + p), [x1, y1] = tokXY(p, i);
+  const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(t.style.transform) || [0, x1, y1], x0 = +m[1], y0 = +m[2];
+  if (dur <= 4 || RM.matches) { t.style.transform = `translate(${x1}px,${y1}px)`; return dur > 4 ? sleep(dur) : Promise.resolve(); }
+  return new Promise(res => {
+    const t0 = performance.now(), hgt = C * 0.55;
+    const step = now => {
+      const q = Math.min(1, (now - t0) / dur), e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2, z = Math.sin(Math.PI * q) * hgt;
+      t.style.transform = `translate(${x0 + (x1 - x0) * e}px,${y0 + (y1 - y0) * e - z}px) scale(${1 + z / hgt * 0.18})`;
+      if (q < 1) requestAnimationFrame(step); else { t.style.transform = `translate(${x1}px,${y1}px)`; res(); }
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+// ---------- event animation ----------
+const WHY = { rent: '過路費', tax: '稅金', bail: '保釋金', card: '', gift: '紅包', repair: '修繕費' };
+async function playEvents(evs) {
+  for (const e of evs) {
+    if (e.p != null) animP = e.p; else if (e.from != null) animP = e.from;
+    EVC[e.t] = (EVC[e.t] || 0) + 1;
+    await anim(e);
+  }
+  syncView(); renderAll(); checkLive();
+}
+function cname(p) { return `<b style="color:${PC[p]}">${nm(p)}</b>`; }
+async function anim(e) {
+  switch (e.t) {
+    case 'roll': {
+      snd('roll'); if (animP === 0) buzz(12);
+      $('dSum').classList.remove('show'); showDice(e.d, true);
+      msg(`${cname(e.p)} 擲骰…`);
+      await wait(640);
+      const one = e.d.length < 2, s = one ? e.d[0] : e.d[0] + e.d[1]; $('dSum').textContent = s; $('dSum').classList.add('show');
+      if (one) { msg(`${cname(e.p)} 只擲一顆：<em class="num">${s}</em>`); log(`${cname(e.p)} 只擲一顆，擲出 ${s}`); }
+      else { msg(`${cname(e.p)} 擲出 <em class="num">${e.d[0]} + ${e.d[1]} = ${s}</em>${e.d[0] === e.d[1] ? '・對子！' : ''}`); log(`${cname(e.p)} 擲出 ${s}${e.d[0] === e.d[1] ? '（對子）' : ''}`); }
+      await wait(220); break;
+    }
+    case 'move': {
+      const t = $('tok' + e.p); t.classList.add('mv');
+      const dur = T(e.path.length > 9 ? 105 : 150);
+      for (let k = 0; k < e.path.length; k++) { await hopTo(e.p, e.path[k], k, e.path.length, dur); V.pos[e.p] = e.path[k]; if (!skipping && dur > 4) snd(k === e.path.length - 1 ? 'land' : 'hop'); }
+      t.classList.remove('mv'); if (!e.path.length) break;
+      const i = e.path[e.path.length - 1]; if (!skipping) { landRing(i, e.p); await wait(120); }
+      break;
+    }
+    case 'cash': {
+      V.cash[e.p] += e.v; renderChips(); floatAt(e.p, e.v); if (!skipping) snd('coin');
+      if (e.why === 'go') { msg(`${cname(e.p)} 經過起點，領 <em>$2,000</em>`); log(`${cname(e.p)} 經過起點 +$2,000`); }
+      if (e.why === 'take') log(`${cname(e.p)} 接收破產者的現金 ${fmt(e.v)}`);
+      await wait(e.why === 'go' ? 420 : 300); break;
+    }
+    case 'pay': {
+      V.cash[e.from] -= e.amt; if (e.to >= 0) V.cash[e.to] += e.amt; renderChips();
+      floatAt(e.from, -e.amt); if (e.to >= 0) setTimeout(() => floatAt(e.to, e.amt), T(200));
+      if (!skipping) { snd(e.to === 0 ? 'coin' : 'pay'); if (e.from === 0 && e.why === 'rent') buzz(25); }
+      let t;
+      if (e.why === 'rent') t = `${cname(e.from)} 付給 ${cname(e.to)} 過路費 <em class="num">${fmt(e.amt)}</em>`;
+      else if (e.why === 'gift') t = `${cname(e.from)} 包紅包 <em class="num">${fmt(e.amt)}</em> 給 ${cname(e.to)}`;
+      else if (e.why === 'tax') t = `${cname(e.from)} 繳${SQ[e.sq].n} <em class="num">${fmt(e.amt)}</em>`;
+      else if (e.why === 'bail') t = `${cname(e.from)} 付保釋金 <em class="num">${fmt(e.amt)}</em>`;
+      else if (e.why === 'repair') t = `${cname(e.from)} 付修繕費 <em class="num">${fmt(e.amt)}</em>`;
+      else t = `${cname(e.from)} 付出 <em class="num">${fmt(e.amt)}</em>`;
+      msg(t); log(t); if (e.sq != null && e.why === 'rent') flashCell(e.sq);
+      if (skipSum && e.why === 'rent') { if (e.to === 0) skipSum.inc += e.amt; if (e.from === 0) skipSum.out += e.amt; }
+      await wait(e.why === 'rent' ? 700 : 520); break;
+    }
+    case 'buy': case 'take': {
+      V.own[e.sq] = e.p; V.cash[e.p] -= e.v; if (e.t === 'take') V.cash[e.from] += e.v; renderCell(e.sq); renderChips(); flashCell(e.sq); floatAt(e.p, -e.v);
+      if (!skipping) { snd('buy'); if (e.p === 0) buzz(20); }
+      const t = e.t === 'buy' ? `${cname(e.p)} 買下 <em>${SQ[e.sq].n}</em>` : `${cname(e.p)} 以 <em class="num">${fmt(e.v)}</em> 向 ${cname(e.from)} 收購 <em>${SQ[e.sq].n}</em>`;
+      msg(t); log(t); if (skipSum && e.p) skipSum.items.push(`${nm(e.p)}${e.t === 'buy' ? '買下' : '收購'}${SQ[e.sq].n}`); await wait(650); break;
+    }
+    case 'build': {
+      V.lvl[e.sq] = e.lvl; V.cash[e.p] -= e.v; renderCell(e.sq); renderChips(); flashCell(e.sq); floatAt(e.p, -e.v); if (!skipping) snd('build');
+      const t = e.lvl === 5 ? `${cname(e.p)} 把 <em>${SQ[e.sq].n}</em> 改建成大樓` : `${cname(e.p)} 在 <em>${SQ[e.sq].n}</em> 蓋了第 ${e.lvl} 棟房子`;
+      msg(t); log(t); if (skipSum && e.p) skipSum.items.push(`${nm(e.p)}在${SQ[e.sq].n}${e.lvl === 5 ? '蓋大樓' : '蓋房'}`); await wait(600); break;
+    }
+    case 'sell': case 'mortgage': case 'redeem': {
+      if (e.t === 'sell') V.lvl[e.sq] = e.lvl; if (e.t === 'mortgage') V.mort[e.sq] = 1; if (e.t === 'redeem') V.mort[e.sq] = 0;
+      V.cash[e.p] += e.t === 'redeem' ? -e.v : e.v; renderCell(e.sq); renderChips(); floatAt(e.p, e.t === 'redeem' ? -e.v : e.v); if (!skipping) snd('tick');
+      const t = `${cname(e.p)} ${e.t === 'sell' ? '賣掉' : e.t === 'mortgage' ? '抵押' : '贖回'}${SQ[e.sq].n}${e.t === 'sell' ? '的一棟房子' : ''}`;
+      msg(t); log(t); await wait(e.p === 0 ? 0 : 380); break;
+    }
+    case 'card': {
+      if (!skipping) snd('card');
+      log(`${cname(e.p)} 抽到${e.kind === 'chance' ? '機會' : '命運'}：${e.tx}`);
+      await showCard(e); break;
+    }
+    case 'jail': {
+      V.jail[e.p] = 1; V.pos[e.p] = MP.JAIL; if (!skipping) { snd('jail'); if (e.p === 0) buzz([30, 40, 30]); }
+      const t = $('tok' + e.p); t.classList.add('mv'); await hopTo(e.p, MP.JAIL, 0, 1, T(420)); t.classList.remove('mv'); renderChips();
+      msg(`${cname(e.p)} 被送進監獄`); log(`${cname(e.p)} 入獄`); await wait(600); break;
+    }
+    case 'free': V.jail[e.p] = 0; renderChips(); setTok(e.p, V.pos[e.p]); msg(`${cname(e.p)} ${e.how === 'dbl' ? '擲出對子，' : e.how === 'card' ? '用出獄許可證，' : e.how === 'forced' ? '關滿三次，付保釋金' : ''}出獄了`); log(`${cname(e.p)} 出獄`); await wait(450); break;
+    case 'stay': msg(`${cname(e.p)} 沒擲出對子，繼續關著`); log(`${cname(e.p)} 留在監獄`); await wait(650); break;
+    case 'again': msg(`${cname(e.p)} 擲出對子，<em>再擲一次</em>`); await wait(450); break;
+    case 'skip': if (e.p !== 0) { msg(`${cname(e.p)} 沒有買 ${SQ[e.sq].n}`); } await wait(e.p === 0 ? 0 : 380); break;
+    case 'round': $('sRound').textContent = G.rounds ? `第 ${e.n}／${G.rounds} 輪` : `第 ${e.n} 輪`; log(`— 第 ${e.n} 輪 —`); if (G.rounds && e.n === G.rounds) { toast('最後一輪！'); } break;
+    case 'turn': {
+      const w = $('sWho'); w.style.setProperty('--c', PC[e.p]); w.innerHTML = `<i>${GLY[e.p]}</i><span>${e.p === 0 ? '你的回合' : nm(e.p) + ' 的回合'}</span>`;
+      for (let q = 0; q < 4; q++) $('chip' + q).classList.toggle('on', q === e.p);
+      $('dSum').classList.remove('show'); await wait(e.p === 0 ? 120 : 260); break;
+    }
+    case 'msg': {
+      const t = e.tx === 'mort' ? `${SQ[e.sq].n} 已抵押，免付過路費` : e.tx === 'triple' ? `${cname(e.p)} 連續三次對子！` : e.tx === 'nohouse' ? '沒有房子，不用付錢' : '';
+      msg(t); await wait(600); break;
+    }
+    case 'bankrupt': {
+      V.out[e.p] = 1; renderChips(); $('tok' + e.p).classList.add('out'); if (!skipping) snd('bad');
+      const t = `${cname(e.p)} 破產了${e.to >= 0 ? `，資產歸 ${cname(e.to)}` : ''}`; msg(t); log(t); if (skipSum) skipSum.items.unshift(`${nm(e.p)}破產`); toast(`${nm(e.p)} 破產了`, 2000); await wait(1100); break;
+    }
+    case 'over': break;
+  }
+}
+let cardResolve = null;
+function showCard(e) {
+  const pop = $('pop'), ch = e.kind === 'chance';
+  pop.className = 'card'; pop.style.setProperty('--g', ch ? '#f08a24' : '#d6402c');
+  pop.innerHTML = `<div class="ph"><b>${ch ? '機會' : '命運'}</b><small>${nm(e.p)}抽到</small></div><div class="pb"><div class="cic">${ch ? IC.chance : IC.fate}</div>${e.tx}</div>${e.p === 0 ? '<div class="pa"><button class="sb pri" id="cardOk">好</button></div>' : ''}`;
+  pop.hidden = false; if (!skipping) { void pop.offsetWidth; pop.classList.add('flip'); }
+  return new Promise(res => {
+    const done = () => { if (!cardResolve) return; cardResolve = null; clearTimeout(tm); pop.hidden = true; res(); };
+    cardResolve = done;
+    const tm = setTimeout(done, skipping ? 0 : T(e.p === 0 ? 4200 : 1500));
+    const ok = $('cardOk'); if (ok) ok.onclick = done;
+    pop.onclick = done;
+  });
+}
+
+// ---------- the turn pump ----------
+function save() { LS.set('game', G); }
+async function pump() {
+  const my = runId;
+  while (my === runId && G) {
+    if (G.phase === 'over') { skipping = false; skipSum = null; $('skip').hidden = true; renderLog(); showResult(); return; }
+    const a = G.actor;
+    if (!G.P[a].cpu) { skipping = false; $('skip').hidden = true; humanUI(); if (skipSum) showSkipSum(); return; }
+    $('skip').hidden = skipping; clearAct(); $('diceBtn').classList.remove('ready');
+    if (!$('menu').hidden || !$('help').hidden) { await sleep(150); continue; }
+    if (document.hidden) { await new Promise(r => { const f = () => { if (!document.hidden) { document.removeEventListener('visibilitychange', f); r(); } }; document.addEventListener('visibilitychange', f); }); continue; }
+    animP = a; await wait(G.phase === 'roll' ? 280 : 360);
+    if (my !== runId) return;
+    const x = MP.think(G, MP.cpuLevel(G, a)); const ev = x && MP.act(G, x);
+    if (!ev) { console.warn('cpu stuck', G.phase); return; }
+    save(); busy = true; await playEvents(ev); if (my !== runId) return; busy = false;
+  }
+}
+// one line on what happened while the computers' turns were skipped
+function showSkipSum() {
+  const k = skipSum; skipSum = null; const seen = new Set(), it = k.items.filter(x => !seen.has(x) && seen.add(x));
+  let t = it.length ? it.slice(0, 3).join('、') + (it.length > 3 ? ` 等 ${it.length} 件事` : '') : '電腦沒有買地或蓋房';
+  if (k.inc) t += `；你收到過路費 ${fmt(k.inc)}`; if (k.out) t += `；你付出 ${fmt(k.out)}`;
+  log('跳過期間：' + t, 'sum'); renderLog();
+  if (G.phase === 'roll') hint(`<span style="color:var(--ink)">跳過期間：${t}</span>`); else if (!document.body.classList.contains('plog') && !document.body.classList.contains('land')) toast('跳過期間：' + t, 3200);
+}
+function clearAct() { $('sAct').innerHTML = ''; hint(''); $('pop').hidden = true; }
+function btn(label, cls, fn, dis) { const b = document.createElement('button'); b.className = 'sb ' + (cls || ''); b.innerHTML = label; b.disabled = !!dis; b.onclick = e => { e.stopPropagation(); fn(); }; return b; }
+let primary = null, secondary = null;
+function humanUI() {
+  clearAct(); primary = secondary = null; renderAll();
+  const p = 0, pl = G.P[0], ph = G.phase, L = MP.legal(G), has = a => L.some(x => x.a === a);
+  const db = $('diceBtn'); db.classList.toggle('ready', ph === 'roll');
+  if (ph === 'roll') {
+    $('dSum').classList.remove('show');
+    if (pl.jail) {
+      msg(`你在監獄裡（第 ${pl.jail} 次）`);
+      hint(pl.jail >= 3 ? '這次沒擲出對子就要付 $500 出獄' : '擲出對子就能出獄，或直接付錢');
+      const act = $('sAct');
+      if (has('bail')) act.appendChild(btn('付 $500 出獄', '', () => human({ a: 'bail' })));
+      if (has('card')) act.appendChild(btn('用出獄許可證', '', () => human({ a: 'card' })));
+    } else {
+      msg(G.again ? '對子！<em>再擲一次</em>' : (G.turnNo === 0 && G.round === 1 ? '點骰子開始環島' : '輪到你了'));
+      const ups = L.filter(a => a.a === 'up').length;
+      $('cube1').classList.remove('gone');
+      if (has('roll1')) { const b1 = btn('<svg viewBox="0 0 24 24" style="width:18px;height:18px;vertical-align:-4px;margin-right:5px"><rect x="3" y="3" width="18" height="18" rx="5" fill="#fff" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.6" fill="#d62f22"/></svg>只擲一顆', '', () => human({ a: 'roll1' })); b1.id = 'one'; b1.title = '走得慢一點，可以避開危險的地段，但不會擲出對子'; $('sAct').appendChild(b1); }
+      if (ups) $('sAct').appendChild(btn(`蓋房子 <span class="num">${ups}</span>`, '', () => openAssets(0)));
+      hint(ST.played < 1 && G.round <= 2 ? '點骰子擲兩顆；想慢慢走就「只擲一顆」' : '');
+      secondary = has('roll1') ? () => human({ a: 'roll1' }) : null;
+    }
+    primary = () => human({ a: 'roll' });
+    return;
+  }
+  $('diceBtn').classList.remove('ready');
+  if (ph === 'buy' || ph === 'build' || ph === 'take') return deedPrompt(ph);
+  if (ph === 'debt') return openDebt();
+}
+function rentsGrid(i, cur) {
+  const s = SQ[i]; if (s.t === 'rail') return `<div class="rents" style="grid-template-columns:1fr 1fr"><div${cur === 1 ? ' class="cur"' : ''}>一座<b>${MP.RAIL_RENT[0].toLocaleString('en-US')}</b></div><div${cur === 2 ? ' class="cur"' : ''}>兩座<b>${MP.RAIL_RENT[1].toLocaleString('en-US')}</b></div></div>`;
+  const lab = ['空地', '1 棟', '2 棟', '3 棟', '4 棟', '大樓'];
+  return `<div class="rents">${s.rent.map((r, k) => `<div${cur === k ? ' class="cur"' : ''}>${lab[k]}<b class="num">${r >= 10000 ? (r / 1000).toFixed(r % 1000 ? 1 : 0) + 'k' : r.toLocaleString('en-US')}</b></div>`).join('')}</div>`;
+}
+let popKey = '';
+// what is left after paying: red when it would not cover the biggest rent on the board, green when comfortable
+function leftTag(v) { const tight = v < Math.max(1000, MP.danger(G, 0)); return `<b class="num ${v < 0 || tight ? 'lo' : 'okc'}">${fmt(v)}</b>`; }
+function deedPrompt(ph) {
+  const i = G.pend.sq, s = SQ[i], pl = G.P[0], pop = $('pop');
+  pop.className = 'deed'; pop.style.setProperty('--g', gcol(i));
+  const grp = s.t === 'prop' ? MP.G[s.g].n + '・' + MP.GROUP_SQ[s.g].map(j => SQ[j].n).join('、') : '交通・高鐵站與機場';
+  let body = '', a1, a2, cost;
+  if (ph === 'buy') {
+    cost = s.price; const mine = s.t === 'prop' ? MP.GROUP_SQ[s.g].filter(j => G.own[j] === 0).length : MP.RAILS.filter(j => G.own[j] === 0).length;
+    const setN = s.t === 'prop' ? MP.GROUP_SQ[s.g].length : 2;
+    body = `<div class="row"><span>地價</span><b class="num">${fmt(cost)}</b></div>${rentsGrid(i, -1)}<div class="note">${mine + 1 === setN ? '<b>買下就湊齊整組！</b>空地過路費加倍，還能隨時蓋房' : `這組你已有 ${mine}/${setN} 塊`}・買後剩 ${leftTag(pl.cash - cost)}</div>`;
+    a1 = btn(`買下 ${fmt(cost)}`, 'pri', () => human({ a: 'buy' }), pl.cash < cost); a2 = btn('不買', '', () => human({ a: 'skip' }));
+  } else if (ph === 'build') {
+    cost = s.house; const l = G.lvl[i];
+    body = `<div class="row"><span>${l === 4 ? '改建大樓' : `加蓋第 ${l + 1} 棟`}</span><b class="num">${fmt(cost)}</b></div>${rentsGrid(i, l)}<div class="note">過路費 <b class="num">${fmt(MP.rentOf(G, i))}</b> → <b class="num">${fmt(s.rent[l + 1])}</b>・蓋後剩 ${leftTag(pl.cash - cost)}</div>`;
+    a1 = btn(`${l === 4 ? '改建' : '蓋房'} ${fmt(cost)}`, 'pri', () => human({ a: 'build' }), pl.cash < cost); a2 = btn('先不要', '', () => human({ a: 'skip' }));
+  } else {
+    cost = G.pend.cost; const o = G.pend.to;
+    body = `<div class="row"><span>向 ${nm(o)} 收購</span><b class="num">${fmt(cost)}</b></div>${rentsGrid(i, -1)}<div class="note">付完過路費，可用 1.5 倍地價把這塊地買過來・收購後剩 ${leftTag(pl.cash - cost)}</div>`;
+    a1 = btn(`收購 ${fmt(cost)}`, 'pri', () => human({ a: 'take' }), pl.cash < cost); a2 = btn('不用', '', () => human({ a: 'skip' }));
+  }
+  if (pl.cash < cost) body += `<div class="note">現金不足，可以先到「資產」抵押土地</div>`;
+  pop.innerHTML = `<div class="ph"><small>${grp}</small><b>${s.n}</b></div><div class="pb">${body}</div><div class="pa"></div>`;
+  pop.querySelector('.pa').append(a2, a1); pop.hidden = false; pop.onclick = null;
+  // fade in only when the prompt is new; a refresh after 抵押／贖回 in 資產 keeps it steady
+  const key = ph + ':' + i + ':' + G.turnNo; if (popKey !== key && !RM.matches) { pop.classList.remove('in'); void pop.offsetWidth; pop.classList.add('in'); } else pop.classList.add('in-done'); popKey = key;
+  msg(''); primary = a1.disabled ? null : a1.onclick; secondary = a2.onclick;
+}
+async function human(a) {
+  if (busy || !G || G.actor !== 0 || G.P[0].cpu) return false;
+  const ev = MP.act(G, a); if (!ev) return false;
+  const my = runId; busy = true; primary = secondary = null; clearAct(); $('diceBtn').classList.remove('ready'); animP = 0;
+  save(); await playEvents(ev); if (my !== runId) return true; busy = false;
+  if (!$('assets').hidden) renderAssets();
+  pump(); return true;
+}
+// immediate asset actions (sell, mortgage, redeem, up) from panels
+function assetAct(a) {
+  if (busy || G.actor !== 0) return;
+  const ev = MP.act(G, a); if (!ev) return; save();
+  animP = 0; for (const e of ev) { if (e.t === 'build') { snd('build'); flashCell(e.sq); floatAt(0, -e.v); } else { snd(e.t === 'redeem' ? 'pay' : 'coin'); floatAt(0, e.t === 'redeem' ? -e.v : e.v); } }
+  syncView(); renderAll(); checkLive();
+  if (!$('assets').hidden) renderAssets();
+  if (G.phase === 'debt') renderDebt(); else humanUI();
+}
+
+// ---------- panels ----------
+const OV = ['menu', 'help', 'assets', 'deed', 'debt', 'result', 'logOv', 'ach'];
+function show(id) { $(id).hidden = false; }
+function hide(id) { $(id).hidden = true; }
+const anyOpen = () => OV.some(id => !$(id).hidden);
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { const ov = b.closest('.ov'); ov.hidden = true; });
+document.querySelectorAll('.ov').forEach(o => o.addEventListener('click', e => { if (e.target === o && o.id !== 'debt' && o.id !== 'result' && !(o.id === 'menu' && !G)) { o.hidden = true; } }));
+function showDeed(i) {
+  if (busy && !skipping) { /* still allow viewing */ }
+  const s = SQ[i], o = G.own[i]; let h;
+  if (MP.buyable(i)) {
+    const grp = s.t === 'prop' ? MP.G[s.g].n + '・' + MP.GROUP_SQ[s.g].map(j => SQ[j].n).join('、') : '交通・高鐵站與機場';
+    const cur = s.t === 'rail' ? (o >= 0 ? MP.RAILS.filter(r => G.own[r] === o).length : -1) : (o >= 0 ? G.lvl[i] : -1);
+    h = `<div style="background:${gcol(i)};color:#fff;border-radius:14px;padding:10px;text-align:center;margin:0 34px 10px;text-shadow:0 1px 2px #0004"><small style="font-size:12px;font-weight:700">${grp}</small><div style="font-size:24px;font-weight:900;letter-spacing:3px">${s.n}</div></div>
+      <div class="sum3"><div>地價<b class="num">${fmt(s.price)}</b></div><div>${s.t === 'prop' ? '每棟房子' : '目前過路費'}<b class="num">${s.t === 'prop' ? fmt(s.house) : (o >= 0 ? fmt(MP.rentOf(G, i)) : '—')}</b></div><div>地主<b style="color:${o >= 0 ? PC[o] : 'inherit'}">${o >= 0 ? nm(o) : '無'}</b></div></div>
+      <h3>過路費</h3>${rentsGrid(i, cur).replace('class="rents"', 'class="rents" style="display:grid;grid-template-columns:repeat(' + (s.t === 'rail' ? 2 : 6) + ',1fr);gap:4px;text-align:center;font-size:11px;font-weight:700;color:var(--ink2)"')}
+      <p style="font-size:13px;color:var(--ink2)">${o >= 0 ? (G.mort[i] ? '這塊地已抵押，走到這裡不用付過路費。' : `目前過路費 <b style="color:var(--ink)">${fmt(MP.rentOf(G, i))}</b>${s.t === 'prop' && G.lvl[i] === 0 && MP.hasSet(G, o, s.g) ? '（整組到齊，空地加倍）' : ''}。`) : '還沒有人買。'}${s.t === 'prop' ? '同色整組到齊後空地過路費加倍；走到自己的地可以加蓋房子。' : '一個人擁有兩座時過路費提高。'}</p>`;
+  } else {
+    const D = { go: ['起點', '每次經過或停在起點，領 $2,000。'], jail: ['監獄', '只是路過就是探監，不用做任何事。被關的人可以付 $500、用出獄許可證，或擲出對子出獄；第三次沒擲出對子就付 $500 出獄。'], park: ['夜市', '逛夜市休息一下，什麼事都不會發生。'], gojail: ['警察局', '停在這裡直接送進監獄，不經過起點。'], chance: ['機會', '抽一張機會卡，可能前進到某地、領錢或入獄。'], fate: ['命運', '抽一張命運卡，可能領紅包、繳費或遇到颱風。'], tax: [s.n, `停在這裡繳 ${fmt(s.amt || 0)}。`] };
+    const d = D[s.t]; h = `<h2>${d[0]}</h2><p>${d[1]}</p>`;
+  }
+  // ‹ › step to the neighbouring squares, so a tap on the wrong small square is one tap away from the right one
+  $('dBody').innerHTML = h + `<div class="btns dnav"><button class="big alt" data-d="-1">‹ 上一格</button><button class="big alt" data-d="1">下一格 ›</button></div>`; show('deed');
+  $('dBody').querySelectorAll('.dnav button').forEach(b => b.onclick = () => showDeed((i + +b.dataset.d + N) % N));
+}
+let aTab = 0;
+function openAssets(p) { aTab = p || 0; renderAssets(); show('assets'); }
+function renderAssets() {
+  const tabs = $('aTabs'); tabs.innerHTML = G.P.map((pl, p) => `<button data-p="${p}" class="${p === aTab ? 'on' : ''}" style="${p === aTab ? `color:${PC[p]}` : ''}">${pl.nm}</button>`).join('');
+  tabs.querySelectorAll('button').forEach(b => b.onclick = () => { aTab = +b.dataset.p; renderAssets(); });
+  const p = aTab, mine = p === 0, L = mine && G.actor === 0 && !busy ? MP.legal(G) : [], can = (a, i) => L.some(x => x.a === a && x.sq === i);
+  const lots = MP.owned(G, p);
+  let h = `<div class="sum3"><div>現金<b class="num">${fmt(G.P[p].cash)}</b></div><div>總資產<b class="num">${fmt(MP.netWorth(G, p))}</b></div><div>出獄卡<b>${G.P[p].card || 0}</b></div></div>`;
+  if (!lots.length) h += `<div class="empty">${mine ? '還沒有土地。走到沒人買的地就能買下。' : '還沒有土地。'}</div>`;
+  else {
+    h += '<div class="alist">';
+    for (const i of lots) {
+      const s = SQ[i], l = G.lvl[i], set = s.t === 'prop' && MP.hasSet(G, p, s.g);
+      const st = G.mort[i] ? '已抵押' : (s.t === 'prop' ? (l === 5 ? '大樓' : l ? `${l} 棟房子` : '空地') + (set ? '・整組' : '') : '交通');
+      let b = '';
+      if (mine) {
+        if (can('up', i)) b += `<button class="up" data-a="up" data-i="${i}">蓋房<small class="num">${fmt(s.house)}</small></button>`;
+        if (can('sell', i)) b += `<button data-a="sell" data-i="${i}">賣房<small class="num">+${fmt(s.house / 2)}</small></button>`;
+        if (can('mortgage', i)) b += `<button data-a="mortgage" data-i="${i}">抵押<small class="num">+${fmt(s.price / 2)}</small></button>`;
+        if (can('redeem', i)) b += `<button data-a="redeem" data-i="${i}">贖回<small class="num">${fmt(MP.redeemCost(i))}</small></button>`;
+      }
+      h += `<div class="ar${G.mort[i] ? ' m' : ''}" style="--g:${gcol(i)}"><i></i><div class="an">${s.n}<small>${st}・過路費 ${G.mort[i] ? '—' : fmt(MP.rentOf(G, i))}</small></div><div class="ab">${b}</div></div>`;
+    }
+    h += '</div>';
+  }
+  if (mine && G.actor !== 0) h += '<p class="desc" style="text-align:center">輪到你的時候才能蓋房、抵押或贖回</p>';
+  else if (mine && G.phase === 'roll' && MP.legal(G).some(a => a.a === 'up')) h += '<p class="desc" style="text-align:center">整組到齊的地，擲骰前可以隨時加蓋</p>';
+  $('aBody').innerHTML = h;
+  $('aBody').querySelectorAll('button[data-a]').forEach(b => b.onclick = () => assetAct({ a: b.dataset.a, sq: +b.dataset.i }));
+}
+function openDebt() { renderDebt(); show('debt'); }
+function renderDebt() {
+  if (G.phase !== 'debt' || G.actor !== 0) { hide('debt'); return; }
+  const d = G.pend, pl = G.P[0], short = d.amt - pl.cash, L = MP.legal(G), can = (a, i) => L.some(x => x.a === a && x.sq === i);
+  const to = d.to >= 0 ? `給 ${nm(d.to)}：` : '給銀行：', why = d.why === 'rent' ? `${SQ[d.sq].n}的過路費` : d.why === 'tax' ? SQ[d.sq].n : WHY[d.why] || '費用';
+  let h = `<div class="debtbox">要付${to}${why} <b class="num">${fmt(d.amt)}</b><br>你的現金 <span class="num">${fmt(pl.cash)}</span>${short > 0 ? `，還差 <b class="num">${fmt(short)}</b>` : '，已經夠了'}</div>`;
+  h += '<p class="desc">賣房子拿回半價、抵押土地拿回地價一半。抵押的地收不到過路費，之後可以贖回。</p><div class="alist">';
+  for (const i of MP.owned(G, 0)) {
+    const s = SQ[i]; let b = '';
+    if (can('sell', i)) b += `<button data-a="sell" data-i="${i}">賣房<small class="num">+${fmt(s.house / 2)}</small></button>`;
+    if (can('mortgage', i)) b += `<button data-a="mortgage" data-i="${i}">抵押<small class="num">+${fmt(s.price / 2)}</small></button>`;
+    if (!b) continue;
+    h += `<div class="ar" style="--g:${gcol(i)}"><i></i><div class="an">${s.n}<small>${s.t === 'prop' ? (G.lvl[i] === 5 ? '大樓' : G.lvl[i] ? G.lvl[i] + ' 棟房子' : '空地') : '交通'}</small></div><div class="ab">${b}</div></div>`;
+  }
+  h += '</div><div class="btns" id="debtBtns"></div>';
+  $('debtBody').innerHTML = h;
+  $('debtBody').querySelectorAll('button[data-a]').forEach(b => b.onclick = () => assetAct({ a: b.dataset.a, sq: +b.dataset.i }));
+  const bb = $('debtBtns');
+  const mk = (t, cls, fn, dis) => { const b = document.createElement('button'); b.className = 'big ' + cls; b.textContent = t; b.disabled = !!dis; b.onclick = fn; return b; };
+  if (L.some(a => a.a === 'pay')) { bb.style.gridTemplateColumns = '1fr'; bb.append(mk(`付款 ${fmt(d.amt)}`, '', () => { hide('debt'); human({ a: 'pay' }); })); }
+  else if (L.some(a => a.a === 'auto')) bb.append(mk('自動變賣', 'alt', () => assetAct({ a: 'auto' })), mk(`付款 ${fmt(d.amt)}`, '', null, true));
+  else { bb.style.gridTemplateColumns = '1fr'; bb.append(mk('宣告破產', '', () => { hide('debt'); human({ a: 'bankrupt' }); })); }
+}
+// ---------- result ----------
+let confT = 0;
+function showResult() {
+  const o = G.over; if (!o) return;
+  if (!G.recorded) {
+    G.recorded = 1; ST.played++; const pos = o.rank.indexOf(0), r = recOf(G.diff);
+    r.p++; r.best = Math.max(r.best || 0, G.P[0].out ? 0 : o.worth[0]);
+    if (pos === 0) { ST.wins++; r.w++; ST.streak = (ST.streak || 0) + 1; } else ST.streak = 0;
+    if (pos <= 1) ST.top3++; if (G.P[0].out) ST.bust++; ST.best = Math.max(ST.best, o.worth[0]); LS.set('stats', ST);
+    checkLive();
+    if (pos === 0) { unlock('first'); if (G.diff >= 1) unlock('norm'); if (G.diff === 2) unlock('hard'); if (G.rounds === 0 || G.rounds >= 30) unlock('long'); if (o.reason === 'last') unlock('sweep'); if (ST.streak >= 3) unlock('streak'); }
+    if (!G.P[0].out && o.worth[0] >= 100000) unlock('rich');
+    save();
+    if (pos === 0) { snd('win'); confetti(); } else if (G.P[0].out) snd('bad');
+  }
+  const pos = o.rank.indexOf(0);
+  $('rTitle').textContent = G.P[0].out ? '你破產了' : pos === 0 ? '你是大富翁！' : `第 ${pos + 1} 名`;
+  $('rSub').textContent = o.reason === 'rounds' ? `${G.rounds || 60} 輪結束，比總資產（現金＋地價＋房屋）` : o.reason === 'last' ? '對手全部破產' : '現金和土地都不夠付錢';
+  $('rList').innerHTML = o.rank.map((p, k) => `<div class="rk${p === 0 ? ' me' : ''}" style="--c:${PC[p]}"><span class="m">${k + 1}</span><span class="t">${GLY[p]}</span>${G.P[p].nm}${G.P[p].out ? '<small style="color:var(--ink2);font-weight:700">・破產</small>' : ''}<span class="w num">${G.P[p].out ? '—' : fmt(o.worth[p])}</span></div>`).join('');
+  const s0 = G.st[0];
+  $('rKv').innerHTML = `<div>收到過路費<b class="num">${fmt(s0.rentIn)}</b></div><div>付出過路費<b class="num">${fmt(s0.rentOut)}</b></div><div>${DIFF_N[G.diff]}戰績<b class="num">${recOf(G.diff).w} 勝／${recOf(G.diff).p} 局</b></div>`;
+  const na = (G.newAch || []).map(id => (ACHS.find(a => a[0] === id) || [])[2]).filter(Boolean);
+  $('rAch').textContent = na.length ? `★ 這局解鎖：${na.join('、')}` : '';
+  hideAllBut('result'); show('result');
+}
+function hideAllBut(id) { OV.forEach(x => { if (x !== id) hide(x); }); }
+function confetti() {
+  if (RM.matches) return; const cv = $('confetti'), ctx = cv.getContext('2d'); cv.hidden = false;
+  const W = cv.width = innerWidth * devicePixelRatio, H = cv.height = innerHeight * devicePixelRatio; const ps = [];
+  const cols = ['#e5484d', '#f2bd4c', '#2f9e5b', '#2f7fe0', '#9b5de5', '#ff8fb1'];
+  for (let i = 0; i < 140; i++) ps.push({ x: Math.random() * W, y: -Math.random() * H * 0.5, vx: (Math.random() - .5) * 3, vy: 2 + Math.random() * 4, r: Math.random() * 6, c: cols[i % 6], s: 4 + Math.random() * 6 });
+  const t0 = performance.now(); cancelAnimationFrame(confT);
+  const f = now => { ctx.clearRect(0, 0, W, H); for (const p of ps) { p.x += p.vx; p.y += p.vy * devicePixelRatio; p.r += .1; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.s, -p.s / 2, p.s * 2, p.s); ctx.restore(); } if (now - t0 < 3200) confT = requestAnimationFrame(f); else { cv.hidden = true; } };
+  confT = requestAnimationFrame(f);
+}
+// ---------- menu ----------
+const LEN_D = { 12: '大約 5 分鐘。12 輪後比總資產。', 20: '大約 8 分鐘。20 輪後比總資產，有時間湊齊整組蓋房。', 30: '大約 12 分鐘。蓋到大樓的機會更多。', 0: '一直玩到只剩一人（最多 60 輪）。你破產就結束。' };
+const DIFF_D = ['電腦常常亂買亂蓋，適合熟悉規則。', '電腦會保留現金、湊齊整組、看情況蓋房。', '電腦會算兩步決定擲一顆或兩顆、抵押閒置土地來蓋房、為了湊整組收購和卡位。大富翁運氣成分大，所以另外多給電腦 $2,000 起始資金。'];
+function renderAch() {
+  const cell = d => { const r = recOf(d); return `<div>${DIFF_N[d]}<b class="num">${r.w}／${r.p}</b>${r.p ? Math.round(100 * r.w / r.p) + '%' : '—'}${r.best ? '・最高 ' + money(r.best) : ''}</div>`; };
+  $('achBody').innerHTML = `<h3>各難度戰績（勝／局）</h3><div class="rec">${cell(0)}${cell(1)}${cell(2)}</div>
+  <p class="desc" style="min-height:0">全部 ${ST.wins} 勝／${ST.played} 局${ST.quit ? `（含放棄 ${ST.quit} 局，記為敗局）` : ''}・目前連勝 ${ST.streak || 0}</p>
+  <h3>成就 ${ACHS.filter(a => ACH[a[0]]).length}/${ACHS.length}</h3><div class="achl">${ACHS.map(a => `<div class="ach${ACH[a[0]] ? ' on' : ''}"><i>${a[1]}</i><div>${a[2]}<small>${a[3]}</small></div></div>`).join('')}</div>`;
+}
+function renderMenu() {
+  const seg = (id, v) => $(id).querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === String(v)));
+  seg('mLen', S.rounds); seg('mDiff', S.diff); seg('mTheme', S.theme);
+  $('lenDesc').textContent = LEN_D[S.rounds]; $('diffDesc').textContent = DIFF_D[S.diff];
+  const live = G && G.phase !== 'over' && G.turnNo + G.P[0].pos > 0 && LS.get('game', null);
+  $('mResume').hidden = !live; $('mClose').hidden = !G;
+  $('mStart').textContent = live ? '開始新的一局' : '開始遊戲'; armed = false;
+  const r = recOf(S.diff);
+  $('mStats').textContent = ST.played ? `${DIFF_N[S.diff]}：${r.w} 勝／${r.p} 局${r.best ? '・最高 ' + fmt(r.best) : ''}・全部 ${ST.wins} 勝／${ST.played} 局` : '第一次玩？開始後點骰子就會前進';
+  $('mAch').textContent = `成就與戰績 ${ACHS.filter(a => ACH[a[0]]).length}/${ACHS.length}`;
+}
+let armed = false;
+$('mLen').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.rounds = +b.dataset.v; saveSet(); renderMenu(); };
+$('mDiff').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.diff = +b.dataset.v; saveSet(); renderMenu(); };
+$('mTheme').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.theme = b.dataset.v; saveSet(); applyTheme(); renderMenu(); };
+$('mStart').onclick = () => {
+  const live = !$('mResume').hidden;
+  if (live && !armed) { armed = true; $('mStart').textContent = '確定放棄？這局會記一敗'; $('mStats').textContent = '放棄進行中的一局，戰績會記成一場敗局'; return; }
+  if (live) recordQuit();
+  newGame();
+};
+$('mAch').onclick = () => { renderAch(); show('ach'); };
+$('mLog').onclick = () => openLog();
+$('log').onclick = () => openLog();
+$('log').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openLog(); } };
+$('mResume').onclick = () => { hide('menu'); };
+$('mClose').onclick = () => { hide('menu'); };
+$('mHelp').onclick = () => { show('help'); };
+$('bMenu').onclick = () => { renderMenu(); show('menu'); };
+$('bAssets').onclick = () => openAssets(0);
+$('bSpeed').onclick = () => { S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 4 : 1; saveSet(); spdLabel(); toast(S.speed === 1 ? '電腦正常速度' : `電腦 ${S.speed} 倍速`, 1000); };
+$('bSnd').onclick = () => { S.snd = !S.snd; saveSet(); sndIcon(); if (S.snd) snd('coin'); };
+$('rAgain').onclick = () => newGame();
+$('rMenu').onclick = () => { hide('result'); renderMenu(); show('menu'); };
+$('skip').onclick = e => { e.stopPropagation(); if (!skipping) skipSum = { items: [], inc: 0, out: 0 }; skipping = true; $('skip').hidden = true; if (cardResolve) cardResolve(); };
+$('diceBtn').onclick = e => { e.stopPropagation(); if (G && G.phase === 'roll' && G.actor === 0) human({ a: 'roll' }); };
+$('stage').addEventListener('click', e => { if (e.target.closest('button')) return; if (cardResolve) cardResolve(); });
+function spdLabel() { $('spd').textContent = S.speed + '×'; }
+function sndIcon() { $('sndIco').innerHTML = S.snd ? '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>' : '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>'; }
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (e.key === 'Escape') { const o = OV.find(id => !$(id).hidden && id !== 'debt' && id !== 'result'); if (o) { hide(o); e.preventDefault(); return; } if (secondary && G && G.phase !== 'roll') { secondary(); e.preventDefault(); } return; }
+  if (anyOpen()) return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (cardResolve) { cardResolve(); return; } if (primary) primary(); }
+  else if (e.key === 'n' || e.key === 'N') { if (secondary) secondary(); }
+});
+$('helpBody').innerHTML = `
+<h3>目標</h3><p>在設定的輪數結束時，<b>總資產</b>（現金＋地價＋房屋）最高的人獲勝；或讓三位電腦全部破產。</p>
+<h3>每一回合</h3><ul><li>點骰子擲兩顆骰，照點數前進。擲出對子可以再擲一次，連續三次對子要入獄。</li><li>也可以按「只擲一顆」：走得慢，方便避開對手蓋了房子的地段，但不會擲出對子。</li><li>經過或停在起點，領 $2,000。</li></ul>
+<h3>土地</h3><ul><li>走到沒人買的地可以買下。別人走到你的地，要付你過路費。</li><li>走到<b>自己的地</b>可以加蓋一棟房子，最多四棟，第五次改建成<b>大樓</b>。</li><li>同一顏色整組買齊：空地過路費加倍，擲骰前還能在整組的地上隨時加蓋（按「資產」）。</li><li>付完別人<b>空地</b>的過路費後，可以用 1.5 倍地價向地主<b>收購</b>（現金不夠可以先抵押）。對方已買齊整組或蓋了房子的地不能收購。</li><li>高鐵站與機場：擁有一座過路費 $400，兩座 $1,000。</li></ul>
+<h3>機會與命運</h3><p>抽一張卡照做：前進到某地、領獎金、包紅包、繳修繕費或入獄。出獄許可證可以留著用。</p>
+<h3>監獄</h3><p>付 $500、用出獄許可證，或擲出對子出獄。第三次還沒擲出對子，就付 $500 出獄並照點數前進。被關時仍然可以收過路費。</p>
+<h3>沒錢的時候</h3><p>現金不夠時，可以賣房子（拿回半價）或抵押土地（拿回地價一半）。抵押的地收不到過路費，之後用地價 55% 贖回。全部賣掉還不夠就破產。</p>
+<h3>操作</h3><p>點棋盤上的格子可以看地契。電腦回合可以按「跳過」直接到你的回合，或用「電腦速度」調成 2 倍、4 倍。${matchMedia('(hover: hover) and (pointer: fine)').matches ? '鍵盤：空白鍵擲兩顆／確定，N 只擲一顆／不買，Esc 關閉視窗。' : ''}遊戲隨時自動存檔。</p>
+<h3>順序與公平</h3><p>你永遠第一個擲骰；結算時如果總資產相同，先擲骰的人排前面。先手稍微有利，所以「高手」的電腦起始資金多 $2,000。</p>
+<h3>戰績與成就</h3><p>戰績依難度分開記。局還沒結束就從選單重新開始，這局會記成一場敗局。</p>`;
+// logo
+$('logo').innerHTML = `<rect x="22" y="8" width="106" height="60" rx="12" fill="#1d6a55"/><rect x="28" y="14" width="94" height="48" rx="8" fill="#e4eee0"/>
+<path d="M${COAST.map(([lo, la]) => [(55 + (lo - 120) * 18).toFixed(1), (66 - (la - 21.9) * 13).toFixed(1)].join(',')).join(' L')}" transform="translate(4 -8)" fill="#cfe0c6" stroke="#1d6a55" stroke-width="1"/>
+<g transform="translate(44 30) rotate(-12)"><rect width="22" height="22" rx="5" fill="#fff" stroke="#d6cfc2"/><circle cx="6" cy="6" r="2.4" fill="#2a2622"/><circle cx="11" cy="11" r="2.4" fill="#2a2622"/><circle cx="16" cy="16" r="2.4" fill="#2a2622"/></g>
+<g transform="translate(86 30) rotate(10)"><rect width="22" height="22" rx="5" fill="#fff" stroke="#d6cfc2"/><circle cx="11" cy="11" r="3.4" fill="#d62f22"/></g>
+<path d="M64 12l-6 6h3v6h6v-6h3z" fill="#d6402c"/>`;
+
+// ---------- game start / resume ----------
+function newGame(seed) {
+  runId++; busy = false; skipping = false; logLines = []; skipSum = null; popKey = ''; renderLog();
+  G = MP.newGame({ rounds: S.rounds, diff: S.diff, seed });
+  save(); syncView(); hideAllBut(''); renderAll(); showDice([3, 4], false);
+  msg('點骰子開始環島'); toast(`${S.rounds ? S.rounds + ' 輪' : '拚到底'}・電腦${['新手', '普通', '高手'][S.diff]}`, 1400);
+  pump();
+}
+function resume(sv) {
+  G = sv; syncView(); renderAll(); if (G.last) showDice(G.last, false);
+  if (G.phase === 'over') { renderMenu(); show('menu'); return; }
+  toast('已接續上一局', 1300); pump();
+}
+addEventListener('resize', () => { layout(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) layout(); });
+RM.addEventListener && RM.addEventListener('change', () => {});
+buildBoard(); buildMap(); buildDice(); sndIcon(); spdLabel();
+(function boot() {
+  const sv = LS.get('game', null);
+  if (sv && sv.v === 1 && sv.P && sv.P.length === 4) { layout(); resume(sv); return; }
+  // first visit: a fresh board sits behind the menu
+  G = MP.newGame({ rounds: S.rounds, diff: S.diff }); syncView(); layout(); renderAll();
+  renderMenu(); $('mClose').hidden = true; show('menu');
+})();
+layout();
+// ---------- test hooks ----------
+window.__mono = {
+  state: () => G, view: () => V, counts: () => Object.assign({}, EVC), busy: () => busy, skipping: () => skipping,
+  ui: () => ({ phase: G.phase, actor: G.actor, human: G.actor === 0 && !G.P[0].cpu && !busy, pop: !$('pop').hidden, debt: !$('debt').hidden, result: !$('result').hidden, menu: !$('menu').hidden, card: !!cardResolve }),
+  newGame: (o) => { o = o || {}; if (o.rounds != null) S.rounds = o.rounds; if (o.diff != null) S.diff = o.diff; newGame(o.seed); },
+  cellXY: i => { const r = cellEls[i].getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; },
+  setSpeed: v => { S.speed = v; spdLabel(); },
+  load: sv => { runId++; busy = false; skipping = false; skipSum = null; popKey = ''; hideAllBut(''); resume(JSON.parse(JSON.stringify(sv))); save(); }
+};
+})();
+</script>
+</body>
+</html>

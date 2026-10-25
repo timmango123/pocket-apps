@@ -76,6 +76,7 @@ GAMES = [
     ("tower-defense", "菇菇守城", "action", True, "種蘑菇塔擋害蟲，守護蘑菇村。"),
     ("bomb-maze", "鞭炮貓老街", "action", True, "橘貓放鞭炮炸開紅磚，清光怪物找廟門，百關闖關加電腦對戰。"),
     ("bullet-hell", "彈幕射擊", "action", False, "夜櫻祭彈幕射擊，相對觸控閃彈、擦彈、三面 Boss 符卡。"),
+    ("tank-battle", "坦克大戰", "action", True, "守住老鷹基地，打穿磚牆擊退百關戰車大軍。"),
     ("xiangqi", "中國象棋", "board", True, "對弈五級電腦，破解百關連將殺局。"),
     ("chess", "西洋棋", "board", True, "對戰五級電腦，挑戰百道將死殘局。"),
     ("gomoku", "五子棋", "board", True, "對戰五級電腦，挑戰百關限步連五。"),
@@ -92,6 +93,7 @@ GAMES = [
     ("aeroplane-chess", "飛行棋", "board", False, "擲骰起飛撞機回場，對戰三台電腦。"),
     ("backgammon", "雙陸棋", "board", False, "擲骰打擊移出，五級電腦與加倍骰。"),
     ("shogi", "日本將棋", "board", False, "吃子可打入的日本將棋，五級電腦與詰將棋"),
+    ("monopoly", "大富翁", "board", False, "台灣環島買地蓋房，和三台電腦拚身家。"),
     ("klondike-solitaire", "經典接龍", "card", True, "綠呢牌桌上的經典接龍，百局保證可解。"),
     ("spider-solitaire", "蜘蛛接龍", "card", True, "月光蛛網下理順八串牌，一到四種花色。"),
     ("freecell", "新接龍", "card", True, "青花瓷桌上的 FreeCell，百局皆可解。"),
@@ -108,6 +110,7 @@ GAMES = [
     ("yacht-dice", "快艇骰子", "card", False, "擲五顆骰填十三格，乘著快艇遠航刷分。"),
     ("liars-dice", "吹牛骰", "card", False, "燈籠茶館裡喊點開盅，看穿電腦的虛張聲勢。"),
     ("dou-dizhu", "鬥地主", "card", False, "田莊牌桌叫地主，一人鬥兩位電腦農民。"),
+    ("thirteen-cards", "十三支", "card", False, "十三張分三墩，和三位牌友比牌、打槍拚全壘打。"),
     ("pressure-washer",  "高壓洗淨",   "calm",   True,  "用水柱沖掉污垢，看著畫面一點點變乾淨。"),
     ("word-world",       "字字成真",   "calm",   False, "打出一個詞，它就出現在小世界裡。"),
     ("warehouse-command","倉儲指揮所", "world",  False, "派遣堆高機搬貨出貨，衝高倉庫吞吐量。"),
@@ -116,6 +119,7 @@ GAMES = [
     ("clearwater",       "清淺水灣",   "calm",   False, "輕觸卵石淺灘激起漣漪，看光影在水底晃動。"),
     ("rain-on-glass",    "雨窗",       "calm",   False, "雨夜起霧的窗，用手指在玻璃上寫字作畫。"),
     ("zen-sand", "禪意沙畫", "calm", False, "在枯山水沙盤上耙出紋路，線條自動繞過石頭。"),
+    ("color-book", "填色本", "calm", True, "一百張程式畫的線稿，照號碼填色，塗完可存圖。"),
 ]
 
 

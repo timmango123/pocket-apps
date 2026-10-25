@@ -232,10 +232,12 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   ok(await page.isHidden('#intro'), 'intro closes and is remembered');
   const n0 = await page.evaluate(() => window.__eco.st.fish.length);
   ok(n0 >= 17, 'page starts with the sample tank (' + n0 + ' fish)');
-  const food0 = await page.evaluate(() => window.__eco.st.food.length);
-  await tap('#bFeed'); await page.waitForTimeout(100);
-  const pinch = await page.evaluate(() => window.__eco.ECO.pinch(window.__eco.st));
-  ok(await page.evaluate(() => window.__eco.st.food.length) === food0 + pinch && pinch >= 6 && pinch <= 16, 'feed button drops one pinch sized for the tank (' + pinch + ' flakes)');
+  // count before and after the tap in one synchronous step: the tank keeps running, and given a second or two on a slow
+  // runner a hungry fish near the surface can already have eaten a flake
+  const fd = await page.evaluate(() => { const { st, ECO } = window.__eco, food0 = st.food.length, pinch = ECO.pinch(st); document.getElementById('bFeed').click(); return { food0, pinch, food1: st.food.length }; });
+  await page.waitForTimeout(100);
+  const pinch = fd.pinch;
+  ok(fd.food1 === fd.food0 + pinch && pinch >= 6 && pinch <= 16, 'feed button drops one pinch sized for the tank (' + pinch + ' flakes)');
   await tap('#bLight'); await page.waitForTimeout(100);
   ok(await page.evaluate(() => window.__eco.st.light) === 3 && (await page.textContent('#lightLab')) === '強', 'light button cycles to 強');
   await page.evaluate(() => { window.__eco.st.water.nitrate = 60; });
@@ -255,11 +257,13 @@ const bare = (seed) => { const st = ECO.newTank({ seed: seed || 3 }); return st;
   const hit = await page.evaluate(() => { const st = window.__eco.st, S = window.__eco.S(); const f = st.fish.find(x => x.size >= 1) || st.fish[0]; f.x = st.w / 2; f.y = (st.tp + st.h - st.fb) / 2; window.__eco.showCard(f); return { x: f.x * S, y: f.y * S, name: f.name }; });
   await page.waitForTimeout(100);
   ok(await page.isVisible('#card') && (await page.textContent('#card')).includes(hit.name), 'tapping a fish shows its card with its name');
-  const nBefore = await page.evaluate(() => window.__eco.st.fish.length);
+  // follow the carded fish itself: the live tank may gain or lose another fish (a fry eaten, a birth) meanwhile
+  const has = () => page.evaluate(n => window.__eco.st.fish.some(f => f.name === n), hit.name);
   await tap('#cRemove'); await page.waitForTimeout(100);
-  ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore && (await page.textContent('#cRemove')).includes('確定'), 'first tap on 移出 only asks to confirm');
-  await tap('#cRemove'); await page.waitForTimeout(100);
-  ok(await page.evaluate(() => window.__eco.st.fish.length) === nBefore - 1 && await page.isHidden('#card'), 'second tap removes the fish and closes the card');
+  ok(await has() && (await page.textContent('#cRemove')).includes('確定'), 'first tap on 移出 only asks to confirm');
+  const n = await page.evaluate(() => { const st = window.__eco.st, b = st.fish.length; document.getElementById('cRemove').click(); return [b, st.fish.length]; });
+  await page.waitForTimeout(100);
+  ok(!(await has()) && n[1] === n[0] - 1 && await page.isHidden('#card'), 'second tap removes the fish and closes the card');
   await page.evaluate(() => { const st = window.__eco.st; window.__eco.showCard(st.fish.find(x => x.size >= 1) || st.fish[0]); });
   await tap('#cClose'); await page.waitForTimeout(100);
   ok(await page.isHidden('#card') && (await page.textContent('#cRemove')) === '移出', 'card closes and the remove button is reset');
