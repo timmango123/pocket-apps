@@ -24,6 +24,7 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     const { ctx, page } = await mk({ viewport: { width: 390, height: 844 }, ...mobile });
     await page.clock.install({ time: new Date('2026-10-12T21:00:00') });
     await page.goto(URL); await page.waitForTimeout(150);
+    await page.clock.pauseAt(new Date('2026-10-12T21:00:05')); // freeze so screenshots don't let real time drift in
     const [sw, iw] = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
     assert(iw === 390 && sw <= iw, 'innerWidth 390, no horizontal scroll');
     // rhythm math
