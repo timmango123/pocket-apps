@@ -1,0 +1,2175 @@
+<style id="mobile-shim">
+/* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior: none; }
+body { overscroll-behavior: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
+</style>
+<script>
+/* Mobile shim: iOS ignores user-scalable=no, so block pinch zoom here; suppress long-press menus; resume audio that iOS interrupts (calls, Siri, app switch). */
+(() => {
+  const stop = e => e.preventDefault();
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, stop, { passive: false }));
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const live = new Set();
+  const Tracked = function (...a) { const c = new AC(...a); live.add(c); return c; };
+  Tracked.prototype = AC.prototype;
+  window.AudioContext = Tracked;
+  if (window.webkitAudioContext) window.webkitAudioContext = Tracked;
+  const wake = () => { if (!document.hidden) live.forEach(c => { if (c.state === 'interrupted') c.resume().catch(() => {}); }); };
+  document.addEventListener('visibilitychange', wake);
+  ['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, wake, { passive: true, capture: true }));
+})();
+</script>
+<title>小店經營</title>
+<style>
+/* 巷口柑仔店: a corner shop in an old Taiwanese arcade street. Warm paper UI, red-and-white awning stripes,
+   mint wall tiles, yellow price tags. Market (buy + price) → the open day on a canvas → closing report. */
+:root {
+  color-scheme: light;
+  --bg: #f3eadb; --bg2: #eadcc6; --card: #fffaf1; --card2: #f8efe0; --ink: #3a2a1d; --muted: #86705b; --line: #e2d2b8;
+  --accent: #cf4434; --accent2: #b23526; --on-accent: #fff8ef; --teal: #2a877a; --teal-soft: #d6ece6; --gold: #e3a227; --tag: #ffe58f;
+  --good: #2f8650; --warn: #b8740f; --bad: #c63d2d; --shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 6px 18px -10px rgba(90,60,30,.45);
+  --font: "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --num: ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "PingFang TC", system-ui, sans-serif;
+  --r: 16px; --r2: 12px;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  color-scheme: dark;
+  --bg: #1a1511; --bg2: #231c16; --card: #2a221b; --card2: #322820; --ink: #f4e8d6; --muted: #b09a82; --line: #43362a;
+  --accent: #f0694f; --accent2: #ff8a6e; --on-accent: #1c120c; --teal: #5cc4b1; --teal-soft: #1f3a35; --gold: #f2bd4b; --tag: #f7d675;
+  --good: #6fcf8e; --warn: #f2b84b; --bad: #ff8270; --shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 8px 22px -12px rgba(0,0,0,.7);
+} }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1a1511; --bg2: #231c16; --card: #2a221b; --card2: #322820; --ink: #f4e8d6; --muted: #b09a82; --line: #43362a;
+  --accent: #f0694f; --accent2: #ff8a6e; --on-accent: #1c120c; --teal: #5cc4b1; --teal-soft: #1f3a35; --gold: #f2bd4b; --tag: #f7d675;
+  --good: #6fcf8e; --warn: #f2b84b; --bad: #ff8270; --shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 8px 22px -12px rgba(0,0,0,.7);
+}
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
+button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.num { font-family: var(--num); font-variant-numeric: tabular-nums; }
+svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+
+#app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+/* ---------- top bar ---------- */
+.top { position: relative; z-index: 5; display: flex; align-items: center; gap: 6px; padding: calc(6px + var(--sat)) calc(8px + var(--sar)) 6px calc(8px + var(--sal)); background: var(--bg); border-bottom: 1px solid var(--line); }
+.top .day { min-width: 0; flex: 1; display: flex; align-items: center; gap: 8px; }
+.seal { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 17px; color: var(--on-accent); background: var(--accent); box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent); }
+.top .dt { min-width: 0; line-height: 1.15; }
+.top .dt b { display: block; font-size: 15px; white-space: nowrap; }
+.top .dt span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .dt span.sn { display: inline; font-size: inherit; }
+@media (max-width: 380px) { .top .dt span.sn { display: none; } }
+.pill { flex: none; height: 36px; border-radius: 18px; padding: 0 10px; display: flex; align-items: center; gap: 5px; background: var(--card); box-shadow: var(--shadow); font-weight: 700; font-size: 15px; white-space: nowrap; }
+.pill small { font-size: 11px; color: var(--muted); font-weight: 600; }
+.pill .coin { width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe7a0, var(--gold) 60%, #b97d12); box-shadow: inset 0 0 0 1.5px rgba(120,70,0,.35); }
+.pill.bump { animation: bump .35s ease-out; }
+@keyframes bump { 40% { transform: scale(1.09); } }
+.iconbtn { flex: none; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--card); box-shadow: var(--shadow); }
+.iconbtn:active, .btn:active, .step:active, .chip:active { transform: scale(.94); }
+
+/* ---------- main stage ---------- */
+#stage { position: relative; flex: 1; min-height: 0; }
+#scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#sceneBg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.phase { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.phase[hidden] { display: none; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 10px calc(12px + var(--sar)) 14px calc(12px + var(--sal)); }
+.wrapc { max-width: 560px; margin: 0 auto; }
+.bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px calc(10px + var(--sar)) calc(8px + var(--sab)) calc(10px + var(--sal)); background: var(--bg); border-top: 1px solid var(--line); }
+.bar .wrapc { width: 100%; display: flex; align-items: center; gap: 8px; }
+.btn { min-height: 48px; padding: 0 16px; border-radius: 14px; font-weight: 800; font-size: 16px; letter-spacing: .04em; display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--card); box-shadow: var(--shadow); white-space: nowrap; transition: transform .08s, background-color .2s; }
+.btn.primary { background: var(--accent); color: var(--on-accent); box-shadow: 0 3px 0 var(--accent2), 0 10px 20px -12px var(--accent); }
+.btn.primary:active { box-shadow: 0 1px 0 var(--accent2); transform: translateY(2px); }
+.btn.teal { background: var(--teal); color: #fff; }
+:root[data-theme="dark"] .btn.teal { color: #0f1d1a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.teal { color: #0f1d1a; } }
+.btn[disabled] { opacity: .45; cursor: default; }
+.btn .sub { font-size: 12px; font-weight: 700; opacity: .85; letter-spacing: 0; }
+.grow { flex: 1; min-width: 0; }
+
+/* ---------- market ---------- */
+.forecast { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; padding: 12px 14px; border-radius: var(--r); background: var(--card); box-shadow: var(--shadow); position: relative; overflow: hidden; }
+.forecast .wx { grid-row: span 2; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: var(--teal-soft); }
+.forecast .wx svg { width: 40px; height: 40px; }
+.forecast h2 { margin: 0; font-size: 17px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.forecast h2 small { font-size: 13px; color: var(--muted); font-weight: 600; }
+.forecast p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.forecast p b { color: var(--ink); }
+.evt { margin-top: 10px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r2); background: color-mix(in srgb, var(--gold) 18%, var(--card)); border: 1.5px dashed color-mix(in srgb, var(--gold) 70%, transparent); font-size: 13.5px; line-height: 1.45; }
+.evt b { display: block; font-size: 14.5px; }
+.evt .tagi { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--gold); color: #3a2400; }
+.goal { margin-top: 10px; padding: 10px 14px 12px; border-radius: var(--r); background: var(--card); box-shadow: var(--shadow); }
+.goal .row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; color: var(--muted); }
+.goal .row b { color: var(--ink); font-size: 15px; }
+.gbar { position: relative; height: 12px; margin: 8px 4px 2px; border-radius: 6px; background: var(--bg2); }
+.gbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: linear-gradient(90deg, var(--gold), var(--accent)); transition: width .6s cubic-bezier(.2,.8,.2,1); }
+.gbar .mk { position: absolute; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; color: var(--line); filter: drop-shadow(0 1px 0 rgba(0,0,0,.15)); }
+.gbar .mk.on { color: var(--gold); }
+.gbar .mk svg { width: 20px; height: 20px; fill: currentColor; stroke: var(--card); stroke-width: 1.5; }
+.tip { margin-top: 10px; display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: var(--r2); background: var(--teal-soft); color: var(--ink); font-size: 13.5px; line-height: 1.45; }
+.tip svg { color: var(--teal); }
+.tip button { margin-left: auto; flex: none; width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); border-radius: 12px; }
+.sect { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 2px 8px; }
+.sect h3 { margin: 0; font-size: 15px; letter-spacing: .08em; }
+.sect span { font-size: 12px; color: var(--muted); }
+.items { display: grid; gap: 10px; }
+@media (min-width: 700px) { .items { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.item { min-width: 0; padding: 10px 12px 10px; border-radius: var(--r); background: var(--card); box-shadow: var(--shadow); }
+.item .hd { display: flex; align-items: center; gap: 10px; }
+.item .ic { flex: none; width: 44px; height: 44px; border-radius: 12px; background: var(--card2); display: grid; place-items: center; }
+.item .ic img { width: 36px; height: 36px; }
+.item .nm { min-width: 0; flex: 1; }
+.item .nm b { font-size: 16px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.item .nm span { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 6px; background: var(--bg2); color: var(--muted); letter-spacing: .02em; white-space: nowrap; }
+.badge.lo { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+.badge.hi { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.badge.pk { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.stock { flex: none; text-align: right; font-size: 12px; color: var(--muted); line-height: 1.2; }
+.stock b { display: block; font-size: 17px; color: var(--ink); }
+.ctl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 8px; min-width: 0; }
+.ctl > * { min-width: 0; }
+.stepper { display: flex; align-items: stretch; height: 46px; border-radius: 13px; background: var(--bg2); padding: 1px; }
+.step { flex: none; width: 44px; display: grid; place-items: center; border-radius: 12px; font-size: 22px; font-weight: 700; color: var(--ink); transition: transform .06s, background-color .15s; }
+.step svg { width: 20px; height: 20px; stroke-width: 2.6; }
+.step[disabled] { opacity: .3; }
+.stepper .val { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; border-radius: 10px; background: var(--card); margin: 3px 0; }
+.stepper .val small { font-size: 10.5px; line-height: 12px; color: var(--muted); font-weight: 700; letter-spacing: .08em; white-space: nowrap; }
+.stepper .val b { font-size: 17px; line-height: 20px; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.stepper.buy .val b.z { color: var(--muted); font-weight: 600; }
+.stepper.price .val { background: var(--tag); color: #4a1d10; box-shadow: inset 0 0 0 1.5px rgba(160,90,0,.25); }
+.stepper.price .val small { color: #8a5a20; }
+.stepper.price .val b { color: #b42318; }
+.stepper.price[data-lv="hi"] .val { box-shadow: inset 0 0 0 2px var(--bad); }
+.stepper.price[data-lv="lo"] .val { box-shadow: inset 0 0 0 2px var(--good); }
+.item .yest { margin-top: 7px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+.item .yest em { font-style: normal; color: var(--bad); font-weight: 700; }
+.item .yest i { font-style: normal; color: var(--warn); font-weight: 700; }
+.mktsum { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.mktsum small { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.mktsum b { font-size: 16px; white-space: nowrap; }
+.mktsum b.neg { color: var(--bad); }
+.flash { animation: flash .5s; }
+@keyframes flash { 30% { background: color-mix(in srgb, var(--bad) 30%, transparent); } }
+
+/* ---------- day HUD ---------- */
+.hud { position: absolute; left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); top: 8px; display: flex; gap: 6px; align-items: flex-start; pointer-events: none; }
+.clock { pointer-events: none; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); box-shadow: var(--shadow); }
+.clock .dial { width: 30px; height: 30px; }
+.clock b { font-size: 18px; display: block; line-height: 1; }
+.clock small { font-size: 11px; color: var(--muted); }
+.hud .tally { margin-left: auto; display: grid; grid-template-columns: repeat(2, auto); gap: 2px 10px; padding: 6px 10px; border-radius: 14px; background: color-mix(in srgb, var(--card) 88%, transparent); box-shadow: var(--shadow); font-size: 12px; color: var(--muted); }
+.hud .tally b { color: var(--ink); font-family: var(--num); font-variant-numeric: tabular-nums; }
+.hud .tally .bad b { color: var(--bad); }
+.toasts { position: absolute; left: 50%; top: 60px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: min(92%, 380px); }
+.toast { padding: 8px 14px; border-radius: 14px; font-size: 14px; font-weight: 700; background: color-mix(in srgb, var(--card) 94%, transparent); box-shadow: var(--shadow); text-align: center; animation: tin .3s ease-out, tout .4s ease-in forwards; animation-delay: 0s, var(--life, 2.6s); }
+.toast.gold { background: var(--gold); color: #3a2400; }
+.toast.bad { background: var(--bad); color: #fff; }
+@keyframes tin { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
+@keyframes tout { to { opacity: 0; transform: translateY(-6px); } }
+.daybar { flex: none; display: flex; gap: 8px; align-items: stretch; padding: 8px calc(10px + var(--sar)) calc(8px + var(--sab)) calc(10px + var(--sal)); background: var(--bg); border-top: 1px solid var(--line); }
+.daybar .iconbtn { height: 52px; width: 48px; }
+.speed { flex: none; width: 52px; height: 52px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; gap: 3px; }
+.speed b { font-size: 17px; font-family: var(--num); }
+.speed span { display: flex; gap: 2px; }
+.speed span i { width: 5px; height: 5px; border-radius: 50%; background: var(--line); }
+.speed span i.on { background: var(--accent); }
+.upsell { flex: 1.1; min-width: 0; height: 52px; border-radius: 14px; display: flex; align-items: center; gap: 6px; padding: 0 8px; background: var(--card); box-shadow: var(--shadow); color: var(--muted); font-weight: 700; font-size: 14px; transition: background-color .2s, color .2s, transform .08s; overflow: hidden; }
+.upsell img { width: 32px; height: 32px; flex: none; }
+.upsell .t { min-width: 0; text-align: left; line-height: 1.15; }
+.upsell .t small { display: block; font-size: 11px; font-weight: 600; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upsell .t b { display: block; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.upsell .ph { width: 32px; height: 32px; border-radius: 10px; border: 2px dashed var(--line); flex: none; }
+.upsell.on { background: var(--gold); color: #3a2400; animation: pulse 1s ease-in-out infinite; }
+.upsell.ok { background: var(--good); color: #fff; }
+.upsell.no { background: var(--bg2); color: var(--muted); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 40%, transparent); } }
+.serve { flex: 1; min-width: 0; white-space: nowrap; height: 52px; border-radius: 14px; position: relative; font-weight: 800; font-size: 17px; letter-spacing: .06em; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: var(--on-accent); box-shadow: 0 3px 0 var(--accent2); transition: transform .06s, opacity .2s; }
+.serve:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--accent2); }
+.serve.idle { opacity: .5; }
+.serve .q { min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--on-accent); color: var(--accent); font-size: 14px; display: grid; place-items: center; font-family: var(--num); }
+.serve.rush .q { animation: pulse 0.7s infinite; }
+
+/* ---------- panels: report / end / title ---------- */
+.paper { border-radius: var(--r); background: var(--card); box-shadow: var(--shadow); padding: 14px; }
+.rhead { text-align: center; padding: 6px 0 10px; }
+.rhead .k { font-size: 13px; color: var(--muted); letter-spacing: .12em; }
+.rhead h2 { margin: 4px 0 0; font-size: 24px; letter-spacing: .06em; }
+.awning { height: 26px; margin: -14px -14px 12px; border-radius: var(--r) var(--r) 0 0; background: repeating-linear-gradient(90deg, var(--accent) 0 22px, #fff6ea 22px 44px); -webkit-mask: radial-gradient(11px 8px at 11px 100%, #0000 98%, #000) 0 0 / 22px 100%; mask: radial-gradient(11px 8px at 11px 100%, #0000 98%, #000) 0 0 / 22px 100%; }
+:root[data-theme="dark"] .awning { background: repeating-linear-gradient(90deg, var(--accent) 0 22px, #3a2c22 22px 44px); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .awning { background: repeating-linear-gradient(90deg, var(--accent) 0 22px, #3a2c22 22px 44px); } }
+.big { text-align: center; margin: 2px 0 12px; }
+.big small { display: block; font-size: 13px; color: var(--muted); }
+.big b { font-size: 40px; font-family: var(--num); letter-spacing: .01em; }
+.big b.pos { color: var(--good); } .big b.neg { color: var(--bad); }
+.ledger { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 14.5px; }
+.ledger span { color: var(--muted); }
+.ledger b { text-align: right; font-family: var(--num); font-variant-numeric: tabular-nums; }
+.ledger .tot { border-top: 1.5px dashed var(--line); padding-top: 8px; color: var(--ink); font-weight: 800; }
+.cust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.cust div { border-radius: 12px; background: var(--card2); padding: 8px 4px; text-align: center; }
+.cust b { display: block; font-size: 20px; font-family: var(--num); }
+.cust span { font-size: 11.5px; color: var(--muted); }
+.cust .bad b { color: var(--bad); }
+.sold { display: grid; gap: 6px; margin-top: 4px; }
+.sold .r { display: grid; grid-template-columns: 30px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.sold img { width: 28px; height: 28px; }
+.sold .tr { height: 10px; border-radius: 5px; background: var(--bg2); position: relative; overflow: hidden; }
+.sold .tr i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--teal); border-radius: 5px; }
+.sold .tr u { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, var(--bad) 0 3px, transparent 3px 6px); opacity: .7; }
+.sold .r span { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hints { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.hints li { display: flex; gap: 8px; font-size: 13.5px; line-height: 1.45; }
+.hints li::before { content: ""; flex: none; width: 7px; height: 7px; margin-top: 7px; border-radius: 50%; background: var(--teal); }
+.hints li.w::before { background: var(--warn); }
+.hints li.b::before { background: var(--bad); }
+.h4 { margin: 16px 2px 8px; font-size: 14px; letter-spacing: .1em; color: var(--muted); font-weight: 700; display: flex; justify-content: space-between; }
+.rep { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.rep .tr { flex: 1; height: 10px; border-radius: 5px; background: var(--bg2); overflow: hidden; }
+.rep .tr i { display: block; height: 100%; background: linear-gradient(90deg, #e8a33a, #e2574a); border-radius: 5px; transition: width .8s; }
+
+/* upgrades */
+.upgs { display: grid; gap: 8px; }
+.upg { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 8px; border-radius: 14px; background: var(--card2); }
+.upg .ui { flex: none; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--card); color: var(--accent); }
+.upg .ui svg { width: 26px; height: 26px; }
+.upg .tx { flex: 1; min-width: 0; line-height: 1.3; }
+.upg .tx b { font-size: 15px; }
+.upg .tx span { display: block; font-size: 12.5px; color: var(--muted); }
+.upg .btn { min-height: 44px; padding: 0 12px; font-size: 14px; }
+.upg.own .btn { background: none; box-shadow: none; color: var(--good); }
+
+/* sheets */
+.scrim { position: fixed; inset: 0; z-index: 20; background: rgba(30,18,8,.42); opacity: 0; transition: opacity .25s; }
+.scrim.show { opacity: 1; }
+.sheet { position: fixed; z-index: 21; left: 0; right: 0; bottom: 0; max-height: min(92%, 720px); display: flex; flex-direction: column; margin: 0 auto; max-width: 560px; background: var(--bg); border-radius: 22px 22px 0 0; box-shadow: 0 -10px 40px -10px rgba(0,0,0,.4); transform: translateY(105%); transition: transform .3s cubic-bezier(.2,.9,.25,1); }
+.sheet.show { transform: none; }
+.sheet header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 4px 18px; }
+.sheet header h2 { margin: 0; font-size: 18px; letter-spacing: .06em; }
+.sheet .scroll { padding-bottom: calc(16px + var(--sab)); }
+.repwhy { margin: 8px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.menu { display: grid; gap: 8px; }
+.menu button { min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow); font-size: 15.5px; font-weight: 700; text-align: left; }
+.menu button span { margin-left: auto; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+.menu button.danger { color: var(--bad); }
+.help h3 { font-size: 15px; margin: 14px 0 6px; }
+.help p, .help li { font-size: 14px; line-height: 1.6; color: var(--ink); }
+.help ol { padding-left: 0; list-style: none; display: grid; gap: 10px; margin: 0; counter-reset: s; }
+.help ol li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; counter-increment: s; }
+.help ol li::before { content: counter(s); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font-weight: 800; font-family: var(--num); }
+.help .note { font-size: 13px; color: var(--muted); }
+.confirm { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(30,18,8,.45); }
+.confirm .paper { width: min(100%, 340px); text-align: center; }
+.confirm p { margin: 6px 0 16px; font-size: 15px; line-height: 1.55; }
+.confirm .row { display: flex; gap: 8px; } .confirm .row .btn { flex: 1; }
+
+/* title */
+#title { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; justify-content: flex-end; background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg) 30%, transparent) 30%, var(--bg) 62%); }
+#title .scroll { flex: 0 1 auto; padding-top: 0; }
+.logo { text-align: center; margin: 0 0 12px; }
+.logo h1 { margin: 0; font-size: clamp(34px, 10vw, 46px); letter-spacing: .12em; line-height: 1.1; text-shadow: 0 2px 0 var(--bg), 0 0 18px var(--bg); }
+.logo p { margin: 4px 0 0; color: var(--muted); font-size: 14px; letter-spacing: .3em; text-shadow: 0 0 10px var(--bg); }
+.seasons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.season { position: relative; min-height: 104px; border-radius: 16px; padding: 10px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--card); box-shadow: var(--shadow); transition: transform .1s, box-shadow .2s; }
+.season .ch { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 19px; font-weight: 800; color: #fff; }
+.season[data-s="0"] .ch { background: #e07a95; } .season[data-s="1"] .ch { background: #e59a1c; } .season[data-s="2"] .ch { background: #c4622d; } .season[data-s="3"] .ch { background: #4b86b8; }
+.season b { font-size: 12.5px; white-space: nowrap; }
+.season .st { display: flex; gap: 1px; color: var(--line); }
+.season .st svg { width: 14px; height: 14px; fill: currentColor; }
+.season .st .on { color: var(--gold); }
+.season small { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.season.sel { box-shadow: 0 0 0 2.5px var(--accent), var(--shadow); }
+.season.lock { opacity: .55; }
+.season.lock .ch { background: var(--muted) !important; }
+.season .cur { position: absolute; top: -6px; right: -4px; font-size: 10.5px; font-weight: 800; padding: 2px 6px; border-radius: 8px; background: var(--accent); color: var(--on-accent); }
+.tbtns { display: flex; gap: 8px; margin-top: 12px; }
+.tbtns .btn.primary { flex: 1; }
+.tnote { text-align: center; font-size: 12.5px; color: var(--muted); margin: 8px 0 0; min-height: 1.4em; }
+
+/* end */
+.stars { display: flex; justify-content: center; gap: 6px; margin: 4px 0 8px; }
+.stars svg { width: 54px; height: 54px; fill: var(--line); stroke: none; }
+.stars svg.on { fill: var(--gold); animation: starpop .55s cubic-bezier(.3,1.6,.5,1) both; filter: drop-shadow(0 3px 0 rgba(150,90,0,.35)); }
+.stars svg:nth-child(2) { margin-top: -12px; width: 64px; height: 64px; }
+.stars svg.on:nth-child(2) { animation-delay: .25s; } .stars svg.on:nth-child(3) { animation-delay: .5s; }
+@keyframes starpop { from { transform: scale(0) rotate(-40deg); opacity: 0; } }
+.endlist { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 14px; }
+.endlist span { color: var(--muted); } .endlist b { text-align: right; font-family: var(--num); }
+.unlock { margin-top: 12px; padding: 12px; border-radius: 14px; text-align: center; background: color-mix(in srgb, var(--gold) 22%, var(--card)); font-weight: 700; font-size: 14.5px; line-height: 1.5; }
+.thresh { display: flex; justify-content: space-between; gap: 6px; margin-top: 10px; }
+.thresh div { flex: 1; text-align: center; padding: 6px 2px; border-radius: 10px; background: var(--card2); font-size: 12px; color: var(--muted); }
+.thresh div b { display: block; font-size: 14px; color: var(--ink); font-family: var(--num); }
+.thresh div.hit { background: color-mix(in srgb, var(--gold) 30%, var(--card2)); }
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .top { padding-top: calc(4px + var(--sat)); padding-bottom: 4px; }
+  .daybar { padding-top: 6px; padding-bottom: calc(6px + var(--sab)); }
+  #title { background: linear-gradient(90deg, transparent 0%, transparent 35%, var(--bg) 58%); justify-content: center; align-items: flex-end; }
+  #title .scroll { width: min(100%, 470px); max-height: 100%; padding-top: 10px; }
+  .logo { margin-bottom: 8px; } .logo h1 { font-size: 32px; }
+  .season { min-height: 92px; }
+}
+@media (max-height: 560px) and (orientation: portrait) {
+  .forecast { padding: 9px 12px; } .forecast .wx { width: 46px; height: 46px; } .forecast .wx svg { width: 34px; height: 34px; }
+  .goal { padding: 8px 12px 9px; } .goal .row:last-child { display: none; }
+  .logo h1 { font-size: 30px; } .logo p { font-size: 12.5px; margin-top: 2px; } .logo { margin-bottom: 8px; }
+  .season { min-height: 0; padding: 7px 2px 6px; gap: 2px; } .season .ch { width: 32px; height: 32px; font-size: 16px; }
+  .tbtns { margin-top: 8px; } .tnote { margin-top: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+
+<div id="app">
+  <header class="top" id="top">
+    <div class="day"><div class="seal" id="seal">春</div><div class="dt"><b id="dayT">第 1 天・週一</b><span id="daySub">春天・梅雨季</span></div></div>
+    <div class="pill num" id="cashPill" aria-label="現金"><i class="coin"></i><span id="cashT">1,500</span></div>
+    <div class="pill" id="repPill" aria-label="口碑"><svg class="i" viewBox="0 0 24 24" style="width:17px;height:17px;color:var(--accent)"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" fill="currentColor" stroke="none"/></svg><span class="num" id="repT">50</span></div>
+    <button class="iconbtn" id="bMenu" type="button" aria-label="選單"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </header>
+  <main id="stage">
+    <canvas id="scene" aria-label="柑仔店：客人進門、挑東西、到櫃台結帳" role="img"></canvas>
+    <div class="hud" id="hud" hidden>
+      <div class="clock"><svg class="dial" viewBox="0 0 30 30" id="dial"></svg><div><b class="num" id="clockT">07:00</b><small id="sumT">營業額 $0</small></div></div>
+      <div class="tally" id="tally"></div>
+    </div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <section class="phase" id="market" hidden aria-label="早上進貨">
+      <div class="scroll"><div class="wrapc">
+        <div class="forecast" id="fcCard"></div>
+        <div id="evtBox"></div>
+        <div class="goal" id="goalBox"></div>
+        <div id="tipBox"></div>
+        <div class="sect"><h3>進貨・定價</h3><span id="mktNote">進價每天變動</span></div>
+        <div class="items" id="itemList"></div>
+      </div></div>
+      <div class="bar"><div class="wrapc">
+        <button class="iconbtn" id="bUpg" type="button" aria-label="店面升級"><svg class="i" viewBox="0 0 24 24"><path d="M3 10l2-5h14l2 5"/><path d="M3 10c0 1.5 1.3 2.5 3 2.5S9 11.5 9 10c0 1.5 1.3 2.5 3 2.5s3-1 3-2.5c0 1.5 1.3 2.5 3 2.5s3-1 3-2.5"/><path d="M5 12.5V20h14v-7.5"/><path d="M10 20v-4h4v4"/></svg></button>
+        <button class="btn" id="bSuggest" type="button">照建議</button>
+        <div class="mktsum grow" id="mktSum"><small>進貨</small><b class="num">$0</b></div>
+        <button class="btn primary" id="bOpen" type="button">開門營業</button>
+      </div></div>
+    </section>
+
+    <section class="phase" id="report" hidden aria-label="打烊結算">
+      <div class="scroll"><div class="wrapc" id="repBody"></div></div>
+      <div class="bar"><div class="wrapc">
+        <button class="btn" id="bRepUpg" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>升級</button>
+        <button class="btn primary grow" id="bNext" type="button">隔天早上</button>
+      </div></div>
+    </section>
+
+    <section class="phase" id="end" hidden aria-label="季末結算">
+      <div class="scroll"><div class="wrapc" id="endBody"></div></div>
+      <div class="bar"><div class="wrapc" id="endBtns"></div></div>
+    </section>
+
+    <section id="title" hidden aria-label="開始">
+      <div class="scroll"><div class="wrapc">
+        <div class="logo"><h1>小店經營</h1><p>巷口柑仔店的四季</p></div>
+        <div class="seasons" id="seasonList"></div>
+        <p class="tnote" id="tNote"></p>
+        <div class="tbtns">
+          <button class="iconbtn" id="bTHelp" type="button" aria-label="怎麼玩"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg></button>
+          <button class="iconbtn" id="bTSound" type="button" aria-label="音效"></button>
+          <button class="btn primary" id="bStart" type="button">開始</button>
+        </div>
+      </div></div>
+    </section>
+  </main>
+  <footer class="daybar" id="dayBar" hidden>
+    <button class="iconbtn" id="bPause" type="button" aria-label="暫停"><svg class="i" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg></button>
+    <button class="speed" id="bSpeed" type="button" aria-label="速度"><b class="num" id="speedT">1×</b><span><i class="on"></i><i></i><i></i></span></button>
+    <button class="upsell" id="bUp" type="button" aria-label="推薦加購"><span class="ph"></span><span class="t"><small>櫃台客人</small><b>推薦加購</b></span></button>
+    <button class="serve idle" id="bServe" type="button"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M7 9V5h10v4M7 14h4"/></svg>結帳<span class="q num" id="qN">0</span></button>
+  </footer>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheetUpg" hidden aria-label="店面升級">
+  <header><h2>店面升級</h2><button class="iconbtn" data-close type="button" aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+  <div class="scroll"><p class="help note" style="margin:0 2px 10px" id="upgNote">升級只在這一季有效。</p><div class="upgs" id="upgList"></div></div>
+</section>
+<section class="sheet" id="sheetMenu" hidden aria-label="選單">
+  <header><h2>選單</h2><button class="iconbtn" data-close type="button" aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+  <div class="scroll"><div class="menu">
+    <button type="button" id="mSound"><svg class="i" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></svg>音效<span id="mSoundT">開</span></button>
+    <button type="button" id="mTheme"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></svg>介面主題<span id="mThemeT">跟隨系統</span></button>
+    <button type="button" id="mHelp"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>怎麼玩<span>說明</span></button>
+    <button type="button" id="mTitle"><svg class="i" viewBox="0 0 24 24"><path d="M4 11l8-6 8 6v9H4z"/><path d="M10 20v-5h4v5"/></svg>季節選單<span>進度會保留</span></button>
+    <button type="button" id="mRestart" class="danger"><svg class="i" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3L20 8"/><path d="M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-14 5.3L4 16"/><path d="M4 21v-5h5"/></svg>這一季重新開始<span></span></button>
+  </div></div>
+</section>
+<section class="sheet" id="sheetHelp" hidden aria-label="怎麼玩">
+  <header><h2>怎麼玩</h2><button class="iconbtn" data-close type="button" aria-label="關閉"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
+  <div class="scroll help">
+    <p style="margin-top:0">你接手了巷口的柑仔店。每一季 14 天，一天一回合，季末存款達標就能拿星星、解鎖下一季。</p>
+    <ol>
+      <li><div><b>早上進貨</b>：看天氣和事件，用＋－決定每樣貨進幾件。不知道進多少就按「照建議」：它會看前幾天賣出和缺貨的量，再依今天的天氣和活動調整。茶葉蛋、烤地瓜放不過夜；其他貨每晚會有 8% 的庫存損耗，囤太多不划算。</div></li>
+      <li><div><b>定價</b>：黃色價格牌是售價。比參考價貴，有些客人會嫌貴走掉。口碑跟著每天客人的感受走：嫌貴、缺貨、排太久都會扣分，口碑低了來的客人就少；便宜一點客人覺得划算，口碑上升。</div></li>
+      <li><div><b>營業</b>：客人自己挑東西、到櫃台排隊。按「結帳」（或直接點櫃台）可以立刻幫櫃台的客人結帳，排太久客人會生氣走掉。櫃台出現「推薦」時按一下，客人可能多買一樣。右下的速度鈕可以 1×、2×、4× 快轉。</div></li>
+      <li><div><b>打烊結算</b>：看今天賺多少、誰沒買到、為什麼。用賺的錢升級店面：每項升級適合的季節和玩法不同，季初買才回得了本。</div></li>
+    </ol>
+    <h3>小訣竅</h3>
+    <p>下雨天雨傘搶手、熱天冰品大賣、寒流時地瓜和暖暖包好賣。廟會、中秋、過年前人潮多，前一天就會預告。學生和小朋友最在意價格，上班族和觀光客比較不計較。</p>
+    <p class="note">進度自動保存在這台裝置，重新整理也會回到原本的時間點。</p>
+  </div>
+</section>
+<script>
+"use strict";
+/*CORE-START*/
+const SHOP = (() => {
+  // ---- constants ---------------------------------------------------------------------------------
+  const OPEN = 420, CLOSE = 1260, LAST_IN = 1235, DAYS = 14, MIN_PER_SEC = 14;
+  // every night unsold shelf-stable stock loses this share of its cost (damp, dents, the odd pack that walks off)
+  const SHRINK = 0.08;
+  const WEEK = ['一', '二', '三', '四', '五', '六', '日'];
+  // cost = base wholesale price, ref = the price customers think is normal
+  const ITEMS = {
+    noodle:  { name: '王子麵',   unit: '包', cost: 7,  ref: 15,  perish: false, cold: false, qty: [1, 1, 2] },
+    ramune:  { name: '彈珠汽水', unit: '瓶', cost: 12, ref: 25,  perish: false, cold: true,  qty: [1] },
+    egg:     { name: '茶葉蛋',   unit: '顆', cost: 5,  ref: 12,  perish: true,  cold: false, qty: [1, 2, 2, 3] },
+    pop:     { name: '枝仔冰',   unit: '支', cost: 9,  ref: 20,  perish: false, cold: true,  qty: [1, 1, 2], frozen: true },
+    umbrella:{ name: '雨傘',     unit: '把', cost: 45, ref: 100, perish: false, cold: false, qty: [1] },
+    gacha:   { name: '抽抽樂',   unit: '抽', cost: 4,  ref: 10,  perish: false, cold: false, qty: [1, 2, 3] },
+    potato:  { name: '烤地瓜',   unit: '條', cost: 10, ref: 25,  perish: true,  cold: false, qty: [1, 1, 2] },
+    pomelo:  { name: '文旦柚',   unit: '顆', cost: 30, ref: 65,  perish: false, cold: false, qty: [1, 2, 3] },
+    warmer:  { name: '暖暖包',   unit: '包', cost: 8,  ref: 20,  perish: false, cold: false, qty: [1, 2, 2] },
+    couplet: { name: '春聯',     unit: '組', cost: 25, ref: 60,  perish: false, cold: false, qty: [1] },
+  };
+  // what goes well with what (first one in stock is recommended at the counter)
+  const PAIR = { noodle: ['ramune', 'egg', 'pop'], ramune: ['noodle', 'gacha', 'egg'], egg: ['noodle', 'ramune', 'potato'], pop: ['gacha', 'ramune', 'noodle'], umbrella: ['egg', 'noodle', 'ramune'],
+    gacha: ['pop', 'ramune', 'noodle'], potato: ['egg', 'warmer', 'ramune'], pomelo: ['egg', 'noodle', 'ramune'], warmer: ['potato', 'egg', 'noodle'], couplet: ['gacha', 'egg', 'noodle'] };
+  // m = price ratio at which half of them still buy; pat = patience in queue (game minutes)
+  const TYPES = {
+    student: { name: '學生',   m: 1.17, pat: 45, multi: 0.25, up: 0.7, pref: { noodle: 3, ramune: 3, egg: 2, pop: 3, umbrella: 1, gacha: 1.5, potato: 1.5, pomelo: 0.2, warmer: 1.5, couplet: 0.1 } },
+    kid:     { name: '小朋友', m: 1.09, pat: 40, multi: 0.3,  up: 0.7,  pref: { noodle: 2, ramune: 2, egg: 0.5, pop: 4, umbrella: 0.3, gacha: 4, potato: 1, pomelo: 0.1, warmer: 0.8, couplet: 0.05 } },
+    office:  { name: '上班族', m: 1.36, pat: 30, multi: 0.15, up: 0.55, pref: { noodle: 1, ramune: 2.5, egg: 3, pop: 1, umbrella: 1.5, gacha: 0.2, potato: 2, pomelo: 0.8, warmer: 2, couplet: 1 } },
+    elder:   { name: '阿伯阿姨', m: 1.21, pat: 80, multi: 0.3, up: 0.6, pref: { noodle: 1, ramune: 0.8, egg: 3, pop: 0.6, umbrella: 1, gacha: 0.3, potato: 3, pomelo: 2, warmer: 1.5, couplet: 3 } },
+    tourist: { name: '觀光客', m: 1.58, pat: 60, multi: 0.4,  up: 0.7,  pref: { noodle: 2, ramune: 3, egg: 2.5, pop: 2.5, umbrella: 1, gacha: 1.5, potato: 2, pomelo: 1.5, warmer: 1, couplet: 1.5 } },
+  };
+  // weather: traffic multiplier and per-item demand multipliers
+  const WX = {
+    sun:    { name: '晴天', traffic: 1,    item: { ramune: 1.2, pop: 1.3, potato: 0.8, warmer: 0.6, umbrella: 0.12 } },
+    hot:    { name: '炎熱', traffic: 0.95, item: { ramune: 1.7, pop: 2.2, egg: 0.8, potato: 0.35, warmer: 0.2, noodle: 0.9, umbrella: 0.12 } },
+    cloudy: { name: '多雲', traffic: 1,    item: { umbrella: 0.5 } },
+    rain:   { name: '下雨', traffic: 0.65, item: { umbrella: 1.6, ramune: 0.7, pop: 0.6, egg: 1.15, potato: 1.2, noodle: 1.1 } },
+    cold:   { name: '寒流', traffic: 0.85, item: { ramune: 0.45, pop: 0.2, egg: 1.5, potato: 2.1, warmer: 3, umbrella: 0.2 } },
+    typhoon:{ name: '颱風', traffic: 0.45, item: { umbrella: 1.4, noodle: 3.2, egg: 1.3, ramune: 0.5, pop: 0.4, gacha: 0.4 } },
+  };
+  const UPGRADES = {
+    sign:     { name: '招牌燈箱', cost: 900,  desc: '路過的人多 15%，晚上更顯眼；每一季都有用' },
+    register: { name: '收銀機',   cost: 500,  desc: '自動結帳快一倍；不常自己按「結帳」的話最有用' },
+    shelf:    { name: '新貨架',   cost: 500,  desc: '貨擺得好看，客人順手多拿一樣的機會多 60%' },
+    fan:      { name: '電風扇',   cost: 400,  desc: '客人願意多等 50%，熱天多 10% 客人；夏天有用' },
+    fridge:   { name: '玻璃冰箱', cost: 500,  desc: '晴天多 12%、熱天多 30% 客人，冰品飲料更好賣，冷凍櫃 80 格；夏天最划算' },
+    awning:   { name: '遮雨棚',   cost: 700,  desc: '下雨天客人幾乎不減少；梅雨季最有用' },
+  };
+  // seasons: items on sale, weather odds, scripted events, money targets
+  const SEASONS = [
+    { id: 'spring', name: '春', title: '春天・梅雨季', start: 1500, rent: 180, vol: 0.08, base: 44,
+      items: ['noodle', 'ramune', 'egg', 'gacha', 'umbrella'],
+      wx: { sun: 4, cloudy: 3, rain: 2.2 }, wxLate: { sun: 2, cloudy: 3, rain: 4 }, storm: 0.15,
+      events: { 4: 'fair', 9: 'order:noodle:20' }, randomEv: ['influencer'],
+      stars: [7000, 12000, 19000] },
+    { id: 'summer', name: '夏', title: '夏天・颱風季', start: 1500, rent: 200, vol: 0.1, base: 46,
+      items: ['noodle', 'ramune', 'egg', 'pop', 'umbrella'],
+      wx: { hot: 5, sun: 3, cloudy: 1.5, rain: 1 }, storm: 0.35,
+      events: { 3: 'order:ramune:15', 8: 'typhoonWarn', 9: 'typhoon', 10: 'priceUp', 12: 'fair' }, randomEv: ['influencer'],
+      stars: [6500, 12500, 19500] },
+    { id: 'autumn', name: '秋', title: '秋天・中秋節', start: 1500, rent: 220, vol: 0.12, base: 46,
+      items: ['noodle', 'ramune', 'egg', 'potato', 'pomelo', 'gacha'],
+      wx: { sun: 4, cloudy: 3, rain: 1.5, cold: 0.6 }, storm: 0.15,
+      events: { 5: 'fair', 8: 'moonSoon', 9: 'moonSoon', 10: 'moon' }, randomEv: ['influencer', 'priceUp'],
+      stars: [7500, 15500, 23000] },
+    { id: 'winter', name: '冬', title: '冬天・過年前', start: 1500, rent: 240, vol: 0.14, base: 46,
+      items: ['noodle', 'egg', 'potato', 'warmer', 'couplet', 'ramune'],
+      wx: { cold: 3.5, cloudy: 3, sun: 2, rain: 1.5 }, storm: 0.1,
+      events: { 7: 'order:warmer:20', 12: 'newyear1', 13: 'newyear2', 14: 'newyear3' }, randomEv: ['influencer', 'priceUp'],
+      stars: [7500, 14000, 21000] },
+  ];
+  const EVENTS = {
+    fair:        { name: '廟會', desc: '土地公廟會，人潮多 60%，還有觀光客', traffic: 1.6, tourist: 3, item: { noodle: 1.2, ramune: 1.3, gacha: 1.4, pop: 1.3 } },
+    influencer:  { name: '網紅來打卡', desc: '網紅推薦了小店，觀光客變多，口碑加分', traffic: 1.25, tourist: 4, rep: 6 },
+    typhoonWarn: { name: '颱風警報', desc: '明天颱風要來，大家會搶買泡麵和雨傘', traffic: 1.1, item: { noodle: 1.8, umbrella: 1.5, egg: 1.2 } },
+    typhoon:     { name: '颱風天', desc: '風雨很大，客人少，但泡麵和雨傘搶手', traffic: 1 },
+    priceUp:     { name: '批發漲價', desc: '颱風過後菜價上漲，進貨貴 40%', cost: 1.4, traffic: 1 },
+    moonSoon:    { name: '中秋前夕', desc: '大家開始買文旦送禮', traffic: 1.1, item: { pomelo: 2.6 } },
+    moon:        { name: '中秋節', desc: '中秋烤肉日，文旦大賣、人潮多 30%', traffic: 1.3, tourist: 2, item: { pomelo: 5.5, ramune: 1.3, noodle: 1.2 } },
+    newyear1:    { name: '年前採買', desc: '春聯開始熱賣', traffic: 1.15, item: { couplet: 3.5 } },
+    newyear2:    { name: '小年夜前', desc: '春聯搶手，人潮多 30%', traffic: 1.3, tourist: 1.5, item: { couplet: 6 } },
+    newyear3:    { name: '除夕前一天', desc: '最後衝刺！春聯和年貨大賣', traffic: 1.45, tourist: 2, item: { couplet: 8, egg: 1.3 } },
+    order:       { name: '里長訂單', desc: '', traffic: 1 },
+  };
+  // hourly foot-traffic shape (07..20) and who comes when
+  const PROFILE = [1.7, 1.3, 0.6, 0.6, 0.9, 1.6, 1.4, 0.6, 0.7, 1.0, 1.6, 1.5, 1.2, 0.8];
+  const MIX = [ // student, kid, office, elder, tourist(base)
+    [5, 1, 3, 3, 0], [2, 0.5, 5, 3, 0], [0.5, 0.3, 1.5, 5, 0.5], [0.5, 0.3, 1.5, 5, 0.6], [1, 0.5, 2, 3, 0.8],
+    [2, 0.5, 5, 2, 1], [2, 0.5, 4, 2, 1], [1, 0.5, 1.5, 3, 1], [1.5, 2, 1, 3, 1], [4, 4, 1, 2, 1],
+    [5, 4, 1.5, 2, 1], [3, 2, 3, 2, 0.8], [2, 1, 4, 2, 0.6], [2, 1, 2.5, 1.5, 0.5]];
+  const TYPE_IDS = ['student', 'kid', 'office', 'elder', 'tourist'];
+
+  // ---- random ------------------------------------------------------------------------------------
+  function mix32(a) { a = (a ^ 61) ^ (a >>> 16); a = (a + (a << 3)) | 0; a ^= a >>> 4; a = Math.imul(a, 0x27d4eb2d); a ^= a >>> 15; return a >>> 0; }
+  function hash(...xs) { let h = 0x9e3779b9; for (const x of xs) h = mix32((h ^ (x | 0)) + 0x632be5ab | 0); return h; }
+  function rnd(o) { let t = (o.r = (o.r + 0x6D2B79F5) | 0); t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+  function gauss(o) { const u = Math.max(1e-9, rnd(o)), v = rnd(o); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185307 * v); }
+  function pick(o, w) { let s = 0; for (const k in w) s += w[k]; let x = rnd(o) * s; for (const k in w) { x -= w[k]; if (x <= 0) return k; } return Object.keys(w).pop(); }
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+  // ---- season / run ------------------------------------------------------------------------------
+  function newRun(season, seed) {
+    const S = SEASONS[season];
+    seed = seed >>> 0 || 1;
+    const run = { v: 1, season, seed, day: 1, phase: 'market', cash: S.start, rep: 50, stock: {}, avg: {}, price: {}, order: {}, mkt: {}, upg: {}, hist: [], spent: 0, ds: null, last: null };
+    const o = { r: hash(seed, 77) };
+    for (const id of S.items) { run.stock[id] = 0; run.avg[id] = ITEMS[id].cost; run.price[id] = ITEMS[id].ref; run.order[id] = 0; run.mkt[id] = 1 + (rnd(o) - 0.5) * 0.16; }
+    // random events (influencer etc.) on fixed-by-seed days that have no scripted event
+    const free = []; for (let d = 2; d <= DAYS - 1; d++) if (!S.events[d]) free.push(d);
+    run.rev = {};
+    for (const e of S.randomEv) { if (!free.length) break; const i = Math.floor(rnd(o) * free.length); run.rev[free[i]] = e; free.splice(i, 1); }
+    run.wxs = []; for (let d = 1; d <= DAYS + 1; d++) run.wxs.push(rollWeather(S, seed, d));
+    planDay(run);
+    return run;
+  }
+  function eventOf(run, day) { const S = SEASONS[run.season]; return S.events[day] || run.rev[day] || null; }
+  function rollWeather(S, seed, day) {
+    const o = { r: hash(seed, day, 11) };
+    let w = { ...(day > 8 && S.wxLate ? S.wxLate : S.wx) };
+    let base = pick(o, w);
+    if (S.events[day] === 'typhoon') base = 'typhoon';
+    if (S.events[day] === 'typhoonWarn') base = 'cloudy';
+    // rain: whole day for rain/typhoon, a shower window for cloudy, afternoon storm chance for sun/hot
+    let chance = 0, win = null;
+    if (base === 'rain' || base === 'typhoon') { chance = 100; win = [OPEN, CLOSE]; }
+    else if (base === 'cloudy') { chance = 30 + Math.round(rnd(o) * 4) * 10; }
+    else if (base === 'sun' || base === 'hot') { chance = Math.round(S.storm * 10 + (rnd(o) - 0.5) * 2) * 10; chance = clamp(chance, 0, 60); }
+    else if (base === 'cold') chance = 20;
+    if (!win && chance > 0 && rnd(o) * 100 < chance) {
+      const st = base === 'cloudy' || base === 'cold' ? OPEN + 60 + Math.floor(rnd(o) * 600) : 840 + Math.floor(rnd(o) * 180);
+      win = [st, Math.min(CLOSE, st + 90 + Math.floor(rnd(o) * 200))];
+    } else rnd(o), rnd(o);
+    // tomorrow's forecast may be a little off
+    const fo = { r: hash(seed, day, 12) };
+    const fcBase = rnd(fo) < 0.8 ? base : pick(fo, w);
+    // a wrong forecast gets the rain chance its own weather would have, never the real day's
+    let fcChance = chance;
+    if (fcBase !== base) {
+      if (fcBase === 'rain' || fcBase === 'typhoon') fcChance = 100;
+      else if (fcBase === 'cloudy') fcChance = 30 + Math.round(rnd(fo) * 4) * 10;
+      else if (fcBase === 'sun' || fcBase === 'hot') fcChance = clamp(Math.round(S.storm * 10) * 10, 0, 60);
+      else if (fcBase === 'cold') fcChance = 20;
+      else fcChance = 0;
+    }
+    return { base, chance, win, fc: { base: fcBase, chance: fcChance } };
+  }
+  function planDay(run) {
+    const S = SEASONS[run.season], o = { r: hash(run.seed, run.day, 21) };
+    const ev = eventOf(run, run.day), costMul = ev === 'priceUp' ? EVENTS.priceUp.cost : 1;
+    if (run.day > 1) for (const id of S.items) {
+      const m = run.mkt[id];
+      run.mkt[id] = clamp(1 + 0.55 * (m - 1) + gauss(o) * S.vol, 0.68, 1.55);
+    }
+    run.cost = {};
+    for (const id of S.items) run.cost[id] = Math.max(1, Math.round(ITEMS[id].cost * run.mkt[id] * costMul));
+    run.today = run.wxs[run.day - 1];
+    run.event = ev;
+    for (const id of S.items) run.order[id] = 0;
+    run.phase = 'market';
+  }
+  function cap(run, id) {
+    if (ITEMS[id].frozen) return run.upg.fridge ? 80 : 40;
+    return 99;
+  }
+  function orderCost(run) { let s = 0; for (const id in run.order) s += run.order[id] * run.cost[id]; return s; }
+  function setOrder(run, id, n) {
+    if (run.phase !== 'market' || !(id in run.order)) return 0;
+    n = Math.max(0, Math.floor(n) || 0);
+    n = Math.min(n, cap(run, id) - run.stock[id]);
+    const other = orderCost(run) - run.order[id] * run.cost[id];
+    n = Math.min(n, Math.floor((run.cash - other) / run.cost[id]));
+    run.order[id] = Math.max(0, n);
+    return run.order[id];
+  }
+  function setPrice(run, id, p) {
+    if (!(id in run.price)) return 0;
+    const ref = ITEMS[id].ref;
+    run.price[id] = clamp(Math.round(p) || 0, Math.max(1, Math.round(ref * 0.4)), ref * 3);
+    return run.price[id];
+  }
+  // how busy a day is for one item, relative to a plain weekday: weather, weekend, event, reputation
+  const STARTER = { noodle: 14, ramune: 14, egg: 18, pop: 14, umbrella: 3, gacha: 10, potato: 10, pomelo: 4, warmer: 10, couplet: 3 };
+  function dayFactor(run, id, day, base, chance, event, rep) {
+    const W = WX[base] || WX.cloudy, wet = base === 'rain' || base === 'typhoon' ? 1 : (chance || 0) / 100 * 0.45;
+    let it = (W.item[id] || 1) * (1 - wet) + (base === 'typhoon' ? (WX.typhoon.item[id] || 1) : (WX.rain.item[id] || 1)) * wet;
+    let tr = W.traffic * (1 - wet) + (base === 'typhoon' ? WX.typhoon.traffic : (run.upg.awning ? 0.92 : WX.rain.traffic)) * wet;
+    if (base === 'typhoon') it = WX.typhoon.item[id] || 1;
+    const E = event ? EVENTS[event.split(':')[0]] : null;
+    let f = it * tr * (isWeekend(day) ? 1.2 : 1) * (0.55 + 0.9 * rep / 100);
+    if (E) f *= (E.traffic || 1) * (E.item && E.item[id] || 1) * (E.tourist ? 1 + 0.08 * E.tourist : 1);
+    return f;
+  }
+  // restock suggestion: what the last days sold plus who found it sold out, scaled from those days' weather and
+  // events to today's, minus what is on the shelf; the 里長 order on top; on the last day only what today should sell
+  function suggest(run) {
+    const S = SEASONS[run.season], out = {}, h = run.hist.slice(-3), last = run.day >= DAYS;
+    const evT = eventOf(run, run.day), order = evT && evT.startsWith('order:') ? evT.split(':') : null;
+    for (const id of S.items) {
+      const fT = dayFactor(run, id, run.day, run.today.base, run.today.chance, evT, run.rep);
+      let want;
+      if (!h.length) want = STARTER[id] * fT / dayFactor(run, id, 1, 'cloudy', 0, null, 50);
+      else {
+        const qa = ITEMS[id].qty, q = qa.reduce((a, b) => a + b, 0) / qa.length;
+        let sum = 0, wsum = 0;
+        h.forEach((r, i) => {
+          const sold = (r.sold[id] || 0) - (r.bulkN && r.bulkItem === id ? r.bulkN : 0);
+          const dem = sold + (r.oosItem[id] || 0) * q * 0.8;
+          const w = i + 1; sum += w * dem / Math.max(0.05, dayFactor(run, id, r.day, r.wx, r.chance, r.event, r.rep0)); wsum += w;
+        });
+        want = sum / wsum * fT;
+      }
+      want = want * (last ? 0.9 : ITEMS[id].perish ? 1.0 : 1.12) + (last ? 0 : 1);
+      if (order && order[1] === id) want += +order[2];
+      out[id] = clamp(Math.round(want) - run.stock[id], 0, cap(run, id) - run.stock[id]);
+    }
+    return out;
+  }
+  function applySuggest(run) {
+    const sg = suggest(run), S = SEASONS[run.season];
+    for (const id of S.items) run.order[id] = 0;
+    for (const id of S.items) setOrder(run, id, sg[id]);
+    return run.order;
+  }
+  function buyUpgrade(run, id) {
+    const U = UPGRADES[id];
+    if (!U || run.upg[id] || run.cash < U.cost + orderCost(run) || (run.phase !== 'market' && run.phase !== 'report')) return false;
+    run.cash -= U.cost; run.upg[id] = run.day; run.spent += U.cost;
+    run.todayUpg = (run.todayUpg || 0) + U.cost;
+    return true;
+  }
+  function weekday(day) { return (day - 1) % 7; }
+  function isWeekend(day) { return weekday(day) >= 5; }
+
+  // ---- the day -----------------------------------------------------------------------------------
+  function openShop(run) {
+    if (run.phase !== 'market') return false;
+    const S = SEASONS[run.season];
+    let spend = 0;
+    for (const id of S.items) {
+      const n = run.order[id]; if (!n) continue;
+      const c = run.cost[id];
+      run.avg[id] = (run.stock[id] * run.avg[id] + n * c) / (run.stock[id] + n);
+      run.stock[id] += n; spend += n * c; run.order[id] = 0;
+    }
+    run.cash -= spend;
+    const ev = eventOf(run, run.day);
+    const order = ev && ev.startsWith('order:') ? ev.split(':') : null;
+    run.ds = {
+      t: OPEN, r: hash(run.seed, run.day, 31), nid: 1, cs: [], q: [], svc: null, raining: false,
+      spend, upg: run.todayUpg || 0, rev: 0, cogs: 0, n: 0, served: 0, items: 0,
+      lost: { price: 0, oos: 0, wait: 0 }, lostItem: {}, oosItem: {}, priceItem: {}, sold: {}, up: { tried: 0, ok: 0 }, taps: 0,
+      repD: 0, sat: 0, bargain: 0, startStock: { ...run.stock },
+      bulk: order ? { item: order[1], n: +order[2], t: 720, done: false } : null, bulkRes: null,
+    };
+    run.todayUpg = 0;
+    run.phase = 'day';
+    return true;
+  }
+  function raining(run, t) { const w = run.today.win; return !!w && t >= w[0] && t < w[1]; }
+  function curWx(run, t) {
+    const b = run.today.base;
+    if (b === 'typhoon') return 'typhoon';
+    if (raining(run, t)) return 'rain';
+    return b === 'rain' ? 'cloudy' : b;
+  }
+  function trafficMul(run, t) {
+    const ev = run.event ? EVENTS[run.event.split(':')[0]] : null;
+    const wx = curWx(run, t);
+    let m = 0.55 + 0.9 * run.rep / 100;
+    let w = WX[wx].traffic; if (run.upg.awning && (wx === 'rain')) w = 0.92;
+    m *= w;
+    if (run.upg.sign) m *= t >= 1080 ? 1.25 : 1.15;
+    if (run.upg.fan && (wx === 'hot')) m *= 1.1;
+    if (run.upg.fridge && (wx === 'hot' || wx === 'sun')) m *= wx === 'hot' ? 1.3 : 1.12;
+    if (isWeekend(run.day)) m *= 1.2;
+    if (ev) m *= ev.traffic;
+    return m;
+  }
+  function arrivalRate(run, t) {
+    const S = SEASONS[run.season];
+    return S.base / 840 * PROFILE[Math.min(13, Math.floor((t - OPEN) / 60))] * trafficMul(run, t);
+  }
+  function itemMul(run, id, t) {
+    const wx = curWx(run, t);
+    let m = WX[wx].item[id] || 1;
+    const ev = run.event ? EVENTS[run.event.split(':')[0]] : null;
+    if (ev && ev.item && ev.item[id]) m *= ev.item[id];
+    if (run.upg.fridge && ITEMS[id].cold) m *= 1.35;
+    return m;
+  }
+  function midpoint(run, type, id, t) {
+    let m = TYPES[type].m + (run.rep - 50) / 500;
+    const wx = curWx(run, t);
+    if (id === 'umbrella' && (wx === 'rain' || wx === 'typhoon')) m += 0.3;
+    if (id === 'noodle' && wx === 'typhoon') m += 0.25;
+    if (id === 'pop' && wx === 'hot') m += 0.12;
+    if (id === 'warmer' && wx === 'cold') m += 0.15;
+    const ev = run.event;
+    if (id === 'pomelo' && (ev === 'moon' || ev === 'moonSoon')) m += 0.2;
+    if (id === 'couplet' && ev && ev.startsWith('newyear')) m += 0.25;
+    return m;
+  }
+  function pBuy(run, type, id, t) {
+    const r = run.price[id] / ITEMS[id].ref;
+    return 1 / (1 + Math.exp((r - midpoint(run, type, id, t)) / 0.1));
+  }
+  function wants(run, type, t) {
+    const S = SEASONS[run.season], w = {};
+    for (const id of S.items) w[id] = TYPES[type].pref[id] * itemMul(run, id, t);
+    return w;
+  }
+  function serveTime(run) { return run.upg.register ? 8 : 15; }
+  function spawn(run, d, t) {
+    const S = SEASONS[run.season], h = Math.min(13, Math.floor((t - OPEN) / 60));
+    const ev = run.event ? EVENTS[run.event.split(':')[0]] : null;
+    const mw = {};
+    TYPE_IDS.forEach((k, i) => { mw[k] = MIX[h][i] * (k === 'tourist' ? ((isWeekend(run.day) ? 1.5 : 0.4) * (ev && ev.tourist || 1)) : 1); });
+    const type = pick(d, mw);
+    const want = pick(d, wants(run, type, t));
+    const T = TYPES[type];
+    const qa = ITEMS[want].qty;
+    const c = {
+      id: d.nid++, type, look: Math.floor(rnd(d) * 1e6), s: 'in', t0: t, t1: t + 9 + Math.floor(rnd(d) * 4),
+      want, qty: qa[Math.floor(rnd(d) * qa.length)], uBuy: rnd(d), uAlt: rnd(d), uMulti: rnd(d), uBuy2: rnd(d), uUp: rnd(d), uAcc: rnd(d),
+      pat: Math.round(T.pat * (run.upg.fan ? 1.5 : 1) * (0.8 + rnd(d) * 0.4)), cart: [], why: null, up: null, upRes: null, mood: 0,
+      second: null, shelf: 0,
+    };
+    // pick a second item now so the draw order never depends on the player
+    if (c.uMulti < T.multi * (run.upg.shelf ? 1.6 : 1)) { const w2 = wants(run, type, t); delete w2[want]; c.second = pick(d, w2); }
+    c.shelf = S.items.indexOf(want);
+    d.cs.push(c); d.n++;
+    return c;
+  }
+  function reserve(run, c, id, n, price) { run.stock[id] -= n; c.cart.push({ id, n, p: price }); }
+  function release(run, c) { for (const it of c.cart) run.stock[it.id] += it.n; c.cart = []; }
+  function decide(run, d, c, t, ev) {
+    const S = SEASONS[run.season];
+    let id = c.want;
+    if (run.stock[id] < 1) {
+      d.oosItem[id] = (d.oosItem[id] || 0) + 1;
+      // maybe settle for something else on the shelf
+      if (c.uAlt < 0.45) {
+        const w = wants(run, c.type, t); delete w[id];
+        for (const k in w) if (run.stock[k] < 1) delete w[k];
+        if (Object.keys(w).length) { id = Object.keys(w).sort((a, b) => w[b] - w[a])[0]; c.alt = id; }
+        else id = null;
+      } else id = null;
+      if (!id) { leave(run, d, c, t, 'oos', ev); return; }
+    }
+    const p = pBuy(run, c.type, id, t);
+    if (c.uBuy > p) { d.priceItem[id] = (d.priceItem[id] || 0) + 1; c.priced = id; leave(run, d, c, t, 'price', ev); return; }
+    reserve(run, c, id, Math.min(c.qty, run.stock[id]), run.price[id]);
+    if (run.price[id] <= ITEMS[id].ref * 0.95) c.mood = 1;
+    const s2 = c.second;
+    if (s2 && run.stock[s2] > 0 && c.uBuy2 < pBuy(run, c.type, s2, t)) reserve(run, c, s2, 1, run.price[s2]);
+    c.s = 'toq'; c.t1 = t + 5 + (S.items.length - c.shelf) % 3;
+    ev.push({ k: 'pick', c });
+  }
+  function leave(run, d, c, t, why, ev) {
+    release(run, c);
+    c.s = 'out'; c.why = why; c.t1 = t + 10;
+    if (why === 'price') { d.lost.price++; d.sat -= 1; }
+    else if (why === 'oos') { d.lost.oos++; d.sat -= 1; }
+    else if (why === 'wait') { d.lost.wait++; d.sat -= 2; }
+    ev.push({ k: 'leave', c, why });
+  }
+  function frontOffer(run, d, c) {
+    // decide once, when the customer reaches the counter, whether there is something to recommend
+    if (c.up !== null) return;
+    const id = PAIR[c.want].find(k => run.stock[k] > 0 && !c.cart.some(x => x.id === k)) || null;
+    c.up = id && c.uUp < TYPES[c.type].up ? id : '';
+  }
+  function finishSale(run, d, c, t, ev, tapped) {
+    d.q.shift(); d.svc = null;
+    if (d.q.length) frontOffer(run, d, byId(d, d.q[0]));
+    let amt = 0;
+    for (const it of c.cart) { amt += it.n * it.p; d.cogs += it.n * run.avg[it.id]; d.sold[it.id] = (d.sold[it.id] || 0) + it.n; d.items += it.n; }
+    d.rev += amt; run.cash += amt; d.served++;
+    d.sat += 1 + (c.mood ? 0.5 : 0);
+    if (c.mood) d.bargain++;
+    c.s = 'out'; c.why = 'paid'; c.t1 = t + 10; c.paid = amt;
+    ev.push({ k: 'sale', c, amt, tapped: !!tapped });
+  }
+  function tick(run) {
+    const d = run.ds, ev = [];
+    if (!d || run.phase !== 'day') return ev;
+    const t = d.t;
+    const rn = raining(run, t);
+    if (rn !== d.raining) { d.raining = rn; ev.push({ k: rn ? 'rainOn' : 'rainOff' }); }
+    if (t < LAST_IN) {
+      let lam = arrivalRate(run, t);
+      while (lam > 0) { if (rnd(d) < Math.min(1, lam)) ev.push({ k: 'enter', c: spawn(run, d, t) }); lam -= 1; }
+    }
+    if (d.bulk && !d.bulk.done && t >= d.bulk.t) {
+      const b = d.bulk; b.done = true;
+      if (run.stock[b.item] >= b.n) {
+        const amt = b.n * Math.round(ITEMS[b.item].ref * 1.1);
+        run.stock[b.item] -= b.n; d.rev += amt; run.cash += amt; d.cogs += b.n * run.avg[b.item];
+        d.sold[b.item] = (d.sold[b.item] || 0) + b.n; d.items += b.n; d.repD += 3; d.bulkRes = { ok: true, amt };
+      } else { d.repD -= 3; d.bulkRes = { ok: false }; }
+      ev.push({ k: 'bulk', res: d.bulkRes, b });
+    }
+    for (const c of d.cs) {
+      if (c.s === 'in' && t >= c.t1) { c.s = 'browse'; c.t1 = t + 6 + (c.look % 5); }
+      else if (c.s === 'browse' && t >= c.t1) decide(run, d, c, t, ev);
+      else if (c.s === 'toq' && t >= c.t1) { c.s = 'q'; c.qt = t; d.q.push(c.id); }
+      else if (c.s === 'q' && t - c.qt > c.pat && d.q[0] !== c.id) {
+        d.q.splice(d.q.indexOf(c.id), 1); leave(run, d, c, t, 'wait', ev);
+      }
+    }
+    // the shopkeeper serves the front of the queue
+    if (d.q.length) {
+      const c = byId(d, d.q[0]);
+      frontOffer(run, d, c);
+      if (!d.svc || d.svc.id !== c.id) d.svc = { id: c.id, t0: t, until: t + serveTime(run) };
+      if (t >= d.svc.until) finishSale(run, d, c, t, ev, false);
+    }
+    d.cs = d.cs.filter(c => !(c.s === 'out' && t >= c.t1));
+    d.t++;
+    if (d.t >= CLOSE) ev.push({ k: 'closing' });
+    return ev;
+  }
+  function byId(d, id) { for (const c of d.cs) if (c.id === id) return c; return null; }
+  function front(run) { const d = run.ds; return d && d.q.length ? byId(d, d.q[0]) : null; }
+  // player taps 結帳: serve the customer at the counter right now
+  function serve(run) {
+    const d = run.ds; if (!d || run.phase !== 'day' || !d.q.length) return null;
+    const ev = [], c = byId(d, d.q[0]);
+    frontOffer(run, d, c);
+    d.taps++;
+    finishSale(run, d, c, d.t, ev, true);
+    return ev[0];
+  }
+  // player taps 推薦: offer the paired item to the customer at the counter
+  function upsell(run) {
+    const d = run.ds; if (!d || run.phase !== 'day' || !d.q.length) return null;
+    const c = byId(d, d.q[0]);
+    frontOffer(run, d, c);
+    if (!c.up || c.upRes) return null;
+    const id = c.up; d.up.tried++;
+    if (run.stock[id] > 0 && c.uAcc < 0.8 * pBuy(run, c.type, id, d.t)) {
+      reserve(run, c, id, 1, run.price[id]); c.upRes = 'ok'; d.up.ok++;
+    } else c.upRes = 'no';
+    return { ok: c.upRes === 'ok', id, c };
+  }
+  function dayDone(run) { const d = run.ds; return !!d && d.t >= CLOSE; }
+  // closing time: everyone still in the shop is settled at once
+  function closeDay(run) {
+    const d = run.ds; if (!d || run.phase !== 'day') return null;
+    const S = SEASONS[run.season], ev = [];
+    while (d.t < CLOSE) tick(run);
+    for (const c of d.cs.slice()) {
+      if (c.s === 'in' || c.s === 'browse') decide(run, d, c, d.t, ev);
+    }
+    for (const c of d.cs) if (c.s === 'toq') { c.s = 'q'; d.q.push(c.id); }
+    while (d.q.length) finishSale(run, d, byId(d, d.q[0]), d.t, ev, false);
+    const spoiled = {}; let spoilV = 0;
+    for (const id of S.items) if (ITEMS[id].perish && run.stock[id] > 0) { spoiled[id] = run.stock[id]; spoilV += run.stock[id] * run.avg[id]; run.stock[id] = 0; }
+    // shelf-stable leftovers lose a little value every night (none on the last night: the season is over)
+    let shrink = 0;
+    if (run.day < DAYS) for (const id of S.items) if (!ITEMS[id].perish && run.stock[id] > 0) shrink += run.stock[id] * run.avg[id] * SHRINK;
+    shrink = Math.round(shrink);
+    run.cash -= S.rent + shrink;
+    // reputation follows how today's customers felt: it moves a third of the way to today's score
+    const evRep = run.event === 'influencer' ? EVENTS.influencer.rep : 0;
+    const met = d.served + d.lost.price + d.lost.oos + d.lost.wait;
+    const score = met ? clamp(50 + 50 * d.sat / met, 0, 100) : run.rep;
+    const rep0 = run.rep;
+    run.rep = clamp(Math.round((run.rep + 0.35 * (score - run.rep) + d.repD + evRep) * 10) / 10, 0, 100);
+    let stockV = 0; for (const id of S.items) stockV += run.stock[id] * run.avg[id];
+    const rep = {
+      day: run.day, wx: run.today.base, rained: !!run.today.win, event: run.event,
+      rev: d.rev, spend: d.spend, rent: S.rent, upg: d.upg, shrink, net: d.rev - d.spend - S.rent - d.upg - shrink, profit: Math.round(d.rev - d.cogs - spoilV - S.rent - shrink),
+      chance: run.today.chance, score: Math.round(score), bulkItem: d.bulk ? d.bulk.item : null, bulkN: d.bulkRes && d.bulkRes.ok ? d.bulk.n : 0,
+      n: d.n, served: d.served, items: d.items, lost: { ...d.lost }, oosItem: d.oosItem, priceItem: d.priceItem, sold: d.sold,
+      spoiled, spoilV: Math.round(spoilV), up: { ...d.up }, taps: d.taps, bargain: d.bargain,
+      rep0, rep: run.rep, cash: run.cash, stockV: Math.round(stockV), bulk: d.bulkRes, prices: { ...run.price },
+    };
+    run.hist.push(rep); run.last = rep;
+    run.ds = null;
+    run.phase = run.day >= DAYS ? 'end' : 'report';
+    return rep;
+  }
+  function nextDay(run) {
+    if (run.phase !== 'report') return false;
+    run.day++; planDay(run); return true;
+  }
+  function stars(season, cash) { const s = SEASONS[season].stars; return cash >= s[2] ? 3 : cash >= s[1] ? 2 : cash >= s[0] ? 1 : 0; }
+
+  // ---- expectations (used by hints and by the test bots) ----------------------------------------
+  // expected unconstrained demand for each item today at the current prices (customers × share × buy chance)
+  function expectDemand(run, opts) {
+    const S = SEASONS[run.season], out = {}, only = opts && opts.only, step = (opts && opts.step) || 10;
+    for (const id of S.items) out[id] = 0;
+    const ev = run.event ? EVENTS[run.event.split(':')[0]] : null;
+    for (let t = OPEN + step / 2; t < LAST_IN; t += step) {
+      const h = Math.min(13, Math.floor((t - OPEN) / 60));
+      const lam = arrivalRate(run, t) * step;
+      const mw = {}; let ms = 0;
+      TYPE_IDS.forEach((k, i) => { mw[k] = MIX[h][i] * (k === 'tourist' ? ((isWeekend(run.day) ? 1.5 : 0.4) * (ev && ev.tourist || 1)) : 1); ms += mw[k]; });
+      for (const k of TYPE_IDS) {
+        const w = wants(run, k, t); let ws = 0; for (const id in w) ws += w[id];
+        for (const id in w) {
+          if (only && id !== only) continue;
+          const qa = ITEMS[id].qty, q = qa.reduce((a, b) => a + b, 0) / qa.length;
+          out[id] += lam * mw[k] / ms * w[id] / ws * q * pBuy(run, k, id, t);
+        }
+      }
+    }
+    return out;
+  }
+  return { OPEN, CLOSE, LAST_IN, DAYS, MIN_PER_SEC, WEEK, ITEMS, PAIR, TYPES, WX, UPGRADES, SEASONS, EVENTS, TYPE_IDS,
+    SHRINK, dayFactor, hash, newRun, planDay, cap, orderCost, setOrder, setPrice, suggest, applySuggest, buyUpgrade, weekday, isWeekend, openShop,
+    raining, curWx, trafficMul, arrivalRate, pBuy, midpoint, serveTime, tick, front, serve, upsell, dayDone, closeDay, nextDay, stars,
+    eventOf, expectDemand, itemMul };
+})();
+/*CORE-END*/
+
+// ---------- art: item icons (SVG, also drawn on the canvas), weather and upgrade icons ----------
+const SVGNS = "xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'";
+const ICON_SRC = {
+  noodle: `<svg ${SVGNS}><path d='M8 9h32l-1.5 3 1.5 3v18l-1.5 3 1.5 3H8l1.5-3L8 33V15l1.5-3z' fill='#f6bb45' stroke='#8a4b12' stroke-width='1.8' stroke-linejoin='round'/><path d='M9.5 11.5h29M9.5 36.5h29' stroke='#c47a1c' stroke-width='1.4' stroke-dasharray='2 1.6'/><rect x='8.8' y='17' width='30.4' height='13' fill='#d8402e'/><path d='M12.5 23.5c2-3.2 4 3.2 6 0s4 3.2 6 0 4 3.2 6 0 4 3.2 5 0' fill='none' stroke='#ffe9a8' stroke-width='2.2' stroke-linecap='round'/><circle cx='33' cy='13.6' r='2.1' fill='#fff3c4'/><path d='M13 33.5h9' stroke='#8a4b12' stroke-width='1.6' stroke-linecap='round'/></svg>`,
+  ramune: `<svg ${SVGNS}><rect x='19.5' y='3.5' width='9' height='5' rx='1.5' fill='#2f6fb3'/><path d='M19 8.5h10v3c0 2.4-2.4 3.2-2.4 5.2 0 1.6 5.4 3 5.4 6.8V40a4 4 0 0 1-4 4h-8a4 4 0 0 1-4-4V23.5c0-3.8 5.4-5.2 5.4-6.8 0-2-2.4-2.8-2.4-5.2z' fill='#a6e3dc' stroke='#2b6c80' stroke-width='1.8' stroke-linejoin='round'/><circle cx='24' cy='13.8' r='3' fill='#eefbff' stroke='#5a9fb4' stroke-width='1.2'/><rect x='16' y='27' width='16' height='9' fill='#3f8ed1'/><path d='M17 32c2-2 3.5 2 5.5 0s3.5 2 5.5 0 2.5 1 3 .5' fill='none' stroke='#fff' stroke-width='1.5' stroke-linecap='round'/><path d='M18.5 23v2.5M18.5 38.5v2' stroke='#fff' stroke-width='1.6' stroke-linecap='round' opacity='.8'/></svg>`,
+  egg: `<svg ${SVGNS}><path d='M18 8c1.5-2 1-3.5 0-5M24 7c1.5-2 1-3.5 0-5M30 8c1.5-2 1-3.5 0-5' fill='none' stroke='#b9a28a' stroke-width='1.6' stroke-linecap='round'/><ellipse cx='24' cy='27' rx='12.5' ry='15' fill='#a2602e' stroke='#5a2f12' stroke-width='1.8'/><path d='M14 22l5 2 3-3 4 3 4-2 5 2M13 30l5-1 3 3 4-3 4 3 5-2 3 1M19 39l3-3 4 2 3-2' fill='none' stroke='#5a2f12' stroke-width='1.3' stroke-linejoin='round' opacity='.75'/><ellipse cx='19' cy='19' rx='3' ry='4.5' fill='#fff' opacity='.28'/></svg>`,
+  pop: `<svg ${SVGNS}><rect x='20.5' y='31' width='7' height='14' rx='3' fill='#e8c58e' stroke='#9a7340' stroke-width='1.5'/><rect x='13' y='4' width='22' height='31' rx='9' fill='#9b4b5e' stroke='#5c2433' stroke-width='1.8'/><circle cx='19' cy='14' r='1.6' fill='#5c2433'/><circle cx='27' cy='19' r='1.6' fill='#5c2433'/><circle cx='21' cy='25' r='1.6' fill='#5c2433'/><circle cx='28' cy='28' r='1.3' fill='#5c2433'/><path d='M17 9.5v10' stroke='#fff' stroke-width='2.4' stroke-linecap='round' opacity='.35'/></svg>`,
+  umbrella: `<svg ${SVGNS}><path d='M24 24v14a4 4 0 0 1-8 0' fill='none' stroke='#6b4a2b' stroke-width='2.6' stroke-linecap='round'/><path d='M4.5 24C5.5 13 14 6 24 6s18.5 7 19.5 18c-2.2-2.4-4.3-2.4-6.5 0-2.2-2.4-4.3-2.4-6.5 0-2.2-2.4-4.3-2.4-6.5 0-2.2-2.4-4.3-2.4-6.5 0-2.2-2.4-4.3-2.4-6.5 0-2.2-2.4-4.3-2.4-6.5 0z' fill='#e0483a' stroke='#8e2219' stroke-width='1.8' stroke-linejoin='round'/><path d='M24 6c-4 5-6 11-6.5 18M24 6c4 5 6 11 6.5 18' fill='none' stroke='#fff3e8' stroke-width='3'/><path d='M24 6v-2' stroke='#6b4a2b' stroke-width='2.4' stroke-linecap='round'/></svg>`,
+  gacha: `<svg ${SVGNS}><rect x='7' y='6' width='34' height='37' rx='3' fill='#ffd84d' stroke='#9a6a00' stroke-width='1.8'/><rect x='7' y='6' width='34' height='9' rx='3' fill='#e0483a'/><path d='M14 10.5h20' stroke='#fff3c4' stroke-width='2' stroke-linecap='round' stroke-dasharray='3 2'/><g stroke='#9a6a00' stroke-width='.9'><rect x='11' y='18' width='6' height='6' rx='1' fill='#5ab0e8'/><rect x='18.5' y='18' width='6' height='6' rx='1' fill='#fff'/><rect x='26' y='18' width='6' height='6' rx='1' fill='#7cd07a'/><rect x='33.5' y='18' width='4' height='6' rx='1' fill='#fff'/><rect x='11' y='26' width='6' height='6' rx='1' fill='#fff'/><rect x='18.5' y='26' width='6' height='6' rx='1' fill='#f28ab0'/><rect x='26' y='26' width='6' height='6' rx='1' fill='#fff'/><rect x='33.5' y='26' width='4' height='6' rx='1' fill='#ff9f43'/><rect x='11' y='34' width='6' height='6' rx='1' fill='#b28ae0'/><rect x='18.5' y='34' width='6' height='6' rx='1' fill='#fff'/><rect x='26' y='34' width='6' height='6' rx='1' fill='#5ab0e8'/><rect x='33.5' y='34' width='4' height='6' rx='1' fill='#fff'/></g></svg>`,
+  potato: `<svg ${SVGNS}><path d='M15 10c1-2.4 0-4-1-5.5M21 9c1-2.4 0-4-1-5.5' fill='none' stroke='#b9a28a' stroke-width='1.6' stroke-linecap='round'/><path d='M9 33c-4-8 4-19 15-21s20 3 17 12c-2.4 7.4-13 14-22 14-5 0-8.4-2-10-5z' fill='#8c3b4f' stroke='#4f1a28' stroke-width='1.8'/><path d='M27 15c6-1.5 12 .5 12.6 5.4.6 5.2-5 10.6-12 12.4-4 1-7.4-3-6.6-8.4.6-4.6 2.8-8.6 6-9.4z' fill='#ffc94a' stroke='#c47a1c' stroke-width='1.4'/><path d='M28 20c2.4-1 5-.5 6 .8M27 25.4c2.6-.8 5.4-.4 6.6.8' fill='none' stroke='#e89a2a' stroke-width='1.3' stroke-linecap='round'/><path d='M13 27c2-.6 3 .5 5 .2' fill='none' stroke='#b85a70' stroke-width='1.3' stroke-linecap='round'/></svg>`,
+  pomelo: `<svg ${SVGNS}><path d='M24 9c-8 0-11 7-12.5 13C9.4 30.6 13 42 24 42s14.6-11.4 12.5-20C35 16 32 9 24 9z' fill='#cfdc55' stroke='#6c7a18' stroke-width='1.8'/><path d='M24 9.5c2-3.4 5-5 9.5-4.6-1 3.8-4.4 6-9 6' fill='#5a9a3a' stroke='#2f5e1a' stroke-width='1.4' stroke-linejoin='round'/><path d='M24 9.5V6' stroke='#6b4a2b' stroke-width='1.8' stroke-linecap='round'/><ellipse cx='18.5' cy='22' rx='3' ry='6' fill='#fff' opacity='.3'/><g fill='#9aaa2a'><circle cx='27' cy='25' r='.9'/><circle cx='30' cy='31' r='.9'/><circle cx='22' cy='34' r='.9'/><circle cx='26' cy='38' r='.9'/></g></svg>`,
+  warmer: `<svg ${SVGNS}><rect x='9' y='7' width='30' height='35' rx='5' fill='#fff8ee' stroke='#9a7a5a' stroke-width='1.8'/><path d='M9 12h30' stroke='#d9c3a5' stroke-width='1.5' stroke-dasharray='2 1.6'/><circle cx='24' cy='27' r='9' fill='#ff8a3d'/><path d='M24 20.5c3 2.6 4.2 5 2.6 7.6-.6-1.6-1.8-2.2-2.6-2.2 0 2-1.6 3-1.6 4.6 0 1 .6 1.8 1.6 2.2-3.2 0-5.2-2.2-5-5 .2-3.4 3.6-4.2 5-7.2z' fill='#ffe07a'/><path d='M14 38h20' stroke='#e0483a' stroke-width='2.2' stroke-linecap='round'/></svg>`,
+  couplet: `<svg ${SVGNS}><path d='M24 3l21 21-21 21L3 24z' fill='#d8352a' stroke='#8e1a12' stroke-width='1.8' stroke-linejoin='round'/><path d='M24 8.5L39.5 24 24 39.5 8.5 24z' fill='none' stroke='#f2c14e' stroke-width='1.6'/><path d='M18 18h12M17 23h14M20 23v8M28 23v8M20 31h8M24 15v4M22 27h4' stroke='#f2c14e' stroke-width='2' stroke-linecap='round'/></svg>`,
+};
+const ICON_IMG = {};
+const iconUrl = id => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(ICON_SRC[id]);
+// SVG images are slow to draw on a canvas every frame, so each icon is rasterised once into a bitmap
+for (const id in ICON_SRC) {
+  const im = new Image(), bmp = document.createElement('canvas'); bmp.width = bmp.height = 72; bmp.complete = false;
+  im.onload = () => { bmp.getContext('2d').drawImage(im, 0, 0, 72, 72); bmp.complete = true; };
+  im.src = iconUrl(id); ICON_IMG[id] = bmp;
+}
+const ic = (id, cls) => `<img src="${iconUrl(id)}" alt="" ${cls ? `class="${cls}"` : ''} draggable="false">`;
+const STAR = '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
+const WX_SVG = {
+  sun: `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="8" fill="#ffc53d"/><g stroke="#f0a320" stroke-width="2.6" stroke-linecap="round"><path d="M20 4v4M20 32v4M4 20h4M32 20h4M8.7 8.7l2.8 2.8M28.5 28.5l2.8 2.8M8.7 31.3l2.8-2.8M28.5 11.5l2.8-2.8"/></g></svg>`,
+  hot: `<svg viewBox="0 0 40 40"><circle cx="20" cy="18" r="9" fill="#ff8a3d"/><g stroke="#f05a28" stroke-width="2.6" stroke-linecap="round"><path d="M20 2.5v3.5M5 18h3.5M31.5 18H35M9 7l2.5 2.5M31 7l-2.5 2.5"/></g><path d="M9 33c2-2 4 2 6 0s4 2 6 0 4 2 6 0 4 2 4 0" fill="none" stroke="#f05a28" stroke-width="2.4" stroke-linecap="round"/></svg>`,
+  cloudy: `<svg viewBox="0 0 40 40"><circle cx="25" cy="14" r="6.5" fill="#ffc53d"/><path d="M11 31a6.5 6.5 0 0 1 .5-13 8.5 8.5 0 0 1 16-1.5A6.5 6.5 0 0 1 29 31z" fill="#c9d3dc" stroke="#8796a5" stroke-width="1.8"/></svg>`,
+  rain: `<svg viewBox="0 0 40 40"><path d="M10 24a6.5 6.5 0 0 1 .5-13 8.5 8.5 0 0 1 16-1.5A6.5 6.5 0 0 1 28 24z" fill="#aab7c4" stroke="#6e7d8c" stroke-width="1.8"/><g stroke="#3f8ed1" stroke-width="2.6" stroke-linecap="round"><path d="M13 28l-2 5M20 28l-2 5M27 28l-2 5"/></g></svg>`,
+  cold: `<svg viewBox="0 0 40 40"><g stroke="#4b86b8" stroke-width="2.6" stroke-linecap="round"><path d="M20 5v30M7 12.5l26 15M7 27.5l26-15M16 7l4 4 4-4M16 33l4-4 4 4"/></g></svg>`,
+  typhoon: `<svg viewBox="0 0 40 40"><path d="M20 6c-8 0-13 5-13 11 0 7 7 10 12 8-4 0-7-3-6-7 1-5 7-7 12-6-2-3-3-5-5-6z" fill="#6e7d8c"/><path d="M20 34c8 0 13-5 13-11 0-7-7-10-12-8 4 0 7 3 6 7-1 5-7 7-12 6 2 3 3 5 5 6z" fill="#3f6e9e"/><circle cx="20" cy="20" r="3" fill="#fff"/></svg>`,
+};
+const UPG_SVG = {
+  sign: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="9" rx="2"/><path d="M7 15v4M17 15v4M7 10.5h10"/><path d="M12 2.5v2M5 3.5l1.2 1.6M19 3.5l-1.2 1.6"/></svg>',
+  register: '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="9" rx="2"/><path d="M6 11l1.5-6h9L18 11"/><path d="M9 8h6M7 15h3M14 15h3"/></svg>',
+  shelf: '<svg class="i" viewBox="0 0 24 24"><path d="M4 3v18M20 3v18M4 8h16M4 14h16M4 20h16"/><rect x="6.5" y="4.5" width="3" height="3.5"/><rect x="11" y="10" width="4" height="4"/><rect x="15.5" y="16" width="3" height="4"/></svg>',
+  fan: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="10" r="7"/><path d="M12 10c0-3 1-4.5 3-4.5M12 10c2.6 1.5 3 3.4 1.6 5M12 10c-2.6 1.5-4.4 1-5-1"/><path d="M12 17v4M8 21h8"/></svg>',
+  fridge: '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M5 9h14M8 5.5v1.5M8 12v3"/><path d="M12 13.5l1.5 1.5L12 16.5 10.5 15z"/></svg>',
+  awning: '<svg class="i" viewBox="0 0 24 24"><path d="M2.5 8l3-4h13l3 4"/><path d="M2.5 8c0 1.4 1.2 2.3 2.4 2.3S7.3 9.4 7.3 8c0 1.4 1.2 2.3 2.4 2.3S12 9.4 12 8c0 1.4 1.2 2.3 2.4 2.3S16.7 9.4 16.7 8c0 1.4 1.2 2.3 2.4 2.3s2.4-.9 2.4-2.3"/><path d="M5 10v11M19 10v11"/><path d="M9 15l-1 2M13 14l-1 2M16 16l-1 2"/></svg>',
+};
+
+// ---------- scene renderer ----------
+const SW = 360, SH = 250;
+const Scene = (() => {
+  const cv = document.getElementById('scene'), ctx = cv.getContext('2d');
+  // the cached background is its own canvas behind the scene, so a frame only clears and redraws what moves
+  const bgEl = document.createElement('canvas'); bgEl.id = 'sceneBg'; bgEl.setAttribute('aria-hidden', 'true'); cv.parentNode.insertBefore(bgEl, cv);
+  let W = 0, H = 0, dpr = 1, s = 1, ox = 0, oy = 0, bg = null, bgKey = '', L = 0, anchor = null, anchorW = 0;
+  const actors = new Map(), floats = [], drops = [], scooters = [];
+  let owner = { bounce: 0 }, shutter = 0, shutterTarget = 0, lastT = 0;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  function resize() {
+    const r = cv.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.max(1, r.width); H = Math.max(1, r.height);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    // the title screen can reserve the right side (landscape): the shop then fills the free width on the left
+    const wa = anchorW ? Math.min(W, anchorW) : W;
+    const hb = anchor ? Math.min(H, anchor) : H, s0 = wa / 350;
+    // tall portrait screens get a taller shop (more shelf boards) instead of a sliver at the bottom
+    L = Math.max(0, Math.min(110, Math.round(hb / s0 - 238 - (anchor ? 40 : 76))));
+    s = Math.min(s0, hb / (238 + L));
+    ox = (wa - SW * s) / 2; oy = hb - SH * s;
+    bgKey = '';
+  }
+  function setAnchor(px, w) { w = w || 0; if (px !== anchor || w !== anchorW) { anchor = px; anchorW = w; resize(); } }
+  const view = () => ({ xl: -ox / s, xr: (W - ox) / s, yt: -oy / s, yb: (H - oy) / s });
+  // ---- colour helpers ----
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function mixc(c1, c2, t) { // hex colours
+    const p = c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const a = p(c1), b = p(c2);
+    return 'rgb(' + a.map((v, i) => Math.round(lerp(v, b[i], t))).join(',') + ')';
+  }
+  // time of day → {sky top, sky bottom, night 0..1}
+  function light(tm, wx) {
+    const h = tm / 60;
+    let night = h < 17.3 ? 0 : h < 18.8 ? (h - 17.3) / 1.5 : 1;
+    let dusk = h < 16.3 ? 0 : h < 17.6 ? (h - 16.3) / 1.3 : h < 18.8 ? 1 - (h - 17.6) / 1.2 : 0;
+    const morning = h < 8.5 ? 1 - (h - 7) / 1.5 : 0;
+    let top = '#6fb4e6', bot = '#cfe9f5';
+    if (morning > 0) { top = mixc('#6fb4e6', '#9fc3e8', morning); bot = mixc('#cfe9f5', '#ffe2c4', morning); }
+    if (dusk > 0) { top = mixc('#6fb4e6', '#7a6fb0', dusk); bot = mixc('#cfe9f5', '#ffb37a', dusk); }
+    if (night > 0) { top = mixc(dusk > 0 ? '#7a6fb0' : '#6fb4e6', '#141b3a', night); bot = mixc(dusk > 0 ? '#ffb37a' : '#cfe9f5', '#2e3a66', night); }
+    if (wx === 'rain' || wx === 'cloudy' || wx === 'typhoon') {
+      const g = wx === 'cloudy' ? 0.4 : wx === 'rain' ? 0.7 : 0.85;
+      top = mixc(rgb2hex(top), night > 0.5 ? '#1d2230' : '#7d8a97', g); bot = mixc(rgb2hex(bot), night > 0.5 ? '#2c3240' : '#b3bcc4', g);
+    }
+    if (wx === 'cold') { top = mixc(rgb2hex(top), '#a9c1d6', 0.35); bot = mixc(rgb2hex(bot), '#e4edf3', 0.35); }
+    return { top, bot, night, dusk };
+  }
+  function rgb2hex(c) { if (c[0] === '#') return c; const m = c.match(/\d+/g).map(Number); return '#' + m.map(v => v.toString(16).padStart(2, '0')).join(''); }
+  function rr(x, y, w, h, r, C) { C = C || ctx; C.beginPath(); C.roundRect ? C.roundRect(x, y, w, h, r) : C.rect(x, y, w, h); }
+  // ---- static background (cached) ----
+  function drawBackground(c2, run, tm, wx) {
+    const v = view(), Lt = light(tm, wx), C = c2;
+    const sky = C.createLinearGradient(0, v.yt, 0, 60 - L);
+    sky.addColorStop(0, Lt.top); sky.addColorStop(1, Lt.bot);
+    C.fillStyle = sky; C.fillRect(v.xl - 2, v.yt - 2, v.xr - v.xl + 4, v.yb - v.yt + 4);
+    // sun or moon
+    const h = tm / 60;
+    if (wx !== 'rain' && wx !== 'typhoon') {
+      if (Lt.night < 0.6) { const a = (h - 6) / 13 * Math.PI; C.fillStyle = Lt.dusk > 0.3 ? '#ffd27a' : '#fff4c9'; C.globalAlpha = wx === 'cloudy' ? 0.5 : 0.95; C.beginPath(); C.arc(v.xr - 60 - Math.cos(a) * 40, Math.min(-40 - L, v.yt + 40 + Math.max(0, 1 - Math.sin(a)) * 60), 16, 0, 7); C.fill(); C.globalAlpha = 1; }
+      else { C.fillStyle = '#f4f1dc'; C.beginPath(); C.arc(v.xl + 60, Math.min(-50 - L, v.yt + 50), 11, 0, 7); C.fill(); C.fillStyle = Lt.top; C.beginPath(); C.arc(v.xl + 65, Math.min(-50 - L, v.yt + 50) - 3, 9, 0, 7); C.fill();
+        C.fillStyle = 'rgba(255,255,240,.7)'; for (let i = 0; i < 18; i++) { const sx = v.xl + ((i * 97) % Math.max(1, v.xr - v.xl)), sy = v.yt + ((i * 53) % Math.max(10, -v.yt - 30)); C.fillRect(sx, sy, 1.2, 1.2); } }
+    }
+    // clouds drift slowly with the clock
+    const nc = { sun: 2, hot: 1, cloudy: 5, rain: 6, typhoon: 7, cold: 3 }[wx] || 2;
+    const cc = wx === 'rain' || wx === 'typhoon' ? (Lt.night > .5 ? '#3a4150' : '#9aa5b0') : (Lt.night > .5 ? '#39405a' : '#ffffff');
+    const span = v.xr - v.xl + 160, ytop = v.yt + 16, ybot = -60 - L;
+    for (let i = 0; i < nc; i++) {
+      const cx = v.xl - 80 + ((i * 137 + tm * 0.12 * (1 + (i % 3) * 0.3)) % span), cy = ytop + (ybot - ytop) * ((i * 0.37) % 1), k = 0.8 + (i % 3) * 0.25;
+      if (ybot < ytop) break;
+      C.globalAlpha = wx === 'sun' || wx === 'hot' ? 0.85 : 0.92; C.fillStyle = cc;
+      C.beginPath(); C.arc(cx, cy, 14 * k, 0, 7); C.arc(cx + 16 * k, cy - 6 * k, 17 * k, 0, 7); C.arc(cx + 34 * k, cy, 13 * k, 0, 7); C.rect(cx, cy, 34 * k, 13 * k); C.fill();
+      C.globalAlpha = 1;
+    }
+    // neighbouring buildings (visible on wide screens)
+    const nb = (x0, x1, top, col, seed) => {
+      C.fillStyle = col; C.fillRect(x0, top, x1 - x0, SH - top);
+      for (let fy = top + 14; fy < 30; fy += 62) for (let fx = x0 + 12; fx < x1 - 26; fx += 46) {
+        const lit = Lt.night > 0.3 && ((fx * 7 + fy * 3 + seed) % 5 < 2);
+        C.fillStyle = lit ? '#ffd98a' : 'rgba(40,50,70,.35)'; C.fillRect(fx, fy, 24, 30);
+        C.strokeStyle = 'rgba(30,30,30,.35)'; C.lineWidth = 1; for (let k = 1; k < 4; k++) { C.beginPath(); C.moveTo(fx + k * 6, fy); C.lineTo(fx + k * 6, fy + 30); C.stroke(); }
+      }
+      // closed shutter at street level
+      C.fillStyle = '#9aa0a6'; C.fillRect(x0 + 6, 96, x1 - x0 - 12, 126); C.fillStyle = 'rgba(0,0,0,.12)'; for (let y = 98; y < 222; y += 5) C.fillRect(x0 + 6, y, x1 - x0 - 12, 1.2);
+      C.fillStyle = 'rgba(0,0,0,.25)'; C.fillRect(x0, 80, x1 - x0, 6);
+    };
+    if (v.xl < 0) { nb(Math.min(-170, v.xl - 2), -122, -150 - L, Lt.night > .5 ? '#3c3a44' : '#c9b8a6', 3); nb(-122, 0, -110 - L, Lt.night > .5 ? '#45403f' : '#d8c3a5', 7); }
+    if (v.xr > SW) { nb(SW, SW + 130, -190 - L, Lt.night > .5 ? '#3a404a' : '#bcc6c9', 5); nb(SW + 130, Math.max(SW + 300, v.xr + 2), -120 - L, Lt.night > .5 ? '#443c3a' : '#d6b9a0', 9); }
+    // our building: three floors above the shop + roof with a water tank
+    const wall = Lt.night > 0.5 ? '#5b5049' : '#efe1c8', wall2 = Lt.night > 0.5 ? '#4e443e' : '#e4d2b3';
+    C.save(); C.translate(0, -L);
+    C.fillStyle = wall; C.fillRect(0, -232, SW, 250);
+    C.fillStyle = wall2; for (let y = -232; y < 18; y += 8) C.fillRect(0, y, SW, 1);
+    C.fillStyle = Lt.night > 0.5 ? '#3d3632' : '#c9b18d'; C.fillRect(-4, -240, SW + 8, 10);
+    // water tank & antenna on the roof
+    if (v.yt < -240 - L) {
+      C.fillStyle = '#c7ccd1'; rr(250, -276, 50, 36, 6, C); C.fill(); C.fillStyle = '#a7aeb5'; C.fillRect(250, -262, 50, 3); C.fillRect(262, -240, 4, 10); C.fillRect(284, -240, 4, 10);
+      C.strokeStyle = '#7d858d'; C.lineWidth = 2; C.beginPath(); C.moveTo(70, -240); C.lineTo(70, -290); C.moveTo(56, -280); C.lineTo(84, -280); C.moveTo(60, -270); C.lineTo(80, -270); C.stroke();
+    }
+    for (let f = 0; f < 3; f++) {
+      const y0 = -224 + f * 82;
+      for (const wx0 of [40, 200]) {
+        const lit = Lt.night > 0.3 && ((f * 3 + wx0) % 4 !== 0);
+        C.fillStyle = lit ? '#ffd98a' : (Lt.night > 0.5 ? '#2b2f3c' : '#8fb3c9'); C.fillRect(wx0, y0 + 14, 120, 48);
+        if (!lit) { C.fillStyle = 'rgba(255,255,255,.25)'; C.fillRect(wx0 + 6, y0 + 18, 30, 6); }
+        // 鐵窗 iron grille
+        C.strokeStyle = Lt.night > 0.5 ? '#1f1f22' : '#4d5156'; C.lineWidth = 1.6;
+        C.strokeRect(wx0 - 4, y0 + 10, 128, 56);
+        C.beginPath(); for (let k = 1; k < 16; k++) { C.moveTo(wx0 - 4 + k * 8, y0 + 10); C.lineTo(wx0 - 4 + k * 8, y0 + 66); } C.stroke();
+        C.beginPath(); C.moveTo(wx0 - 4, y0 + 22); C.lineTo(wx0 + 124, y0 + 22); C.stroke();
+        // potted plants on the grille ledge
+        if ((f + wx0) % 3 !== 1) for (let k = 0; k < 3; k++) { const px = wx0 + 10 + k * 40 + (f * 13 % 9); C.fillStyle = '#b5653a'; C.fillRect(px, y0 + 58, 12, 8); C.fillStyle = k % 2 ? '#4f9a46' : '#6fb85a'; C.beginPath(); C.arc(px + 6, y0 + 55, 7, 0, 7); C.fill(); if (k === 1) { C.fillStyle = '#ff6f8a'; C.beginPath(); C.arc(px + 4, y0 + 52, 2.2, 0, 7); C.fill(); } }
+      }
+      // air conditioner box
+      if (f !== 1) { C.fillStyle = '#e9ecef'; C.fillRect(f ? 168 : 172, y0 + 30, 24, 18); C.strokeStyle = '#9aa3ab'; C.lineWidth = 1; C.strokeRect(f ? 168 : 172, y0 + 30, 24, 18); C.beginPath(); C.arc((f ? 168 : 172) + 12, y0 + 39, 6, 0, 7); C.stroke(); }
+      if (f === 1) { // laundry pole
+        C.strokeStyle = '#7d858d'; C.lineWidth = 1.5; C.beginPath(); C.moveTo(170, y0 + 20); C.lineTo(196, y0 + 20); C.stroke();
+        [['#e65a4a', 172], ['#4fa3d8', 180], ['#f2c14e', 188]].forEach(([col, x]) => { C.fillStyle = col; C.fillRect(x, y0 + 21, 6, 12); });
+      }
+    }
+    // shop sign
+    C.fillStyle = '#6b3e22'; rr(26, 16, 308, 34, 4, C); C.fill();
+    C.fillStyle = run && run.upg && run.upg.sign ? (Lt.night > 0.3 ? '#fff6d6' : '#fdf3dd') : '#f6e7c8'; rr(30, 19, 300, 28, 3, C); C.fill();
+    C.fillStyle = '#b8261a'; C.font = '800 19px ' + getComputedStyle(document.body).fontFamily; C.textAlign = 'center'; C.textBaseline = 'middle';
+    C.fillText('巷 口 柑 仔 店', 180, 34);
+    C.fillStyle = '#2a877a'; C.font = '700 7px sans-serif'; C.fillText('零食・飲料・日用品', 290, 42);
+    C.fillText('創業五十年', 70, 42);
+    if (run && run.upg && run.upg.sign) { for (let k = 0; k < 13; k++) { C.fillStyle = Lt.night > 0.3 ? '#ffe9a0' : '#f5c84a'; C.beginPath(); C.arc(34 + k * 24.3, 18, 2, 0, 7); C.fill(); } }
+    // ceiling + awning
+    C.fillStyle = '#5e4632'; C.fillRect(0, 50, SW, 18);
+    C.save(); C.beginPath(); C.rect(-30, 52, SW + 60, 30); C.clip();
+    for (let x = -22, k = 0; x < SW + 22; x += 16, k++) {
+      C.fillStyle = k % 2 ? '#fff4e6' : '#d8402e';
+      C.beginPath(); C.moveTo(x, 52); C.lineTo(x + 16, 52); C.lineTo(x + 16, 68); C.arc(x + 8, 68, 8, 0, Math.PI); C.closePath(); C.fill();
+    }
+    C.restore();
+    C.restore();
+    // interior: back wall (cream) + mint tiles, ceiling shadow
+    C.fillStyle = '#f7ecd8'; C.fillRect(14, 66 - L, SW - 28, 90 + L);
+    C.fillStyle = '#9ed2c4'; C.fillRect(14, 150, SW - 28, 64);
+    C.strokeStyle = 'rgba(40,110,95,.28)'; C.lineWidth = 0.8; C.beginPath();
+    for (let x = 14; x < SW - 14; x += 10) { C.moveTo(x, 150); C.lineTo(x, 214); } for (let y = 150; y < 214; y += 10) { C.moveTo(14, y); C.lineTo(SW - 14, y); } C.stroke();
+    C.fillStyle = '#2a877a'; C.fillRect(14, 148, SW - 28, 3);
+    // calendar & clock on the wall above the counter
+    const cy = 84 - Math.round(L * 0.55);
+    C.fillStyle = '#fff'; C.fillRect(300, cy, 30, 34); C.fillStyle = '#d8352a'; C.fillRect(300, cy, 30, 9);
+    C.fillStyle = '#3a2a1d'; C.font = '800 15px ' + getComputedStyle(document.body).fontFamily; C.textAlign = 'center'; C.fillText(String(run ? run.day : 1), 315, cy + 22);
+    C.fillStyle = '#fff'; C.font = '700 6px sans-serif'; C.fillText(['春', '夏', '秋', '冬'][run ? run.season : 0] + '季', 315, cy + 5);
+    if (L > 40) { // a radio and a poster fill the taller wall
+      C.fillStyle = '#e8c35a'; C.fillRect(262, cy + 2, 24, 32); C.fillStyle = '#d8402e'; C.fillRect(262, cy + 2, 24, 8); C.fillStyle = '#3a8fd1'; C.beginPath(); C.arc(274, cy + 23, 6, 0, 7); C.fill(); C.fillStyle = '#fff'; C.font = '800 5.5px sans-serif'; C.fillText('彈珠汽水', 274, cy + 6.5);
+      C.fillStyle = '#8a5a32'; C.fillRect(268, cy + 62, 60, 4); C.fillStyle = '#6b4a2b'; rr(276, cy + 46, 30, 16, 3, C); C.fill(); C.fillStyle = '#d9cbb0'; C.beginPath(); C.arc(284, cy + 54, 5, 0, 7); C.fill(); C.fillStyle = '#c9a24a'; C.fillRect(292, cy + 50, 10, 2); C.fillRect(292, cy + 55, 10, 2);
+    }
+    // shelves (wood)
+    const sh = shelfGeom(run);
+    const st = sh.boards[0] - 26;
+    C.fillStyle = '#c99a62'; C.fillRect(sh.x0 - 4, st, 4, 214 - st); C.fillRect(sh.x1, st, 4, 214 - st);
+    C.fillStyle = 'rgba(120,80,40,.12)'; C.fillRect(sh.x0, st, sh.x1 - sh.x0, 214 - st);
+    C.fillStyle = '#a8743f'; C.fillRect(sh.x0 - 6, st - 4, sh.x1 - sh.x0 + 12, 5);
+    for (const by of sh.boards) { C.fillStyle = '#a8743f'; C.fillRect(sh.x0 - 4, by, sh.x1 - sh.x0 + 8, 5); C.fillStyle = '#7d5129'; C.fillRect(sh.x0 - 4, by + 5, sh.x1 - sh.x0 + 8, 1.5); }
+    // cold columns get a glass-freezer tint
+    run && sh.items.forEach((id, i) => { if (SHOP.ITEMS[id].frozen) { C.fillStyle = 'rgba(160,215,240,.45)'; C.fillRect(sh.x0 + i * sh.cw + 1, st + 2, sh.cw - 2, 212 - st); } });
+    if (run && run.upg && run.upg.fridge) { // glass fridge at the left
+      const ft = 74 - Math.round(L * 0.6), nk = Math.floor((204 - ft - 8) / 28);
+      C.fillStyle = '#dfe9ee'; rr(18, ft, 34, 214 - ft, 3, C); C.fill(); C.fillStyle = 'rgba(150,210,235,.8)'; C.fillRect(21, ft + 6, 28, 204 - ft);
+      C.fillStyle = '#c94a3a'; C.fillRect(18, ft, 34, 6);
+      for (let k = 0; k < nk; k++) { const yk = 204 - (k + 1) * 28; C.fillStyle = '#e9f4f8'; C.fillRect(21, yk + 24, 28, 2); for (let j = 0; j < 4; j++) { C.fillStyle = (j + k) % 2 ? '#3f8ed1' : '#7cc7c0'; C.fillRect(23 + j * 6.5, yk + 10, 4.5, 13); } }
+    }
+    // floor (terrazzo)
+    C.fillStyle = '#d9cdbb'; C.fillRect(14, 212, SW - 28, 10);
+    C.fillStyle = 'rgba(120,100,80,.25)'; for (let i = 0; i < 60; i++) C.fillRect(14 + (i * 37) % (SW - 30), 213 + (i * 7) % 8, 1.5, 1.5);
+    const aw = run && run.upg && run.upg.awning;
+    if (aw) { C.fillStyle = 'rgba(110,190,150,.55)'; C.beginPath(); C.moveTo(-20, 76); C.lineTo(SW + 20, 76); C.lineTo(SW + 30, 96); C.lineTo(-30, 96); C.closePath(); C.fill(); C.strokeStyle = 'rgba(40,110,80,.6)'; C.lineWidth = 1; C.beginPath(); for (let x = -20; x < SW + 20; x += 10) { C.moveTo(x, 76); C.lineTo(x - 2, 96); } C.stroke(); }
+    // arcade pillars
+    for (const px of [0, SW - 14]) {
+      C.fillStyle = '#e7d6bd'; C.fillRect(px, 66 - L, 14, 158 + L); C.fillStyle = '#c8b190'; C.fillRect(px + (px ? 0 : 11), 66 - L, 3, 158 + L);
+      C.fillStyle = '#b84b3b'; C.fillRect(px, 196, 14, 28); C.fillStyle = 'rgba(0,0,0,.12)'; for (let y = 198; y < 224; y += 6) C.fillRect(px, y, 14, 1);
+    }
+    // sidewalk + street
+    C.fillStyle = '#c9bba5'; C.fillRect(v.xl - 2, 222, v.xr - v.xl + 4, 14);
+    C.strokeStyle = 'rgba(90,70,50,.22)'; C.lineWidth = .8; C.beginPath(); for (let x = Math.floor(v.xl / 14) * 14; x < v.xr; x += 14) { C.moveTo(x, 222); C.lineTo(x - 4, 236); } C.stroke();
+    C.fillStyle = '#9b8f80'; C.fillRect(v.xl - 2, 235, v.xr - v.xl + 4, 2.5);
+    C.fillStyle = '#4c4f55'; C.fillRect(v.xl - 2, 237.5, v.xr - v.xl + 4, Math.max(20, v.yb - 237.5 + 2));
+    C.fillStyle = '#e8e2d2'; for (let x = Math.floor(v.xl / 40) * 40; x < v.xr; x += 40) C.fillRect(x, 246, 20, 1.6);
+    // night: darken the outside, light up the shop
+    if (Lt.night > 0) {
+      C.save(); C.globalAlpha = Lt.night * 0.45; C.fillStyle = '#0c1230';
+      C.beginPath(); C.rect(v.xl - 2, v.yt - 2, v.xr - v.xl + 4, v.yb - v.yt + 4); C.rect(14, 66 - L, SW - 28, 156 + L); C.fill('evenodd'); C.restore();
+      C.save(); C.globalAlpha = Lt.night * 0.9; const g = C.createRadialGradient(180, 222, 10, 180, 222, 190); g.addColorStop(0, 'rgba(255,214,140,.55)'); g.addColorStop(1, 'rgba(255,214,140,0)'); C.fillStyle = g; C.fillRect(-20, 200, SW + 40, 50); C.restore();
+      // fluorescent tubes
+      C.fillStyle = '#fbfff6'; C.fillRect(80, 70 - L, 60, 3); C.fillRect(200, 70 - L, 60, 3);
+    }
+    if (wx === 'rain' || wx === 'typhoon') { C.fillStyle = 'rgba(150,170,190,.35)'; for (let i = 0; i < 6; i++) { C.beginPath(); C.ellipse(v.xl + 30 + i * ((v.xr - v.xl) / 6), 241 + (i % 2) * 6, 18, 2.2, 0, 0, 7); C.fill(); } }
+  }
+  function shelfGeom(run) {
+    const items = run ? SHOP.SEASONS[run.season].items : SHOP.SEASONS[0].items;
+    const x0 = run && run.upg && run.upg.fridge ? 60 : 26, x1 = 240;
+    const boards = [], step = run && run.upg && run.upg.shelf ? 30 : 36, bot = run && run.upg && run.upg.shelf ? 182 : 176;
+    for (let y = bot; y >= 100 - L; y -= step) boards.unshift(y);
+    return { items, x0, x1, cw: (x1 - x0) / items.length, boards };
+  }
+  // ---- people ----
+  const SKIN = ['#f2c9a0', '#e8b48a', '#d9a073', '#f5d3b0'], HAIR = ['#2b1d16', '#3b2a20', '#1a1410', '#5a3a24'];
+  const BRIGHT = ['#ff8a5b', '#4fb3e8', '#ffcf3f', '#7ccf72', '#f28ab0', '#b28ae0'];
+  function drawPerson(x, y, type, look, phase, face, alpha) {
+    const kid = type === 'kid', sc = kid ? 0.86 : 1.1;
+    const C = ctx;
+    C.save(); C.translate(x, y); C.scale(face * sc, sc); if (alpha < 1) C.globalAlpha = alpha;
+    const sw = Math.sin(phase) * 3.2, bob = Math.abs(Math.cos(phase)) * 0.8;
+    const skin = SKIN[look % 4], hair = type === 'elder' ? (look & 4 ? '#d9d4cc' : '#b6aea4') : HAIR[(look >> 2) % 4];
+    let top, bottom, girl = (look >> 4) & 1;
+    if (type === 'student') { top = '#fbfbf6'; bottom = '#2f3d66'; }
+    else if (type === 'kid') { top = BRIGHT[look % 6]; bottom = '#3e5c86'; }
+    else if (type === 'office') { top = look & 8 ? '#cfe0f2' : '#f4f4f0'; bottom = '#3a3f4a'; }
+    else if (type === 'elder') { top = ['#a8445a', '#5f7f5a', '#8a6a9a', '#c07a3a'][look % 4]; bottom = '#6b5a4a'; }
+    else { top = ['#ff9f43', '#26a69a', '#ef5f8a', '#5a8de0'][look % 4]; bottom = '#e9dcc0'; }
+    // shadow
+    C.fillStyle = 'rgba(0,0,0,.16)'; C.beginPath(); C.ellipse(0, 0, 8, 2.2, 0, 0, 7); C.fill();
+    // legs
+    C.fillStyle = type === 'student' && girl ? skin : bottom;
+    C.fillRect(-4 + sw * 0.4, -9, 3.2, 9); C.fillRect(1 - sw * 0.4, -9, 3.2, 9);
+    C.fillStyle = '#2b2622'; C.fillRect(-4.5 + sw * 0.4, -1.6, 4.2, 1.8); C.fillRect(0.6 - sw * 0.4, -1.6, 4.2, 1.8);
+    C.translate(0, -bob);
+    // backpack / bag behind
+    if (type === 'student' || type === 'kid') { C.fillStyle = BRIGHT[(look >> 3) % 6]; rr(-8.5, -21, 5, 10, 2); C.fill(); }
+    // body
+    C.fillStyle = top; rr(-5.5, -21, 11, 13, 3.5); C.fill();
+    if (type === 'student' && girl) { C.fillStyle = bottom; C.beginPath(); C.moveTo(-6, -10); C.lineTo(6, -10); C.lineTo(7, -6); C.lineTo(-7, -6); C.closePath(); C.fill(); }
+    else { C.fillStyle = bottom; C.fillRect(-5.5, -10.5, 11, 3); }
+    if (type === 'office') { C.fillStyle = '#c8402f'; C.beginPath(); C.moveTo(0, -20.5); C.lineTo(1.4, -17); C.lineTo(0, -12); C.lineTo(-1.4, -17); C.closePath(); C.fill(); }
+    if (type === 'elder') { C.fillStyle = 'rgba(255,255,255,.5)'; for (let k = 0; k < 4; k++) C.fillRect(-3 + (k % 2) * 4, -19 + k * 2.6, 1.4, 1.4); }
+    if (type === 'tourist') { C.strokeStyle = '#333'; C.lineWidth = 0.8; C.beginPath(); C.moveTo(-4, -20); C.lineTo(3, -13); C.stroke(); C.fillStyle = '#333'; C.fillRect(1.5, -14.5, 4.5, 3.2); }
+    if (type === 'student') { C.fillStyle = '#2f3d66'; C.fillRect(-1, -21, 2, 3); }
+    // arm
+    C.fillStyle = skin; C.save(); C.translate(2.5, -19); C.rotate(-sw * 0.09); C.fillRect(-1.3, 0, 2.6, 8); C.restore();
+    // head
+    C.fillStyle = skin; C.beginPath(); C.arc(0.5, -27, 6.2, 0, 7); C.fill();
+    C.fillStyle = hair;
+    C.beginPath(); C.arc(0.5, -28, 6.4, Math.PI * 1.02, Math.PI * 2.05); C.fill();
+    C.fillRect(-5.9, -29, 3, girl && type !== 'office' ? 8 : 4);
+    if (type === 'elder') { C.beginPath(); C.arc(-5, -30, 2.6, 0, 7); C.fill(); }
+    if (type === 'kid') { C.fillStyle = BRIGHT[(look + 2) % 6]; C.beginPath(); C.arc(0.5, -29.5, 6.2, Math.PI, Math.PI * 2); C.fill(); C.fillRect(0.5, -30, 8.5, 2); }
+    if (type === 'tourist') { C.fillStyle = '#e9d7a8'; C.beginPath(); C.ellipse(0.5, -32, 9, 2.2, 0, 0, 7); C.fill(); C.beginPath(); C.arc(0.5, -32.5, 4.8, Math.PI, Math.PI * 2); C.fill(); C.fillStyle = '#c8402f'; C.fillRect(-4.3, -33.5, 9.6, 1.4); }
+    // face
+    C.fillStyle = '#2b1d16'; C.fillRect(3, -27.5, 1.3, 1.6);
+    C.fillStyle = 'rgba(240,120,110,.4)'; C.beginPath(); C.arc(3, -24.6, 1.5, 0, 7); C.fill();
+    C.restore();
+  }
+  function drawOwner(tm) {
+    const C = ctx, b = owner.bounce > 0 ? Math.sin(owner.bounce * Math.PI) * 3 : 0;
+    C.save(); C.translate(318, 170 - b);
+    C.fillStyle = '#fbfbf6'; rr(-9, -16, 18, 18, 5); C.fill();
+    C.fillStyle = '#d8402e'; rr(-7, -12, 14, 14, 3); C.fill(); // apron
+    C.fillStyle = '#f2c9a0'; C.beginPath(); C.arc(0, -23, 7.2, 0, 7); C.fill();
+    C.fillStyle = '#2b1d16'; C.beginPath(); C.arc(0, -24.5, 7.4, Math.PI * 1.05, Math.PI * 1.95); C.fill();
+    C.fillStyle = '#2a877a'; C.fillRect(-7.4, -27.5, 14.8, 2.6); // headband
+    C.fillStyle = '#2b1d16'; C.fillRect(-4, -23, 1.4, 1.8); C.fillRect(2.6, -23, 1.4, 1.8);
+    C.strokeStyle = '#7a3a2a'; C.lineWidth = 0.9; C.beginPath(); C.arc(0, -20.5, 2, 0.15 * Math.PI, 0.85 * Math.PI); C.stroke();
+    C.restore();
+  }
+  function drawCounter(run, tm) {
+    const C = ctx;
+    C.fillStyle = '#8a5a32'; C.fillRect(262, 166, 84, 6); C.fillStyle = '#a8743f'; C.fillRect(264, 172, 80, 42);
+    C.fillStyle = '#f3e3c8'; C.fillRect(270, 178, 68, 30); // glass front with snacks
+    for (let k = 0; k < 5; k++) { C.fillStyle = ['#f6bb45', '#e0483a', '#7cc7c0', '#ffd84d', '#b28ae0'][k]; C.fillRect(274 + k * 13, 196, 9, 10); }
+    C.fillStyle = 'rgba(255,255,255,.35)'; C.fillRect(272, 180, 64, 3);
+    // register
+    if (run && run.upg && run.upg.register) {
+      C.fillStyle = '#4a5560'; rr(320, 148, 22, 18, 3); C.fill(); C.fillStyle = '#7ee0c0'; C.fillRect(323, 151, 16, 5); C.fillStyle = '#d6dbe0'; for (let k = 0; k < 6; k++) C.fillRect(323 + (k % 3) * 5.5, 158 + Math.floor(k / 3) * 3.6, 4, 2.4);
+    } else { C.fillStyle = '#c9a24a'; rr(322, 156, 18, 10, 2); C.fill(); C.fillStyle = '#8a6a20'; C.fillRect(322, 159, 18, 1.4); }
+    // sleeping cat
+    const tail = Math.sin(tm * 0.08) * 2;
+    C.fillStyle = '#e8a04a'; C.beginPath(); C.ellipse(284, 162, 10, 5, 0, Math.PI, 0); C.fill(); C.fillRect(274, 161, 20, 5);
+    C.beginPath(); C.arc(275.5, 160, 4.4, 0, 7); C.fill();
+    C.beginPath(); C.moveTo(272, 157.5); C.lineTo(273, 153.5); C.lineTo(275.5, 156.5); C.fill(); C.beginPath(); C.moveTo(276, 156); C.lineTo(278.5, 153); C.lineTo(279.5, 157); C.fill();
+    C.strokeStyle = '#e8a04a'; C.lineWidth = 2.4; C.lineCap = 'round'; C.beginPath(); C.moveTo(293, 164); C.quadraticCurveTo(300, 162 + tail, 297, 158 + tail); C.stroke();
+    C.strokeStyle = '#b8742a'; C.lineWidth = 1; C.beginPath(); C.moveTo(282, 158); C.lineTo(282, 162); C.moveTo(286, 158); C.lineTo(286, 162); C.moveTo(290, 159); C.lineTo(290, 163); C.stroke();
+    C.strokeStyle = '#5a3a1a'; C.lineWidth = 0.8; C.beginPath(); C.moveTo(273.5, 160); C.lineTo(275.5, 160); C.stroke();
+  }
+  // the stocked shelves only change when stock or a price does, so they live in their own small cached layer
+  let shelfCv = null, shelfKey = '';
+  function shelfLayer(run) {
+    const sh = shelfGeom(run), y0 = sh.boards[0] - 22, y1 = sh.boards[sh.boards.length - 1] + 34, x0 = 0, x1 = 250;
+    const S = SHOP.SEASONS[run.season].items;
+    const key = [s, dpr, L, numFont, run.season, JSON.stringify(run.upg), S.map(id => run.stock[id] + ':' + run.price[id]).join(',')].join('|');
+    if (key !== shelfKey) {
+      shelfKey = key;
+      if (!shelfCv) shelfCv = document.createElement('canvas');
+      shelfCv.width = Math.ceil((x1 - x0) * s * dpr); shelfCv.height = Math.ceil((y1 - y0) * s * dpr);
+      const c2 = shelfCv.getContext('2d'); c2.setTransform(s * dpr, 0, 0, s * dpr, -x0 * s * dpr, -y0 * s * dpr);
+      drawShelfItems(run, c2);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(shelfCv, Math.round((ox + x0 * s) * dpr), Math.round((oy + y0 * s) * dpr));
+    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+  }
+  function drawShelfItems(run, C) {
+    const sh = shelfGeom(run), per = sh.cw >= 34 ? 2 : 1;
+    const rows = sh.boards.length;
+    sh.items.forEach((id, i) => {
+      const n = run.stock[id] || 0, cap = SHOP.cap(run, id), full = per * rows;
+      const show = n <= 0 ? 0 : Math.max(1, Math.ceil(full * Math.min(1, n / (Math.min(cap, 40) * 0.5))));
+      const img = ICON_IMG[id], sz = Math.min(17, sh.cw / per - 1);
+      let k = 0;
+      for (let r = rows - 1; r >= 0 && k < show; r--) for (let p = 0; p < per && k < show; p++, k++) {
+        const x = sh.x0 + i * sh.cw + (sh.cw - per * sz) / 2 + p * sz, y = sh.boards[r] - sz + 1;
+        if (img.complete) C.drawImage(img, x, y, sz, sz);
+      }
+      // price tag hanging under the bottom board
+      const tx = sh.x0 + i * sh.cw + sh.cw / 2, ty = sh.boards[rows - 1] + 9;
+      const p = run.price[id], lab = '$' + p;
+      C.font = '800 8.5px ' + numFont; const tw = C.measureText(lab).width + 6;
+      C.fillStyle = n <= 0 ? '#d9d2c6' : '#ffe58f'; C.beginPath(); C.moveTo(tx - tw / 2, ty); C.lineTo(tx + tw / 2, ty); C.lineTo(tx + tw / 2, ty + 11); C.lineTo(tx - tw / 2, ty + 11); C.closePath(); C.fill();
+      C.fillStyle = n <= 0 ? '#7a7066' : '#b42318'; C.textAlign = 'center'; C.textBaseline = 'middle'; C.fillText(n <= 0 ? '缺貨' : lab, tx, ty + 6);
+      if (n > 0) { C.font = '700 7px ' + numFont; C.fillStyle = n <= 3 ? '#c63d2d' : 'rgba(40,90,80,.85)'; C.fillText('剩 ' + n, tx, ty + 17); }
+    });
+  }
+  let numFont = 'system-ui';
+  // ---- positions ----
+  function browseSpot(run, c) { const sh = shelfGeom(run); const i = Math.max(0, sh.items.indexOf(c.alt || c.want)); return { x: sh.x0 + i * sh.cw + sh.cw / 2 + ((c.look % 7) - 3) * 1.5, y: 213 }; }
+  function queueSpot(k) { return { x: 252 - k * 19, y: 221 }; }
+  const DOOR_Y = 229;
+  function sync(run, tm) {
+    const d = run.ds; if (!d) return;
+    const seen = new Set();
+    let toqCount = 0;
+    for (const c of d.cs) {
+      seen.add(c.id);
+      let a = actors.get(c.id);
+      if (!a) {
+        const from = c.look & 1 ? -1 : 1, v = view();
+        a = { id: c.id, x: from < 0 ? v.xl - 20 : v.xr + 20, y: DOOR_Y, path: [], st: '', ph: Math.random() * 6, face: -from, c, bub: null, gone: false, door: 30 + (c.look % 280), leaveSide: c.look & 2 ? -1 : 1 };
+        if (c.s !== 'in') { const p = c.s === 'browse' ? browseSpot(run, c) : c.s === 'q' ? queueSpot(Math.max(0, d.q.indexOf(c.id))) : browseSpot(run, c); a.x = p.x; a.y = p.y; }
+        actors.set(c.id, a);
+      }
+      a.c = c;
+      if (a.st !== c.s) {
+        a.st = c.s; a.t1 = c.t1;
+        if (c.s === 'in') a.path = [{ x: a.door, y: DOOR_Y }, browseSpot(run, c)];
+        else if (c.s === 'toq') { a.path = [queueSpot(d.q.length + toqCount)]; }
+        else if (c.s === 'out') { const v = view(); a.path = [{ x: a.x, y: DOOR_Y }, { x: a.leaveSide < 0 ? v.xl - 30 : v.xr + 30, y: DOOR_Y }]; a.t1 = tm + 16; }
+        else a.path = [];
+      }
+      if (c.s === 'toq') toqCount++;
+      if (c.s === 'q') a.path = [queueSpot(d.q.indexOf(c.id))];
+    }
+    for (const [id, a] of actors) if (!seen.has(id) && !a.gone) { a.gone = true; if (a.st !== 'out') { const v = view(); a.st = 'out'; a.path = [{ x: a.x, y: DOOR_Y }, { x: a.leaveSide < 0 ? v.xl - 30 : v.xr + 30, y: DOOR_Y }]; } a.t1 = tm + 14; }
+  }
+  function move(a, tm, dtm) {
+    if (!a.path.length) { a.moving = false; return; }
+    let rem = 0, px = a.x, py = a.y;
+    for (const p of a.path) { rem += Math.hypot(p.x - px, p.y - py); px = p.x; py = p.y; }
+    const left = Math.max(0.6, (a.t1 || tm) - tm);
+    let spd = a.st === 'q' || a.st === 'browse' ? 5 : Math.max(4, rem / left);
+    if (a.gone) spd = Math.max(spd, 9);
+    let step = spd * dtm;
+    while (step > 0 && a.path.length) {
+      const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, dd = Math.hypot(dx, dy);
+      if (dd <= step) { a.x = p.x; a.y = p.y; step -= dd; a.path.shift(); }
+      else { a.x += dx / dd * step; a.y += dy / dd * step; if (Math.abs(dx) > 0.5) a.face = dx > 0 ? 1 : -1; step = 0; }
+    }
+    a.moving = a.path.length > 0;
+    if (a.moving) a.ph += dtm * 0.9;
+  }
+  // ---- bubbles & floating text ----
+  function bubble(x, y, draw, w, h, tone) {
+    const C = ctx; w = w || 20; h = h || 18;
+    C.fillStyle = tone === 'bad' ? '#fff0ec' : tone === 'gold' ? '#fff3c8' : '#ffffff';
+    C.strokeStyle = tone === 'bad' ? '#d8402e' : tone === 'gold' ? '#d99a1a' : 'rgba(60,40,20,.35)'; C.lineWidth = 1;
+    rr(x - w / 2, y - h, w, h, 6); C.fill(); C.stroke();
+    C.beginPath(); C.moveTo(x - 3, y - 0.5); C.lineTo(x, y + 4); C.lineTo(x + 3, y - 0.5); C.fill();
+    draw(x, y - h / 2);
+  }
+  function iconAt(id, x, y, sz) { const im = ICON_IMG[id]; if (im && im.complete) ctx.drawImage(im, x - sz / 2, y - sz / 2, sz, sz); }
+  function addFloat(text, x, y, col, big) { floats.push({ text, x, y, col, big, t: 0 }); if (floats.length > 30) floats.shift(); }
+  // ---- events from the sim ----
+  function onEvent(ev, run) {
+    if (ev.k === 'sale') {
+      const a = actors.get(ev.c.id);
+      addFloat('+$' + ev.amt, 300, 140, '#2f8650', ev.tapped);
+      owner.bounce = 1;
+      if (a) a.bub = { k: ev.c.mood ? 'heart' : 'happy', until: 0, life: 22 };
+    } else if (ev.k === 'leave') {
+      const a = actors.get(ev.c.id);
+      if (a) a.bub = { k: ev.why, item: ev.why === 'price' ? (ev.c.priced || ev.c.want) : ev.c.want, life: 26 };
+    } else if (ev.k === 'pick') {
+      const a = actors.get(ev.c.id); if (a) a.bub = { k: 'got', life: 10, items: ev.c.cart.map(x => x.id) };
+    }
+  }
+  function upsellFx(res) { const a = actors.get(res.c.id); if (a) a.bub = { k: res.ok ? 'upok' : 'upno', item: res.id, life: 24 }; if (res.ok) addFloat('加購！', 252, 150, '#c47a1c', true); }
+  function reset() { actors.clear(); floats.length = 0; owner.bounce = 0; }
+  // ---- rain + scooters ----
+  function weatherFx(run, tm, dtr, wx) {
+    const v = view(), C = ctx, rainy = wx === 'rain' || wx === 'typhoon';
+    const want = rainy ? (wx === 'typhoon' ? 140 : 80) : 0;
+    while (drops.length < want) drops.push({ x: v.xl + Math.random() * (v.xr - v.xl + 60), y: v.yt + Math.random() * (SH - v.yt), sp: 260 + Math.random() * 120 });
+    if (drops.length > want) drops.length = want;
+    if (!want) return;
+    const slant = wx === 'typhoon' ? -0.55 : -0.18;
+    C.strokeStyle = 'rgba(200,220,240,.55)'; C.lineWidth = 0.9; C.beginPath();
+    for (const d of drops) {
+      if (!reduce.matches) { d.y += d.sp * dtr; d.x += d.sp * slant * dtr; }
+      if (d.y > SH || d.x < v.xl - 40) { d.y = v.yt - Math.random() * 40; d.x = v.xl + Math.random() * (v.xr - v.xl + 80); }
+      // keep the shop interior dry
+      if (d.x > 14 && d.x < SW - 14 && d.y > 70 - L && d.y < 222) continue;
+      C.moveTo(d.x, d.y); C.lineTo(d.x - slant * 8, d.y - 8);
+    }
+    C.stroke();
+  }
+  function traffic(tm, dtr, night) {
+    const v = view(), C = ctx;
+    if (!reduce.matches && Math.random() < dtr * 0.35 && scooters.length < 3) { const dir = Math.random() < 0.5 ? 1 : -1; scooters.push({ x: dir > 0 ? v.xl - 30 : v.xr + 30, dir, col: BRIGHT[Math.floor(Math.random() * 6)], sp: 70 + Math.random() * 40 }); }
+    for (let i = scooters.length - 1; i >= 0; i--) {
+      const sc = scooters[i]; sc.x += sc.dir * sc.sp * dtr;
+      if (sc.x < v.xl - 40 || sc.x > v.xr + 40) { scooters.splice(i, 1); continue; }
+      C.save(); C.translate(sc.x, 249); C.scale(sc.dir, 1);
+      C.fillStyle = '#222'; C.beginPath(); C.arc(-8, -2.5, 2.8, 0, 7); C.arc(8, -2.5, 2.8, 0, 7); C.fill();
+      C.fillStyle = sc.col; rr(-11, -9, 22, 6, 3); C.fill(); C.fillRect(6, -15, 3, 7);
+      C.fillStyle = '#3a3f4a'; C.fillRect(-4, -17, 5, 8); C.fillStyle = sc.col === '#ffcf3f' ? '#e0483a' : '#f2c14e'; C.beginPath(); C.arc(-1.5, -20, 3.6, 0, 7); C.fill();
+      if (night > 0.3) { C.fillStyle = 'rgba(255,240,180,.5)'; C.beginPath(); C.moveTo(10, -9); C.lineTo(40, -14); C.lineTo(40, 0); C.closePath(); C.fill(); }
+      C.restore();
+    }
+  }
+  // ---- main draw ----
+  function draw(run, tm, dtr, opts) {
+    opts = opts || {};
+    if (!W) resize();
+    numFont = numFont === 'system-ui' ? getComputedStyle(document.documentElement).getPropertyValue('--num') || 'system-ui' : numFont;
+    const wx = run ? SHOP.curWx(run, Math.floor(tm)) : 'sun';
+    const Lw = light(tm, wx);
+    const key = [W, H, dpr, Math.floor(tm / 10), wx, run ? JSON.stringify(run.upg) + run.day + run.season : '-'].join('|');
+    if (key !== bgKey) {
+      bgKey = key;
+      bg = bgEl; bg.width = cv.width; bg.height = cv.height;
+      const c2 = bg.getContext('2d'); c2.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+      drawBackground(c2, run, tm, wx);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * ox, dpr * oy);
+    if (run) shelfLayer(run);
+    // fan upgrade: a little standing fan in the corner
+    if (run && run.upg && run.upg.fan) { const C = ctx, a = reduce.matches ? 0 : tm * 2.4; C.fillStyle = '#9aa3ab'; C.fillRect(246, 178, 2, 34); C.fillRect(240, 210, 14, 3); C.strokeStyle = '#7d858d'; C.lineWidth = 1; C.beginPath(); C.arc(247, 172, 9, 0, 7); C.stroke(); C.fillStyle = 'rgba(120,190,220,.75)'; for (let k = 0; k < 3; k++) { C.beginPath(); C.ellipse(247 + Math.cos(a + k * 2.1) * 4.5, 172 + Math.sin(a + k * 2.1) * 4.5, 4.5, 2.2, a + k * 2.1, 0, 7); C.fill(); } }
+    drawOwner(tm);
+    drawCounter(run, tm);
+    if (owner.bounce > 0) owner.bounce = Math.max(0, owner.bounce - dtr * 4);
+    // customers
+    const dtm = opts.paused ? 0 : (opts.dtm || 0);
+    if (run && run.ds) sync(run, tm);
+    const list = [...actors.values()].sort((a, b) => a.y - b.y);
+    const v = view();
+    for (const a of list) {
+      move(a, tm, dtm);
+      if (a.gone && (a.x < v.xl - 25 || a.x > v.xr + 25)) { actors.delete(a.id); continue; }
+      const stand = !a.moving;
+      drawPerson(a.x, a.y, a.c.type, a.c.look, stand ? 0 : a.ph, a.face, 1);
+    }
+    // bubbles on top
+    for (const a of list) {
+      if (!actors.has(a.id)) continue;
+      const c = a.c, top = a.y - (c.type === 'kid' ? 33 : 42);
+      if (a.bub && a.bub.life > 0) {
+        a.bub.life -= dtm; const b = a.bub;
+        if (b.k === 'price') bubble(a.x, top, (x, y) => { iconAt(b.item, x - 5, y, 13); ctx.fillStyle = '#d8402e'; ctx.font = '900 10px ' + numFont; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$!', x + 7, y); }, 28, 18, 'bad');
+        else if (b.k === 'oos') bubble(a.x, top, (x, y) => { ctx.globalAlpha = .45; iconAt(b.item, x - 5, y, 13); ctx.globalAlpha = 1; ctx.strokeStyle = '#d8402e'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(x + 3, y - 4); ctx.lineTo(x + 11, y + 4); ctx.moveTo(x + 11, y - 4); ctx.lineTo(x + 3, y + 4); ctx.stroke(); }, 28, 18, 'bad');
+        else if (b.k === 'wait') bubble(a.x, top, (x, y) => { ctx.fillStyle = '#d8402e'; ctx.font = '900 12px ' + numFont; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!!', x, y + 0.5); }, 20, 18, 'bad');
+        else if (b.k === 'heart' || b.k === 'happy') { ctx.save(); ctx.globalAlpha = Math.min(1, b.life / 8); ctx.fillStyle = b.k === 'heart' ? '#e8505b' : '#f2a33a'; const hx = a.x, hy = top + 4 - (22 - b.life) * 0.6; ctx.beginPath(); if (b.k === 'heart') { ctx.moveTo(hx, hy + 4); ctx.bezierCurveTo(hx - 7, hy - 1, hx - 3, hy - 7, hx, hy - 3); ctx.bezierCurveTo(hx + 3, hy - 7, hx + 7, hy - 1, hx, hy + 4); } else { ctx.arc(hx, hy, 3.5, 0, 7); } ctx.fill(); ctx.restore(); }
+        else if (b.k === 'upok' || b.k === 'upno') bubble(a.x, top, (x, y) => { iconAt(b.item, x - 5, y, 13); ctx.fillStyle = b.k === 'upok' ? '#2f8650' : '#8a7562'; ctx.font = '900 11px ' + numFont; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(b.k === 'upok' ? '✓' : '…', x + 7, y); }, 28, 18, b.k === 'upok' ? 'gold' : '');
+        else if (b.k === 'got' && c.s === 'toq') bubble(a.x, top, (x, y) => { const its = b.items || []; its.slice(0, 2).forEach((id, i) => iconAt(id, x + (i - (Math.min(2, its.length) - 1) / 2) * 13, y, 13)); }, 14 + Math.min(2, (b.items || []).length) * 13, 18);
+        continue;
+      }
+      if (c.s === 'browse' || (c.s === 'in' && !a.moving)) {
+        bubble(a.x, top, (x, y) => { ctx.globalAlpha = 0.9; iconAt(c.want, x, y, 13); ctx.globalAlpha = 1; }, 20, 18);
+      } else if (c.s === 'q') {
+        const d = run.ds, front = d.q[0] === c.id, waited = (tm - c.qt) / c.pat;
+        if (front) {
+          const its = c.cart.map(x => x.id).filter((v, i, arr) => arr.indexOf(v) === i);
+          const w = 12 + its.length * 13 + (c.up && !c.upRes ? 14 : 0);
+          bubble(a.x, top, (x, y) => {
+            its.forEach((id, i) => iconAt(id, x - w / 2 + 12.5 + i * 13, y, 12));
+            if (c.up && !c.upRes) { ctx.fillStyle = '#e3a227'; ctx.beginPath(); ctx.arc(x + w / 2 - 9, y, 5, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '900 7.5px ' + numFont; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('?', x + w / 2 - 9, y + 0.5); }
+          }, w, 18, c.up && !c.upRes ? 'gold' : '');
+          // serving progress ring
+          if (d.svc && d.svc.id === c.id) { const p = Math.min(1, (tm - d.svc.t0) / (d.svc.until - d.svc.t0)); ctx.strokeStyle = '#2a877a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a.x, a.y - 51, 4, -Math.PI / 2, -Math.PI / 2 + p * 6.283); ctx.stroke(); }
+        } else if (waited > 0.45) {
+          ctx.fillStyle = waited > 0.8 ? '#d8402e' : '#e3a227';
+          const n = waited > 0.8 ? 3 : waited > 0.6 ? 2 : 1; for (let k = 0; k < n; k++) { ctx.beginPath(); ctx.arc(a.x - (n - 1) * 3 + k * 6, top + 6, 1.8, 0, 7); ctx.fill(); }
+        }
+      }
+    }
+    // floating money
+    for (let i = floats.length - 1; i >= 0; i--) {
+      const f = floats[i]; f.t += dtr; if (f.t > 1.3) { floats.splice(i, 1); continue; }
+      const C = ctx; C.save(); C.globalAlpha = Math.min(1, (1.3 - f.t) * 2.2); C.font = `900 ${f.big ? 13 : 11}px ` + numFont; C.textAlign = 'center'; C.textBaseline = 'middle';
+      C.lineWidth = 3; C.strokeStyle = 'rgba(255,255,255,.9)'; C.strokeText(f.text, f.x, f.y - f.t * 26); C.fillStyle = f.col; C.fillText(f.text, f.x, f.y - f.t * 26); C.restore();
+    }
+    traffic(tm, opts.paused ? 0 : dtr, Lw.night);
+    weatherFx(run, tm, opts.paused ? 0 : dtr, wx);
+    // rolling shutter (morning open / closing time)
+    if (shutter !== shutterTarget) { const sp = reduce.matches ? 99 : 1.6; shutter += Math.sign(shutterTarget - shutter) * Math.min(Math.abs(shutterTarget - shutter), dtr * sp); }
+    if (shutter > 0.001) {
+      const C = ctx, top = 66 - L, hgt = (156 + L) * shutter;
+      C.fillStyle = '#a3a9ae'; C.fillRect(14, top, SW - 28, hgt);
+      C.fillStyle = 'rgba(0,0,0,.13)'; for (let y = top + hgt % 6; y < top + hgt; y += 6) C.fillRect(14, y, SW - 28, 1.4);
+      C.fillStyle = '#7d858d'; C.fillRect(14, top + hgt - 4, SW - 28, 4);
+      if (shutter > 0.6) { C.fillStyle = '#f6e7c8'; rr(120, top + hgt - 52, 120, 32, 4); C.fill(); C.fillStyle = '#b8261a'; C.font = '800 13px ' + getComputedStyle(document.body).fontFamily; C.textAlign = 'center'; C.textBaseline = 'middle'; C.fillText(opts.shutterText || '本日公休', 180, top + hgt - 36); }
+    }
+  }
+  function setShutter(v, instant) { shutterTarget = v; if (instant) shutter = v; }
+  function shutterDone() { return Math.abs(shutter - shutterTarget) < 0.001; }
+  return { resize, setAnchor, draw, onEvent, upsellFx, reset, setShutter, shutterDone, actors, floats, owner, light, get scale() { return s; }, toScreen: (x, y) => ({ x: ox + x * s, y: oy + y * s }), toStage: (x, y) => ({ x: (x - ox) / s, y: (y - oy) / s }) };
+})();
+
+// ---------- controller ----------
+const $ = s => document.querySelector(s);
+const KEY = 'little-shop:v1:';
+const store = {
+  get(k) { try { const v = localStorage.getItem(KEY + k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(KEY + k); } catch {} },
+};
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const money = n => (n < 0 ? '−$' : '$') + fmt(Math.abs(n));
+const signed = n => (n >= 0 ? '+$' : '−$') + fmt(Math.abs(n));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const { ITEMS, SEASONS, UPGRADES, EVENTS, WX, DAYS, OPEN, CLOSE } = SHOP;
+
+let prefs = Object.assign({ sound: true, theme: 'auto', speed: 1, tips: {} }, store.get('prefs') || {});
+let prog = Object.assign({ best: [null, null, null, null], unlocked: 1, ending: false, runs: 0 }, store.get('progress') || {});
+let run = store.get('run');
+if (!run || run.v !== 1 || !SEASONS[run.season] || !run.stock) run = null;
+let view = '', paused = false, acc = 0, demo = null, selSeason = run ? run.season : Math.min(prog.unlocked - 1, 3);
+let closing = false, lastSave = 0, upFlash = null;
+const savePrefs = () => store.set('prefs', prefs);
+const saveProg = () => store.set('progress', prog);
+function save() { if (run) store.set('run', run); else store.del('run'); lastSave = performance.now(); }
+
+// ---------- theme ----------
+function applyTheme() {
+  if (prefs.theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = prefs.theme;
+  $('#mThemeT').textContent = { auto: '跟隨系統', light: '淺色', dark: '深色' }[prefs.theme];
+}
+
+// ---------- sound (generated) ----------
+const Sound = (() => {
+  let ac = null, out = null, rainNode = null, rainGain = null; const last = {};
+  let gest = false;
+  ['pointerdown', 'keydown'].forEach(t => document.addEventListener(t, () => { gest = true; }, { capture: true, passive: true }));
+  function ensure() {
+    if (!prefs.sound || !gest) return null;
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); out = ac.createGain(); out.gain.value = 0.55; out.connect(ac.destination); } catch { ac = null; return null; } }
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    return ac;
+  }
+  function tone(f, t, dur, type, vol, f2) {
+    const a = ensure(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain(), t0 = a.currentTime + (t || 0);
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol || 0.2, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function noise(t, dur, vol, hp) {
+    const a = ensure(); if (!a) return;
+    const n = Math.floor(a.sampleRate * dur), b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const src = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = hp || 2000; g.gain.value = vol || 0.1;
+    src.buffer = b; src.connect(f); f.connect(g); g.connect(out); src.start(a.currentTime + (t || 0));
+  }
+  const throttle = (k, ms) => { const n = performance.now(); if (last[k] && n - last[k] < ms) return false; last[k] = n; return true; };
+  return {
+    unlock() { ensure(); },
+    chime() { if (throttle('chime', 900)) { tone(1318, 0, 0.5, 'sine', 0.05); tone(1046, 0.12, 0.6, 'sine', 0.045); } },
+    cash(big) { if (!throttle('cash', 90)) return; tone(big ? 1568 : 1318, 0, 0.09, 'square', 0.05); tone(big ? 2093 : 1760, 0.06, 0.22, 'triangle', 0.07); noise(0, 0.06, 0.05, 4000); },
+    up() { [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.06, 0.18, 'triangle', 0.08)); },
+    no() { tone(330, 0, 0.18, 'sine', 0.07, 260); },
+    bad() { if (throttle('bad', 250)) tone(220, 0, 0.22, 'triangle', 0.07, 160); },
+    tick() { if (throttle('tick', 40)) tone(1900, 0, 0.03, 'square', 0.025); },
+    deny() { tone(200, 0, 0.12, 'square', 0.04); },
+    shutter() { noise(0, 0.9, 0.06, 900); tone(140, 0.85, 0.15, 'triangle', 0.08); },
+    open() { [523, 659, 784, 1046].forEach((f, i) => tone(f, i * 0.08, 0.25, 'triangle', 0.07)); },
+    buy() { tone(880, 0, 0.12, 'triangle', 0.08); tone(1320, 0.07, 0.2, 'triangle', 0.08); },
+    star(i) { tone(880 * Math.pow(1.26, i), 0, 0.4, 'triangle', 0.1); tone(1760 * Math.pow(1.26, i), 0.03, 0.3, 'sine', 0.05); },
+    fanfare() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, i * 0.11, 0.3, 'triangle', 0.08)); },
+    rain(on) {
+      const a = on ? ensure() : ac; if (!a) return;
+      if (on && !rainNode) {
+        const n = a.sampleRate * 2, b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+        rainNode = a.createBufferSource(); rainNode.buffer = b; rainNode.loop = true;
+        const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 0.6;
+        rainGain = a.createGain(); rainGain.gain.value = 0;
+        rainNode.connect(f); f.connect(rainGain); rainGain.connect(out); rainNode.start();
+      }
+      if (rainGain) rainGain.gain.setTargetAtTime(on ? 0.05 : 0, a.currentTime, 0.4);
+    },
+    stopAll() { if (rainGain && ac) rainGain.gain.setTargetAtTime(0, ac.currentTime, 0.1); },
+  };
+})();
+const buzz = ms => { try { if (prefs.sound && navigator.vibrate) navigator.vibrate(ms); } catch {} };
+
+// ---------- toasts ----------
+// one toast at a time over the shop: during the day new ones wait their turn (at most 3 waiting), elsewhere the
+// newest replaces what is showing so button feedback is immediate
+const toastQ = []; let toastEl = null, toastT = 0;
+function toast(msg, kind, life) {
+  const t = { msg, kind, life: life || 2.6 };
+  if (view !== 'day' || !toastEl) { toastQ.length = 0; showToast(t); return; }
+  if (toastQ.some(x => x.msg === msg)) return;
+  toastQ.push(t); while (toastQ.length > 3) toastQ.shift();
+}
+function showToast(t) {
+  const box = $('#toasts');
+  clearTimeout(toastT); box.textContent = '';
+  const el = toastEl = document.createElement('div');
+  el.className = 'toast' + (t.kind ? ' ' + t.kind : ''); el.textContent = t.msg;
+  // the queue speeds up when it is long so news never lags far behind
+  const life = toastQ.length ? Math.max(1.4, t.life * 0.7) : t.life;
+  el.style.setProperty('--life', life + 's');
+  box.appendChild(el);
+  toastT = setTimeout(() => { el.remove(); if (toastEl === el) toastEl = null; const n = toastQ.shift(); if (n) showToast(n); }, (life + 0.35) * 1000);
+}
+
+// ---------- sheets / dialogs ----------
+let openSheet = null;
+function showSheet(id) {
+  if (openSheet) hideSheet(true);
+  const sh = $(id), sc = $('#scrim');
+  sc.hidden = false; sh.hidden = false; openSheet = sh;
+  requestAnimationFrame(() => { sc.classList.add('show'); sh.classList.add('show'); });
+  if (view === 'day') setPaused(true, true);
+}
+function hideSheet(instant) {
+  const sh = openSheet; if (!sh) return; openSheet = null;
+  const sc = $('#scrim'); sc.classList.remove('show'); sh.classList.remove('show');
+  const done = () => { if (!openSheet) sc.hidden = true; if (!sh.classList.contains('show')) sh.hidden = true; };
+  if (instant) done(); else setTimeout(done, 300);
+}
+$('#scrim').addEventListener('click', () => hideSheet());
+document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => hideSheet()));
+function confirmBox(text, ok, cb, cancel) {
+  const el = document.createElement('div'); el.className = 'confirm';
+  el.innerHTML = `<div class="paper"><p>${text}</p><div class="row"><button class="btn" type="button" data-n>${cancel || '取消'}</button><button class="btn primary" type="button" data-y>${ok}</button></div></div>`;
+  document.body.appendChild(el);
+  el.querySelector('[data-n]').onclick = () => el.remove();
+  el.querySelector('[data-y]').onclick = () => { el.remove(); cb(); };
+  el.querySelector('[data-y]').focus();
+  return el;
+}
+
+// ---------- top bar ----------
+function updateTop() {
+  const show = view !== 'title';
+  $('#top').hidden = !show;
+  if (!run || !show) return;
+  const S = SEASONS[run.season];
+  $('#seal').textContent = S.name;
+  $('#dayT').textContent = `第 ${run.day} 天・週${SHOP.WEEK[SHOP.weekday(run.day)]}`;
+  $('#daySub').innerHTML = `<span class="sn">${S.title.split('・')[1]}・</span>` + (run.day === DAYS ? '最後一天' : `還有 ${DAYS - run.day} 天`);
+  const ct = $('#cashT'), v = fmt(view === 'market' ? run.cash - SHOP.orderCost(run) : run.cash);
+  if (ct.textContent !== v) { ct.textContent = v; const p = $('#cashPill'); p.classList.remove('bump'); void p.offsetWidth; p.classList.add('bump'); }
+  $('#repT').textContent = Math.round(run.rep);
+}
+
+// ---------- views ----------
+function setView(v) {
+  view = v;
+  $('#market').hidden = v !== 'market'; $('#report').hidden = v !== 'report'; $('#end').hidden = v !== 'end'; $('#title').hidden = v !== 'title';
+  $('#hud').hidden = v !== 'day'; $('#dayBar').hidden = v !== 'day';
+  if (v !== 'day') Sound.stopAll();
+  if (v !== 'title') Scene.setAnchor(null);
+  updateTop();
+  requestAnimationFrame(() => Scene.resize());
+}
+function route() {
+  if (!run) return showTitle();
+  if (run.phase === 'market') showMarket();
+  else if (run.phase === 'day') { showDay(true); setPaused(true); }
+  else if (run.phase === 'report') showReport();
+  else if (run.phase === 'end') showEnd();
+}
+
+// ---------- title ----------
+function makeDemo() {
+  const d = SHOP.newRun(0, 20261024);
+  d.rep = 72; d.upg.sign = 1;
+  for (const id of SEASONS[0].items) d.order[id] = { noodle: 26, ramune: 24, egg: 26, gacha: 18, umbrella: 6 }[id];
+  d.cash = 99999; d.today = { base: 'sun', chance: 0, win: null, fc: { base: 'sun', chance: 0 } };
+  SHOP.openShop(d);
+  while (d.ds.t < 930) SHOP.tick(d);
+  return d;
+}
+function seasonCards() {
+  const box = $('#seasonList');
+  box.innerHTML = SEASONS.map((S, i) => {
+    const lock = i >= prog.unlocked, b = prog.best[i], st = b ? b.stars : 0;
+    const cur = run && run.season === i && run.phase !== 'end';
+    return `<button class="season${i === selSeason ? ' sel' : ''}${lock ? ' lock' : ''}" data-s="${i}" type="button" aria-pressed="${i === selSeason}" aria-label="${S.title}${lock ? '（未解鎖）' : ''}">
+      ${cur ? '<span class="cur">進行中</span>' : ''}<span class="ch">${lock ? '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>' : S.name}</span>
+      <b>${S.title.split('・')[1]}</b><span class="st">${[0, 1, 2].map(k => `<span class="${k < st ? 'on' : ''}">${STAR}</span>`).join('')}</span><small class="num">${b ? money(b.cash) : lock ? '未解鎖' : '尚未經營'}</small></button>`;
+  }).join('');
+  updateTitleNote();
+}
+function updateTitleNote() {
+  const S = SEASONS[selSeason], lock = selSeason >= prog.unlocked;
+  const cur = run && run.season === selSeason && run.phase !== 'end';
+  const btn = $('#bStart');
+  if (lock) { btn.disabled = true; btn.textContent = '未解鎖'; $('#tNote').textContent = `先在${SEASONS[selSeason - 1].title.split('・')[0]}拿到 1 顆星`; return; }
+  btn.disabled = false;
+  btn.textContent = cur ? `繼續第 ${run.day} 天` : `開始${S.title.split('・')[0]}`;
+  $('#tNote').textContent = cur ? `${S.title}・現金 ${money(run.cash)}` : `14 天內存到 ${money(S.stars[0])} 得 1 顆星・${money(S.stars[2])} 拿滿 3 顆`;
+}
+function showTitle() {
+  if (!demo) demo = makeDemo();
+  Scene.reset(); Scene.setShutter(0, true);
+  setView('title'); seasonCards(); soundBtn();
+  requestAnimationFrame(anchorTitle);
+}
+function anchorTitle() {
+  if (view !== 'title') return Scene.setAnchor(null);
+  const r = $('#title .scroll').getBoundingClientRect(), st = $('#stage').getBoundingClientRect();
+  // landscape: the title card sits on the right, so the shop takes the whole height on the left
+  if (r.left - st.left > st.width * 0.3) return Scene.setAnchor(st.height, r.left - st.left);
+  Scene.setAnchor(Math.max(st.height * 0.36, r.top - st.top + 14));
+}
+$('#seasonList').addEventListener('click', e => {
+  const b = e.target.closest('.season'); if (!b) return;
+  selSeason = +b.dataset.s; Sound.tick();
+  document.querySelectorAll('.season').forEach(x => { x.classList.toggle('sel', x === b); x.setAttribute('aria-pressed', x === b); });
+  updateTitleNote();
+});
+$('#bStart').addEventListener('click', () => {
+  Sound.unlock();
+  if (selSeason >= prog.unlocked) return;
+  if (run && run.season === selSeason && run.phase !== 'end') { Scene.reset(); return route(); }
+  const go = () => { startSeason(selSeason); };
+  if (run && run.phase !== 'end') confirmBox(`目前${SEASONS[run.season].title.split('・')[0]}第 ${run.day} 天的進度會被取代，確定開始新的一季？`, '開始新的一季', go);
+  else go();
+});
+function startSeason(i) {
+  run = SHOP.newRun(i, (Math.random() * 4294967295) >>> 0 || 7);
+  prog.runs++; saveProg(); save(); Scene.reset(); showMarket();
+}
+function soundBtn() {
+  const on = prefs.sound;
+  $('#bTSound').innerHTML = on ? '<svg class="i" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></svg>' : '<svg class="i" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
+  $('#bTSound').setAttribute('aria-label', on ? '音效：開' : '音效：關');
+  $('#bTSound').setAttribute('aria-pressed', on);
+  $('#mSoundT').textContent = on ? '開' : '關';
+}
+function toggleSound() { prefs.sound = !prefs.sound; savePrefs(); soundBtn(); if (prefs.sound) { Sound.unlock(); Sound.tick(); if (run && run.ds && run.ds.raining) Sound.rain(true); } else Sound.stopAll(); }
+$('#bTSound').addEventListener('click', toggleSound);
+$('#bTHelp').addEventListener('click', () => showSheet('#sheetHelp'));
+
+// ---------- market ----------
+const priceLv = r => r <= 0.95 ? ['lo', '便宜'] : r <= 1.1 ? ['', '合理'] : r <= 1.3 ? ['', '偏貴'] : ['hi', '很貴'];
+const stepOf = id => ITEMS[id].ref >= 50 ? 5 : 1;
+function wxLine(w) { return WX[w.base === 'rain' ? 'rain' : w.base].name + (w.chance && w.base !== 'rain' && w.base !== 'typhoon' ? `・降雨 ${w.chance}%` : ''); }
+function wxAdvice(base, chance) {
+  if (base === 'typhoon') return '客人少，但泡麵、雨傘會被搶購。';
+  if (base === 'rain') return '客人少一點，雨傘好賣，冰品差。';
+  if (base === 'hot') return '冰品和汽水大賣，熱食差。';
+  if (base === 'cold') return '烤地瓜、茶葉蛋、暖暖包好賣。';
+  if (chance >= 40) return '可能會下雨，備幾把雨傘。';
+  return '天氣不錯，客人正常。';
+}
+function goalHTML() {
+  const S = SEASONS[run.season], st = S.stars, max = st[2] * 1.08, cash = view === 'market' ? run.cash - SHOP.orderCost(run) : run.cash;
+  const pct = Math.max(0, Math.min(100, cash / max * 100));
+  return `<div class="row"><span>季末目標・第 ${DAYS} 天打烊時的現金</span><b class="num">${money(cash)}</b></div>
+    <div class="gbar"><i style="width:${pct}%"></i>${st.map(v => `<span class="mk${cash >= v ? ' on' : ''}" style="left:${v / max * 100}%">${STAR}</span>`).join('')}</div>
+    <div class="row" style="margin-top:6px"><span class="num">★ ${money(st[0])}</span><span class="num">★★ ${money(st[1])}</span><span class="num">★★★ ${money(st[2])}</span></div>`;
+}
+function showMarket() {
+  closing = false; Scene.setShutter(1, true);
+  setView('market');
+  const S = SEASONS[run.season], w = run.today, ev = run.event, nextEv = run.day < DAYS ? SHOP.eventOf(run, run.day + 1) : null;
+  const tw = run.day < DAYS ? run.wxs[run.day].fc : null;
+  $('#fcCard').innerHTML = `<div class="wx">${WX_SVG[w.base]}</div><h2>今天 ${wxLine(w)}${SHOP.isWeekend(run.day) ? '<small>週末客人多</small>' : ''}</h2>
+    <p>${wxAdvice(w.base, w.chance)}${tw ? `<br>明天預報：<b>${wxLine(tw)}</b>${nextEv ? `・<b>${evName(nextEv)}</b>` : ''}` : '<br><b>今天是這一季最後一天</b>，賣不完的貨不算錢。'}</p>`;
+  $('#evtBox').innerHTML = ev ? `<div class="evt"><span class="tagi"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M4 21V4h12l-2 4 2 4H4"/></svg></span><div><b>今日事件：${evName(ev)}</b>${evDesc(ev)}</div></div>` : '';
+  $('#goalBox').innerHTML = goalHTML();
+  $('#tipBox').innerHTML = !prefs.tips.mkt ? `<div class="tip"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span>第一次開店？按下方<b>「照建議」</b>自動填好進貨量，價格先用參考價，再按<b>「開門營業」</b>。</span><button type="button" id="bTipX" aria-label="知道了"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>` : '';
+  const bx = $('#bTipX'); if (bx) bx.onclick = () => { prefs.tips.mkt = 1; savePrefs(); $('#tipBox').innerHTML = ''; };
+  $('#mktNote').textContent = run.day === 1 ? '進價每天變動' : '依昨天賣況調整';
+  $('#itemList').innerHTML = S.items.map(id => itemCard(id)).join('');
+  S.items.forEach(updateItem);
+  updateMarketSum();
+  $('#market .scroll').scrollTop = 0;
+}
+function evName(ev) { if (!ev) return ''; if (ev.startsWith('order:')) { const [, id, n] = ev.split(':'); return `里長訂 ${n} ${ITEMS[id].unit}${ITEMS[id].name}`; } return EVENTS[ev].name; }
+function evDesc(ev) {
+  if (ev.startsWith('order:')) { const [, id, n] = ev.split(':'); return `中午 12 點來拿，每${ITEMS[id].unit} ${money(Math.round(ITEMS[id].ref * 1.1))}。庫存不夠 ${n} ${ITEMS[id].unit}會失信，口碑下降。`; }
+  return EVENTS[ev].desc + '。';
+}
+function itemCard(id) {
+  const I = ITEMS[id];
+  return `<div class="item" data-id="${id}">
+    <div class="hd"><div class="ic">${ic(id)}</div><div class="nm"><b>${I.name}<span class="badge" data-b></span>${I.perish ? '<span class="badge pk">當天賣完</span>' : ''}</b><span data-cost></span></div><div class="stock"><b class="num" data-st></b><span data-cap></span></div></div>
+    <div class="ctl">
+      <div class="stepper buy"><button class="step" type="button" data-a="b-" aria-label="${I.name}少進一${I.unit}"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><div class="val"><small>進貨</small><b class="num" data-buy></b></div><button class="step" type="button" data-a="b+" aria-label="${I.name}多進一${I.unit}"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button></div>
+      <div class="stepper price"><button class="step" type="button" data-a="p-" aria-label="${I.name}降價"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button><div class="val"><small data-pl>售價</small><b class="num" data-pr></b></div><button class="step" type="button" data-a="p+" aria-label="${I.name}漲價"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></button></div>
+    </div>
+    <div class="yest" data-y></div></div>`;
+}
+function updateItem(id) {
+  const el = document.querySelector(`.item[data-id="${id}"]`); if (!el) return;
+  const I = ITEMS[id], c = run.cost[id], m = c / I.cost, cap = SHOP.cap(run, id);
+  const b = el.querySelector('[data-b]');
+  b.className = 'badge' + (m <= 0.9 ? ' lo' : m >= 1.12 ? ' hi' : ''); b.textContent = m <= 0.9 ? '進價低' : m >= 1.12 ? '進價高' : '';
+  b.hidden = !b.textContent;
+  el.querySelector('[data-cost]').textContent = `進價 $${c}・參考售價 $${I.ref}`;
+  el.querySelector('[data-st]').textContent = run.stock[id] + (run.order[id] ? ` → ${run.stock[id] + run.order[id]}` : '');
+  el.querySelector('[data-cap]').textContent = `庫存 / ${cap}`;
+  const bq = el.querySelector('[data-buy]'); bq.textContent = run.order[id] ? '+' + run.order[id] : '0'; bq.classList.toggle('z', !run.order[id]);
+  const r = run.price[id] / I.ref, [lv, lab] = priceLv(r);
+  el.querySelector('.stepper.price').dataset.lv = lv;
+  el.querySelector('[data-pl]').textContent = '售價・' + lab;
+  el.querySelector('[data-pr]').textContent = '$' + run.price[id];
+  el.querySelector('[data-a="b-"]').disabled = !run.order[id];
+  const h = run.last;
+  if (h) {
+    const parts = [`昨天賣 ${h.sold[id] || 0}`];
+    if (h.oosItem[id]) parts.push(`<em>缺貨 ${h.oosItem[id]} 人</em>`);
+    if (h.priceItem[id]) parts.push(`<i>嫌貴 ${h.priceItem[id]} 人</i>`);
+    if (h.spoiled[id]) parts.push(`<i>報廢 ${h.spoiled[id]}</i>`);
+    el.querySelector('[data-y]').innerHTML = parts.join('・');
+  } else el.querySelector('[data-y]').textContent = I.perish ? '放不過夜，打烊時沒賣完的會丟掉' : '賣不完可以留到明天';
+}
+function updateMarketSum() {
+  const oc = SHOP.orderCost(run), left = run.cash - oc;
+  $('#mktSum').innerHTML = `<small>進貨 <span class="num">${money(oc)}</span></small><b class="num${left < 300 ? ' neg' : ''}">剩 ${money(left)}</b>`;
+  updateTop();
+  $('#goalBox').innerHTML = goalHTML();
+}
+function marketAct(id, a, n) {
+  if (run.phase !== 'market') return false;
+  n = n || 1;
+  if (a === 'b+' || a === 'b-') {
+    const before = run.order[id];
+    const got = SHOP.setOrder(run, id, before + (a === 'b+' ? n : -n));
+    if (a === 'b+' && got === before) {
+      const capLeft = SHOP.cap(run, id) - run.stock[id];
+      if (got >= capLeft) toast(`${ITEMS[id].name}放不下了（上限 ${SHOP.cap(run, id)}）`, 'bad', 1.6); else { toast('現金不夠了', 'bad', 1.4); $('#mktSum').classList.remove('flash'); void $('#mktSum').offsetWidth; $('#mktSum').classList.add('flash'); }
+      Sound.deny(); return false;
+    }
+  } else {
+    const st = stepOf(id), p = run.price[id], np = SHOP.setPrice(run, id, p + (a === 'p+' ? st : -st) * n);
+    if (np === p) { Sound.deny(); return false; }
+  }
+  Sound.tick(); updateItem(id); updateMarketSum(); saveSoon();
+  return true;
+}
+let saveT = 0; function saveSoon() { clearTimeout(saveT); saveT = setTimeout(save, 250); }
+// press-and-hold steppers. A tap steps once when the finger lifts, so a press that turns into a scroll
+// (moves more than 8 px, or the browser cancels it) changes nothing. Holding repeats from 420 ms; if the lift
+// turns out (by the events' own timestamps) to have come sooner, a busy main thread fired the repeats late
+// and they are undone, so a tap is always exactly one step.
+let hold = null;
+function holdRestore(h) { if (h.reps) { SHOP.setOrder(run, h.id, h.o0); SHOP.setPrice(run, h.id, h.p0); updateItem(h.id); updateMarketSum(); saveSoon(); h.reps = 0; } }
+function stopHold(keep) { if (!hold) return; clearTimeout(hold.t); if (!keep) holdRestore(hold); hold = null; }
+$('#itemList').addEventListener('pointerdown', e => {
+  const b = e.target.closest('.step'); if (!b || b.disabled || run.phase !== 'market') return;
+  const id = b.closest('.item').dataset.id, a = b.dataset.a;
+  stopHold(true); Sound.unlock();
+  const h = hold = { id, a, pid: e.pointerId, x: e.clientX, y: e.clientY, t0: e.timeStamp, reps: 0, o0: run.order[id], p0: run.price[id], t: 0 };
+  const rep = () => { if (hold !== h) return; h.reps++; if (!marketAct(id, a, a[0] === 'b' && h.reps > 10 ? 5 : 1)) { clearTimeout(h.t); return; } h.t = setTimeout(rep, h.reps > 4 ? 60 : 110); };
+  h.t = setTimeout(rep, 420);
+});
+$('#itemList').addEventListener('pointermove', e => {
+  const h = hold; if (!h || e.pointerId !== h.pid) return;
+  if (Math.hypot(e.clientX - h.x, e.clientY - h.y) > 8) stopHold(false);
+});
+$('#itemList').addEventListener('pointercancel', e => { if (hold && e.pointerId === hold.pid) stopHold(false); });
+$('#itemList').addEventListener('pointerup', e => {
+  const h = hold; if (!h || e.pointerId !== h.pid) return;
+  clearTimeout(h.t); hold = null;
+  if (Math.hypot(e.clientX - h.x, e.clientY - h.y) > 8) { holdRestore(h); return; }
+  if (e.timeStamp - h.t0 < 420 || !h.reps) { holdRestore(h); marketAct(h.id, h.a); }
+});
+// a mouse that slides off the button while held keeps what the hold already did
+$('#itemList').addEventListener('pointerleave', e => { if (hold && e.pointerId === hold.pid && e.pointerType === 'mouse') stopHold(!!hold.reps); });
+$('#itemList').addEventListener('click', e => { const b = e.target.closest('.step'); if (b && e.detail === 0 && !b.disabled) marketAct(b.closest('.item').dataset.id, b.dataset.a); });
+$('#bSuggest').addEventListener('click', () => {
+  SHOP.applySuggest(run); SEASONS[run.season].items.forEach(updateItem); updateMarketSum(); save();
+  Sound.buy();
+  toast(run.day === 1 ? '已填好第一天的建議進貨量（看今天天氣）' : run.day >= DAYS ? '最後一天：只補今天賣得完的量，剩貨季末不算錢' : '已照前幾天賣出＋缺貨的量，依今天天氣和活動填好', '', 2.4);
+});
+$('#bOpen').addEventListener('click', () => {
+  Sound.unlock();
+  const S = SEASONS[run.season], total = S.items.reduce((s, id) => s + run.stock[id] + run.order[id], 0);
+  const go = () => { prefs.tips.mkt = 1; savePrefs(); SHOP.openShop(run); save(); Scene.reset(); showDay(false); };
+  if (!total) return confirmBox('店裡一件貨都沒有，客人來了也買不到東西。確定要開店？', '照樣開店', go, '回去進貨');
+  go();
+});
+$('#bUpg').addEventListener('click', () => { renderUpg(); showSheet('#sheetUpg'); });
+$('#bRepUpg').addEventListener('click', () => { renderUpg(); showSheet('#sheetUpg'); });
+
+// ---------- upgrades ----------
+let armed = null;
+function renderUpg() {
+  const avail = run.cash - SHOP.orderCost(run);
+  $('#upgNote').textContent = `升級只在這一季有效，季初買才回得了本；看說明挑適合這一季和你玩法的。可用現金 ${money(avail)}`;
+  $('#upgList').innerHTML = Object.keys(UPGRADES).map(k => {
+    const U = UPGRADES[k], own = run.upg[k], can = !own && avail >= U.cost && (run.phase === 'market' || run.phase === 'report');
+    return `<div class="upg${own ? ' own' : ''}"><span class="ui">${UPG_SVG[k]}</span><div class="tx"><b>${U.name}</b><span>${U.desc}</span></div>
+      <button class="btn${armed === k ? ' primary' : ''}" type="button" data-u="${k}" ${own || !can ? 'disabled' : ''}>${own ? '已安裝' : armed === k ? '確定購買' : money(U.cost)}</button></div>`;
+  }).join('');
+}
+$('#upgList').addEventListener('click', e => {
+  const b = e.target.closest('[data-u]'); if (!b || b.disabled) return;
+  const k = b.dataset.u;
+  if (armed !== k) { armed = k; Sound.tick(); renderUpg(); setTimeout(() => { if (armed === k) { armed = null; if (openSheet && openSheet.id === 'sheetUpg') renderUpg(); } }, 3500); return; }
+  armed = null;
+  if (SHOP.buyUpgrade(run, k)) {
+    Sound.buy(); buzz(15); toast(`安裝了${UPGRADES[k].name}！`, 'gold', 2);
+    save(); renderUpg(); updateTop();
+    if (view === 'market') { SEASONS[run.season].items.forEach(updateItem); updateMarketSum(); }
+    if (view === 'report') renderReport();
+  }
+});
+
+// ---------- the day ----------
+function setSpeedUI() { $('#speedT').textContent = prefs.speed + '×'; [...$('#bSpeed span').children].forEach((d, i) => d.classList.toggle('on', i < [1, 2, 4].indexOf(prefs.speed) + 1)); $('#bSpeed').setAttribute('aria-label', `速度 ${prefs.speed} 倍`); }
+function showDay(resume) {
+  setView('day'); paused = false; closing = false; acc = 0; hidePause();
+  Scene.setShutter(resume ? 0 : 1, true); Scene.setShutter(0);
+  if (!resume) { Sound.open(); }
+  setSpeedUI(); updateHUD(true);
+  if (run.ds && run.ds.raining) Sound.rain(true);
+  if (!prefs.tips.day) { prefs.tips.day = 1; savePrefs(); setTimeout(() => toast('客人到櫃台排隊時，按「結帳」幫忙結帳', 'gold', 3.5), 700); setTimeout(() => toast('左邊按鈕變黃色時按一下，推薦客人多買一樣', 'gold', 3.5), 4600); }
+  else if (!resume && run.event) setTimeout(() => toast(evName(run.event), 'gold', 2.2), 500);
+}
+function tallyHTML(d) { return `<span>成交 <b>${d.served}</b></span><span class="${d.lost.price ? 'bad' : ''}">嫌貴 <b>${d.lost.price}</b></span><span class="${d.lost.oos ? 'bad' : ''}">缺貨 <b>${d.lost.oos}</b></span><span class="${d.lost.wait ? 'bad' : ''}">久候 <b>${d.lost.wait}</b></span>`; }
+let hudKey = '';
+function updateHUD(force) {
+  const d = run && run.ds; if (!d) return;
+  const t = Math.min(CLOSE, d.t), hh = Math.floor(t / 60), mm = t % 60;
+  $('#clockT').textContent = String(hh).padStart(2, '0') + ':' + String(mm - mm % 5).padStart(2, '0');
+  const key = d.rev + '|' + d.served + '|' + d.lost.price + '|' + d.lost.oos + '|' + d.lost.wait;
+  if (key !== hudKey || force) { hudKey = key; $('#sumT').textContent = '營業額 ' + money(d.rev); $('#tally').innerHTML = tallyHTML(d); updateTop(); }
+  const p = (t - OPEN) / (CLOSE - OPEN), a = -Math.PI / 2 + p * Math.PI * 2;
+  $('#dial').innerHTML = `<circle cx="15" cy="15" r="13" fill="var(--card2)" stroke="var(--line)" stroke-width="2"/><path d="M15 15 L15 2 A13 13 0 ${p > 0.5 ? 1 : 0} 1 ${15 + 13 * Math.cos(a)} ${15 + 13 * Math.sin(a)} Z" fill="${p > 0.75 ? '#7a6fb0' : '#f2b84b'}" opacity=".85"/><circle cx="15" cy="15" r="2" fill="var(--ink)"/>`;
+  // counter buttons
+  const q = d.q.length, sv = $('#bServe');
+  $('#qN').textContent = q; sv.classList.toggle('idle', !q); sv.classList.toggle('rush', q >= 3);
+  sv.setAttribute('aria-label', `結帳，排隊 ${q} 人`);
+  const f = SHOP.front(run), ub = $('#bUp');
+  let st = 'idle', html;
+  if (upFlash && performance.now() < upFlash.until) { st = upFlash.ok ? 'ok' : 'no'; html = `${ic(upFlash.id)}<span class="t"><small>${upFlash.ok ? '客人說好！' : '搖搖頭'}</small><b>${upFlash.ok ? ITEMS[upFlash.id].name : '這次不要'}</b></span>`; }
+  else if (f && f.up && !f.upRes && run.stock[f.up] > 0) { st = 'on'; html = `${ic(f.up)}<span class="t"><small>推薦・$${run.price[f.up]}</small><b>${ITEMS[f.up].name}</b></span>`; }
+  else html = `<span class="ph"></span><span class="t"><small>${f ? '沒有可推薦' : '櫃台沒人'}</small><b>推薦加購</b></span>`;
+  const k2 = st + html;
+  if (ub.dataset.k !== k2) { ub.dataset.k = k2; ub.className = 'upsell' + (st !== 'idle' ? ' ' + st : ''); ub.innerHTML = html; }
+}
+function handleEvents(evs) {
+  for (const ev of evs) {
+    Scene.onEvent(ev, run);
+    if (ev.k === 'enter') Sound.chime();
+    else if (ev.k === 'sale') Sound.cash(ev.tapped);
+    else if (ev.k === 'leave') Sound.bad();
+    else if (ev.k === 'rainOn') { toast('下雨了！雨傘會好賣', '', 2.4); Sound.rain(true); }
+    else if (ev.k === 'rainOff') { toast('雨停了', '', 1.8); Sound.rain(false); }
+    else if (ev.k === 'bulk') { if (ev.res.ok) { toast(`里長來拿 ${ev.b.n} ${ITEMS[ev.b.item].unit}${ITEMS[ev.b.item].name}，收入 ${money(ev.res.amt)}`, 'gold', 3); Sound.up(); } else { toast(`${ITEMS[ev.b.item].name}不夠 ${ev.b.n} ${ITEMS[ev.b.item].unit}，里長很失望`, 'bad', 3); Sound.no(); } }
+  }
+}
+$('#bServe').addEventListener('click', () => {
+  if (view !== 'day' || paused || closing) return;
+  Sound.unlock();
+  const ev = SHOP.serve(run);
+  if (ev) { handleEvents([ev]); buzz(8); updateHUD(); }
+});
+$('#bUp').addEventListener('click', () => {
+  if (view !== 'day' || paused || closing) return;
+  const res = SHOP.upsell(run);
+  if (!res) return;
+  Scene.upsellFx(res); upFlash = { ok: res.ok, id: res.id, until: performance.now() + 1100 };
+  if (res.ok) { Sound.up(); buzz(12); } else Sound.no();
+  updateHUD();
+});
+// tapping the customer at the counter (or the counter itself) also rings them up
+$('#scene').addEventListener('pointerdown', e => {
+  if (view !== 'day' || paused || closing || !run.ds || !run.ds.q.length) return;
+  const r = $('#scene').getBoundingClientRect(), p = Scene.toStage(e.clientX - r.left, e.clientY - r.top);
+  if (p.x > 225 && p.x < 350 && p.y > 140 && p.y < 232) { const ev = SHOP.serve(run); if (ev) { handleEvents([ev]); buzz(8); updateHUD(); } }
+});
+$('#bSpeed').addEventListener('click', () => { prefs.speed = { 1: 2, 2: 4, 4: 1 }[prefs.speed] || 1; savePrefs(); setSpeedUI(); Sound.tick(); });
+$('#bPause').addEventListener('click', () => setPaused(true));
+let pauseEl = null;
+function setPaused(p, quiet) {
+  if (view !== 'day' || closing) return;
+  paused = p;
+  if (p) { save(); Sound.stopAll(); if (!quiet) showPause(); }
+  else { hidePause(); acc = 0; if (run.ds && run.ds.raining) Sound.rain(true); }
+}
+function showPause() {
+  hidePause();
+  pauseEl = document.createElement('div'); pauseEl.className = 'confirm'; pauseEl.id = 'pauseBox';
+  pauseEl.innerHTML = `<div class="paper"><div class="awning"></div><h2 style="margin:0 0 4px;font-size:20px">暫停中</h2><p class="num" style="margin:0 0 14px;color:var(--muted)">營業額 ${money(run.ds.rev)}・排隊 ${run.ds.q.length} 人</p><div class="row"><button class="btn" type="button" data-h>說明</button><button class="btn primary" type="button" data-r>繼續營業</button></div></div>`;
+  document.body.appendChild(pauseEl);
+  pauseEl.querySelector('[data-r]').onclick = () => setPaused(false);
+  pauseEl.querySelector('[data-h]').onclick = () => { hidePause(); showSheet('#sheetHelp'); };
+}
+function hidePause() { if (pauseEl) { pauseEl.remove(); pauseEl = null; } }
+function finishDay() {
+  closing = true;
+  SHOP.closeDay(run);
+  if (run.phase === 'end') recordSeason();
+  save();
+  Scene.setShutter(1); Sound.shutter(); Sound.stopAll();
+  updateHUD(true);
+  setTimeout(() => { if (view === 'day') { run.phase === 'end' ? showEnd() : showReport(); } }, 1350);
+}
+
+// ---------- report ----------
+function hints(r) {
+  const out = [], repD = Math.round((r.rep - r.rep0) * 10) / 10, lostAll = r.lost.price + r.lost.oos + r.lost.wait;
+  const oos = Object.entries(r.oosItem).sort((a, b) => b[1] - a[1]);
+  if (oos.length && oos[0][1] >= 3) out.push(['b', `${oos.slice(0, 2).filter(x => x[1] >= 3).map(x => ITEMS[x[0]].name).join('、')}缺貨，有 ${oos.filter(x => x[1] >= 3).slice(0, 2).reduce((s, x) => s + x[1], 0)} 位客人沒買到，明天多進一點（「照建議」會把沒買到的人算進去）。`]);
+  const pr = Object.entries(r.priceItem).filter(([id, n]) => n >= 3 && n >= 0.3 * (r.sold[id] || 0)).sort((a, b) => b[1] - a[1]);
+  const repTail = repD <= -1 ? `口碑 ${repD}，口碑低了明天來的客人會變少。` : '嫌貴走掉的客人會拉低口碑，口碑低了客人就少。';
+  if (pr.length >= 2) out.push(['w', `${pr.map(([id]) => ITEMS[id].name).join('、')}都有很多人嫌貴（共 ${pr.reduce((s, x) => s + x[1], 0)} 人走掉）。${repTail}`]);
+  else if (pr.length) {
+    const [id, n] = pr[0], p = r.prices[id];
+    out.push(['w', (p > ITEMS[id].ref ? `${n} 位客人嫌${ITEMS[id].name}太貴（售價 $${p}），可以降一點。` : `${n} 位客人還是嫌${ITEMS[id].name}貴，學生和小朋友最在意價格。`) + (r.lost.price >= 0.15 * r.n ? repTail : '')]);
+  } else if (repD <= -3 && lostAll >= 0.25 * r.n) out.push(['w', `口碑 ${repD}：今天有 ${lostAll} 位客人沒買到、嫌貴或等太久。口碑越低，來的客人越少。`]);
+  if (r.lost.wait >= 2) out.push(['b', `${r.lost.wait} 位客人排隊太久走掉了，口碑扣最多。排隊時按「結帳」幫忙${run.upg.register ? '' : '，或買一台收銀機'}。`]);
+  const sp = Object.entries(r.spoiled);
+  if (sp.length && sp.reduce((s, x) => s + x[1], 0) >= 4) out.push(['w', `${sp.map(([id, n]) => `${ITEMS[id].name} ${n}`).join('、')} 沒賣完報廢了（${money(r.spoilV)}），這類貨要進剛好。`]);
+  if (r.shrink >= 40) out.push(['w', `沒賣完的貨今晚損耗 ${money(r.shrink)}（每晚約 ${Math.round(SHOP.SHRINK * 100)}%），別一次囤太多。`]);
+  if (r.up.tried === 0 && r.served > 8) out.push(['', '櫃台按鈕變黃色時按「推薦」，客人常常會多買一樣。']);
+  else if (r.up.ok) out.push(['', `推薦成功 ${r.up.ok} 次（試了 ${r.up.tried} 次）。`]);
+  if (r.bargain >= 5) out.push(['', `${r.bargain} 位客人覺得很划算，口碑上升。`]);
+  if (!out.length) out.push(['', r.net >= 0 ? '今天很順利，照這個節奏繼續！' : '今天進了比較多貨，庫存明天還能賣。']);
+  return out.slice(0, 4);
+}
+function renderReport() {
+  const r = run.last, S = SEASONS[run.season]; if (!r) return;
+  const wxn = WX[r.wx].name + (r.rained && r.wx !== 'rain' && r.wx !== 'typhoon' ? '轉雨' : '');
+  const items = S.items.map(id => {
+    const sold = r.sold[id] || 0, lost = (r.oosItem[id] || 0) + (r.priceItem[id] || 0), tot = Math.max(1, sold + lost), mx = Math.max(...S.items.map(k => (r.sold[k] || 0) + (r.oosItem[k] || 0) + (r.priceItem[k] || 0)), 1);
+    const left = r.spoiled[id] ? `<b style="color:var(--bad)">報廢 ${r.spoiled[id]}</b>` : `剩 ${run.stock[id]}`;
+    return `<div class="r">${ic(id)}<div class="tr"><i style="width:${sold / mx * 100}%"></i><u style="left:${sold / mx * 100}%;width:${lost / mx * 100}%"></u></div><span>賣 ${sold}・${left}</span></div>`;
+  }).join('');
+  const nextW = run.wxs[run.day] && run.wxs[run.day].fc, nextEv = SHOP.eventOf(run, run.day + 1);
+  const repD = Math.round((r.rep - r.rep0) * 10) / 10;
+  $('#repBody').innerHTML = `<div class="paper"><div class="awning"></div>
+    <div class="rhead"><div class="k">第 ${r.day} 天・${wxn}${r.event ? '・' + evName(r.event) : ''}</div><h2>打烊結算</h2></div>
+    <div class="big"><small>今日結餘</small><b class="num ${r.net >= 0 ? 'pos' : 'neg'}">${signed(r.net)}</b></div>
+    <div class="ledger"><span>營業額</span><b class="num">${money(r.rev)}</b><span>早上進貨</span><b class="num">${money(-r.spend)}</b><span>店租水電</span><b class="num">${money(-r.rent)}</b>${r.shrink ? `<span>庫存損耗</span><b class="num">${money(-r.shrink)}</b>` : ''}${r.upg ? `<span>店面升級</span><b class="num">${money(-r.upg)}</b>` : ''}
+    <span class="tot">現金</span><b class="tot num">${money(r.cash)}</b></div>
+    <div class="cust"><div><b>${r.n}</b><span>來客</span></div><div><b>${r.served}</b><span>成交</span></div><div class="${r.lost.price ? 'bad' : ''}"><b>${r.lost.price}</b><span>嫌貴</span></div><div class="${r.lost.oos + r.lost.wait ? 'bad' : ''}"><b>${r.lost.oos + r.lost.wait}</b><span>沒買到</span></div></div></div>
+    <div class="h4"><span>老闆的筆記</span></div><div class="paper"><ul class="hints">${hints(r).map(([k, t]) => `<li class="${k}">${esc(t)}</li>`).join('')}</ul></div>
+    <div class="h4"><span>賣得怎樣</span><span style="letter-spacing:0">綠＝賣出・紅＝沒買到</span></div><div class="paper"><div class="sold">${items}</div></div>
+    <div class="h4"><span>口碑</span><span class="num" style="letter-spacing:0;color:${repD >= 0 ? 'var(--good)' : 'var(--bad)'}">${repD >= 0 ? '+' : ''}${repD}</span></div>
+    <div class="paper"><div class="rep"><span class="num" style="font-weight:800;font-size:18px">${Math.round(r.rep)}</span><span class="tr"><i style="width:${r.rep}%"></i></span><span style="color:var(--muted);font-size:12.5px">${r.rep >= 70 ? '街坊都愛來' : r.rep >= 45 ? '普普通通' : '大家嫌貴、常缺貨'}</span></div><p class="repwhy">今天客人滿意度 ${r.score != null ? r.score : '—'}。口碑每晚往滿意度靠近：買得開心、覺得划算會加分；嫌貴、缺貨、排太久會扣分。口碑越高，路過進來的人越多。</p></div>
+    ${nextW ? `<div class="h4"><span>明天</span></div><div class="forecast"><div class="wx">${WX_SVG[nextW.base]}</div><h2>${wxLine(nextW)}</h2><p>${nextEv ? `<b>${evName(nextEv)}</b>：${evDesc(nextEv)}` : wxAdvice(nextW.base, nextW.chance)}</p></div>` : ''}
+    <div class="h4"><span>季末目標</span><span style="letter-spacing:0">還有 ${DAYS - r.day} 天</span></div><div class="goal" style="margin-top:0">${goalHTML()}</div>`;
+}
+function showReport() { setView('report'); renderReport(); $('#report .scroll').scrollTop = 0; }
+$('#bNext').addEventListener('click', () => { if (run.phase !== 'report') return; SHOP.nextDay(run); save(); Sound.tick(); showMarket(); });
+
+// ---------- season end ----------
+function recordSeason() {
+  if (run.recorded) return;
+  run.recorded = true;
+  const st = SHOP.stars(run.season, run.cash), b = prog.best[run.season];
+  run.newBest = !b || run.cash > b.cash;
+  if (!b || st > b.stars || (st === b.stars && run.cash > b.cash)) prog.best[run.season] = { stars: Math.max(st, b ? b.stars : 0), cash: Math.max(run.cash, b ? b.cash : -1e9) };
+  else if (b && run.cash > b.cash) b.cash = run.cash;
+  run.unlockedNew = false;
+  if (st >= 1 && run.season < 3 && prog.unlocked < run.season + 2) { prog.unlocked = run.season + 2; run.unlockedNew = true; }
+  if (st >= 1 && run.season === 3 && !prog.ending) { prog.ending = true; run.ending = true; }
+  saveProg();
+}
+function showEnd() {
+  setView('end'); recordSeason();
+  const S = SEASONS[run.season], st = SHOP.stars(run.season, run.cash), H = run.hist;
+  const rev = H.reduce((s, h) => s + h.rev, 0), n = H.reduce((s, h) => s + h.n, 0), served = H.reduce((s, h) => s + h.served, 0);
+  const bestDay = H.reduce((a, h) => h.net > a.net ? h : a, H[0]);
+  const msg = st === 0 ? `差 ${money(S.stars[0] - run.cash)} 就有第一顆星。試試多看天氣預報、別讓熱門貨缺貨。` : st === 3 ? '滿分經營！整條街都知道這家柑仔店。' : st === 2 ? '生意很好！再精打細算一點就能拿滿三顆星。' : '撐過一季了！口碑和存款都還有進步空間。';
+  $('#endBody').innerHTML = `<div class="paper"><div class="awning"></div>
+    <div class="rhead"><div class="k">${S.title}・14 天結束</div><h2>${st ? '季末結算' : '還差一點'}</h2></div>
+    <div class="stars">${[0, 1, 2].map(k => STAR.replace('<svg', `<svg class="${k < st ? 'on' : ''}"`)).join('')}</div>
+    <div class="big"><small>季末現金</small><b class="num ${st ? 'pos' : 'neg'}">${money(run.cash)}</b></div>
+    <p style="text-align:center;margin:0 0 4px;font-size:14px;line-height:1.55">${msg}</p>
+    <div class="thresh">${S.stars.map((v, i) => `<div class="${run.cash >= v ? 'hit' : ''}">${'★'.repeat(i + 1)}<b>${money(v)}</b></div>`).join('')}</div>
+    ${run.unlockedNew ? `<div class="unlock">解鎖了${SEASONS[run.season + 1].title}！</div>` : ''}
+    ${run.ending ? `<div class="unlock">四季都撐過來了。一年過去，巷口柑仔店成了整條街最愛的小店。謝謝老闆！</div>` : ''}</div>
+    <div class="h4"><span>這一季</span></div>
+    <div class="paper"><div class="endlist"><span>總營業額</span><b>${money(rev)}</b><span>來客</span><b>${fmt(n)} 人</b><span>成交率</span><b>${n ? Math.round(served / n * 100) : 0}%</b><span>最賺的一天</span><b>第 ${bestDay.day} 天 ${signed(bestDay.net)}</b><span>口碑</span><b>${Math.round(run.rep)}</b><span>升級</span><b>${Object.keys(run.upg).length} 項</b><span>最佳紀錄</span><b>${prog.best[run.season] ? money(prog.best[run.season].cash) : '—'}${run.newBest ? '（新紀錄）' : ''}</b></div></div>`;
+  const next = run.season < 3 && prog.unlocked > run.season + 1;
+  $('#endBtns').innerHTML = `<button class="btn" type="button" id="bEndTitle">季節選單</button><button class="btn${next ? '' : ' primary grow'}" type="button" id="bAgain">再挑戰</button>${next ? `<button class="btn primary grow" type="button" id="bNextSeason">${SEASONS[run.season + 1].title.split('・')[0]} →</button>` : ''}`;
+  $('#bEndTitle').onclick = () => { selSeason = run.season; showTitle(); };
+  $('#bAgain').onclick = () => startSeason(run.season);
+  if (next) $('#bNextSeason').onclick = () => startSeason(run.season + 1);
+  $('#end .scroll').scrollTop = 0;
+  if (st) { Sound.fanfare(); for (let i = 0; i < st; i++) setTimeout(() => Sound.star(i), 300 + i * 250); }
+}
+
+// ---------- menu ----------
+$('#bMenu').addEventListener('click', () => { $('#mRestart').hidden = !run || view === 'title'; showSheet('#sheetMenu'); });
+$('#mSound').addEventListener('click', toggleSound);
+$('#mTheme').addEventListener('click', () => { prefs.theme = { auto: 'light', light: 'dark', dark: 'auto' }[prefs.theme]; savePrefs(); applyTheme(); });
+$('#mHelp').addEventListener('click', () => { hideSheet(true); showSheet('#sheetHelp'); });
+$('#mTitle').addEventListener('click', () => { hideSheet(true); if (run) { save(); selSeason = run.season; } showTitle(); });
+$('#mRestart').addEventListener('click', () => { hideSheet(true); confirmBox(`${SEASONS[run.season].title.split('・')[0]}從第 1 天重新開始？現在的進度會不見。`, '重新開始', () => startSeason(run.season)); });
+// resume the day when the last sheet closes
+const _hide = hideSheet;
+hideSheet = function (instant) { _hide(instant); if (view === 'day' && paused && !pauseEl) setPaused(false); };
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, textarea')) return;
+  if (e.key === 'Escape') { if (document.querySelector('.confirm:not(#pauseBox)')) document.querySelector('.confirm:not(#pauseBox)').remove(); else if (openSheet) hideSheet(); else if (view === 'day') setPaused(!paused); return; }
+  if (view !== 'day' || openSheet) return;
+  if (e.key === ' ' || e.key === 'Enter') { if (document.activeElement && document.activeElement.tagName === 'BUTTON' && document.activeElement !== document.body) return; e.preventDefault(); $('#bServe').click(); }
+  else if (e.key === 'u' || e.key === 'U' || e.key === 'ArrowUp') { e.preventDefault(); $('#bUp').click(); }
+  else if (e.key === 'p' || e.key === 'P') setPaused(!paused);
+  else if (e.key === 's' || e.key === 'S') $('#bSpeed').click();
+});
+
+// ---------- main loop ----------
+let lastFrame = performance.now(), hudT = 0, lock = false, shownTm = 0, lastDtm = 0;
+// advance the game clock by dtr real seconds (day sim or the title demo)
+function advance(dtr) {
+  let dtm = 0;
+  if (view === 'title' && demo) {
+    dtm = dtr * SHOP.MIN_PER_SEC * 0.7;
+    acc += dtm;
+    while (acc >= 1) { acc -= 1; const evs = SHOP.tick(demo); for (const ev of evs) Scene.onEvent(ev, demo); if (demo.ds.t >= 1140) { demo = makeDemo(); Scene.reset(); } }
+    if (Math.random() < dtr * 0.8 && demo.ds.q.length > 2) { const ev = SHOP.serve(demo); if (ev) Scene.onEvent(ev, demo); }
+  } else if (view === 'day' && run && run.ds && !paused && !closing) {
+    dtm = dtr * SHOP.MIN_PER_SEC * prefs.speed;
+    acc += dtm;
+    let n = 0;
+    while (acc >= 1 && n < 80) { acc -= 1; n++; handleEvents(SHOP.tick(run)); if (SHOP.dayDone(run)) { finishDay(); break; } }
+  }
+  lastDtm += dtm;
+}
+function frame(now) {
+  const dtr = Math.min(0.1, (now - lastFrame) / 1000); lastFrame = now;
+  if (!lock) advance(dtr);
+  let shown = null, tm = 0;
+  if (view === 'title' && demo) { shown = demo; tm = demo.ds.t + acc; }
+  else if (run && view === 'day') { shown = run; tm = run.ds ? run.ds.t + (closing ? 0 : acc) : CLOSE; }
+  if (view === 'day' && run && run.ds && !paused && now - lastSave > 1500) save();
+  if (view === 'day' && run && run.ds && now - hudT > 90) { hudT = now; updateHUD(); }
+  if (shown) Scene.draw(shown, tm, dtr, { dtm: paused ? 0 : lastDtm, paused, shutterText: closing ? '打烊囉・明天見' : '準備開門' });
+  lastDtm = 0;
+  requestAnimationFrame(frame);
+}
+
+// ---------- lifecycle ----------
+new ResizeObserver(() => { Scene.resize(); if (view === 'title') anchorTitle(); }).observe($('#stage'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) { save(); if (view === 'day' && !closing) setPaused(true); Sound.stopAll(); } });
+window.addEventListener('pagehide', save);
+applyTheme(); soundBtn(); setSpeedUI();
+route();
+requestAnimationFrame(t => { lastFrame = t; frame(t); });
+
+// test hooks (read state; start/select seasons)
+window.__shop = {
+  SHOP, Scene,
+  get run() { return run; }, get view() { return view; }, get paused() { return paused; }, get prog() { return prog; }, get prefs() { return prefs; },
+  save, load: () => { run = store.get('run'); route(); },
+  start(season, seed) { selSeason = season; run = SHOP.newRun(season, seed >>> 0 || 7); save(); Scene.reset(); showMarket(); },
+  unlockAll() { prog.unlocked = 4; saveProg(); },
+  // test-only virtual clock: the page stops advancing on its own and the bot steps time explicitly
+  lockstep(on) { lock = !!on; acc = 0; },
+  step(ms) { for (let k = 0; k < ms; k += 16) advance(Math.min(16, ms - k) / 1000); if (run && run.ds) updateHUD(); },
+  // step until something a player would react to happens: a new customer at the counter with a 推薦 offer,
+  // the queue reaching q, or the day ending
+  stepUntil(maxMs, q) {
+    const d0 = run && run.ds, f0 = d0 && d0.q.length ? d0.q[0] : null; let el = 0;
+    while (el < maxMs) {
+      advance(0.016); el += 16;
+      const d = run && run.ds;
+      if (view !== 'day' || closing || !d) return { why: 'end', el };
+      const f = SHOP.front(run);
+      if (f && f.id !== f0 && f.up && !f.upRes && run.stock[f.up] > 0) { updateHUD(); return { why: 'up', el, id: f.id }; }
+      if (q && d.q.length >= q) { updateHUD(); return { why: 'q', el }; }
+    }
+    if (run && run.ds) updateHUD();
+    return { why: 'time', el };
+  },
+};
+</script>
