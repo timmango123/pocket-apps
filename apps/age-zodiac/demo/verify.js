@@ -70,7 +70,7 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   await p.fill('#birth', '1880-01-01');
   assert(await p.isVisible('#old-warn'), '超過 130 歲顯示確認');
   await p.click('#old-ok');
-  assert((await p.textContent('#lunar-bday')).includes('停用'), '1900 前農曆功能停用並說明');
+  assert((await p.textContent('#lunar-bday')).includes('1900/1/31 以前不支援'), '1900/1/31 前農曆功能不支援並說明');
   // 今天生日
   await p.fill('#birth', '2000-10-07');
   assert((await p.textContent('#next-bday')).includes('今天生日'), '今天生日顯示');
