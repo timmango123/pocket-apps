@@ -6,8 +6,8 @@
 const fs = require('fs'), path = require('path'), zlib = require('zlib'), http = require('http');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const IC = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return IC;')();
-let pass = 0, fail = 0;
-function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } }
+let pass = 0, fail = 0; const failed = [];
+function ok(c, msg) { if (c) pass++; else { fail++; failed.push(msg); console.log('FAIL', msg); } }
 const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
 const eqR = (r, e) => near(r.x, e.x) && near(r.y, e.y) && near(r.w, e.w) && near(r.h, e.h);
 
@@ -312,14 +312,22 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   ex = await exportNow({ fmt: 'gif', fx: 'blink' }); g = decodeGif(Uint8Array.from(ex.bytes));
   ok(g.frames.length === 2 && gclose(gat(0, 100, 50), RED) && gclose(gat(1, 100, 50), BLUE), 'GIF blink: A frame then B frame');
   ex = await exportNow({ fmt: 'gif', fx: 'fade', exLab: true }); g = decodeGif(Uint8Array.from(ex.bytes));
-  ok(g.frames.length === 16 && gclose(gat(4, 150, 80), [125, 20, 125]), 'GIF fade: middle frame is a 50% blend');
+  // A dithered pixel can land well over 14 away from its colour when the palette also holds the labels' anti-aliased
+  // edge shades, and those depend on the fonts and CPU (with labels 左/右 one pixel here comes out 15 off). What the
+  // frame must get right is the colour on average, so compare the mean of an 8×8 block (whole 4×4 Bayer tiles).
+  const gmean = (f, x0, y0) => { const m = [0, 0, 0]; for (let y = y0; y < y0 + 8; y++) for (let x = x0; x < x0 + 8; x++) gat(f, x, y).forEach((v, k) => m[k] += v / 64); return m; };
+  const fm = gmean(4, 144, 76);
+  ok(g.frames.length === 16 && fm.every((v, k) => Math.abs(v - [125, 20, 125][k]) <= 6), `GIF fade: middle frame is a 50% blend (mean ${fm.map(v => v.toFixed(1)).join(',')})`);
   // 7. difference: 10×10 black square in 100×100 white
   await put(F.white, F.dot); await page.click('[data-mode="diff"]'); await page.click('[data-dm="mark"]');
   await page.evaluate(() => { window.__ic.set.tol = 8; window.__ic.render(); });
   let stat = await page.evaluate(() => { window.__ic.ensureDiff(); return Object.assign({}, window.__ic.S.stats); });
+  // the chip is painted by the render that follows the app's deferred comparison: wait for that instead of hoping it ran
+  const diffShown = () => page.waitForFunction(() => window.__ic.S.stats && !window.__ic.S.diffPending).then(frames2);
+  await diffShown();
   ok(stat.nd === 100 && near(stat.pct, 1) && near(stat.psnr, 20, 1e-9), 'diff: 1.00% different, PSNR 20 dB');
   ok((await page.textContent('#stat')).includes('1.00%'), 'diff chip shows 1.00%');
-  await put(F.white, F.white); await page.evaluate(() => window.__ic.render());
+  await put(F.white, F.white); await page.evaluate(() => window.__ic.render()); await diffShown();
   ok((await page.textContent('#stat')).includes('完全相同'), 'identical images: 完全相同');
   // 8. different sizes: A 200×100 red, B 100×100 black, contain/centre: overlap is B's square only
   await put(F.red, F.sq); await page.evaluate(() => { window.__ic.set.fit = 'contain'; window.__ic.set.ax = .5; window.__ic.set.tol = 0; window.__ic.S.work = null; window.__ic.ensureDiff(); });
@@ -372,7 +380,8 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   const t0 = Date.now(); await put(big, F.red); s = await st();
   ok(s.A.w === 4096 && s.A.h === 2731 && s.A.ow === 6000, `24 MP image capped to 4096×2731 for comparison, original size kept (${Date.now() - t0} ms)`);
   ok((await page.textContent('#slotA .l2')).includes('6000×4000'), 'slot shows the original size');
-  await page.click('[data-mode="diff"]'); await page.waitForTimeout(100); ok(await page.evaluate(() => window.__ic.S.work.w === 1600), 'big frame compared at 1600 px');
+  await page.click('[data-mode="diff"]'); await page.waitForFunction(() => window.__ic.S.work && !window.__ic.S.diffPending, null, { timeout: 20000 }).catch(() => {});
+  ok(await page.evaluate(() => !!window.__ic.S.work && window.__ic.S.work.w === 1600), 'big frame compared at 1600 px');
   // 12. labels: emoji, CJK, long, empty
   await put(F.red, F.blue); await page.click('[data-mode="slider"]');
   await page.click('#adjBtn'); await page.waitForTimeout(350);
@@ -390,7 +399,9 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   ok(s.B.name === 'green.png' && s.A.name === 'red.png', 'tapping B replaces only B');
   await page.click('#toastBtn'); s = await st(); ok(s.B.name === 'blue.png', '復原 brings the replaced image back');
   // 14. refresh keeps images and settings
-  await page.click('[data-mode="onion"]'); await page.evaluate(() => window.__ic.persist()); await page.waitForTimeout(300);
+  // settings are saved 120 ms after a change and the images through IndexedDB: wait for both, not a fixed 300 ms
+  await page.click('[data-mode="onion"]'); await page.evaluate(() => window.__ic.persist());
+  await page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem('image-compare:v1:settings')).mode === 'onion'; } catch (e) { return false; } }, null, { timeout: 10000 }).catch(() => {});
   await page.reload(); await page.evaluate(() => window.__ic.ready); s = await st();
   ok(s.A.name === 'red.png' && s.B.name === 'blue.png' && !s.A.sample && s.mode === 'onion', 'after refresh: same two images and mode');
   await page.click('#adjBtn'); await page.waitForTimeout(350); await page.click('#resetSample'); s = await st();
@@ -481,4 +492,5 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   ok(ext.length === 0, 'no network requests' + (ext.length ? ': ' + ext[0] : ''));
   await browser.close(); srv.close(); done();
 })().catch(e => { console.log('FAIL exception', e && e.stack || e); fail++; done(); });
-function done() { console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }
+// qa/smoke/run.js only shows the last line, so the names of failed checks go on it too
+function done() { console.log(`${pass} passed, ${fail} failed` + (failed.length ? ' — ' + failed.map(m => String(m).slice(0, 80)).join(' | ') : '')); process.exit(fail ? 1 : 0); }
