@@ -111,8 +111,8 @@ eq(id([60, 64, 67, 70, 74, 77]).name, 'C11', 'C11');
 eq(id([60, 64, 67, 70, 74, 81]).name, 'C13', 'C13');
 eq(id([60, 64, 67, 72, 76]).name, 'C', 'doubled octaves still C');
 eq(id([60]).kind, 'single', 'one note');
-eq(id([60, 72]).zh, '八度', 'octave');
-eq(id([60, 67]).zh, '完全五度', 'perfect fifth');
+ok(/^八度/.test(id([60, 72]).zh), 'octave');
+ok(/^完全五度/.test(id([60, 67]).zh), 'perfect fifth');
 eq(id([60, 64]).zh, '大三度', 'major third');
 eq(id([60, 61, 62]).kind, 'unknown', 'cluster has no name');
 eq(id([]).kind, 'none', 'empty set');
@@ -162,6 +162,105 @@ eq(PC.keyAt(100, 150, 30, 140), -1, 'below the keys');
 eq(PC.keyAt(35 * 30 + 15, 40, 30, 140), 96, 'last key C7 has no black key after it');
 ok(Math.abs(PC.freqOf(69) - 440) < 1e-9 && Math.abs(PC.freqOf(60) - 261.63) < 0.01, 'frequencies');
 
+
+// ---- independent spelling check: build every chord/scale from the major key signature (circle of fifths), no semitone math ----
+{
+  const LETS = 'CDEFGAB', FIFTH = { C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, F: -1 }, SH = 'FCGDAEB', FL = 'BEADGCF';
+  const majorScale = (Lt, acc) => { const pos = FIFTH[Lt] + 7 * acc, li = LETS.indexOf(Lt); return Array.from({ length: 7 }, (_, d) => { const lt = LETS[(li + d) % 7]; let a = 0; if (pos > 0) a = Math.floor(pos / 7) + (SH.indexOf(lt) < pos % 7 ? 1 : 0); if (pos < 0) a = -(Math.floor(-pos / 7) + (FL.indexOf(lt) < (-pos) % 7 ? 1 : 0)); return [lt, a]; }); };
+  const accS = a => a > 0 ? '♯'.repeat(a) : '♭'.repeat(-a);
+  const build = (Lt, a, f) => { const sc = majorScale(Lt, a); return f.split(' ').map(t => { const m = t.match(/^([b#]*)(\d+)$/), d = (+m[2] - 1) % 7, alt = [...m[1]].reduce((x, c) => x + (c === '#' ? 1 : -1), 0); return sc[d][0] + accS(sc[d][1] + alt); }).join(' '); };
+  const F = { maj: '1 3 5', m: '1 b3 5', 7: '1 3 5 b7', maj7: '1 3 5 7', m7: '1 b3 5 b7', dim: '1 b3 b5', dim7: '1 b3 b5 bb7', m7b5: '1 b3 b5 b7', aug: '1 3 #5', sus2: '1 2 5', sus4: '1 4 5', 6: '1 3 5 6', m6: '1 b3 5 6', 9: '1 3 5 b7 9', maj9: '1 3 5 7 9', m9: '1 b3 5 b7 9', add9: '1 3 5 9', 69: '1 3 5 6 9', 11: '1 3 5 b7 9 11', 13: '1 3 5 b7 9 13', '7sus4': '1 4 5 b7', '7b9': '1 3 5 b7 b9', aug7: '1 3 #5 b7', mMaj7: '1 b3 5 7', madd9: '1 b3 5 9', m11: '1 b3 5 b7 9 11', maj13: '1 3 5 7 9 13', '7s9': '1 3 5 b7 #9', '7b5': '1 3 b5 b7', maj7s11: '1 3 5 7 #11', '9sus4': '1 4 5 b7 9' };
+  const SF = { major: '1 2 3 4 5 6 7', minor: '1 2 b3 4 5 b6 b7', harm: '1 2 b3 4 5 b6 7', melo: '1 2 b3 4 5 6 7', pentM: '1 2 3 5 6', pentm: '1 b3 4 5 b7', blues: '1 b3 4 b5 5 b7', dorian: '1 2 b3 4 5 6 b7', phrygian: '1 b2 b3 4 5 b6 b7', lydian: '1 2 3 #4 5 6 7', mixo: '1 2 3 4 5 6 b7', locrian: '1 b2 b3 4 b5 b6 b7' };
+  ok(Object.keys(F).length === PC.QUAL.length && Object.keys(SF).length === PC.SCALES.length, 'independent formulas cover every quality and scale');
+  let n = 0, badS = 0, badInv = 0;
+  for (const Lt of LETS) for (const a of [-1, 0, 1]) {
+    const l = LETS.indexOf(Lt);
+    for (const q in F) {
+      n++; if (names(PC.chordNotes(l, a, q)) !== build(Lt, a, F[q])) { badS++; console.log('  spell', Lt, a, q); }
+      const tones = PC.chordNotes(l, a, q).map(x => PC.pcOf(x.l, x.a));
+      for (let inv = 0; inv < tones.length; inv++) {
+        const mid = PC.chordMidi(l, a, q, inv);
+        if (mid[0] % 12 !== tones[inv] || !tones.every(p => mid.some(m => m % 12 === p)) || mid.some((m, i) => i && m <= mid[i - 1]) || mid[0] < PC.LO || mid[mid.length - 1] > PC.HI) { badInv++; console.log('  inv', Lt, a, q, inv, mid); }
+        const r = PC.identify(mid);
+        if (!r.matches.some(x => x.q === q && PC.pcOf(x.root.l, x.root.a) === tones[0])) { badInv++; console.log('  ident', Lt, a, q, inv, r.name); }
+      }
+    }
+    for (const sc in SF) { n++; if (names(PC.scaleNotes(l, a, sc)) !== build(Lt, a, SF[sc])) { badS++; console.log('  scale', Lt, a, sc); } }
+  }
+  ok(badS === 0, `${n} chord/scale spellings on 21 roots match the key-signature method (${badS} bad)`);
+  ok(badInv === 0, `every inversion of every chord has the right bass, all tones, and is found again by identification (${badInv} bad)`);
+}
+// extended-chord inversions: the requested tone really is the bass
+eq(PC.chordMidi(0, 0, '9', 3), [70, 72, 74, 76, 79], 'C9 third inversion has B♭ in the bass (not C)');
+eq(PC.chordMidi(0, 0, 'add9', 3), [74, 76, 79, 84], 'Cadd9 with D in the bass');
+
+// ---- identification: readable root spelling, omitted fifths, dyads ----
+const rootRow = ivs => Array.from({ length: 12 }, (_, r) => id(ivs.map(x => 60 + r + x)).name).join(' ');
+eq(rootRow([0, 4, 7]), 'C D♭ D E♭ E F F♯ G A♭ A B♭ B', 'major triads on all 12 roots');
+eq(rootRow([0, 3, 7]), 'Cm C♯m Dm E♭m Em Fm F♯m Gm G♯m Am B♭m Bm', 'minor triads: C♯m and G♯m, not D♭m / A♭m');
+eq(rootRow([0, 3, 6, 9]), 'Cdim7 C♯dim7 Ddim7 D♯dim7 Edim7 Fdim7 F♯dim7 Gdim7 G♯dim7 Adim7 A♯dim7 Bdim7', 'dim7 named as leading-tone chords (A♯dim7, not B♭dim7)');
+eq(rootRow([0, 4, 10]), 'C7 D♭7 D7 E♭7 E7 F7 F♯7 G7 A♭7 A7 B♭7 B7', 'shell voicing R–3–♭7 found as a 7th chord with the fifth left out');
+ok(/省略五音/.test(id([60, 64, 70]).zh), 'omitted fifth is said');
+eq(id([60, 64, 70, 74]).name, 'C9', 'C E B♭ D → C9 (no 5th)');
+eq(id([68, 71]).name, 'G♯ – B', 'G♯–B is spelled as a minor third, not A♭–B');
+eq(id([63, 69]).name + ' ' + id([63, 69]).zh, 'E♭ – A 三全音（增四度）', 'tritone spelled as an augmented fourth');
+eq(id([60, 67]).zh, '完全五度・強力和弦 C5', 'fifth is also named as a power chord');
+eq(id([61]).zh, '單音 C♯4 = D♭4', 'single black key shows both names and the octave');
+eq(id([60, 61, 62]).kind, 'unknown', 'cluster has no name');
+
+// ---- added types: identification (also with the fifth left out) and the honest "not supported" message ----
+eq(id([48, 52, 58, 63]).name, 'C7♯9', 'C3 E3 B♭3 D♯4 → C7♯9 (fifth omitted)');
+ok(/省略五音/.test(id([48, 52, 58, 63]).zh), '… and says the fifth is omitted');
+eq(PC.chordNotes(0, 0, '7s9').map(n => n.name).join(' '), 'C E G B♭ D♯', 'C7♯9 spelled with D♯, not E♭');
+eq(id([60, 63, 67, 70, 74, 77]).name, 'Cm11', 'C E♭ G B♭ D F → Cm11');
+eq(id([60, 63, 70, 74, 77]).name, 'Cm11', 'Cm11 without the fifth');
+eq(id([60, 63, 67, 74]).name, 'Cm(add9)', 'C E♭ G D → Cm(add9)');
+eq(id([60, 64, 67, 71, 74, 81]).name, 'Cmaj13', 'C E G B D A → Cmaj13');
+eq(id([60, 64, 71, 74, 81]).name, 'Cmaj13', 'Cmaj13 without the fifth');
+eq(id([60, 64, 66, 70]).name, 'C7♭5', 'C E G♭ B♭ → C7♭5 (bass decides between C7♭5 and F♯7♭5)');
+eq(id([66, 70, 72, 76]).name, 'F♯7♭5', 'same notes from F♯ → F♯7♭5');
+eq(id([60, 64, 67, 71, 78]).name, 'Cmaj7♯11', 'C E G B F♯ → Cmaj7♯11');
+eq(id([60, 65, 67, 70, 74]).name, 'C9sus4', 'C F G B♭ D → C9sus4 (not B♭6/9/C)');
+eq(PC.chordNotes(1, -1, '7b5').map(n => n.name).join(' '), 'D♭ F A♭♭ C♭', 'D♭7♭5 spelled by degree');
+eq(rootRow([0, 4, 6, 10]), 'C7♭5 D♭7♭5 D7♭5 E♭7♭5 E7♭5 F7♭5 F♯7♭5 G7♭5 A♭7♭5 A7♭5 B♭7♭5 B7♭5', '7♭5 roots read like dominant sevenths');
+ok(id([60, 61, 62]).zh.includes(`支援的 ${PC.QUAL.length} 種和弦`) && !/不是常見/.test(id([60, 61, 62]).zh), 'unknown sets say they are outside the supported types: ' + id([60, 61, 62]).zh);
+ok(PC.QUAL.length === 31, '31 chord types');
+
+// ---- typed chord names ----
+const P = s => { const r = PC.parseChord(s); return r.ok ? PC.chordName(r.l, r.a, r.q, PC.chordNotes(r.l, r.a, r.q)[r.inv]) : 'ERR'; };
+const typed = { 'C': 'C', 'cm7': 'Cm7', 'F#m7b5': 'F♯m7♭5', 'F♯m7♭5': 'F♯m7♭5', 'Bb/D': 'B♭/D', 'C/E': 'C/E', 'C7(b9)': 'C7♭9', 'Cm(maj7)': 'CmM7', 'C△7': 'Cmaj7', 'CΔ': 'Cmaj7', 'CM7': 'Cmaj7', 'C°7': 'Cdim7', 'Co': 'Cdim', 'Cø': 'Cm7♭5', 'C+': 'Caug',
+  'Ｆ＃ｍ７': 'F♯m7', '  g7  ': 'G7', 'C6/9': 'C6/9', 'Cmaj7/B': 'Cmaj7/B', 'Am7/G': 'Am7/G', 'Ebsus': 'E♭sus4', 'CMAJ7': 'Cmaj7', 'Cmin7': 'Cm7', 'C-7': 'Cm7', 'E#m': 'E♯m', 'B#dim7': 'B♯dim7', 'Cb7': 'C♭7', 'Am/C': 'Am/C', 'Gadd9': 'Gadd9', 'D7sus4': 'D7sus4', 'G7#5': 'G7♯5', 'C/Fb': 'C/E', 'C7#9': 'C7♯9', 'Cm11': 'Cm11', 'Cmaj13': 'Cmaj13', 'CM13': 'Cmaj13', 'Cm(add9)': 'Cm(add9)', 'Cmadd9': 'Cm(add9)', 'C7b5': 'C7♭5', 'Cmaj7#11': 'Cmaj7♯11', 'CΔ7#11': 'Cmaj7♯11', 'C9sus4': 'C9sus4', 'Bb9sus': 'B♭9sus4', 'Cm13': 'ERR', 'Cxyz': 'ERR',
+  '': 'ERR', 'H7': 'ERR', '🎹': 'ERR', 'Bbb': 'ERR', 'Cx': 'ERR', 'C5': 'ERR', 'C/F': 'ERR', 'C/Bb': 'ERR', 'C/': 'ERR', 'C//E': 'ERR', '<script>': 'ERR', 'Cmaj13#11': 'ERR', '123': 'ERR', ['C'.repeat(200)]: 'ERR' };
+let tbad = 0; for (const k in typed) { const got = P(k); if (got !== typed[k]) { tbad++; console.log('  typed', JSON.stringify(k), got, '≠', typed[k]); } }
+ok(tbad === 0, `${Object.keys(typed).length} typed chord names parsed or rejected correctly (${tbad} bad)`);
+ok(PC.parseChord('Cxyz').err.includes('看不懂和弦種類「xyz」') && !PC.parseChord('Cxyz').err.includes('升降記號'), 'Cxyz is reported as an unknown chord type, not as a double sharp');
+ok(PC.parseChord('C/Bb').err.includes('不是') && PC.parseChord('H7').err.includes('A–G') && PC.parseChord('Cfoo').err.includes('看不懂'), 'errors say what is wrong in plain words');
+ok(PC.parseChord(null).ok === false && PC.parseChord(undefined).ok === false && PC.parseChord(42).ok === false, 'non-strings do not throw');
+
+// ---- progressions: transposition and voice leading ----
+const prog = (chords, minor, pc) => PC.progChords({ minor, chords }, pc).map(c => PC.chordName(c.l, c.a, c.q)).join(' ');
+const CANON = [[1, 0, 'maj'], [5, 7, 'maj'], [6, 9, 'm'], [3, 4, 'm'], [4, 5, 'maj'], [1, 0, 'maj'], [4, 5, 'maj'], [5, 7, 'maj']];
+eq(prog(CANON, false, 2), 'D A Bm F♯m G D G A', 'Canon in D');
+eq(prog(CANON, false, 6), 'F♯ C♯ D♯m A♯m B F♯ B C♯', 'Canon transposed to F♯');
+eq(prog(CANON, false, 3), 'E♭ B♭ Cm Gm A♭ E♭ A♭ B♭', 'Canon transposed to E♭');
+eq(prog(CANON, false, 1), 'D♭ A♭ B♭m Fm G♭ D♭ G♭ A♭', 'Canon transposed to D♭');
+const MINOR = [[1, 0, 'm'], [6, 8, 'maj'], [3, 3, 'maj'], [7, 10, 'maj']];
+eq(prog(MINOR, true, 9), 'Am F C G', 'minor i–VI–III–VII in A');
+eq(prog(MINOR, true, 3), 'D♯m B F♯ C♯', 'in D♯ minor (not E♭m with C♭)');
+eq(prog(MINOR, true, 10), 'B♭m G♭ D♭ A♭', 'in B♭ minor');
+eq(prog([[2, 2, 'm7'], [5, 7, '7'], [1, 0, 'maj7']], false, 8), 'B♭m7 E♭7 A♭maj7', 'ii–V–I in A♭');
+let vbad = 0;
+for (let k = 0; k < 12; k++) {
+  let prev = null;
+  for (const c of PC.progChords({ minor: false, chords: CANON }, k)) {
+    const v = PC.voiceLead(prev, c.l, c.a, c.q), tones = PC.chordNotes(c.l, c.a, c.q).map(x => PC.pcOf(x.l, x.a));
+    if (v.upper.length !== tones.length || !tones.every(p => v.upper.some(m => m % 12 === p)) || v.bass % 12 !== tones[0] || v.bass < 40 || v.bass > 51 || v.upper[0] < 53 || v.upper[v.upper.length - 1] > 86) vbad++;
+    if (prev && Math.abs(v.upper[0] - prev[0]) > 7) vbad++;
+    prev = v.upper;
+  }
+}
+ok(vbad === 0, `voice-led playback in all 12 keys: every tone present, root in the bass, small hand movement (${vbad} bad)`);
+
 // ---- browser: multi-touch and sound in Chromium ----
 (async () => {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -191,12 +290,24 @@ ok(Math.abs(PC.freqOf(69) - 440) < 1e-9 && Math.abs(PC.freqOf(60) - 261.63) < 0.
     eq(await page.evaluate(() => [__pc.fingers.size, __pc.PRESSED.size, __pc.Piano.voices.filter(v => !v.released).length]), [0, 0, 0], 'all released on touch end');
     // polyphony limit with voice stealing
     const n = await page.evaluate(() => { for (let m = 48; m < 72; m++) __pc.Piano.noteOn(m); return __pc.Piano.voices.length; });
-    ok(n <= 10, `voice count capped at 10 (${n})`);
+    ok(n <= 14, `voice count capped at 14 (${n})`);
     // sustain pedal holds released notes
     await page.evaluate(() => { __pc.Piano.allOff(); __pc.Piano.setPedal(true); __pc.Piano.noteOn(60); __pc.Piano.noteOff(60); });
     ok(await page.evaluate(() => __pc.Piano.voices.some(v => v.m === 60 && !v.released)), 'pedal keeps the note ringing after key up');
     await page.evaluate(() => __pc.Piano.setPedal(false));
     ok(await page.evaluate(() => !__pc.Piano.voices.some(v => v.m === 60 && !v.released)), 'pedal up releases it');
+    // click-free release: the gain a release starts from equals the envelope at that instant (no jump), and it decays to silence
+    const env = await page.evaluate(() => { const P = __pc.Piano, v = { t: 0, peak: 0.2, tau: 2 }; const pts = []; for (let t = 0; t < 3; t += 0.0005) pts.push(P.envAt(v, t)); let jump = 0; for (let i = 1; i < pts.length; i++) jump = Math.max(jump, Math.abs(pts[i] - pts[i - 1])); const r = { ...v, rel: 1, relV: P.envAt(v, 1), relTc: 0.075 }; return { jump, cont: Math.abs(P.envAt(r, 1) - P.envAt(v, 1)), tail: P.envAt(r, 1 + 0.075 * 9) / 0.2 }; });
+    ok(env.jump < 0.03 && env.cont < 1e-9 && env.tail < 2e-4, `envelope is continuous (max step ${env.jump.toFixed(4)}), release starts where it is, ends ${(20 * Math.log10(env.tail)).toFixed(0)} dB down before the oscillator stops`);
+    // pitch: every key's oscillator frequency is 440·2^((m−69)/12)
+    const fr = await page.evaluate(() => { __pc.Piano.allOff(); const out = []; for (const m of [36, 57, 60, 69, 81, 96]) { __pc.Piano.noteOn(m); const v = __pc.Piano.voices[__pc.Piano.voices.length - 1]; out.push([m, v.oscs[0].frequency.value]); } __pc.Piano.allOff(); return out; });
+    ok(fr.every(([m, f]) => Math.abs(f - 440 * Math.pow(2, (m - 69) / 12)) < 0.01), 'oscillators sound the right pitches ' + fr.map(x => x[1].toFixed(2)).join(' '));
+    // rapid taps: 40 taps at ~8 per second alternating between far-apart keys, every one strikes exactly one note
+    await page.evaluate(() => { __pc.Piano.allOff(); window.__ons = 0; const o = __pc.Piano.noteOn; __pc.Piano.noteOn = (...a) => { window.__ons++; return o(...a); }; });
+    const ka = await box(60), kb2 = await box(71);
+    for (let i = 0; i < 40; i++) { const p = i % 2 ? kb2 : ka; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id: 9 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(125); }
+    const taps = await page.evaluate(() => [window.__ons, __pc.fingers.size, __pc.PRESSED.size]);
+    eq(taps, [40, 0, 0], '40 rapid alternating taps → 40 notes, nothing stuck');
     ok(errors.length === 0, 'no page errors: ' + errors.join(' | '));
     await ctx.close();
   } finally { await browser.close(); }

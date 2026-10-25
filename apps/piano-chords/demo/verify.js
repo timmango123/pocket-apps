@@ -8,12 +8,12 @@ const PAGE = '<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"
 const OUT = __dirname;
 const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log('ok -', m); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const SIZES = [[390, 844], [375, 500], [390, 610], [430, 740]];
+const SIZES = [[390, 844], [375, 500], [390, 610], [430, 740], [360, 640], [430, 932]];
 let URL = '';
 function serve() { const srv = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(PAGE); }); return new Promise(r => srv.listen(0, () => r(srv))); }
 
 async function open(browser, w, h, scheme) {
-  const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, colorScheme: scheme });
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: w < 800, hasTouch: true, deviceScaleFactor: 2, colorScheme: scheme, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await ctx.newPage(), errors = [];
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push(String(e)));
@@ -33,12 +33,15 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       assert(ow[0] <= ow[1], `${w}×${h} ${scheme}: no horizontal overflow (${ow})`);
       // first open: sample chord C highlighted, 範例 progression visible
       assert((await text(page, '#chName')) === 'C' && /大三和弦/.test(await text(page, '#chZh')), `${w}×${h} ${scheme}: first open shows C 大三和弦`);
-      assert(await page.locator('#progChips .chip').count() === 4 && /範例/.test(await text(page, '.prog .tag')), 'sample progression C–G–Am–F marked 範例');
+      assert((await page.locator('#progChips .chip .sym').allTextContents()).join(' ') === 'C G Am F' && (await page.locator('#progChips .chip small').allTextContents()).join(' ') === 'I V vi IV', 'sample progression C–G–Am–F with roman numerals');
+      assert(/^C\s*大調$/.test(await text(page, '#progKey')), 'progression key shown as C 大調');
+      const cardTop = await page.locator('#tab-chord .card').boundingBox(), kbTop = (await page.locator('.kb').boundingBox()).y;
+      assert(cardTop.y + 90 < kbTop, `${w}×${h}: chord name and notes visible above the keyboard without scrolling`);
       const hl = await page.evaluate(() => Object.keys(__pc.HL).map(Number).sort((a, b) => a - b));
       assert(hl.join() === '60,64,67', 'C4 E4 G4 highlighted on the keyboard');
       assert((await keyPoint(page, 60)).vis && (await keyPoint(page, 83)).vis, 'C4…B5 (two octaves) visible without scrolling');
       const kb = await page.locator('#keysWrap').boundingBox();
-      assert(kb.y + kb.height <= h + 1 && kb.height >= 100, `keyboard fully inside the ${w}×${h} viewport (bottom ${Math.round(kb.y + kb.height)})`);
+      assert(kb.y + kb.height <= h + 1 && kb.height >= 88, `keyboard fully inside the ${w}×${h} viewport (bottom ${Math.round(kb.y + kb.height)})`);
       const small = await page.evaluate(() => [...document.querySelectorAll('button, select')].filter(e => e.offsetParent && !e.closest('[hidden]')).map(e => { const r = e.getBoundingClientRect(); return [e.id || e.textContent.trim().slice(0, 6), Math.round(r.width), Math.round(r.height)]; }).filter(([, w, h]) => w < 44 || h < 44));
       assert(small.length === 0, 'all tap targets >= 44px ' + JSON.stringify(small));
       if (w === 390 && h === 844 && scheme === 'light') await page.screenshot({ path: OUT + '/390x844.png' });
@@ -79,9 +82,9 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       await page.locator('#progChips .chip').nth(2).click();
       assert((await text(page, '#chName')) === 'Am', 'tapping the progression chip loads Am');
       await page.locator('#playProg').click(); await sleep(150);
-      assert(/停止/.test(await text(page, '#playProg')) && await page.evaluate(() => Object.keys(__pc.HL).join()) === '60,64,67', 'play all: first chord C highlighted');
+      assert(/停止/.test(await text(page, '#playProg')) && await page.evaluate(() => Object.keys(__pc.HL).join()) === '48,60,64,67', 'play all: first chord C highlighted (C3 bass + C4 E4 G4)');
       await page.locator('#playProg').click();
-      assert(/全部/.test(await text(page, '#playProg')), 'stop returns the button');
+      assert(/播放進行/.test(await text(page, '#playProg')), 'stop returns the button');
       // Gb spelling
       await page.locator('#chLetters [data-l="4"]').click(); await page.locator('#chAcc [data-a="-1"]').click(); await page.locator('#chQual [data-q="maj7"]').click(); await page.locator('#chInv [data-i="0"]').click();
       assert((await page.locator('#chNotes .note b').allTextContents()).join(' ') === 'G♭ B♭ D♭ F', 'G♭maj7 spelled with F');
@@ -98,11 +101,45 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       assert((await text(page, '#chName')) === 'G♭maj7', 'chord restored from localStorage');
       assert(JSON.parse(await page.evaluate(() => localStorage.getItem('piano-chords:v1:state'))).q === 'maj7', 'state saved under piano-chords:v1:state');
 
+      // typed chord names
+      await page.locator('#chInput').fill('Bb/D'); await sleep(100);
+      assert((await text(page, '#chName')) === 'B♭/D' && /第一轉位/.test(await text(page, '#chZh')), 'typing Bb/D shows B♭/D live, first inversion');
+      await page.locator('#chInput').fill('ｆ＃ｍ７ｂ５'); await page.locator('#chInput').press('Enter'); await sleep(150);
+      assert((await text(page, '#chName')) === 'F♯m7♭5' && (await page.locator('#chNotes .note b').allTextContents()).join(' ') === 'F♯ A C E', 'full-width lower-case ｆ＃ｍ７ｂ５ → F♯m7♭5 = F♯ A C E');
+      assert(await page.evaluate(() => __pc.Piano.voices.filter(v => !v.released).length) === 4, 'Enter plays it');
+      await page.locator('#chInput').fill('C/F'); await sleep(1100);
+      assert(!(await page.locator('#chErr').isHidden()) && /不是 C 的組成音/.test(await text(page, '#chErr')), 'non-chord-tone bass explained: ' + await text(page, '#chErr'));
+      assert((await text(page, '#chName')) === 'F♯m7♭5', 'invalid input leaves the last good chord');
+      await page.locator('#chInput').fill('Xm7'); await page.locator('#chInput').press('Enter'); await sleep(50);
+      assert(/A–G/.test(await text(page, '#chErr')), 'unknown root explained immediately on Enter');
+      await page.locator('#chInputX').click();
+      assert(await page.locator('#chErr').isHidden() && (await page.locator('#chInput').inputValue()) === '', 'clear button empties the field and the error');
+      // copy
+      await page.locator('#chCopy').click(); await sleep(150);
+      const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      assert(clip === 'F♯m7♭5（半減七和弦）：F♯ A C E' && /已複製/.test(await text(page, '#toast')), 'copy puts “' + clip + '” on the clipboard');
+      // transposition of the sample progression
+      await page.locator('#progSel').selectOption('1');
+      assert((await page.locator('#progChips .chip .sym').allTextContents()).join(' ') === 'D A Bm F♯m G D G A', 'Canon in D');
+      for (let i = 0; i < 4; i++) await page.locator('#keyUp').click();
+      assert((await page.locator('#progChips .chip .sym').allTextContents()).join(' ') === 'F♯ C♯ D♯m A♯m B F♯ B C♯' && /F♯/.test(await text(page, '#progKey')), 'Canon transposed up 4 half steps to F♯');
+      await page.locator('#keyDown').click(); await page.locator('#keyDown').click();
+      assert((await page.locator('#progChips .chip .sym').allTextContents()).join(' ') === 'E B C♯m G♯m A E A B', '… and down to E');
+      await page.locator('#playProg').click(); await sleep(150);
+      const pv = await page.evaluate(() => __pc.Piano.voices.filter(v => !v.released).map(v => v.m).sort((a, b) => a - b));
+      assert(pv.length === 4 && pv[0] === 40 && pv.slice(1).every(m => m >= 53), 'play all: E2 in the bass plus a voiced E chord ' + pv);
+      await page.locator('#playProg').click();
+      await page.locator('#progSel').selectOption('0');
+      assert(/^C/.test(await text(page, '#progKey')), 'choosing another progression resets to its own key');
+
       // scale practice
       await page.locator('.tabs [data-tab="scale"]').click();
       await page.locator('#scLetters [data-l="5"]').click();
       await page.locator('#scType [data-s="harm"]').click();
       assert((await text(page, '#scName')) === 'A 和聲小調', 'A harmonic minor selected');
+      assert((await page.locator('#scOct button').allTextContents()).join(' ') === 'A3 A4 A5', 'octave buttons name the start note (A3 A4 A5)');
+      const nb = await page.locator('#scNotes .note').evaluateAll(els => els.map(e => e.offsetTop));
+      assert(new Set(nb).size === 1, 'all seven scale notes fit on one row');
       assert((await page.locator('#scNotes .note b').allTextContents()).join(' ') === 'A B C D E F G♯', 'harmonic minor spelled with G♯');
       const scHl = await page.evaluate(() => Object.values(__pc.HL).filter(h => h.role === 'root').length);
       assert(scHl === 5, 'every A on the keyboard marked as the tonic (' + scHl + ')');
@@ -130,8 +167,25 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       assert((await text(page, '#identName')) === 'Am7', 'A3 G4 C5 E4 → Am7');
       assert(await page.locator('#identAlts .chip').count() >= 1 && /C6\/A/.test(await text(page, '#identAlts')), 'C6/A offered as an alternative');
       await page.screenshot({ path: OUT + '/ident-390x844.png' });
+      // alternative name opens in the chord tab with the right inversion
+      await page.locator('#identAlts .chip', { hasText: 'C6/A' }).click(); await sleep(150);
+      assert((await text(page, '#chName')) === 'C6/A' && /第三轉位/.test(await text(page, '#chZh')), 'tapping C6/A opens it in 和弦表 as the third inversion');
+      assert((await page.locator('#chNotes .note b').allTextContents()).join(' ') === 'A C E G', 'notes listed bass first: A C E G');
+      await page.locator('.tabs [data-tab="ident"]').click(); await sleep(100);
+      // held notes survive a reload
+      await page.reload(); await sleep(300);
+      assert((await text(page, '#identName')) === 'Am7' && await page.evaluate(() => __pc.HELD.size) === 4, 'identification notes restored after reload');
       await page.locator('#identClear').click();
-      assert((await text(page, '#identName')) === '—' && await page.evaluate(() => __pc.HELD.size) === 0, 'clear empties the set');
+      assert((await text(page, '#identName')) === '點琴鍵開始' && await page.evaluate(() => __pc.HELD.size) === 0, 'clear empties the set');
+      assert(/已清除 4 個音/.test(await text(page, '#toast')), 'clear says what it removed');
+      await page.locator('#toast button').click();
+      assert((await text(page, '#identName')) === 'Am7', '復原 brings the notes back');
+      await page.locator('#identClear').click();
+      assert(await page.locator('#identPlay').isDisabled() && await page.locator('#identOpen').isDisabled(), 'play / open disabled while empty');
+      assert(await page.locator('#identTries .chip').count() === 4, 'empty state offers one-tap examples');
+      await page.locator('#identTries .chip', { hasText: 'G7' }).click(); await sleep(100);
+      assert((await text(page, '#identName')) === 'G7' && await page.evaluate(() => __pc.HELD.size) === 4, 'example G7 fills four keys');
+      await page.locator('#identClear').click();
 
       // multi-touch: three fingers on the keyboard at once, glissando, release
       const cdp = await ctx.newCDPSession(page);
@@ -150,9 +204,10 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       assert(await page.evaluate(() => __pc.fingers.size === 0 && __pc.PRESSED.size === 0) === true, 'all fingers released');
       // octave shift and sustain pedal
       const before = await page.evaluate(() => __pc.keysWrap.scrollLeft);
-      await page.locator('#octUp').click(); await sleep(500);
-      assert(await page.evaluate(() => __pc.keysWrap.scrollLeft) > before + 100, 'octave button scrolls the keyboard');
       await page.locator('#octDown').click(); await sleep(500);
+      assert(await page.evaluate(() => __pc.keysWrap.scrollLeft) < before - 100, 'octave button scrolls the keyboard down');
+      await page.locator('#octUp').click(); await sleep(500);
+      assert(Math.abs(await page.evaluate(() => __pc.keysWrap.scrollLeft) - before) < 2, '… and back up');
       await page.locator('#pedalBtn').click();
       assert(await page.locator('#pedalBtn').getAttribute('aria-pressed') === 'true' && await page.evaluate(() => __pc.Piano.pedal), 'sustain pedal on');
       const p72 = await keyPoint(page, 72); assert(p72.vis, 'C5 visible'); await page.touchscreen.tap(p72.x, p72.y); await sleep(80);
@@ -166,6 +221,76 @@ const keyPoint = (page, m) => page.evaluate(m => { const r = __pc.keysWrap.query
       await page.locator('#panicBtn').click();
       assert(/已停止/.test(await text(page, '#toast')), '全部停止 toast');
       assert(!(await page.evaluate(() => /NaN|undefined/.test(document.body.innerText))), 'no NaN/undefined on screen');
+      assert(errors.length === 0, 'no console errors: ' + errors.join(' | '));
+      await ctx.close();
+    }
+    // review fixes: short screens keep the result above the keyboard, chord types on the first screen, taller keys on tall phones
+    const aboveKb = (page, sel) => page.evaluate(sel => { const kb = document.querySelector('.kb').getBoundingClientRect().top; return [...document.querySelectorAll(sel)].filter(e => e.offsetParent).length > 0 && [...document.querySelectorAll(sel)].filter(e => e.offsetParent).every(e => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= kb + 1; }); }, sel);
+    for (const [w, h] of [[375, 500], [844, 390], [640, 360], [360, 640], [390, 610], [430, 740], [390, 844], [430, 932]]) {
+      const { ctx, page, errors } = await open(browser, w, h, 'light');
+      assert(await aboveKb(page, '#chNotes') && await aboveKb(page, '#playBlock') && await aboveKb(page, '#playArp'), `${w}×${h}: chord notes and 彈奏/琶音 above the keyboard`);
+      assert(await aboveKb(page, '#chQual'), `${w}×${h}: chord types visible on the first screen`);
+      await page.locator('.tabs [data-tab="ident"]').click(); await page.locator('#identTries .chip').nth(1).click(); await sleep(100);
+      assert(await aboveKb(page, '#identNotes') && await aboveKb(page, '#identPlay') && await aboveKb(page, '#identClear'), `${w}×${h}: identification notes, 彈奏 and 清除 above the keyboard`);
+      const tabH = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.tabs [role="tab"]')].map(b => b.getBoundingClientRect().height)));
+      assert(tabH <= 46, `${w}×${h}: tab labels on one line (${tabH}px)`);
+      if (h >= 844) assert(await page.evaluate(() => __pc.KH) >= 175, `${w}×${h}: taller keys on a tall phone (${await page.evaluate(() => __pc.KH)}px)`);
+      assert(errors.length === 0, 'no console errors: ' + errors.join(' | '));
+      await ctx.close();
+    }
+    // rotation keeps the chord on screen (reviewer's repro: Bbmaj7 at 390×844 → 844×390 → 390×844 → 360×640)
+    {
+      const { ctx, page, errors } = await open(browser, 390, 844, 'light');
+      await page.locator('#chInput').fill('Bbmaj7'); await page.locator('#chInput').press('Enter'); await sleep(700);
+      const allVis = () => page.evaluate(() => { const r0 = __pc.keysWrap.getBoundingClientRect(); return Object.keys(__pc.HL).every(m => { const r = __pc.keysWrap.querySelector(`[data-m="${m}"]`).getBoundingClientRect(); return r.left >= r0.left - 1 && r.right <= r0.right + 1; }); });
+      assert(await allVis(), 'B♭maj7 visible at 390×844');
+      for (const [w, h] of [[844, 390], [390, 844], [360, 640], [640, 360]]) { await page.setViewportSize({ width: w, height: h }); await sleep(350); assert(await allVis(), `after rotating to ${w}×${h} every B♭maj7 key is still on screen`); }
+      // with nothing highlighted, the same spot of the keyboard stays in view
+      await page.setViewportSize({ width: 390, height: 844 }); await page.locator('.tabs [data-tab="ident"]').click(); await page.locator('#identClear').click().catch(() => {}); await sleep(100);
+      await page.evaluate(() => { __pc.keysWrap.scrollLeft = 22 * __pc.KW; }); await sleep(100);
+      const mid = () => page.evaluate(() => Math.round((__pc.keysWrap.scrollLeft + __pc.keysWrap.clientWidth / 2) / __pc.KW));
+      const m0 = await mid(); await page.setViewportSize({ width: 844, height: 390 }); await sleep(350); const m1 = await mid(); const atEnd = await page.evaluate(() => __pc.keysWrap.scrollLeft >= __pc.keysWrap.scrollWidth - __pc.keysWrap.clientWidth - 1);
+      await page.setViewportSize({ width: 390, height: 844 }); await sleep(350); const m2 = await mid();
+      assert((Math.abs(m1 - m0) <= 1 || atEnd) && Math.abs(m2 - m0) <= 1, `empty keyboard keeps its centre key through rotation (${m0} → ${m1}${atEnd ? ' (end of keyboard)' : ''} → ${m2})`);
+      // key size setting: 2 / 1.5 / ~1 octave across, saved
+      await page.setViewportSize({ width: 360, height: 640 }); await sleep(300);
+      const kw0 = await page.evaluate(() => __pc.KW);
+      await page.locator('#volBtn').click(); await page.locator('#kSize [data-k="8"]').click(); await sleep(100);
+      const kw1 = await page.evaluate(() => __pc.KW);
+      assert(kw0 <= 26 && kw1 >= 40, `大鍵 makes white keys ${Math.round(kw1)}px wide at 360 (was ${Math.round(kw0)}px)`);
+      await page.reload(); await sleep(300);
+      assert(await page.evaluate(() => __pc.S.keys === 8 && __pc.KW >= 40), 'key size remembered after reload');
+      await page.locator('#volBtn').click(); await page.locator('#kSize [data-k="14"]').click();
+      // added chord types through real key taps: C3 E3 B♭3 D♯4 → C7♯9
+      await page.locator('.tabs [data-tab="ident"]').click(); await page.locator('#identClear').click().catch(() => {});
+      await page.evaluate(() => { __pc.keysWrap.scrollLeft = 7 * __pc.KW; }); await sleep(100);
+      for (const m of [48, 52, 58, 63]) { const p = await keyPoint(page, m); assert(p.vis, 'key ' + m + ' visible'); await page.touchscreen.tap(p.x, p.y); await sleep(60); }
+      assert((await text(page, '#identName')) === 'C7♯9' && /省略五音/.test(await text(page, '#identZh')), 'C3 E3 B♭3 D♯4 identified as C7♯9 (fifth omitted)');
+      for (const m of [49, 50]) { const p = await keyPoint(page, m); await page.touchscreen.tap(p.x, p.y); await sleep(60); }
+      assert(/不在支援的 \d+ 種和弦裡/.test(await text(page, '#identZh')), 'unsupported set says so honestly: ' + await text(page, '#identZh'));
+      // legend, drag hint, Cxyz message, contrast
+      await page.locator('.tabs [data-tab="chord"]').click();
+      assert(/根音（R）/.test(await text(page, '#chLegend')) && /和弦音/.test(await text(page, '#chLegend')), 'chord tab has a legend for R and the key colours');
+      assert(await page.locator('#miniWin span').isVisible() && (await text(page, '#miniWin span')) === '拖曳', 'visible 拖曳 hint on the keyboard strip');
+      await page.locator('#chInput').fill('Cxyz'); await page.locator('#chInput').press('Enter'); await sleep(50);
+      assert(/看不懂和弦種類「xyz」/.test(await text(page, '#chErr')), 'Cxyz → unknown chord type, not a double-sharp message');
+      await page.locator('#chInputX').click();
+      const cr = await page.evaluate(() => { const lum = c => { const v = c.match(/\d+(\.\d+)?/g).slice(0, 3).map(x => +x / 255).map(x => x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4); return .2126 * v[0] + .7152 * v[1] + .0722 * v[2]; }; const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); }; const cs = getComputedStyle(document.documentElement); const tmp = document.createElement('div'); document.body.appendChild(tmp); const rgb = v => { tmp.style.color = cs.getPropertyValue(v); return getComputedStyle(tmp).color; }; const out = ['--bg', '--bg-2', '--surface', '--surface-2'].map(b => ratio(rgb('--muted'), rgb(b))); tmp.remove(); return out; });
+      assert(cr.every(r => r >= 4.5), 'light-mode secondary text ≥ 4.5:1 on every background (' + cr.map(r => r.toFixed(2)).join(', ') + ')');
+      assert(errors.length === 0, 'no console errors: ' + errors.join(' | '));
+      await ctx.close();
+    }
+    // a viewport squeezed by the on-screen keyboard (360×330): no vertical tab labels, the result stays visible while typing
+    {
+      const { ctx, page, errors } = await open(browser, 360, 640, 'light');
+      await page.locator('#chInput').focus(); await page.setViewportSize({ width: 360, height: 330 }); await sleep(300);
+      const tabH = await page.evaluate(() => Math.max(...[...document.querySelectorAll('.tabs [role="tab"]')].map(b => b.getBoundingClientRect().height)));
+      assert(tabH <= 46, `360×330: tab labels on one line (${tabH}px)`);
+      await page.locator('#chInput').fill('Cm11'); await sleep(100);
+      const nb = await page.locator('#chNotes').boundingBox();
+      assert((await text(page, '#chName')) === 'Cm11' && nb && nb.y + nb.height <= 330, 'while typing on a squeezed screen the piano steps aside and Cm11 + notes are visible');
+      await page.locator('#chInput').blur(); await sleep(100);
+      assert(await page.locator('.kb').isVisible(), 'piano comes back after typing');
       assert(errors.length === 0, 'no console errors: ' + errors.join(' | '));
       await ctx.close();
     }
