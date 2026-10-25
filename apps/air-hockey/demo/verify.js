@@ -15,7 +15,7 @@ const DELAY = 0.15, FSPD = 2600;
 
 function simMatch(n, seed) {
   const M = core.newMatch(n, { seed }), plan = makeBot(seed * 31 + 7), hist = [];
-  let t = 0, fx = M.m[1].x, fy = M.m[1].y, tgt = { x: fx, y: fy };
+  let t = 0, fx = M.m[1].x, fy = M.m[1].y, tgt = { x: fx, y: fy }, anc = null, stuck = 0;
   while (!M.over && t < 900) {
     const p = M.puck;
     hist.push({ t, px: p.x, py: p.y, pvx: p.vx, pvy: p.vy, on: p.on, freeze: M.freeze, mx: M.m[1].x, my: M.m[1].y, ox: M.m[0].x, oy: M.m[0].y });
@@ -25,17 +25,21 @@ function simMatch(n, seed) {
     if (d <= st) { fx = tgt.x; fy = tgt.y; } else { fx += dx / d * st; fy += dy / d * st; }
     M.m[1].tx = fx; M.m[1].ty = fy;
     core.stepMatch(M, 1 / 60); M.ev.length = 0; t += 1 / 60;
+    // wedge watch: a puck that keeps speed > 40 but does not move for 2 s (it used to get pinned in a corner)
+    const v = Math.hypot(M.puck.vx, M.puck.vy);
+    if (!M.puck.on || M.freeze > 0 || v <= 40 || !anc || Math.hypot(M.puck.x - anc.x, M.puck.y - anc.y) > 1) anc = { x: M.puck.x, y: M.puck.y, t };
+    else if (t - anc.t > 2) { stuck++; anc = null; }
   }
-  return { win: M.winner === 1, score: M.score, t };
+  return { win: M.winner === 1, score: M.score, t, stuck };
 }
 function simulate(levels) {
   let prev = 0, mono = true; const D = [];
   for (let n = 1; n <= 100; n++) { const d = core.difficulty(n); if (d <= prev) mono = false; prev = d; D.push(d); }
   console.log('Difficulty D strictly increasing over 100 levels:', mono, '(D1 =', D[0] + ', D50 =', D[49] + ', D100 =', D[99] + ')');
   for (const n of levels) {
-    let w = 0, tt = 0; const sc = [];
-    for (let g = 0; g < 10; g++) { const r = simMatch(n, 5000 + g * 101 + n); if (r.win) w++; tt += r.t; sc.push(r.score[1] + '-' + r.score[0]); }
-    console.log('SIM level', n, 'D', core.difficulty(n), 'first to', core.targetScore(n), '| bot won', w + '/10', '(' + (w * 10) + '%)', 'avg match', (tt / 10).toFixed(0) + 's |', sc.join(' '));
+    let w = 0, tt = 0, mx = 0, stuck = 0; const sc = [];
+    for (let g = 0; g < 10; g++) { const r = simMatch(n, 5000 + g * 101 + n); if (r.win) w++; tt += r.t; mx = Math.max(mx, r.t); stuck += r.stuck; sc.push(r.score[1] + '-' + r.score[0]); }
+    console.log('SIM level', n, 'D', core.difficulty(n), 'first to', core.targetScore(n), '| bot won', w + '/10', '(' + (w * 10) + '%)', 'avg match', (tt / 10).toFixed(0) + 's, longest', mx.toFixed(0) + 's | wedged pucks', stuck, '|', sc.join(' '));
   }
 }
 
