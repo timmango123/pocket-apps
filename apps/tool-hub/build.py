@@ -47,6 +47,7 @@ TOOLS = [
     ('mirror'            , '鏡子', 'image', '前鏡頭當鏡子，凍結畫面放大看細節，附補光外框。'),
     ('exif-tool'         , 'EXIF 檢視與清除', 'image', '看照片藏了什麼：拍攝時間、相機、GPS 位置一目了然，無損清除中繼資料，全程不上傳。'),
     ('image-compare'     , '圖片比較', 'image', '兩張圖左右滑動比較，並排、疊圖、差異標示，雙指縮放同步，可匯出 GIF 與 PNG，全程不上傳。'),
+    ('screenshot-stitch' , '長截圖拼接', 'image', '多張截圖上下接合，自動找出重疊處並略過重複的狀態列與頂欄，可逐條接縫放大微調，匯出 PNG／JPEG。'),
     ('palette-lab'       , '調色盤工作室', 'design', '由照片取色或主色產生配色，檢查對比度，複製 HEX/RGB/HSL。'),
     ('gradient-maker'    , '漸層產生器', 'design', '視覺化調整線性、放射、錐形漸層，輸出 CSS 或圖片。'),
     ('css-shadow'        , '陰影與圓角產生器', 'design', '拖拉調整 box-shadow、圓角、玻璃擬態效果並複製 CSS。'),
