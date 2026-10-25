@@ -1,5 +1,7 @@
 // Skill-tier bot for atlantis (波塞迪亞). Free-roaming walk; goal = visit the 6 glowing landmarks (POIs).
-// Usage: node bot.js [tier ...] [probes]   -> results.json
+// Usage: node bot.js [tier ...] [probes]   -> results.json   (env: GAME=path/to/index.html, NODRAW=1, RUNS=n, CAP=s, SEED=n)
+// Human tiers (clumsy, casual) only look at the screen: they walk where the in-game gold arrow points
+// (window.__poseidia.guide() is the arrow's waypoint) — no map knowledge. Skilled+ plan with A* on the walk grid.
 // Real headless Chromium (SwiftShader WebGL), mobile 390x844 @2x touch. three.js r128 is served from a local copy of the
 // same npm build because the sandbox proxy blocks cdnjs. Movement = real touch drags: left 45% of screen = floating
 // joystick, right side = look drag. Time is lock-stepped (rAF + performance.now virtualised, 1/60 s frames); hidden pages
@@ -9,16 +11,15 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs');
 const path = require('path');
 const OUT = __dirname;
-const GAME = '/mnt/project-files/apps/atlantis/index.html';
-const THREE = path.join(OUT, 'three.min.js');
+const GAME = process.env.GAME || path.resolve(__dirname, '../../../apps/atlantis/index.html');
 const FR = 1 / 60;
 const CAP_S = +(process.env.CAP || 240);
 
 const POIS = { temple: [0, 22, 11], springs: [-20, -1.5, 9], bridge: [0, 35, 7], walls: [71, 0, 8], market: [null, null, 11], harbor: [0, 172, 10] };
 
 const TIERS = {
-  clumsy:     { react: [650, 200], pos: 40, mistake: 0.15, random: 0.5, plan: 'greedy', run: 0.5, look: 0.2, events: true },
-  casual:     { react: [400, 100], pos: 20, mistake: 0.06, random: 0.15, plan: 'greedy', run: 0.7, look: 0.3 },
+  clumsy:     { react: [650, 200], pos: 40, mistake: 0.15, random: 0.5, plan: 'arrow', run: 0.5, look: 0.2, events: true },
+  casual:     { react: [400, 100], pos: 20, mistake: 0.06, random: 0.15, plan: 'arrow', run: 0.7, look: 0.3 },
   skilled:    { react: [260, 50], pos: 10, mistake: 0.02, random: 0, plan: 'astar', coarse: 6, run: 0.9, look: 0.5 },
   world:      { react: [180, 25], pos: 4, mistake: 0.003, random: 0, plan: 'astar', coarse: 3, run: 1, look: 0.2 },
   superhuman: { react: [16, 0], pos: 0, mistake: 0, random: 0, plan: 'astar', coarse: 1, run: 1, look: 0, tour: true },
@@ -28,6 +29,7 @@ function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79
 function gauss(r) { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
 
 const INIT = `(() => {
+  if (${!!process.env.NODRAW}) for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) if (C) for (const f of ['drawArrays','drawElements','drawArraysInstanced','drawElementsInstanced']) if (C.prototype[f]) C.prototype[f] = function () {};
   let q = new Map(), id = 0, t = 1000;
   window.requestAnimationFrame = cb => { q.set(++id, cb); return id; };
   window.cancelAnimationFrame = i => { q.delete(i); };
@@ -43,17 +45,19 @@ const INIT = `(() => {
 async function newPage(browser) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const html = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(GAME, 'utf8') + '</body></html>';
-  const three = fs.readFileSync(THREE, 'utf8');
-  await ctx.route('**/*', r => { const u = r.request().url(); if (u.startsWith('http://game.test/')) return r.fulfill({ body: html, contentType: 'text/html' }); if (/three(\.min)?\.js$/.test(u)) return r.fulfill({ body: three, contentType: 'application/javascript' }); return r.abort(); });
+  // offline: every request other than the page itself is refused (and counted)
+  const external = [];
+  await ctx.route('**/*', r => { const u = r.request().url(); if (u.startsWith('http://game.test/')) return r.fulfill({ body: html, contentType: 'text/html' }); external.push(u); return r.abort(); });
   await ctx.addInitScript(INIT);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-  page.on('console', m => { if (m.type() === 'error' && !/ERR_FAILED|net::/.test(m.text())) errors.push('console: ' + m.text()); });
+  page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   const cdp = await ctx.newCDPSession(page);
   await page.goto('http://game.test/');
   for (let i = 0; i < 100; i++) { await page.evaluate(() => __vt.step(2)); await new Promise(r => setTimeout(r, 50)); if (await page.evaluate(() => !document.getElementById('start').disabled)) break; }
-  return { ctx, page, cdp, errors };
+  for (let i = 0; i < 400; i++) { if (await page.evaluate(() => !!window.__poseidia && __poseidia.fieldsReady() === 6 && !document.getElementById('start').disabled)) break; await page.evaluate(() => __vt.step(1)); await new Promise(r => setTimeout(r, 50)); }
+  return { ctx, page, cdp, errors, external };
 }
 const touch = (cdp, type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(p => ({ x: p.x, y: p.y, id: p.id, radiusX: 8, radiusY: 8, force: 1 })) });
 
@@ -99,7 +103,7 @@ async function runTier(browser, tierId, T, seed, grid) {
   let joyDown = false, joyPos = null, joyOrigin = null;
   let gameT = 0, frameMs = [], hist = [];
   const log = { tier: tierId, found: [], foundAt: [], stuck: [], fellOut: [], distance: 0, clumsy: [], mistakes: 0 };
-  const read = () => page.evaluate(() => { const m = window.__poseidia; const p = m.player; return { x: p.x, z: p.z, y: p.y, yaw: p.yaw, g: m.groundAt(p.x, p.z), found: m.found(), info: m.info(), hud: document.getElementById('found').textContent }; });
+  const read = () => page.evaluate(() => { const m = window.__poseidia; const p = m.player; return { x: p.x, z: p.z, y: p.y, yaw: p.yaw, g: m.groundAt(p.x, p.z), found: m.found(), info: m.info(), hud: document.getElementById('found').textContent, guide: m.guide() }; });
   const step = async n => { const ms = await page.evaluate(n => __vt.step(n), n); frameMs.push(ms / n); gameT += n * FR; };
   // market position: ring 90 at angle MK (constant read from the game source in main())
   const poi = Object.assign({}, POIS);
@@ -141,7 +145,8 @@ async function runTier(browser, tierId, T, seed, grid) {
 
     // choose target
     const remaining = ids.filter(k => !v.found.includes(k));
-    if (!target || v.found.includes(target)) {
+    if (T.plan === 'arrow' && s.guide) target = s.guide.id;
+    else if (!target || v.found.includes(target)) {
       target = T.tour ? order.find(k => remaining.includes(k)) : remaining.sort((a, b) => Math.hypot(poi[a][0] - v.x, poi[a][1] - v.z) - Math.hypot(poi[b][0] - v.x, poi[b][1] - v.z))[0];
       path = null; pi = 0;
     }
@@ -154,7 +159,8 @@ async function runTier(browser, tierId, T, seed, grid) {
       }
       if (path) { while (pi < path.length - 1 && Math.hypot(path[pi][0] - v.x, path[pi][1] - v.z) < Math.max(1.2, T.coarse * 0.7)) pi++; dir = [path[pi][0] - v.x, path[pi][1] - v.z]; }
       else dir = [tg[0] - v.x, tg[1] - v.z];
-    } else dir = [tg[0] - v.x, tg[1] - v.z];
+    } else if (T.plan === 'arrow' && s.guide) dir = [s.guide.x - v.x, s.guide.z - v.z];   // walk straight where the arrow points
+    else dir = [tg[0] - v.x, tg[1] - v.z];
     // random wandering / unstick
     if (T.random && gameT > wanderUntil && r() < T.random * 2 * FR) { wanderUntil = gameT + 1 + r() * 3; wanderDir = r() * Math.PI * 2; }
     if (gameT < wanderUntil) dir = [Math.cos(wanderDir), Math.sin(wanderDir)];
@@ -174,7 +180,7 @@ async function runTier(browser, tierId, T, seed, grid) {
       const pts0 = joyDown ? [{ ...joyPos, id: 1 }] : [];
       await touch(cdp, joyDown ? 'touchStart' : 'touchStart', [...pts0, { x: lx, y: ly, id: 2 }]);
       for (let i = 1; i <= 6; i++) { await touch(cdp, 'touchMove', [...pts0, { x: Math.max(vw * 0.46, Math.min(vw - 2, lx + px * i / 6)), y: ly + gauss(r) * T.pos * 0.2, id: 2 }]); await step(1); }
-      await touch(cdp, 'touchEnd', pts0); // only the look finger lifts
+      await touch(cdp, joyDown ? 'touchMove' : 'touchEnd', pts0); // only the look finger lifts (reviewer fix: touchEnd with a held finger re-presses it in Chrome)
       continue;
     }
     // joystick: convert world dir into stick axes relative to current yaw
@@ -189,7 +195,7 @@ async function runTier(browser, tierId, T, seed, grid) {
   if (joyDown) await touch(cdp, 'touchEnd', []);
   const s = await read();
   const fm = frameMs.slice().sort((a, b) => a - b);
-  Object.assign(log, { completed: s.found.length >= 6, timeS: +gameT.toFixed(1), foundN: s.found.length, distance: +log.distance.toFixed(0), wallMs: Date.now() - t0, renderMsMedian: fm[fm.length >> 1], renderMsP95: fm[Math.floor(fm.length * 0.95)], drawInfo: s.info, hud: s.hud, errors: errs.slice(0, 5) });
+  Object.assign(log, { completed: s.found.length >= 6, timeS: +gameT.toFixed(1), foundN: s.found.length, distance: +log.distance.toFixed(0), wallMs: Date.now() - t0, renderMsMedian: fm[fm.length >> 1], renderMsP95: fm[Math.floor(fm.length * 0.95)], drawInfo: s.info, hud: s.hud, errors: errs.slice(0, 5), externalRequests: env.external.length });
   log.stuckEpisodes = log.stuck.length; if (log.stuck.length > 12) log.stuck = log.stuck.slice(0, 12);
   if (!log.clumsy.length) delete log.clumsy;
   await env.ctx.close();
@@ -255,13 +261,13 @@ async function main() {
   const run = tiers.length || args.includes('probes') ? tiers : Object.keys(TIERS);
   const resPath = path.join(OUT, 'results.json');
   const results = fs.existsSync(resPath) ? JSON.parse(fs.readFileSync(resPath, 'utf8')) : { game: 'atlantis', tiers: {}, findings: [] };
-  results.harness = { viewport: '390x844@2 touch', frame: '1/60 s lock-stepped', capS: CAP_S, renderer: 'SwiftShader (software WebGL) - render ms are CPU-bound, not device fps', three: 'r128 from npm (cdnjs blocked by sandbox proxy)' };
+  results.harness = { viewport: '390x844@2 touch', frame: '1/60 s lock-stepped', capS: CAP_S, renderer: 'SwiftShader (software WebGL) - render ms are CPU-bound, not device fps', three: 'inlined in index.html; all external requests aborted' };
   const src = fs.readFileSync(GAME, 'utf8'); const m = src.match(/var MK = ([^;]+);/); MKANGLE = m ? eval(m[1].replace(/Math\.PI/g, String(Math.PI))) : 0;
   const browser = await chromium.launch({ args: ['--mute-audio', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const g0 = await newPage(browser); const grid = await walkGrid(g0.page); await g0.ctx.close();
   for (const id of run) {
     const runs = []; const nRuns = +(process.env.RUNS || 2);
-    for (let k = 0; k < nRuns; k++) { const L = await runTier(browser, id, TIERS[id], 100 + k * 31 + id.length, grid); runs.push(L); console.log(id, k, JSON.stringify({ done: L.completed, t: L.timeS, found: L.foundN, dist: L.distance, stuck: L.stuckEpisodes, fell: L.fellOut.length, ms: L.renderMsMedian, wall: L.wallMs, err: L.errors })); }
+    for (let k = 0; k < nRuns; k++) { const L = await runTier(browser, id, TIERS[id], (+(process.env.SEED || 100)) + k * 31 + id.length, grid); runs.push(L); console.log(id, k, JSON.stringify({ done: L.completed, t: L.timeS, found: L.foundN, dist: L.distance, stuck: L.stuckEpisodes, fell: L.fellOut.length, ms: L.renderMsMedian, wall: L.wallMs, err: L.errors })); }
     results.tiers[id] = { runs, summary: { completed: runs.filter(r => r.completed).length + '/' + runs.length, timeS: runs.map(r => r.timeS), found: runs.map(r => r.foundN), distance: runs.map(r => r.distance), stuckEpisodes: runs.map(r => r.stuckEpisodes), fellOut: runs.map(r => r.fellOut.length), renderMsMedian: runs.map(r => r.renderMsMedian) } };
     fs.writeFileSync(resPath, JSON.stringify(results, null, 1));
   }
