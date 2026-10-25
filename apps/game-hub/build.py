@@ -108,6 +108,7 @@ GAMES = [
     ("yacht-dice", "快艇骰子", "card", False, "擲五顆骰填十三格，乘著快艇遠航刷分。"),
     ("liars-dice", "吹牛骰", "card", False, "燈籠茶館裡喊點開盅，看穿電腦的虛張聲勢。"),
     ("dou-dizhu", "鬥地主", "card", False, "田莊牌桌叫地主，一人鬥兩位電腦農民。"),
+    ("thirteen-cards", "十三支", "card", False, "十三張分三墩，和三位牌友比牌、打槍拚全壘打。"),
     ("pressure-washer",  "高壓洗淨",   "calm",   True,  "用水柱沖掉污垢，看著畫面一點點變乾淨。"),
     ("word-world",       "字字成真",   "calm",   False, "打出一個詞，它就出現在小世界裡。"),
     ("warehouse-command","倉儲指揮所", "world",  False, "派遣堆高機搬貨出貨，衝高倉庫吞吐量。"),
