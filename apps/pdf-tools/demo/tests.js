@@ -123,6 +123,60 @@ let handDoc;
   const hd = new PDFDoc(new Uint8Array(hy));
   ok(!hd.reconstructed && hd.pages.length === 1 && hd.pages[0].rotate === 90, 'hybrid /XRefStm entries override free table entries');
 }
+// ---------- extra stream filters ----------
+{
+  const txt = Buffer.from('ASCII85 and LZW and RunLength: 你好 ' + 'abcabcabcabc'.repeat(40));
+  // ASCII85 (Python's adobe=True framing: <~ ... ~>) - encode here
+  const a85enc = b => { let out = ''; for (let i = 0; i < b.length; i += 4) { const n = Math.min(4, b.length - i); let v = 0; for (let k = 0; k < 4; k++) v = v * 256 + (k < n ? b[i + k] : 0); if (n === 4 && v === 0) { out += 'z'; continue; } const ch = []; for (let k = 0; k < 5; k++) { ch.unshift(String.fromCharCode(33 + v % 85)); v = Math.floor(v / 85); } out += ch.join('').slice(0, n + 1); } return out + '~>'; };
+  ok(Buffer.compare(Buffer.from(PDF.a85(PDF.bytesOf(a85enc(txt)))), txt) === 0, 'ASCII85 round trip');
+  ok(b2s(PDF.a85(PDF.bytesOf('87cURD]i,"Ebo80~>'))) === 'Hello World!', 'ASCII85 known vector');
+  ok(b2s(PDF.a85(PDF.bytesOf('z~>'))) === '\0\0\0\0', 'ASCII85 z shortcut');
+  // LZW encoder (EarlyChange 1), as used by old PDFs
+  const lzwEnc = data => { const dict = new Map(); for (let i = 0; i < 256; i++) dict.set(String.fromCharCode(i), i); let next = 258, len = 9, w = '', bits = [], out = [];
+    const emit = c => { for (let k = len - 1; k >= 0; k--) bits.push((c >> k) & 1); };
+    emit(256);
+    for (const byte of data) { const c = String.fromCharCode(byte), wc = w + c; if (dict.has(wc)) w = wc; else { emit(dict.get(w)); dict.set(wc, next++); if (next + 1 > (1 << len) && len < 12) len++; w = c; if (next >= 4094) { emit(256); dict.clear(); for (let i = 0; i < 256; i++) dict.set(String.fromCharCode(i), i); next = 258; len = 9; } } }
+    if (w) emit(dict.get(w)); emit(257); while (bits.length % 8) bits.push(0); for (let i = 0; i < bits.length; i += 8) { let v = 0; for (let k = 0; k < 8; k++) v = v << 1 | bits[i + k]; out.push(v); } return Uint8Array.from(out); };
+  ok(Buffer.compare(Buffer.from(PDF.lzw(lzwEnc(txt), 1)), txt) === 0, 'LZW round trip');
+  const big = Buffer.alloc(30000); for (let i = 0; i < big.length; i++) big[i] = (i * 31 ^ i >> 5) & 255;
+  ok(Buffer.compare(Buffer.from(PDF.lzw(lzwEnc(big), 1)), big) === 0, 'LZW round trip with code-length growth and table reset');
+  const rl = Uint8Array.from([2, 65, 66, 67, 253, 90, 128]); ok(b2s(PDF.runLength(rl)) === 'ABCZZZZ', 'RunLength decode');
+  // a content stream behind A85 + Flate decodes through PDFDoc.decode
+  const st = new PDF.Stream(new Map([['Filter', [PDF.N('ASCII85Decode'), PDF.N('FlateDecode')]]]), PDF.bytesOf(a85enc(zlib.deflateSync(txt))));
+  ok(Buffer.compare(Buffer.from(sampleDoc.decode(st)), txt) === 0, 'filter chain [A85 Flate]');
+}
+// ---------- ToUnicode CMap ----------
+{
+  const cm = PDF.bytesOf('/CIDInit /ProcSet findresource begin 12 dict begin begincmap 1 begincodespacerange <0000> <FFFF> endcodespacerange 2 beginbfchar <0003> <0020> <0010> <5831> endbfchar 2 beginbfrange <0020> <0022> <0041> <0030> <0031> [<4F60> <597D>] endbfrange endcmap end end');
+  const r = PDF.parseToUnicode(cm);
+  ok(r.bytesPerCode === 2 && r.map.get(3) === ' ' && r.map.get(16) === '報'.replace('報', '報') && r.map.get(0x21) === 'B' && r.map.get(0x22) === 'C' && r.map.get(0x30) === '你' && r.map.get(0x31) === '好', 'ToUnicode bfchar / bfrange / array form');
+}
+// ---------- page-range parser (20+ inputs incl. full-width, Chinese words, bad input) ----------
+{
+  const cases = [
+    ['1-3, 5', 10, '1,2,3,5', 0], ['１－３，５', 10, '1,2,3,5', 0], ['5-', 8, '5,6,7,8', 0], ['-3', 8, '1,2,3', 0], ['第3頁', 5, '3', 0], ['p2', 5, '2', 0],
+    ['末', 7, '7', 0], ['最後', 7, '7', 0], ['奇數', 6, '1,3,5', 0], ['偶數頁', 6, '2,4,6', 0], ['even', 6, '2,4,6', 0], ['全部', 3, '1,2,3', 0], ['3-1', 5, '1,2,3', 0],
+    ['1~3、7至8', 9, '1,2,3,7,8', 0], ['1 2 3', 9, '1,2,3', 0], ['2, 2, 2', 9, '2', 0], ['1 - 3', 9, '1,2,3', 0], ['last-2', 5, '2,3,4,5', 0],
+    ['0', 5, '', 1], ['99', 5, '', 1], ['-5', 3, '1,2,3', 1], ['8-12', 10, '8,9,10', 1], ['abc', 5, '', 1], ['😀', 5, '', 1], ['1.5', 9, '', 1], ['-', 9, '', 1], ['2--3', 9, '', 1],
+    ['99999999999', 5, '', 1], ['<script>', 5, '', 1], ['1,abc,3', 5, '1,3', 1]
+  ];
+  let bad = [];
+  for (const [inp, max, want, errs] of cases) { const r = PDF.parseRanges(inp, max); if (r.pages.join(',') !== want || (r.errors.length > 0) !== !!errs) bad.push(`${JSON.stringify(inp)} → ${r.pages.join(',')} ${r.errors.join('|')}`); }
+  ok(!bad.length, `parseRanges ${cases.length} 組輸入 ` + bad.join(' ; '));
+  ok(PDF.parseRanges('', 5).empty && PDF.parseRanges('  ，、 ', 5).empty, 'blank range input is "empty", not an error');
+  ok(PDF.parseRanges('x'.repeat(5000), 5).errors.length === 1, 'very long input is capped');
+}
+// ---------- ZIP ----------
+{
+  const files = [{ name: '報價單-1.pdf', bytes: sampleBytes }, { name: 'b.txt', bytes: new Uint8Array(Buffer.from('hello')) }];
+  const z = PDF.zip(files), f = save('t.zip', z);
+  if (hasPypdf) {
+    const r = spawnSync('python3', ['-I', '-c', 'import zipfile,sys,io,json,pypdf\nz=zipfile.ZipFile(sys.argv[1])\nprint(json.dumps({"bad":z.testzip(),"names":z.namelist(),"pages":len(pypdf.PdfReader(io.BytesIO(z.read(z.namelist()[0]))).pages),"txt":z.read("b.txt").decode()}))', f], { encoding: 'utf8' });
+    const j = JSON.parse(r.stdout || '{}');
+    ok(j.bad === null && j.names[0] === '報價單-1.pdf' && j.pages === 3 && j.txt === 'hello', 'ZIP valid for Python zipfile (UTF-8 name, CRC ok, PDF inside parses): ' + r.stdout + r.stderr.slice(-200));
+  }
+  ok(PDF.crc32(Buffer.from('123456789')) === 0xcbf43926, 'CRC-32 check value');
+}
 // ---------- images ----------
 function crc32(buf) { let c, crc = 0xffffffff; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crc = (crc >>> 8) ^ c; } return (crc ^ 0xffffffff) >>> 0; }
 function makePng(w, h, colorType, pix, extra) {
@@ -226,11 +280,16 @@ let imgPdfBytes;
     for (const f of [mr.file, path.join(TMP, 'images.pdf'), chromeFile]) {
       const p = await viewer.newPage({ viewport: { width: 800, height: 1000 } }); const errs = [];
       p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-      let loaded = true; try { await p.goto('file://' + f, { timeout: 15000 }); await p.waitForTimeout(1200); } catch (e) { loaded = false; errs.push(e.message); }
+      let loaded = true; try { await p.goto('file://' + f, { timeout: 15000 }); await p.waitForTimeout(800); } catch (e) { loaded = false; errs.push(e.message); }
       const type = loaded ? await p.evaluate(() => { const e = document.querySelector('embed'); return e && e.type; }).catch(() => null) : null;
-      const shot = loaded ? await p.screenshot({ type: 'png' }) : null;
       const q = await viewer.newPage();
-      const st = shot ? await q.evaluate(async b64 => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data; let white = 0; const colors = new Set(); for (let i = 0; i < d.length; i += 16) { if (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245) white++; colors.add(d[i] >> 4 << 8 | d[i + 1] >> 4 << 4 | d[i + 2] >> 4); } return { white: white / (d.length / 16), colors: colors.size }; }, shot.toString('base64')) : null;
+      // the viewer paints asynchronously (slower on a busy machine): poll until the page shows up
+      let st = null;
+      for (let attempt = 0; loaded && attempt < 12 && !(st && st.white > 0.15 && st.colors > 10); attempt++) {
+        if (attempt) await p.waitForTimeout(500);
+        const shot = await p.screenshot({ type: 'png' });
+        st = await q.evaluate(async b64 => { const im = new Image(); im.src = 'data:image/png;base64,' + b64; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data; let white = 0; const colors = new Set(); for (let i = 0; i < d.length; i += 16) { if (d[i] > 245 && d[i + 1] > 245 && d[i + 2] > 245) white++; colors.add(d[i] >> 4 << 8 | d[i + 1] >> 4 << 4 | d[i + 2] >> 4); } return { white: white / (d.length / 16), colors: colors.size }; }, shot.toString('base64'));
+      }
       ok(loaded && type === 'application/pdf' && errs.length === 0 && st && st.white > 0.15 && st.colors > 10, `Chromium viewer renders ${path.basename(f)} (white ${st && st.white.toFixed(2)}, colors ${st && st.colors}) ${errs.join(' | ')}`);
       await p.close(); await q.close();
     }
