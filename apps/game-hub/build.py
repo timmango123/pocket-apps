@@ -76,6 +76,7 @@ GAMES = [
     ("tower-defense", "菇菇守城", "action", True, "種蘑菇塔擋害蟲，守護蘑菇村。"),
     ("bomb-maze", "鞭炮貓老街", "action", True, "橘貓放鞭炮炸開紅磚，清光怪物找廟門，百關闖關加電腦對戰。"),
     ("bullet-hell", "彈幕射擊", "action", False, "夜櫻祭彈幕射擊，相對觸控閃彈、擦彈、三面 Boss 符卡。"),
+    ("tank-battle", "坦克大戰", "action", True, "守住老鷹基地，打穿磚牆擊退百關戰車大軍。"),
     ("xiangqi", "中國象棋", "board", True, "對弈五級電腦，破解百關連將殺局。"),
     ("chess", "西洋棋", "board", True, "對戰五級電腦，挑戰百道將死殘局。"),
     ("gomoku", "五子棋", "board", True, "對戰五級電腦，挑戰百關限步連五。"),
