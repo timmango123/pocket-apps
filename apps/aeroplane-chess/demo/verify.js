@@ -41,6 +41,20 @@ function series(label, N, strongLv, np4) {
   console.log(`${label}: ${first}/${N} first places = ${pct(p)} (95% CI ${pct(p - ci)}–${pct(p + ci)}), baseline ${pct(base)}, z = ${z.toFixed(1)} | avg turns ${(turns / N).toFixed(0)} | Lv${strongLv} think avg ${(think.reduce((a, b) => a + b, 0) / think.length).toFixed(2)}ms p99 ${think[Math.floor(think.length * .99)].toFixed(1)}ms max ${think[think.length - 1].toFixed(1)}ms`);
   return { p, z, base };
 }
+// first-place rate of one Lv<lv> seat (rotating) against three Lv3 with the three personalities
+function vsLv3(lv, N) {
+  let first = 0;
+  for (let g = 0; g < N; g++) { const seat = g % 4, levels = [3, 3, 3, 3], pers = [1, 2, 0, 1]; levels[seat] = lv; pers[seat] = 0;
+    const r = playGame({}, levels, pers, 50000 + g * 7919); if (r.st.over.ranking[0] === seat) first++; }
+  console.log(`Lv${lv} vs 3×Lv3 機長: first place ${pct(first / N)} of ${N} (baseline 25%)`); return first / N;
+}
+// heads-up Lv a vs Lv b, alternating who starts: win rate of a
+function series2(a, b, N) {
+  let w = 0;
+  for (let g = 0; g < N; g++) { const levels = [b, 1, b, 1], seatA = g % 2 ? 2 : 0; levels[seatA] = a;
+    const r = playGame({ active: [1, 0, 1, 0] }, levels, [0, 0, 0, 0], 31000 + g * 17); if (r.st.over.ranking[0] === seatA) w++; }
+  console.log(`HEAD-TO-HEAD Lv${a} vs Lv${b} (2 players): Lv${a} wins ${pct(w / N)} of ${N}`); return w / N;
+}
 function stallTest(N) {
   const rnd = AP.rng(4242); let turns = 0;
   for (let g = 0; g < N; g++) {
@@ -80,10 +94,12 @@ async function game() {
   const gaps = []; let lastAct = 0;
   const act = async (fn) => { const now = Date.now(); if (lastAct) { if (now - lastAct < 160) await sleep(160 - (now - lastAct)); gaps.push(Date.now() - lastAct); } await fn(); lastAct = Date.now(); };
   // menu: make yellow the strongest computer (Lv5 王牌飛行員), keep blue Lv3 謹慎領航 and green Lv3 效率塔台, then start
+  await act(async () => { const [x, y] = await center(page, '#mAdv summary'); await tapXY(cdp, x, y); }); await sleep(250);   // 進階設定
   for (let k = 0; k < 2; k++) { await act(async () => { const [x, y] = await center(page, '#seats .seat:nth-child(2) [data-lv="1"]'); await tapXY(cdp, x, y); }); await sleep(250); }
   const yl = await page.textContent('#seats .seat:nth-child(2) .step span');
   await act(async () => { const [x, y] = await center(page, '#mStart'); await tapXY(cdp, x, y); }); await sleep(900);
   if (!(await page.evaluate(() => document.getElementById('menu').hidden))) throw new Error('start button tap did not start the game');
+  if (await page.isVisible('#tut')) { await act(async () => { const [x, y] = await center(page, '#tutSkip'); await tapXY(cdp, x, y); }); await sleep(300); }   // first start opens the tutorial
   await act(async () => { const [x, y] = await center(page, '#bSpeed'); await tapXY(cdp, x, y); }); await sleep(300);   // 2x -> 4x for the computers' turns
   const t0 = Date.now(); let rolls = 0, picks = 0, stackChoices = 0, swipes = 0; const thinks = [];
   let lastThinkSeen = -1;
@@ -136,6 +152,8 @@ async function game() {
     const a = series('SPEC §六-14  Lv4 資深機長 vs 3×Lv1 實習生 (4 players)', 1000, 4, true); ok = ok && a.p > .40;
     const b = series('STRONG vs WEAK Lv5 王牌飛行員 vs 3×Lv1 實習生 (4 players)', N, 5, true); ok = ok && b.z > 5;
     const c = series('STRONG vs WEAK Lv5 王牌飛行員 vs Lv1 實習生 (heads-up)', N, 5, false); ok = ok && c.z > 5;
+    const d = vsLv3(4, 600), e = vsLv3(5, 600); ok = ok && e - d >= 0.1 && e >= 0.45;
+    const f = series2(5, 4, 1000); ok = ok && f > 0.6;
     stallTest(1000);
   }
   if (!process.argv.includes('--skip-game')) ok = (await game()) && ok;

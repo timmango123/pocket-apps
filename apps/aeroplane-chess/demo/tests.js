@@ -145,6 +145,17 @@ t('empty seats are skipped', () => { const st = G({ active: [1, 0, 1, 0] }); eq(
 console.log('Dice & undo fairness');
 t('dice sequence is fixed by the seed (same seed, same rolls)', () => { const a = [], b = []; for (let k = 0; k < 50; k++) { a.push(AP.die(99, k)); b.push(AP.die(99, k)); } eq(a, b); });
 t('dice are fair-ish: 60 000 rolls within ±2% of 1/6', () => { const n = [0, 0, 0, 0, 0, 0, 0]; for (let k = 0; k < 60000; k++) n[AP.die(12345, k)]++; for (let d = 1; d <= 6; d++) ok(Math.abs(n[d] / 60000 - 1 / 6) < .02, 'face ' + d); });
+t('rewind (undo): the die already seen at the restored roll stays, every later die is re-drawn (no scouting, no re-roll fishing)', () => {
+  const st = G(); st.pos[0][0] = 10; const snap = AP.clone(st); const seen = [];
+  for (let n = 0; n < 30; n++) { const r = AP.roll(st); seen.push(r.d); if (r.moves && r.moves.length) AP.play(st, 0); }
+  const back = AP.rewind(st, snap, 4242); eq(back.k, snap.k); eq(AP.roll(AP.clone(back)).d, seen[0], 'same die at the restored index');
+  const later = []; for (let k = snap.k + 1; k < snap.k + 30; k++) later.push(AP.dieAt(back, k));
+  ok(later.join('') !== seen.slice(1).join(''), 'later dice re-drawn');
+  // a second undo from the rewound line keeps what was seen on that line
+  const again = AP.clone(back); AP.roll(again); const d2 = AP.dieAt(again, back.k); const back2 = AP.rewind(again, back, 99); eq(AP.dieAt(back2, back.k), d2); eq(d2, seen[0]);
+  // saved games from before (no pin/rs fields) roll exactly as before
+  const old = JSON.parse(JSON.stringify(G())); eq(AP.dieAt(old, 3), AP.die(old.seed, 3));
+});
 t('undo (restore the pre-roll clone) gives the same die again', () => { const st = G(); const snap = AP.clone(st); const d1 = AP.roll(st).d; const st2 = AP.clone(snap); eq(AP.roll(st2).d, d1); });
 
 console.log('Computer players');
@@ -155,9 +166,183 @@ t('level 3+ takes a capture worth 30 squares over a small advance', () => {
   const st = G(); st.pos[0] = [5, 40, -1, -1]; st.pos[1][0] = sameSq(0, 9, 1); st.d = 4; st.phase = 'move';
   // yellow plane far along its own route (high value)
   st.pos[1][0] = sameSq(0, 9, 1); ok(st.pos[1][0] > 30, 'yellow plane is valuable (' + st.pos[1][0] + ')');
-  for (const lv of [3, 4, 5]) { const L = AP.legal(st, 0, 4), r = AP.think(st, lv, 0, 1); eq(L[r.i].from, 5, 'level ' + lv); }
+  for (const lv of [3, 4]) { const L = AP.legal(st, 0, 4), r = AP.think(st, lv, 0, 1); eq(L[r.i].from, 5, 'level ' + lv); }
+});
+t('Lv5 is clearly stronger than Lv4 (first place vs three Lv3, 300 games each, same seeds)', () => {
+  const rate = lv => { let first = 0; for (let g = 0; g < 300; g++) { const seed = 50000 + g * 7919, st = AP.newGame({ seed }), seat = g % 4; let k = 0;
+    while (!st.over && ++k < 20000) { const r = AP.roll(st); if (!r.moves || !r.moves.length) continue; AP.play(st, AP.think(st, st.turn === seat ? lv : 3, st.turn === seat ? 0 : st.turn % 3, seed * 3 + k).i); }
+    if (st.over.ranking[0] === seat) first++; } return first / 300; };
+  const r4 = rate(4), r5 = rate(5); console.log('        Lv4 ' + (r4 * 100).toFixed(1) + '%  Lv5 ' + (r5 * 100).toFixed(1) + '%');
+  ok(r5 >= 0.42 && r5 - r4 >= 0.1, 'Lv5 ' + r5 + ' vs Lv4 ' + r4);
 });
 t('hint explains its choice', () => { const st = G(); st.pos[0] = [5, -1, -1, -1]; st.pos[1][0] = sameSq(0, 9, 1); const m = mvFrom(st, 0, 4, 5); ok(/撞回/.test(AP.explain(st, m))); });
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exitCode = fail ? 1 : 0;
+// ---------------- in the real page (mobile Chromium, real CDP touch): one regression check per review finding ----------------
+const APP = path.resolve(__dirname, '..', 'index.html');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let browser = null, tid = 1;
+async function at(name, fn) { if (process.env.ONLY && !name.includes(process.env.ONLY)) return; try { await fn(); pass++; console.log('  ok  ', name); } catch (e) { fail++; console.log('  FAIL', name, '-', String(e.message || e).split('\n')[0]); } }
+async function open(vp, o = {}) {
+  const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: o.scheme || 'light' });
+  if (o.settings || o.stats) await ctx.addInitScript(([a, b]) => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); if (a) localStorage.setItem('aeroplane.settings', a); if (b) localStorage.setItem('aeroplane.stats', b); } }, [o.settings ? JSON.stringify(o.settings) : null, o.stats ? JSON.stringify(o.stats) : null]);
+  await ctx.addInitScript(() => { window.__clears = 0; const f = CanvasRenderingContext2D.prototype.clearRect; CanvasRenderingContext2D.prototype.clearRect = function (...a) { window.__clears++; return f.apply(this, a); }; });
+  const page = await ctx.newPage(), errors = [];
+  page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto('file://' + APP); await sleep(500);
+  const cdp = await ctx.newCDPSession(page);
+  const tap = async (x, y, hold = 40) => { const id = tid++; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id }] }); await sleep(hold); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+  const box = async sel => { await page.locator(sel).scrollIntoViewIfNeeded(); return page.locator(sel).boundingBox(); };
+  const tapSel = async sel => { const b = await box(sel); await tap(b.x + b.width / 2, b.y + b.height / 2); await sleep(120); };
+  const gs = () => page.evaluate(() => JSON.parse(JSON.stringify(window.__game.state())));
+  const until = async (pred, ms = 20000) => { const t = Date.now(); while (Date.now() - t < ms) { const g = await gs(); if (await pred(g)) return g; await sleep(60); } throw new Error('timeout waiting'); };
+  // play the human seat (0) with real taps until pred(state) holds
+  const playUntil = async (pred, ms = 60000) => { const t = Date.now(); while (Date.now() - t < ms) { const g = await gs(); if (await pred(g)) return g;
+    if (g.human && !g.busy && g.ui === 'await-roll') await tapSel('#diceBtn');
+    else if (g.human && !g.busy && g.ui === 'choose') { if (g.chooser) await tapSel('#chOne'); else { const L = AP.legal(g.st, 0, g.st.d); const [x, y] = await page.evaluate(i => window.__game.planeXY(0, i), L[0].pl[0]); await tap(x, y); } }
+    await sleep(90); } throw new Error('timeout playing'); };
+  return { ctx, page, errors, tap, tapSel, box, gs, until, playUntil, close: () => ctx.close() };
+}
+const PLAY = { tut: true, speed: 4 };   // skip the auto tutorial, computers at 4x
+async function browserTests() {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  browser = await chromium.launch();
+  console.log('Page (mobile Chromium, touch)');
+  try {
+    await at('first visit: 開始飛行 is on screen without scrolling (360x640, 390x844), no dead 回到棋盤, 5-or-6 take-off on by default', async () => {
+      for (const vp of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) {
+        const s = await open(vp);
+        const r = await s.page.$eval('#mStart', b => { const q = b.getBoundingClientRect(); return [q.top, q.bottom, innerHeight]; });
+        ok(r[0] >= 0 && r[1] <= r[2], 'start button at ' + r); ok(!(await s.page.isVisible('#mClose')), '回到棋盤 shown before any game');
+        await s.tapSel('#mAdv summary'); ok(await s.page.$eval('[data-rule="five"]', b => b.getAttribute('aria-checked') === 'true'), 'five rule default');
+        eq(s.errors, []); await s.close();
+      }
+    });
+    await at('menu controls are all at least 44px tall; overlays use no backdrop blur', async () => {
+      const s = await open({ width: 360, height: 640 }); await s.tapSel('#mAdv summary');
+      const small = await s.page.$$eval('#menu button, #menu summary', bs => bs.filter(b => b.offsetParent).map(b => [b.textContent.trim().slice(0, 8), Math.round(b.getBoundingClientRect().height)]).filter(x => x[1] < 44));
+      eq(small, [], 'small controls'); const bf = await s.page.$eval('#menu', e => getComputedStyle(e).backdropFilter); ok(!bf || bf === 'none', 'backdrop ' + bf); await s.close();
+    });
+    await at('first start opens the tutorial; touch screens show no keyboard hints (空白鍵 / Shift)', async () => {
+      const s = await open({ width: 390, height: 844 }); await s.tapSel('#mStart'); await sleep(300);
+      ok(await s.page.isVisible('#tut'), 'tutorial shown'); await s.tapSel('#tutSkip');
+      const txt = (await s.page.textContent('#rollTip')) + (await s.page.textContent('#status'));
+      ok(!/空白鍵|Shift/.test(txt), txt); await s.page.evaluate(() => window.__game.setSpeed(1));
+      await s.playUntil(g => !g.human && g.ui !== 'await-roll'); await sleep(200);
+      ok(!/Shift/.test(await s.page.textContent('#rollTip')), 'cpu rollTip');
+      await s.tapSel('#bMenu'); await s.tapSel('#mHelp'); ok(!/空白鍵|Shift/.test(await s.page.textContent('#helpBody')), 'help');
+      eq(s.errors, []); await s.close();
+    });
+    await at('悔棋 is enabled on your turn and rewinds; the restored roll keeps its die, the game is marked and not recorded', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: PLAY }); await s.tapSel('#mStart');
+      let g = await s.playUntil(g => g.human && !g.busy && g.ui === 'await-roll' && g.st.turnNo > 4);
+      ok(!(await s.page.$eval('#bUndo', b => b.disabled)), 'undo enabled while waiting to roll');
+      const before = g.st.k; await s.tapSel('#bUndo'); await sleep(300); g = await s.gs();
+      ok(g.st.k < before, 'went back ' + before + '→' + g.st.k); eq(g.undo, 1); ok(g.st.pin && g.st.pin.k === g.st.k, 'die pinned');
+      const pinned = g.st.pin.d; await s.until(g => g.ui === 'await-roll' && !g.busy); await s.tapSel('#diceBtn'); g = await s.until(g => g.st.k > g.st.pin.k && !g.busy && g.ui !== 'rolling');
+      eq(g.st.d, pinned, 'same die after undo');
+      if (g.ui === 'choose') ok(!(await s.page.$eval('#bUndo', b => b.disabled)), 'undo enabled while choosing');
+      // finish this game deterministically: on red's next roll pick a seed whose die d is 1..4 and park red's last plane exactly d short of home
+      // (the others already home, first finisher ends it), so no waiting for a lucky roll
+      if (g.ui === 'choose') { const L = AP.legal(g.st, 0, g.st.d); if (g.chooser) await s.tapSel('#chOne'); else { const [x, y] = await s.page.evaluate(i => window.__game.planeXY(0, i), L[0].pl[0]); await s.tap(x, y); } }
+      await s.page.evaluate(() => window.__game.setSpeed(4));
+      await s.until(g => g.human && !g.busy && g.ui === 'await-roll', 60000);
+      await s.page.evaluate(() => { const st = window.__game.state().st; st.rules.first = true; st.pin = null;
+        for (let q = 1; ; q++) { st.seed = q; const d = AP.dieAt(st, st.k); if (d <= 4) { st.pos[0] = st.pos[0].map((p, i) => i ? AP.GOAL : AP.GOAL - d); break; } } });
+      await s.tapSel('#diceBtn'); await s.playUntil(g => g.resultVisible, 30000); await sleep(300);
+      ok(/不計入戰績/.test(await s.page.textContent('#rSub')), 'result note');
+      const stt = await s.page.evaluate(() => JSON.parse(localStorage.getItem('aeroplane.stats') || '{}'));
+      ok(!stt.games, 'undo game not counted: ' + stt.games); eq(s.errors, []); await s.close();
+    });
+    await at('tutorial step ① draws its rings (tutHL 0 is not skipped)', async () => {
+      const s = await open({ width: 390, height: 844 }); await s.page.evaluate(() => { window.__tut = []; const f = window.drawTut; window.drawTut = function (t) { window.__tut.push(tutHL); return f(t); }; });
+      await s.tapSel('#mStart'); await sleep(500); ok(await s.page.isVisible('#tut'), 'tutorial shown');
+      const seen = await s.page.evaluate(() => window.__tut); ok(seen.includes(0), 'drawTut called on step 1: ' + seen.slice(0, 5)); eq(s.errors, []); await s.close();
+    });
+    await at('first visit preselects 快速 2 架; Lv5 shows 作弊級 on the level picker and the player card, and the card subtitle fits at 390px', async () => {
+      const s = await open({ width: 390, height: 844 });
+      ok(await s.page.$eval('#mMode button[data-v="2"]', b => b.classList.contains('on')), 'quick mode preselected'); await s.tapSel('#mAdv summary');
+      for (let n = 0; n < 3; n++) await s.tapSel('[data-lv="1"][data-seat="1"]');
+      ok(/作弊級/.test(await s.page.textContent('#seats .seat:nth-child(2) .step span')), 'stepper says 作弊級');
+      await s.tapSel('[data-lv="1"][data-seat="2"]');   // and a Lv4 card, the longest non-cheat name
+      await s.tapSel('#mStart'); await sleep(300); if (await s.page.isVisible('#tut')) await s.tapSel('#tutSkip'); await sleep(300);
+      const subs = await s.page.$$eval('.pc .sub', es => es.map(e => [e.textContent, e.scrollWidth <= e.clientWidth + 1]));
+      ok(subs.some(x => /作弊級/.test(x[0])), 'card says 作弊級: ' + subs.map(x => x[0]));
+      ok(subs.every(x => x[1]), 'cut-off subtitle: ' + subs.filter(x => !x[1]).map(x => x[0])); eq(s.errors, []); await s.close();
+    });
+    await at('a missed tap with several movable planes pulses them (feedback, no move)', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: Object.assign({}, PLAY, { auto: false }) }); await s.tapSel('#mStart');
+      await s.until(g => g.human && !g.busy && g.ui === 'await-roll');
+      await s.page.evaluate(() => { const st = window.__game.state().st; st.pos[0] = [10, 30, -1, -1]; for (let q = 1; ; q++) { st.seed = q; if (AP.dieAt(st, st.k) <= 4) break; } });
+      await s.tapSel('#diceBtn'); let g = await s.until(g => g.ui === 'choose' && !g.busy);
+      const bb = await s.page.$eval('#boardBox', e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+      await s.tap(bb[0] + bb[2] / 2, bb[1] + bb[3] / 2); await sleep(200); g = await s.gs();
+      eq(g.ui, 'choose', 'still choosing'); ok(g.nudges >= 1, 'nudged ' + g.nudges); eq(s.errors, []); await s.close();
+    });
+    await at('a computers-only game does not count as your game', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: Object.assign({}, PLAY, { np: 2, seats: [{ t: 'c', lv: 2, pe: 0 }, { t: 'c', lv: 2, pe: 1 }, { t: 'x' }, { t: 'x' }], rules: { five: true, first: true, triple: true, wall: false } }) });
+      await s.tapSel('#mStart'); await s.page.evaluate(() => { const st = window.__game.state().st; st.pos[0] = [58, 57]; st.pos[1] = [58, 57]; });
+      await s.until(g => g.resultVisible, 60000);
+      const stt = await s.page.evaluate(() => JSON.parse(localStorage.getItem('aeroplane.stats') || '{}'));
+      ok(!stt.games && !(stt.colorGames || []).some(Boolean), JSON.stringify(stt)); eq(s.errors, []); await s.close();
+    });
+    await at('menu, rules and stats pause the computers; closing resumes them', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: Object.assign({}, PLAY, { speed: 1 }) }); await s.tapSel('#mStart');
+      await s.playUntil(g => !g.human); await s.tapSel('#bMenu'); await sleep(150); const k0 = (await s.gs()).st.k; await sleep(2500);
+      eq((await s.gs()).st.k, k0, 'no roll while the menu is open'); await s.tapSel('#mClose');
+      await s.until(g => g.st.k > k0, 5000); eq(s.errors, []); await s.close();
+    });
+    await at('開始飛行 / 每日航班 ask before throwing away an unfinished game', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: PLAY }); await s.tapSel('#mStart'); const seed = (await s.gs()).st.seed;
+      await s.tapSel('#bMenu'); await s.tapSel('#mDaily'); ok(await s.page.isVisible('#confirm'), 'confirm shown');
+      await s.tapSel('#cfNo'); eq((await s.gs()).st.seed, seed, 'cancel keeps the game');
+      await s.tapSel('#mStart'); await s.tapSel('#cfYes'); ok((await s.gs()).st.seed !== seed, 'confirmed: new game'); ok(!(await s.page.isVisible('#menu')));
+      // after a reload the saved game also counts
+      await s.page.reload(); await sleep(500); await s.tapSel('#mStart'); ok(await s.page.isVisible('#confirm'), 'confirm for saved game'); eq(s.errors, []); await s.close();
+    });
+    await at('plane taps: >= 24px hit radius on a small board, and a single movable plane takes a tap anywhere on the board', async () => {
+      const s = await open({ width: 375, height: 500 }, { settings: Object.assign({}, PLAY, { auto: false }) }); await s.tapSel('#mStart');
+      const bb = await s.page.$eval('#boardBox', e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }); ok(bb[3] >= 260, 'board ' + bb[3] + 'px tall');
+      const setup = async (pos) => { await s.until(g => g.human && !g.busy && g.ui === 'await-roll');
+        await s.page.evaluate(pos => { const st = window.__game.state().st; st.pos[0] = pos.slice(); for (let q = 1; ; q++) { st.seed = q; if (AP.dieAt(st, st.k) <= 4) break; } }, pos);
+        await s.tapSel('#diceBtn'); return s.until(g => g.ui === 'choose' && !g.busy); };
+      let g = await setup([10, 30, -1, -1]); const [x, y] = await s.page.evaluate(() => window.__game.planeXY(0, 1));
+      await s.tap(x + 15, y + 15); await sleep(250); g = await s.gs(); ok(g.ui !== 'choose' && g.st.pos[0][1] !== 30, 'offset tap (21px) moved the plane');
+      await s.page.evaluate(() => window.__game.setSpeed(4));
+      g = await setup([10, -1, -1, -1]); const [cx, cy] = [bb[0] + bb[2] / 2 + 100, bb[1] + bb[3] - 30];
+      await s.tap(cx, cy); await sleep(250); g = await s.gs(); ok(g.st.pos[0][0] !== 10, 'tap far from the only movable plane moved it');
+      eq(s.errors, []); await s.close();
+    });
+    await at('hint toast does not cover the hinted plane or its landing square', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: PLAY }); await s.tapSel('#mStart');
+      for (let n = 0; n < 6; n++) {
+        await s.until(g => g.human && !g.busy && g.ui === 'await-roll');
+        await s.page.evaluate(n => { const st = window.__game.state().st; st.pos[0] = [[3, 20, -1, -1], [40, 44, 10, -1], [14, 2, -1, -1], [27, 31, 5, 8], [46, 12, -1, -1], [36, 30, 22, -1]][n]; for (let q = 1; ; q++) { st.seed = q; if (AP.dieAt(st, st.k) <= 4) break; } }, n);
+        await s.tapSel('#diceBtn'); const g = await s.until(g => g.ui === 'choose' && !g.busy);
+        await s.tapSel('#bHint'); await sleep(400);
+        const mv = AP.legal(g.st, 0, g.st.d)[AP.think(g.st, 4, 0, 7).i];
+        const pts = await s.page.evaluate(([from, to, i]) => { const b = document.getElementById('boardBox').getBoundingClientRect(), sz = Math.min(b.width, b.height), u = sz / 15, x0 = b.left + (b.width - sz) / 2, y0 = b.top + (b.height - sz) / 2;
+          return [from, to].filter(p => p !== AP.GOAL).map(p => { const q = AP.gridOf(0, p, i); return [x0 + (q[1] + .5) * u, y0 + (q[0] + .5) * u]; }); }, [mv.from, mv.to, mv.pl[0]]);
+        const r = await s.page.$eval('#toast', e => { const q = e.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom]; });
+        for (const [px, py] of pts) ok(!(px > r[0] && px < r[2] && py > r[1] && py < r[3]), 'toast ' + r.map(Math.round) + ' covers ' + [px, py].map(Math.round));
+        const L = AP.legal(g.st, 0, g.st.d); const [x, y] = await s.page.evaluate(i => window.__game.planeXY(0, i), L[0].pl[0]); await s.tap(x, y); await sleep(200);
+        if ((await s.gs()).chooser) await s.tapSel('#chOne');
+      }
+      eq(s.errors, []); await s.close();
+    });
+    await at('nothing is redrawn while idle behind the menu (light theme)', async () => {
+      const s = await open({ width: 390, height: 844 }); await sleep(600);
+      const c0 = await s.page.evaluate(() => window.__clears); await sleep(1000); const c1 = await s.page.evaluate(() => window.__clears);
+      ok(c1 - c0 <= 2, (c1 - c0) + ' redraws in 1 s'); await s.close();
+    });
+    await at('a game still plays to the end with the board taps (quick mode, no errors)', async () => {
+      const s = await open({ width: 360, height: 640 }, { settings: Object.assign({}, PLAY, { np: 2 }) }); await s.tapSel('#mStart');
+      await s.page.evaluate(() => { const st = window.__game.state().st; for (let c = 0; c < 4; c++) st.pos[c] = [52, 50]; });
+      await s.playUntil(g => g.resultVisible, 150000); eq(s.errors, []); await s.close();
+    });
+  } finally { await browser.close(); }
+}
+(async () => {
+  if (!process.argv.includes('--node-only')) await browserTests();
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exitCode = fail ? 1 : 0;
+})();
