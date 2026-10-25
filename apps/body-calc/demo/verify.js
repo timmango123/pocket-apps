@@ -36,8 +36,9 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   const p = await ctx.newPage(); watch(p, 'flow');
   await p.goto(URL); await p.waitForTimeout(150);
   const t = s => p.textContent(s);
-  // 範例：30 歲男 170/65 中度
+  // 範例：30 歲男 170/65（預設久坐，這裡選中度）
   assert((await t('#bmi')) === '22.5' && (await t('#bmi-cls')) === '正常', '170 cm 65 kg → BMI 22.5 正常');
+  await p.click('#act-2');
   const pure = await p.evaluate(() => { const b = window.__body.bmr({ sex: 'm', age: 30, cm: 170, kg: 65 }); return [b.v, window.__body.tdee(b.v, 2)]; });
   assert(pure[0] === 1567.5 && Math.round(pure[1]) === 2430, 'BMR 1567.5、TDEE 2430（純函式）');
   assert((await t('#bmr')) === '1,568' && (await t('#tdee')) === '2,430' && (await t('#target')) === '2,430', '畫面 BMR 1,568 / TDEE 2,430 / 目標 2,430');
@@ -48,7 +49,7 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   // 減脂低於下限警告：女 50 歲 150 cm 45 kg 久坐 減 0.5
   await p.click('#sex-f'); await p.fill('#age', '50'); await p.fill('#height', '150'); await p.fill('#weight', '45');
   await p.click('#act-0'); await p.click('#goal-lose'); await p.click('#rate-50');
-  assert(await p.isVisible('#warn') && (await t('#target')) === '1,200', '減脂低於女性下限 1200 顯示警告');
+  assert(await p.isVisible('#warn') && (await t('#target')) === (await t('#tdee')) && (await t('#target-f')).startsWith('±0'), 'TDEE 已低於女性下限 1200：目標不高於維持熱量並顯示警告');
   // 邊界：身高 0 / 999
   await p.fill('#height', '0');
   assert((await t('#bmi')) === '—' && !(await p.evaluate(() => document.body.innerText)).match(/Infinity|NaN/), '身高 0 不出現 Infinity/NaN');
