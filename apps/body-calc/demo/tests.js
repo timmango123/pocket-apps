@@ -150,7 +150,8 @@ const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.ge
     // R2：分號／Tab 分隔時逗號是小數點；逗號分隔又沒加引號的 65,5 不亂存
     fs.writeFileSync(imp, '日期;體重\n2020-03-02;65,5\n2020-03-03\t66,1\n2020-03-04,67,3\n');
     await p.setInputFiles('#log-file', imp);
-    await p.waitForFunction(() => document.querySelector('#toast-t').textContent.includes('已匯入 2 筆'));
+    // wait for text only this import shows: the previous import's toast also said 已匯入 2 筆
+    await p.waitForFunction(() => document.querySelector('#toast-t').textContent.includes('加引號'));
     const w2 = await p.evaluate(k => JSON.parse(localStorage.getItem(k)), KEY + 'weights');
     const t2 = await p.textContent('#toast-t');
     assert(w2.some(x => x.date === '2020-03-02' && x.kg === 65.5) && w2.some(x => x.date === '2020-03-03' && x.kg === 66.1) && !w2.some(x => x.date === '2020-03-04') && t2.includes('加引號'), 'CSV「;65,5」「\t66,1」正確；「,67,3」略過並提示（' + t2 + '）');
