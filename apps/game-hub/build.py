@@ -43,6 +43,7 @@ GAMES = [
     ("idiom-guess", "成語猜字", "puzzle", True, "從字牌挑四字猜成語，紅印對位金底在內，百關越猜越難。"),
     ("photo-jigsaw", "自訂拼圖", "puzzle", False, "把自己的照片切成真正的拼圖片，吸附連接、旋轉挑戰。"),
     ("sokoban", "推箱子", "puzzle", True, "老茶行倉庫裡把茶箱推回竹蓆，一百關由淺入深。"),
+    ("slitherlink", "數回", "puzzle", True, "依數字畫一條不交叉的封閉迴路，一百關附解題提示。"),
     ("vibe-arcade",      "霓虹街機",   "reflex", False, "閃電反應、疊塔、記憶、拼盤四台機台。"),
     ("knife-target",     "飛刀神射",   "reflex", True,  "對旋轉木靶擲飛刀，別碰到已插的刀。"),
     ("push-zombie",      "推推殭屍",   "reflex", False, "三隻殭屍輪流爬出來，只敲全出來的那隻。"),
