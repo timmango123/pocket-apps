@@ -83,6 +83,27 @@ t('seeded dice are reproducible and fair (chi-square over 36,000 rolls)', () => 
 t('bearoff DB has 54,264 positions with a bijective rank', () => { const d = BG.buildDB(); const seen = new Uint8Array(d.NP); let n = 0; const c = [0, 0, 0, 0, 0, 0]; (function en(i, s) { if (i === 6) { const r = BG.dbRank(c); if (!seen[r]) { seen[r] = 1; n++; } return; } for (let v = 0; v <= s; v++) { c[i] = v; en(i + 1, s - v); } c[i] = 0; })(0, 15); return d.NP === 54264 && n === 54264 || [d.NP, n]; });
 t('bearoff DB expected rolls: 1 checker on 6-pt = 1.25, two on 1-pt = 1', () => Math.abs(BG.dbExpected([0, 0, 0, 0, 0, 1]) - 1.25) < 1e-6 && Math.abs(BG.dbExpected([2, 0, 0, 0, 0, 0]) - 1) < 1e-6);
 t('bearoff DB expected rolls grow with pips (15 on 6-pt > 15 on 1-pt)', () => BG.dbExpected([0, 0, 0, 0, 0, 15]) > BG.dbExpected([15, 0, 0, 0, 0, 0]));
+console.log('Release-review fixes (round 1)');
+const race = (own, opp) => P({ own, opp });
+t('race gammon terms: even 75-75 all-home race, nobody off -> gammon chances ~0 both ways (evalRace lg sign)', () => { const e = BG.evalRace(race({ 6: 5, 5: 5, 4: 5 }, { 19: 5, 20: 5, 21: 5 })); return e.lg < 0.01 && e.wg < 0.01 && e.w > 0.5 && e.w < 0.75 || JSON.stringify(e); });
+t('race gammon terms: side far behind (all on 6-pt vs opp almost done) has real gammon risk', () => { const e = BG.evalRace(P({ own: { 12: 15 }, opp: { 24: 2 }, oppOff: 13 })); return e.lg > 0.3 || JSON.stringify(e); });
+t('Lv4 and Lv5 take a double in an even race and when 5 pips behind (were passing)', () => { const r = []; for (const [own, opp] of [[{ 6: 5, 5: 5, 4: 5 }, { 19: 5, 20: 5, 21: 5 }], [{ 6: 5, 5: 5, 4: 5 }, { 19: 5, 20: 5, 22: 5 }]]) for (const lv of [4, 5]) { const doubler = race(own, opp); r.push(BG.decideTake({ pos: Array.from(BG.flip(doubler)), level: lv, cube: { v: 1 } }).take); } return r.every(Boolean) || JSON.stringify(r); });
+t('pre-roll double hint in an even race shows ~0% gammons', () => { const d = BG.decideDouble({ pos: Array.from(race({ 6: 5, 5: 5, 4: 5 }, { 19: 5, 20: 5, 21: 5 })), level: 4, cube: { v: 1, own: 'mid' } }); return !d.double && d.wg < 0.01 || JSON.stringify(d); });
+t('levels: Lv1 plays carelessly but uses the crude evaluator; Lv2 sometimes careless; Lv3 err 0.15', () => BG.LEVELS[0].rnd > 0 && BG.LEVELS[0].crude && BG.LEVELS[0].naive && BG.LEVELS[1].rnd > 0 && BG.LEVELS[1].rnd < BG.LEVELS[0].rnd && BG.LEVELS[2].err === 0.15);
+function duel(a, b, n, seed0) { let w = 0; for (let g = 0; g < n; g++) { const R = BG.rng(seed0 + g); let d; do { d = [1 + Math.floor(R() * 6), 1 + Math.floor(R() * 6)]; } while (d[0] === d[1]); let side = d[0] > d[1] ? 0 : 1, q = side ? BG.flip(BG.initial()) : BG.initial(), first = true;
+  for (;;) { if (!first) d = [1 + Math.floor(R() * 6), 1 + Math.floor(R() * 6)]; first = false; q = Int8Array.from(BG.think({ pos: Array.from(q), dice: d, level: side ? b : a, seed: Math.floor(R() * 4294967296) }).pos); if (BG.onBoard(q) === 0) { if (side === 0) w++; break; } q = BG.flip(q); side ^= 1; } } return w / n; }
+t('difficulty curve: Lv2 beats Lv1 clearly but not 100% (120 games)', () => { const r = duel(2, 1, 120, 777); return r > 0.6 && r < 0.97 || 'Lv2 win rate ' + r; });
+t('Lv1 never doubles even when winning big, always takes', () => { const p = P({ own: { 1: 2 }, off: 13, opp: { 24: 15 } }); return !BG.decideDouble({ pos: Array.from(p), level: 1, cube: { v: 1, own: 'mid' } }).double && BG.decideTake({ pos: Array.from(BG.flip(p)), level: 1, cube: { v: 1 } }).take; });
+t('post-game review: a poor opening 3-1 (24/21 24/23) is flagged against 8/5 6/5, luck is a finite number', () => {
+  const p = BG.initial(), ms = BG.genRoll(p, 3, 1), bad = ms.find(m => m.steps.every(s => s[0] === 24) && m.pos[21] === 1 && m.pos[23] === 1);
+  const r = BG.review({ moves: [{ r0: Array.from(p), d: [3, 1], fin: Array.from(bad.pos) }], cubes: [], gv: 1, budget: 20000 });
+  const m = r.moves[0], best = m && m.best.map(s => s[0] + '/' + s[1]).sort().join(' ');
+  return r.n === 1 && m.loss > 0.02 && best === '6/5 8/5' && Number.isFinite(r.luck) || JSON.stringify({ r, best }); });
+t('post-game review: the best play has ~0 loss; cube decisions are graded against Lv4', () => {
+  const p = BG.initial(), ms = BG.genRoll(p, 3, 1), good = ms.find(m => m.pos[5] === 2 && m.pos[8] === 2);
+  const lost = P({ own: { 24: 15 }, opp: { 1: 2 }, oppOff: 13 });
+  const r = BG.review({ moves: [{ r0: Array.from(p), d: [3, 1], fin: Array.from(good.pos) }], cubes: [{ kind: 'take', pos: Array.from(lost), v: 1 }, { kind: 'pass', pos: Array.from(lost), v: 1 }], gv: 1, budget: 20000 });
+  return r.moves[0].loss < 0.005 && r.cube.length === 2 && r.cube[0].ok === false && r.cube[1].ok === true || JSON.stringify(r); });
 console.log(`\n${pass} passed, ${fail} failed`);
 console.log('Opening play counts (distinct final positions per roll, own generator):', BG.ROLLS.map(([a, b]) => a + '-' + b + ':' + plays(BG.initial(), a, b).length).join(' '));
 console.log('Bearoff DB: ' + BG.buildDB().NP + ' positions; E[rolls] 15 checkers on 6-pt = ' + BG.dbExpected([0, 0, 0, 0, 0, 15]).toFixed(3) + ', on 1-pt = ' + BG.dbExpected([15, 0, 0, 0, 0, 0]).toFixed(3));
