@@ -64,21 +64,23 @@ const mockDl = () => { window.__saved = []; window.claude = { use: async n => n 
   await page.click('#redoBtn'); await page.waitForTimeout(150);
   assert(await page.evaluate(() => window.__a(180, 1210) === 255), 'redo rect');
   // undo many steps back to start, then back -> effect also restored
-  for (let i = 0; i < hl; i++) await page.click('#undoBtn').catch(() => {});
-  await page.waitForTimeout(200);
+  for (let i = 0; i < hl; i++) await page.evaluate(() => window.__bb.undo());
+  await page.evaluate(() => window.__bb.histDone());
   assert(await page.evaluate(() => window.__bb.hi === 0 && window.__a(240, 240) === 0 && window.__a(__R.cx, __R.cy) === 255), 'undo to initial state');
   // two-finger pinch cancels stroke and zooms
   await page.click('#tBrush');
   const pin = await page.evaluate(async () => {
     const v = document.querySelector('#view'), r = v.getBoundingClientRect(); const ev = (t, id, x, y) => v.dispatchEvent(new PointerEvent(t, { pointerId: id, pointerType: 'touch', clientX: r.left + x, clientY: r.top + y, bubbles: true, isPrimary: id === 11, button: 0 }));
-    const before = window.__a(375, 500 * 0 + 667);
+    const before = window.__a(375, 500 * 0 + 667); const z0 = document.querySelector('#zoomTag').textContent;
     ev('pointerdown', 11, r.width / 2 - 20, r.height / 2); ev('pointermove', 11, r.width / 2 - 25, r.height / 2 + 5);
     const during = window.__bb.layers().mask.getContext('2d').getImageData(0, 0, 750, 1334).data.reduce((s, v, i) => i % 4 === 3 ? s + v : s, 0);
     ev('pointerdown', 12, r.width / 2 + 20, r.height / 2);
     await new Promise(r => setTimeout(r, 200));
     ev('pointermove', 11, r.width / 2 - 80, r.height / 2); ev('pointermove', 12, r.width / 2 + 80, r.height / 2);
     ev('pointerup', 11, r.width / 2 - 80, r.height / 2); ev('pointerup', 12, r.width / 2 + 80, r.height / 2);
-    await new Promise(r => setTimeout(r, 100));
+    // wait on the condition (the cancelled stroke is restored from the history blob asynchronously; zoom tag updates on the next frame)
+    const sumA = () => window.__bb.layers().mask.getContext('2d').getImageData(0, 0, 750, 1334).data.reduce((s, v, i) => i % 4 === 3 ? s + v : s, 0);
+    for (let t0 = performance.now(); performance.now() - t0 < 5000 && (sumA() >= during || document.querySelector('#zoomTag').textContent === z0);) await new Promise(r => setTimeout(r, 50));
     const after = window.__bb.layers().mask.getContext('2d').getImageData(0, 0, 750, 1334).data.reduce((s, v, i) => i % 4 === 3 ? s + v : s, 0);
     return { during, after, zoom: document.querySelector('#zoomTag').textContent, hist: window.__bb.histLen };
   });
