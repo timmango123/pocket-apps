@@ -46,8 +46,8 @@ async function drawSig(page, cdp, box) {
     eq(sw[1], s.viewport.width, `${s.name} innerWidth equals device width`);
     await page.screenshot({ path: `${OUT}/${s.name}.png` });
     if (s.name === '390x844') {
-      const small = await page.$$eval('button,.sw', els => els.filter(e => e.offsetParent && e.getBoundingClientRect().height < 42).map(e => e.id || e.textContent));
-      eq(small, [], 'touch targets >= 42px');
+      const small = await page.$$eval('button,.sw', els => els.filter(e => e.offsetParent && e.getBoundingClientRect().height < 44).map(e => e.id || e.textContent));
+      eq(small, [], 'touch targets >= 44px');
       await page.screenshot({ path: `${OUT}/${s.name}-full.png`, fullPage: true });
     }
     await ctx.close();
@@ -117,7 +117,7 @@ async function drawSig(page, cdp, box) {
   // big canvas
   await page.click('#bigBtn'); await page.waitForTimeout(150);
   const bigBox = await page.locator('#sheet').boundingBox();
-  assert(bigBox.width >= 340, 'big canvas fills width');
+  assert(bigBox.height >= 500 && bigBox.width >= 300, `portrait big canvas is turned 90° and fills the screen (${Math.round(bigBox.width)}x${Math.round(bigBox.height)})`);
   await page.screenshot({ path: `${OUT}/flow-big.png` });
   await page.click('#bDone');
   await page.click('#showBtn'); await page.waitForTimeout(100);
