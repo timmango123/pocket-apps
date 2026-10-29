@@ -65,7 +65,7 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py]).toString());
       const small = await page.$$eval('button', els => els.filter(e => e.offsetParent && e.getBoundingClientRect().height < 44).map(e => e.id || e.textContent));
       eq(small, [], s.name + ' all visible buttons >= 44px tall');
       const cw = await page.$$eval('.bit', b => Math.min(...b.map(x => x.getBoundingClientRect().width)));
-      assert(cw >= 32, `${s.name} bit cells >= 32px wide (${cw.toFixed(1)})`);
+      assert(cw >= 44, `${s.name} bit cells >= 44px wide (${cw.toFixed(1)})`);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), s.name + ' 64-bit grid no horizontal scroll');
       if (s.name !== '360x780') await page.screenshot({ path: `${OUT}/flow-64${s.name.startsWith('dark') ? '-dark' : ''}.png`, fullPage: true });
     }
@@ -78,7 +78,7 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py]).toString());
   page.on('console', m => { if (m.type() === 'error') errors.push('flow console: ' + m.text()); });
   await page.goto(URL); await page.waitForFunction(() => window.__bcReady);
   const vals = async () => page.evaluate(() => ({ bin: f('bin'), oct: f('oct'), dec: f('dec'), hex: f('hex'), cus: f('cus') }) , null).catch(() => null);
-  await page.evaluate(() => { window.f = k => document.getElementById('f-' + k).value.replace(/[ ,]/g, ''); });
+  await page.evaluate(() => { window.f = k => document.getElementById('f-' + k).value.replace(/[\s,]/g, ''); });
   // spec step 1: DEC 255 → 11111111 / 377 / FF
   await page.click('#w-8'); await page.click('#sign-u');
   await page.fill('#f-dec', '255'); await page.click('#f-hex');
