@@ -88,7 +88,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .lt .st{font-size:11px;letter-spacing:1px;color:var(--line);line-height:1}
 .lt .st .on{color:#ffc93d}
 .lt .dp{display:flex;gap:2px}.lt .dp i{width:5px;height:5px;border-radius:1.5px;background:var(--line)}
-.lt .dn{font-size:9.5px;color:var(--ink2);line-height:1}
+.lt .dn{font-size:10.5px;color:var(--ink2);line-height:1}
 .lt.done{border-color:#38e8a066}
 .lt.cur{border-color:var(--pk);box-shadow:0 0 0 2px #ff408155,0 0 16px #ff408144}
 .lt.lock{opacity:.5}
@@ -102,7 +102,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .mech b{color:var(--ink);font-size:14px}
 .setrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 0;text-align:left;font-size:14px;font-weight:700}
 .seg{display:flex;background:var(--panel2);border-radius:12px;padding:3px;gap:2px;flex-wrap:wrap;justify-content:flex-end}
-.seg button{min-height:38px;min-width:44px;padding:0 9px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink2)}
+.seg button{min-height:44px;min-width:44px;padding:0 9px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink2)}
 .seg button[aria-pressed="true"]{background:var(--pk);color:#fff}
 .stgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
 .stgrid div{background:var(--panel2);border-radius:14px;padding:10px 6px;font-size:12px;color:var(--ink2)}
@@ -670,15 +670,19 @@ function sset(k, v){ try{ localStorage.setItem(ID+k, JSON.stringify(v)); }catch(
 function sdel(k){ try{ localStorage.removeItem(ID+k); }catch(e){} }
 var $ = function(id){ return document.getElementById(id); };
 var LV = BB.levels(), NL = LV.length, C = BB.C, W = BB.W, R = BB.R, FLOOR = BB.FLOOR, FH = FLOOR + 12;
-var prog = sget('progress', {}); if (!prog || typeof prog !== 'object') prog = {};
-var starsS = sget('stars', {}); if (!starsS || typeof starsS !== 'object') starsS = {};
-var unlockAll = !!sget('unlockAll', false);
-var seen = sget('seen', {}); if (!seen || typeof seen !== 'object') seen = {};
-var ST = sget('stats', null); if (!ST || typeof ST !== 'object') ST = {};
-['hits','best','broke','shots','endless','balls'].forEach(function(k){ if (typeof ST[k] !== 'number') ST[k] = 0; });
-var SET = sget('settings', null); if (!SET || typeof SET !== 'object') SET = {};
+// everything read back from storage is validated: a damaged or hand-edited value is dropped, never crashes the page
+function isObj(o){ return !!o && typeof o === 'object' && !Array.isArray(o); }
+function cleanMap(o, ok){ var out = {}; if (!isObj(o)) return out; for (var n = 1; n <= NL; n++) if (ok(o[n])) out[n] = o[n]; return out; }
+var prog = cleanMap(sget('progress', {}), function(v){ return v === 1 || v === true; });
+var starsS = cleanMap(sget('stars', {}), function(v){ return v === 1 || v === 2 || v === 3; });
+var unlockAll = sget('unlockAll', false) === true;
+var seen = cleanMap(sget('seen', {}), function(v){ return !!v; });
+var ST = sget('stats', null); if (!isObj(ST)) ST = {};
+['hits','best','broke','shots','endless','balls'].forEach(function(k){ var v = ST[k]; ST[k] = typeof v === 'number' && isFinite(v) && v >= 0 ? Math.floor(v) : 0; });
+var SET = sget('settings', null); if (!isObj(SET)) SET = {};
 var DEF = {aim:'point', assist:0, sound:1, vib:1, theme:'auto', fx:1};
-for (var k in DEF) if (SET[k] === undefined) SET[k] = DEF[k];
+var SETOK = {aim:['point','sling'], assist:[0,1,2,3], sound:[0,1], vib:[0,1], theme:['auto','dark','light'], fx:[0,1]};
+for (var k in DEF) if (SETOK[k].indexOf(SET[k]) < 0) SET[k] = DEF[k];
 
 /* ---------------- theme ---------------- */
 var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
@@ -743,16 +747,94 @@ FX = Math.round((VW - W * SC) / 2); FY = Math.round(top + Math.max(0, (ah - FH *
 window.addEventListener('resize', layout);
 
 /* ---------------- game state ---------------- */
-var G = { mode: 'demo', n: 0, lv: null, S: null, T: null, phase: 'idle', acc: 0, speed: 1, runT: 0, gatherT: 0, dropT: 0, prev: null, undo: null, undoUsed: false, aimA: 90, aimOn: false, aimValid: false, fine: 0, turnDmg: 0, turnBroke: 0, ballsAtStart: 0 };
+var G = { gen: 0, ffAuto: false, ffArmed: false, bestBefore: 0, mode: 'demo', n: 0, lv: null, S: null, T: null, phase: 'idle', acc: 0, speed: 1, runT: 0, gatherT: 0, dropT: 0, prev: null, undo: null, undoUsed: false, aimA: 90, aimOn: false, aimValid: false, fine: 0, turnDmg: 0, turnBroke: 0, ballsAtStart: 0 };
 var parts = [], beams = [], floats = [], shake = 0, danger = 0, dangerPulse = 0;
 function ser(S){ return JSON.stringify({ lv: S.lv, endless: S.endless, seed: S.seed, balls: S.balls, launchX: S.launchX, turn: S.turn, bricks: S.bricks, items: S.items, nid: S.nid, reserve: S.reserve, minMargin: S.minMargin, hpRef: S.hpRef, status: S.status, totalDmg: S.totalDmg }); }
 function deser(s){ var S = JSON.parse(s); BB.rebuild(S); return S; }
+/* ---------------- saves ----------------
+   One slot per mode, so a level never overwrites an endless run (or the other way round).
+   Every save is validated before use; a damaged one is dropped instead of crashing the title screen. */
+var SLOT = { level: 'save', endless: 'saveE' };
+(function(){ var o = sget('save', null); if (isObj(o) && o.mode === 'endless'){ sset('saveE', o); sdel('save'); } })();
+function num(v, lo, hi){ return typeof v === 'number' && isFinite(v) && v >= lo && v <= hi; }
+function int(v, lo, hi){ return num(v, lo, hi) && v % 1 === 0; }
+function validRow(r){
+return isObj(r) && Array.isArray(r.b) && Array.isArray(r.it) && r.b.length <= 7 && r.it.length <= 7
+&& r.b.every(function(b){ return isObj(b) && int(b.c, 0, 6) && int(b.hp, 1, 1e9) && int(b.tri, -1, 3); })
+&& r.it.every(function(it){ return isObj(it) && int(it.c, 0, 6) && ['ball', 'vl', 'hl', 'split'].indexOf(it.k) >= 0; });
+}
+function validState(str, mode){
+try{
+if (typeof str !== 'string' || str.length > 4e6) return null;
+var S = JSON.parse(str), top = BB.ROWS - 2, used = {};
+if (!isObj(S) || !Array.isArray(S.bricks) || !Array.isArray(S.items) || !Array.isArray(S.reserve) || S.status !== 'aim') return null;
+if (!int(S.balls, 1, 1e6) || !num(S.launchX, 0, W) || !int(S.turn, 1, 1e7) || !int(S.nid, 1, 1e12) || !num(S.hpRef, 0, 1e12) || !num(S.minMargin, -9, 99) || !num(S.totalDmg, 0, 1e15)) return null;
+if (mode === 'endless' ? (S.endless !== 1 || !int(S.seed, 0, 4294967295) || S.reserve.length) : (S.endless !== 0 || !int(S.lv, 1, NL))) return null;
+if (!S.reserve.every(validRow)) return null;
+var okCell = function(o){ var k = o.r * 7 + o.c; if (used[k]) return false; used[k] = 1; return true; };
+if (!S.bricks.every(function(b){ return isObj(b) && int(b.id, 0, 1e12) && int(b.c, 0, 6) && int(b.r, 0, top) && int(b.hp, 1, 1e9) && int(b.tri, -1, 3) && okCell(b); })) return null;
+if (!S.items.every(function(it){ return isObj(it) && int(it.id, 0, 1e12) && int(it.c, 0, 6) && int(it.r, 0, top) && ['ball', 'vl', 'hl', 'split'].indexOf(it.k) >= 0 && okCell(it); })) return null;
+S.bricks.forEach(function(b){ b.max = num(b.max, b.hp, 1e9) ? b.max : b.hp; b.mv = b.mv === 1 || b.mv === -1 ? b.mv : 0; ['solid', 'regen', 'elite'].forEach(function(k){ b[k] = b[k] ? 1 : 0; }); b.hit = 0; b.dead = 0; b.flash = 0; });
+S.items.forEach(function(it){ it.used = 0; it.dead = 0; });
+return S;
+}catch(e){ return null; }
+}
+// returns {mode, n, S (string), undo, undoUsed, t, autoUndo} or null
+function loadSave(mode){
+var sv = sget(SLOT[mode], null);
+if (sv == null) return null;
+var ok = isObj(sv) && sv.mode === mode && (mode === 'endless' || int(sv.n, 1, NL));
+var S = ok && validState(sv.S, mode);
+if (S && mode === 'level' && S.lv !== sv.n) S = null;
+if (!S){ sdel(SLOT[mode]); return null; }
+var u = sv.undoUsed === true ? null : sv.undo, U = u != null ? validState(u, mode) : null;
+if (U && mode === 'level' && U.lv !== sv.n) U = null;
+return { mode: mode, n: mode === 'level' ? sv.n : 0, S: JSON.stringify(S), undo: U ? JSON.stringify(U) : null, undoUsed: sv.undoUsed === true, t: num(sv.t, 0, 1e15) ? sv.t : 0, autoUndo: sv.autoUndo === true };
+}
+function putSave(S, extra){
+var o = { mode: G.mode, n: G.n, S: ser(S), undo: G.undo, undoUsed: G.undoUsed, t: Date.now() };
+for (var k in extra) o[k] = extra[k];
+sset(SLOT[G.mode], o);
+}
+// the board was lost: keep the one undo across a reload (resume = undone), or end the run
+function saveLost(S){
+if (G.mode === 'endless' && S.turn > ST.endless){ ST.endless = S.turn; sset('stats', ST); }
+if (G.undo && !G.undoUsed) sset(SLOT[G.mode], { mode: G.mode, n: G.n, S: G.undo, undo: null, undoUsed: true, t: Date.now(), autoUndo: true });
+else sdel(SLOT[G.mode]);
+}
+function recordWin(S){
+var mm = S.minMargin, st = mm >= 4 ? 3 : mm >= 2 ? 2 : 1, n = G.n;
+prog[n] = 1; sset('progress', prog);
+if (st > (starsS[n] || 0)){ starsS[n] = st; sset('stars', starsS); }
+sdel(SLOT.level);
+return st;
+}
+// leaving the page (app switch, tab close): the shot in flight is finished off the screen with the same physics and saved,
+// so a reload neither replays the shot nor loses it
+function flush(){
+if (G.mode === 'demo' || !G.S) return;
+sset('stats', ST);
+var S2, res;
+if (G.phase === 'aim'){ save(); return; }
+if (G.phase === 'drop'){ S2 = G.S; res = G.dropRes; }
+else if ((G.phase === 'run' || G.phase === 'gather') && G.T){
+try{
+S2 = BB.clone(G.S); var T2 = JSON.parse(JSON.stringify(G.T));
+while (!BB.stepTurn(S2, T2, null));
+res = BB.endTurn(S2, T2, null); if (S2.endless) S2.hpRef = Math.max(8, S2.turn * 1.6);
+}catch(e){ return; }
+} else return;
+if (res === 'next') putSave(S2);
+else if (res === 'lose') saveLost(S2);
+else if (res === 'win' && G.mode === 'level') recordWin(S2);
+}
+window.addEventListener('pagehide', flush);
 function hpRefOf(lv){ var m = 1; lv.rows.forEach(function(r){ r.b.forEach(function(b){ if (b.hp > m) m = b.hp; }); }); return m; }
 
 function startLevel(n, fromSave){
 audio();
 var lv = LV[n - 1];
-G.mode = 'level'; G.n = n; G.lv = lv; G.undo = null; G.undoUsed = false; G.T = null;
+G.gen++; G.ffAuto = false; G.mode = 'level'; G.n = n; G.lv = lv; G.undo = null; G.undoUsed = false; G.T = null;
 if (fromSave){ G.S = deser(fromSave.S); G.undo = fromSave.undo || null; G.undoUsed = !!fromSave.undoUsed; }
 else { G.S = BB.newGame(lv); G.S.hpRef = hpRefOf(lv); }
 G.aimA = 90; resetFx(); enterAim(true);
@@ -760,19 +842,21 @@ showOnly(null); $('hud').classList.remove('hidden'); $('bottom').classList.remov
 updateHud();
 var m = mechAt(n);
 if (m && !seen[n] && !fromSave){ seen[n] = 1; sset('seen', seen); showIntro(m); }
+if (fromSave && fromSave.autoUndo) toast('上次這回合壓線了，已自動悔一回合');
 }
 function startEndless(fromSave){
 audio();
-G.mode = 'endless'; G.n = 0; G.lv = null; G.undo = null; G.undoUsed = false; G.T = null;
+G.gen++; G.ffAuto = false; G.bestBefore = ST.endless; G.mode = 'endless'; G.n = 0; G.lv = null; G.undo = null; G.undoUsed = false; G.T = null;
 G.S = fromSave ? deser(fromSave.S) : BB.newEndless((Math.random() * 1e9) | 0);
 if (fromSave){ G.undo = fromSave.undo || null; G.undoUsed = !!fromSave.undoUsed; }
 G.aimA = 90; resetFx(); enterAim(true);
 showOnly(null); $('hud').classList.remove('hidden'); $('bottom').classList.remove('hidden'); updateHud();
+if (fromSave && fromSave.autoUndo) toast('上次這回合壓線了，已自動悔一回合');
 }
 function startDemo(){
-G.mode = 'demo'; G.n = 0; G.lv = LV[33]; G.S = BB.newGame(G.lv); G.S.hpRef = hpRefOf(G.lv); G.T = null; G.phase = 'aim'; G.demoWait = 0.8; resetFx();
+G.gen++; G.mode = 'demo'; G.n = 0; G.lv = LV[33]; G.S = BB.newGame(G.lv); G.S.hpRef = hpRefOf(G.lv); G.T = null; G.phase = 'aim'; G.demoWait = 0.8; resetFx();
 }
-function resetFx(){ parts = []; beams = []; floats = []; shake = 0; G.prev = null; G.speed = 1; G.aimOn = false; G.fine = 0; }
+function resetFx(){ parts = []; beams = []; floats = []; shake = 0; G.prev = null; G.speed = 1; G.aimOn = false; G.fine = 0; ptr = null; }
 function enterAim(first){
 G.phase = 'aim'; G.T = null; G.speed = 1; G.aimOn = false;
 if (G.mode === 'demo') { G.demoWait = 0.5; return; }
@@ -781,10 +865,12 @@ danger = mr >= 8 ? 2 : mr >= 7 ? 1 : 0;
 if (danger === 2 && !first){ SFX.alarm(); vib([30, 60, 30]); }
 save();
 updateHud(); updateBottom();
+// a finger already pressed while the bricks were settling starts aiming right away (no lift-and-press-again)
+if (ptr){ G.aimOn = true; if (ptr.mouse) aimFromMouse(ptr.lx, ptr.ly); else aimFromDrag(ptr.lx, ptr.ly); }
 }
 function save(){
 if (G.mode === 'demo') return;
-sset('save', { mode: G.mode, n: G.n, S: ser(G.S), undo: G.undo, undoUsed: G.undoUsed, t: Date.now() });
+putSave(G.S);
 }
 function fire(angle){
 if (G.phase !== 'aim') return;
@@ -793,6 +879,7 @@ if (G.mode !== 'demo'){
 if (!G.undoUsed) G.undo = ser(G.S);
 ST.shots++; SFX.fire(); vib(8);
 }
+G.ffArmed = G.ffAuto;
 G.T = BB.startTurn(G.S, angle); G.phase = 'run'; G.acc = 0; G.runT = 0; G.speed = 1; G.aimOn = false; G.turnDmg = 0; G.turnBroke = 0;
 G.ballsAtStart = G.S.balls;
 updateBottom();
@@ -813,6 +900,7 @@ if (done){ G.phase = 'gather'; G.gatherT = 0; G.acc = 0; break; }
 if (n >= max) G.acc = 0;
 if (G.mode !== 'demo'){
 $('bFF').classList.toggle('hidden', !(G.runT >= 3));
+if (G.ffArmed && G.runT >= 3){ G.ffArmed = false; G.speed = 2.5; $('bFF').classList.add('on'); $('bFF').setAttribute('aria-pressed', 'true'); }
 $('bRecall').classList.toggle('hidden', !(G.runT >= 10));
 }
 }
@@ -840,14 +928,13 @@ G.phase = 'drop'; G.dropRes = res;
 updateHud();
 }
 function onWin(){
-if (G.mode === 'demo'){ setTimeout(startDemo, 900); return; }
-var S = G.S, mm = S.minMargin, st = mm >= 4 ? 3 : mm >= 2 ? 2 : 1, n = G.n;
-prog[n] = 1; sset('progress', prog);
-var old = starsS[n] || 0; if (st > old){ starsS[n] = st; sset('stars', starsS); }
-sdel('save');
+var gen = G.gen;
+if (G.mode === 'demo'){ setTimeout(function(){ if (G.gen === gen) startDemo(); }, 900); return; }
+var S = G.S, mm = S.minMargin, n = G.n, st = recordWin(S);
+sset('stats', ST);
 SFX.win(); vib([20, 40, 20, 40, 60]); confetti();
 setTimeout(function(){
-if (G.mode !== 'level' || G.n !== n) return;
+if (G.gen !== gen) return;
 $('wTitle').textContent = ['', '過關！', '漂亮！', '完美！'][st];
 var h = ''; for (var i = 0; i < 3; i++) h += '<span class="' + (i < st ? 'on' : '') + '" style="animation-delay:' + (0.15 + i * 0.18) + 's">★</span>';
 $('wStars').innerHTML = h;
@@ -859,14 +946,15 @@ showOnly('win');
 }, 700);
 }
 function onLose(){
-sdel('save'); SFX.lose(); vib([60, 40, 120]); shake = 0.5;
+var gen = G.gen, best = G.bestBefore;
+saveLost(G.S); SFX.lose(); vib([60, 40, 120]); shake = 0.5;
 setTimeout(function(){
+if (G.gen !== gen) return;
 var S = G.S;
 if (G.mode === 'endless'){
-var best = ST.endless, nb = S.turn > best;
-if (nb){ ST.endless = S.turn; sset('stats', ST); }
+var nb = S.turn > best && S.turn >= ST.endless;
 $('lTitle').textContent = nb ? '新紀錄！' : '遊戲結束';
-$('lMsg').textContent = '無盡模式撐到第 ' + S.turn + ' 回合' + (nb ? '，刷新最高紀錄！' : '。最高紀錄：第 ' + best + ' 回合');
+$('lMsg').textContent = '無盡模式撐到第 ' + S.turn + ' 回合' + (nb ? '，刷新最高紀錄！' : '。最高紀錄：第 ' + ST.endless + ' 回合');
 $('lRes').innerHTML = '<div>回合<b>' + S.turn + '</b></div><div>彈珠<b>' + S.balls + '</b></div><div>總傷害<b>' + S.totalDmg + '</b></div>';
 } else {
 $('lTitle').textContent = '磚塊壓線了！';
@@ -874,12 +962,13 @@ $('lMsg').textContent = '第 ' + G.n + ' 關・撐了 ' + S.turn + ' 回合，�
 $('lRes').innerHTML = '';
 }
 $('lUndo').classList.toggle('hidden', !(G.undo && !G.undoUsed));
+$('lSelect').textContent = G.mode === 'endless' ? '主選單' : '選關';
 showOnly('lose');
 }, 650);
 }
 function doUndo(){
 if (!G.undo || G.undoUsed) return;
-G.S = deser(G.undo); G.undo = null; G.undoUsed = true; resetFx(); showOnly(null);
+G.gen++; G.S = deser(G.undo); G.undo = null; G.undoUsed = true; resetFx(); showOnly(null);
 enterAim(true); toast('已悔一回合（每關限一次）'); SFX.click();
 }
 
@@ -921,6 +1010,13 @@ var s = 'rgb(' + c.join(',') + ')';
 colorCache[key] = s; return s;
 }
 
+// number colour on a solid (light theme) brick: white or near-black, whichever contrasts more
+function textOn(col){
+var k = 't' + col; if (colorCache[k]) return colorCache[k];
+var c = col.match(/\d+/g).map(function(v){ v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+var L = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+return (colorCache[k] = 1.05 / (L + 0.05) >= (L + 0.05) / 0.057 ? '#ffffff' : '#14141f');
+}
 /* ---------------- drawing ---------------- */
 function rr(x, y, w, h, r){ ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function shapePath(cell, tri){
@@ -961,7 +1057,7 @@ if (b.regen){ var pl = 0.6 + 0.4 * Math.sin(time * 5); ctx.strokeStyle = 'rgba(5
 if (b.elite && b.tri < 0){ ctx.fillStyle = LIGHT ? 'rgba(255,255,255,.85)' : col; ctx.beginPath(); ctx.moveTo(s.x0 + 5, s.y0 + 5); ctx.lineTo(s.x0 + 12, s.y0 + 5); ctx.lineTo(s.x0 + 5, s.y0 + 12); ctx.closePath(); ctx.fill(); }
 var txt = String(b.hp), fs = txt.length >= 3 ? 15 : 18; if (b.tri >= 0) fs -= 3;
 ctx.font = '800 ' + fs + 'px system-ui,-apple-system,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-ctx.fillStyle = LIGHT ? '#ffffff' : (fl > 0.4 ? '#07070d' : '#ffffff');
+ctx.fillStyle = LIGHT ? textOn(col) : (fl > 0.4 ? '#07070d' : '#ffffff');
 ctx.fillText(txt, cx, cy + 1);
 ctx.restore();
 }
@@ -997,7 +1093,7 @@ for (var r = 0; r <= 10; r++) for (var c = 0; c <= 7; c++){ ctx.fillRect(c * C -
 var dz = 9 * C;
 ctx.fillStyle = 'rgba(255,40,80,' + (0.05 + (danger ? 0.06 + 0.05 * Math.sin(time * 8) : 0)) + ')'; ctx.fillRect(0, dz, W, C);
 ctx.strokeStyle = 'rgba(255,64,129,' + (danger ? 0.7 : 0.35) + ')'; ctx.setLineDash([8, 7]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, dz); ctx.lineTo(W, dz); ctx.stroke(); ctx.setLineDash([]);
-ctx.font = '700 11px system-ui,sans-serif'; ctx.fillStyle = 'rgba(255,64,129,.55)'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText('底線', W - 6, dz + 4);
+ctx.font = '700 11px system-ui,sans-serif'; ctx.fillStyle = LIGHT ? '#c2185b' : 'rgba(255,64,129,.85)'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillText('底線', W - 6, dz + 4);
 // floor
 ctx.fillStyle = LIGHT ? '#c9c9da' : '#26263a'; ctx.fillRect(0, FLOOR, W, 2);
 // items + bricks
@@ -1104,7 +1200,7 @@ if (shake > 0) shake = Math.max(0, shake - dt);
 if (!G.paused){
 if (G.phase === 'run') stepRun(dt);
 else if (G.phase === 'gather'){ G.gatherT += dt; if (G.gatherT >= 0.3) finishTurn(); }
-else if (G.phase === 'drop'){ G.dropT += dt; if (G.dropT >= 0.22){ G.prev = null; if (G.dropRes === 'lose'){ G.phase = 'over'; if (G.mode === 'demo') setTimeout(startDemo, 900); else onLose(); } else enterAim(false); } }
+else if (G.phase === 'drop'){ G.dropT += dt; if (G.dropT >= 0.22){ G.prev = null; if (G.dropRes === 'lose'){ G.phase = 'over'; if (G.mode === 'demo'){ var dg = G.gen; setTimeout(function(){ if (G.gen === dg) startDemo(); }, 900); } else onLose(); } else enterAim(false); } }
 else if (G.phase === 'aim' && G.mode === 'demo'){ G.demoWait -= dt; if (G.demoWait <= 0){ var a = 20 + Math.random() * 140; fire(a); G.speed = 1.6; } }
 }
 ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1116,7 +1212,10 @@ function startLoop(){ if (!rafId){ lastT = performance.now(); rafId = requestAni
 document.addEventListener('visibilitychange', function(){
 running = !document.hidden;
 if (running) startLoop();
-else if (G.mode !== 'demo' && (G.phase === 'run' || G.phase === 'aim') && !G.paused && $('pause').classList.contains('hidden') && isPlayingUI()) openPause();
+else {
+if (G.mode !== 'demo' && (G.phase === 'run' || G.phase === 'aim') && !G.paused && $('pause').classList.contains('hidden') && isPlayingUI()) openPause();
+flush();
+}
 });
 function isPlayingUI(){ return !$('hud').classList.contains('hidden') && OVS.every(function(o){ return $(o).classList.contains('hidden'); }); }
 
@@ -1124,16 +1223,19 @@ function isPlayingUI(){ return !$('hud').classList.contains('hidden') && OVS.eve
 var ptr = null;
 function toLogical(x, y){ return [(x - FX) / SC, (y - FY) / SC]; }
 function canAim(){ return G.phase === 'aim' && G.mode !== 'demo' && !G.paused && isPlayingUI(); }
+// a press is also taken while the last shot's bricks are still settling (gather/drop): aiming starts the moment they land
+function canPress(){ return G.mode !== 'demo' && !G.paused && isPlayingUI() && (G.phase === 'aim' || G.phase === 'gather' || G.phase === 'drop'); }
 cv.addEventListener('pointerdown', function(e){
 audio();
-if (!canAim()) return;
+if (!canPress()) return;
 if (ptr && ptr.id !== e.pointerId){ // second finger: fine tune
+if (!canAim() || ptr.mouse) return;
 var d = e.clientX < VW / 2 ? 0.5 : -0.5; G.fine += d; G.aimA = BB.clampAngle(G.aimA + d); SFX.click(); toast('微調 ' + (G.fine > 0 ? '+' : '') + G.fine.toFixed(1) + '°'); return;
 }
-ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse', moved: false };
+ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, mouse: e.pointerType === 'mouse', moved: false };
 G.fine = 0;
 try{ cv.setPointerCapture(e.pointerId); }catch(_){}
-if (ptr.mouse){ G.aimOn = true; } else { G.aimOn = true; G.aimValid = false; }
+if (canAim()){ G.aimOn = true; if (ptr.mouse) aimFromMouse(e.clientX, e.clientY); else G.aimValid = false; }
 e.preventDefault();
 });
 function aimFromDrag(x, y){
@@ -1151,6 +1253,7 @@ var a = Math.atan2(-dy, dx) * 180 / Math.PI; if (a < 0) a = a > -90 ? BB.MINA : 
 G.aimA = BB.clampAngle(a); G.aimValid = true; G.aimOn = true;
 }
 cv.addEventListener('pointermove', function(e){
+if (ptr && ptr.id === e.pointerId){ ptr.lx = e.clientX; ptr.ly = e.clientY; }
 if (!canAim()) return;
 if (ptr && ptr.id === e.pointerId){
 if (ptr.mouse){ if (Math.hypot(e.clientX - ptr.x, e.clientY - ptr.y) > 6){ ptr.moved = true; } aimFromMouse(e.clientX, e.clientY); }
@@ -1181,7 +1284,8 @@ if ((k === 'r' || k === 'R') && G.phase === 'run' && G.runT >= 10){ recallNow();
 if (k === 'Escape' || k === 'p' || k === 'P'){ openPause(); return; }
 } else if (k === 'Escape' && !$('pause').classList.contains('hidden')) resume();
 });
-function toggleFF(){ G.speed = G.speed > 1 ? 1 : 2.5; $('bFF').classList.toggle('on', G.speed > 1); SFX.click(); }
+// 快進 stays on for the next shots until it is turned off
+function toggleFF(){ G.speed = G.speed > 1 ? 1 : 2.5; G.ffAuto = G.speed > 1; G.ffArmed = false; $('bFF').classList.toggle('on', G.speed > 1); $('bFF').setAttribute('aria-pressed', G.speed > 1 ? 'true' : 'false'); SFX.click(); }
 
 /* ---------------- HUD / UI ---------------- */
 var OVS = ['title', 'select', 'pause', 'win', 'lose', 'help', 'intro', 'settings', 'statsOv'];
@@ -1210,7 +1314,7 @@ $('bUndo').classList.toggle('hidden', !aim);
 $('bUndo').disabled = !(G.undo && !G.undoUsed);
 $('aimHint').classList.toggle('hidden', !aim || LAND);
 $('aimHint').textContent = SET.aim === 'sling' ? '向後拉瞄準・放開發射' : '按住拖曳瞄準・放開發射';
-$('bFF').classList.add('hidden'); $('bFF').classList.remove('on'); $('bRecall').classList.add('hidden');
+$('bFF').classList.add('hidden'); $('bFF').classList.remove('on'); $('bFF').setAttribute('aria-pressed', 'false'); $('bRecall').classList.add('hidden');
 }
 function openPause(){
 if (!isPlayingUI() || G.mode === 'demo') return;
@@ -1223,12 +1327,16 @@ function goTitle(){
 G.paused = false; $('hud').classList.add('hidden'); $('bottom').classList.add('hidden');
 startDemo(); refreshTitle(); showOnly('title');
 }
+function turnOf(sv){ return JSON.parse(sv.S).turn; }
+// 繼續遊戲 = the most recent of the two saves; the endless button resumes its own run
+function latestSave(){ var a = loadSave('level'), e = loadSave('endless'); return a && e ? (e.t > a.t ? e : a) : a || e; }
 function refreshTitle(){
-var sv = sget('save', null), b = $('tCont');
-if (sv && sv.S){ b.classList.remove('hidden'); b.innerHTML = '繼續遊戲<small>' + (sv.mode === 'endless' ? '無盡模式' : '第 ' + sv.n + ' 關') + '・第 ' + (JSON.parse(sv.S).turn) + ' 回合</small>'; $('tPlay').className = 'btn sec'; }
+var sv = latestSave(), b = $('tCont'), es = loadSave('endless'), hu = highestUnlocked();
+if (sv){ b.classList.remove('hidden'); b.innerHTML = '繼續遊戲<small>' + (sv.mode === 'endless' ? '無盡模式' : '第 ' + sv.n + ' 關') + '・第 ' + turnOf(sv) + ' 回合</small>'; $('tPlay').className = 'btn sec'; }
 else { b.classList.add('hidden'); $('tPlay').className = 'btn'; }
-$('tPlay').textContent = highestUnlocked() > 1 ? '開始第 ' + highestUnlocked() + ' 關' : '開始遊戲';
-$('tEndless').textContent = ST.endless ? '無盡・最高 ' + ST.endless : '無盡模式';
+var ls = loadSave('level');
+$('tPlay').textContent = ls && ls.n === hu ? '繼續第 ' + hu + ' 關' : hu > 1 ? '開始第 ' + hu + ' 關' : '開始遊戲';
+$('tEndless').textContent = es ? '繼續無盡・第 ' + turnOf(es) + ' 回合' : ST.endless ? '無盡・最高 ' + ST.endless : '無盡模式';
 }
 function isDone(n){ return !!prog[n]; }
 function unlocked(n){ return unlockAll || n === 1 || isDone(n - 1) || isDone(n); }
@@ -1257,18 +1365,18 @@ var cur = document.querySelector('.lt.cur'); if (cur){ try{ cur.scrollIntoView({
 $('grid').addEventListener('click', function(e){
 var b = e.target.closest('.lt'); if (!b) return; var n = +b.dataset.n; audio();
 if (!unlocked(n)){ toast('先通過第 ' + (n - 1) + ' 關，或開啟「解鎖全部關卡」'); return; }
-SFX.click(); var sv = sget('save', null);
-if (sv && sv.mode === 'level' && sv.n === n) startLevel(n, sv); else startLevel(n);
+SFX.click(); var sv = loadSave('level');
+if (sv && sv.n === n) startLevel(n, sv); else startLevel(n);
 });
 $('unlockSw').addEventListener('click', function(){ audio(); SFX.click(); unlockAll = !unlockAll; sset('unlockAll', unlockAll); buildGrid(); });
 $('sBack').addEventListener('click', function(){ SFX.click(); goTitle(); });
-$('tPlay').addEventListener('click', function(){ audio(); SFX.click(); startLevel(highestUnlocked()); });
-$('tCont').addEventListener('click', function(){ audio(); SFX.click(); var sv = sget('save', null); if (!sv) return refreshTitle(); if (sv.mode === 'endless') startEndless(sv); else startLevel(sv.n, sv); });
+$('tPlay').addEventListener('click', function(){ audio(); SFX.click(); var n = highestUnlocked(), sv = loadSave('level'); if (sv && sv.n === n) startLevel(n, sv); else startLevel(n); });
+$('tCont').addEventListener('click', function(){ audio(); SFX.click(); var sv = latestSave(); if (!sv) return refreshTitle(); if (sv.mode === 'endless') startEndless(sv); else startLevel(sv.n, sv); });
 $('tSelect').addEventListener('click', function(){ audio(); SFX.click(); goSelect(); });
-$('tEndless').addEventListener('click', function(){ audio(); SFX.click(); var sv = sget('save', null); if (sv && sv.mode === 'endless') startEndless(sv); else startEndless(); });
+$('tEndless').addEventListener('click', function(){ audio(); SFX.click(); var sv = loadSave('endless'); if (sv) startEndless(sv); else startEndless(); });
 $('bPause').addEventListener('click', function(){ SFX.click(); openPause(); });
 $('pResume').addEventListener('click', function(){ SFX.click(); resume(); });
-$('pRestart').addEventListener('click', function(){ SFX.click(); sdel('save'); if (G.mode === 'endless') startEndless(); else startLevel(G.n); });
+$('pRestart').addEventListener('click', function(){ SFX.click(); sdel(SLOT[G.mode]); if (G.mode === 'endless') startEndless(); else startLevel(G.n); });
 $('pHome').addEventListener('click', function(){ SFX.click(); goTitle(); });
 $('bUndo').addEventListener('click', function(){ doUndo(); });
 $('bFF').addEventListener('click', function(){ toggleFF(); });
@@ -1284,7 +1392,7 @@ try{ navigator.clipboard.writeText(txt).then(function(){ toast('已複製：' + 
 });
 $('lUndo').addEventListener('click', function(){ doUndo(); });
 $('lRetry').addEventListener('click', function(){ SFX.click(); if (G.mode === 'endless') startEndless(); else startLevel(G.n); });
-$('lSelect').addEventListener('click', function(){ SFX.click(); if (G.mode === 'endless') goTitle(); else goSelect(); });
+$('lSelect').addEventListener('click', function(){ SFX.click(); sdel(SLOT[G.mode]); if (G.mode === 'endless') goTitle(); else goSelect(); });
 
 /* help / intro */
 var MECHS = {
@@ -1318,7 +1426,7 @@ $('iTitle').textContent = '新機制：' + m[0]; var b = $('iBody'); b.innerHTML
 $('iOk').addEventListener('click', function(){ SFX.click(); showOnly(null); });
 var helpReturn = 'title';
 function showHelp(ret){
-helpReturn = ret; var b = $('helpBody'); b.innerHTML = '<p>在畫面任一處<b>按住拖曳</b>決定方向（預設：往哪拖就往哪射；設定可改成彈弓式向後拉），放開即發射。拖回起點 30px 內放開可取消；瞄準時用另一指點左右半邊可微調 ±0.5°。</p><p>電腦：滑鼠指向瞄準、點擊發射；←→ 微調、空白鍵發射、F 快進。</p><p>發射 3 秒後可<b>快進</b>，10 秒後可<b>收回</b>彈珠。每關可<b>悔一回合</b>一次。</p><p>星級看磚塊離底線的最低餘裕：始終保持 ≥4 列得 ★★★，≥2 列得 ★★。</p>';
+helpReturn = ret; var b = $('helpBody'); b.innerHTML = '<p>在畫面任一處<b>按住拖曳</b>決定方向（預設：往哪拖就往哪射；設定可改成彈弓式向後拉），放開即發射。拖回起點 30px 內放開可取消；瞄準時用另一指點左右半邊可微調 ±0.5°。</p><p>電腦：滑鼠指向瞄準、點擊發射；←→ 微調、空白鍵發射、F 快進。</p><p>發射 3 秒後可<b>快進</b>（開著會沿用到下一回合），10 秒後可<b>收回</b>彈珠。每關可<b>悔一回合</b>一次。</p><p>星級看磚塊離底線的最低餘裕：始終保持 ≥4 列得 ★★★，≥2 列得 ★★。</p>';
 [1, 11, 21, 41, 51, 61, 71, 81].forEach(function(n){ var m = MECHS[n]; var r = mechRow(m); if (n > 1) r.querySelector('b').textContent = m[0] + '（第 ' + n + ' 關起）'; b.appendChild(r); });
 b.appendChild(mechRow(['+1 彈珠', 'ball', '吃到後下回合彈珠 +1。']));
 showOnly('help');
@@ -1370,7 +1478,8 @@ window.__bb = {
 state: function(){ return { mode: G.mode, n: G.n, phase: G.phase, turn: G.S && G.S.turn, status: G.S && G.S.status, balls: G.S && G.S.balls, aim: G.aimA, aimValid: G.aimValid, runT: G.runT, speed: G.speed, minMargin: G.S && G.S.minMargin, paused: !!G.paused }; },
 snapshot: function(){ return ser(G.S); },
 field: function(){ return { fx: FX, fy: FY, sc: SC, launchX: G.S.launchX, floor: FLOOR, R: R }; },
-autoShot: function(){ if (G.phase === 'aim') fire(BB.bestAngle(G.S, 1, 1).angle); }
+autoShot: function(){ if (G.phase === 'aim') fire(BB.bestAngle(G.S, 1, 1).angle); },
+textOn: textOn, gen: function(){ return G.gen; }
 };
 
 applyTheme(); layout(); startDemo(); refreshTitle(); startLoop();

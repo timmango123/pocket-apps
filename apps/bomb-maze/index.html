@@ -65,7 +65,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 #hud > span { flex: none; }
 #hud .lab { color: var(--red); font-size: 15px; }
 #hud .tm { font-variant-numeric: tabular-nums; min-width: 40px; text-align: center; padding: 2px 6px; border-radius: 8px; background: var(--panel2); }
-#hud .tm.low { color: #fff; background: var(--red); }
+#hud .tm.low { color: #fff; background: var(--red2); }
 #hud .hearts { color: var(--red); letter-spacing: 1px; font-size: 15px; }
 #hud .pw { display: flex; gap: 3px; margin-left: auto; font-size: 12px; flex: 0 1 auto; min-width: 0; overflow: hidden; }
 #hud .pw span { flex: none; padding: 1px 5px; border-radius: 6px; background: var(--panel2); color: var(--ink2); border: 1px solid var(--line); }
@@ -78,7 +78,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 #hud.c3 .pw { gap: 2px; }
 #hud.c3 .pw span { font-size: 10px; padding: 1px 2px; }
 body.attract #pauseBtn, body.attract #hudPw { visibility: hidden; }
-#hud .pw span.on { color: var(--btn-ink); background: var(--gold2); border-color: transparent; }
+#hud .pw span.on { color: #3a2418; background: var(--gold); border-color: transparent; }   /* dark ink on gold: readable at 10-12px in both themes */
 #hud .pw span.ping { animation: ping .4s ease-out; }
 @keyframes ping { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
 .ibtn { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; color: var(--ink); }
@@ -105,6 +105,9 @@ body.attract #pauseBtn, body.attract #hudPw { visibility: hidden; }
 #bombBtn i { position: absolute; right: 14px; top: 12px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; display: grid; place-items: center; font: 800 14px/1 system-ui, sans-serif; font-style: normal;
   color: var(--red2); background: #fff4dc; box-shadow: 0 2px 4px rgba(80, 20, 10, .3), inset 0 0 0 2px var(--gold); font-variant-numeric: tabular-nums; transition: transform .12s; }
 #bombBtn i.zero { color: var(--ink2); background: var(--panel2); }
+#bombBtn i.deny { animation: deny .32s ease-out; }
+@keyframes deny { 0%, 100% { transform: none; } 25% { transform: translateX(-4px) scale(1.15); } 50% { transform: translateX(4px) scale(1.15); } 75% { transform: translateX(-2px); } }
+@media (prefers-reduced-motion: reduce) { #bombBtn i.deny { animation: none; outline: 2px solid var(--red); } }
 #bombBtn { position: relative; }
 #bombBtn span { transition: transform .06s; }
 #bombBtn.hit span { transform: translateY(4px) scale(.97); }
@@ -1085,16 +1088,40 @@ function snapshot(sim) {
   return { v: 1, n: sim.n, grid: A(sim.grid), items: A(sim.items), fire: A(sim.fire), time: sim.time, lives: sim.lives, doorOpen: sim.doorOpen, deaths: sim.deaths, kills: sim.kills, rng: sim.rng.get(),
     bombs: sim.bombs.map(function (b) { return { x: b.x, y: b.y, owner: b.owner, range: b.range, t: b.t, slide: b.slide, p: b.p }; }),
     me: (function (b) { return { x: b.x, y: b.y, alive: b.alive, deadT: b.deadT, bombs: b.bombs, fire: b.fire, speed: b.speed, kick: b.kick, shield: b.shield, invul: b.invul, placed: b.placed, onBomb: b.onBomb, dir: b.dir }; })(sim.bombers[0]),
-    enemies: sim.enemies.map(function (e) { return { t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed, hp: e.hp, maxHp: e.maxHp, alive: e.alive, hurt: e.hurt, tele: e.tele, chg: e.chg, rest: e.rest || 0, baby: !!e.baby, deadT: e.alive ? 0 : 9 }; }) };
+    enemies: sim.enemies.map(function (e) { return { t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed, hp: e.hp, maxHp: e.maxHp, alive: e.alive, hurt: e.hurt, tele: e.tele, chg: e.chg, rest: e.rest || 0, baby: !!e.baby, deadT: e.alive ? 0 : 9, roarT: e.roarT, dazed: e.dazed || 0, chgN: e.chgN || 0 }; }) };
+}
+// a saved snapshot comes from storage, so every field is checked before anything is changed: a damaged or edited save
+// is refused (the stage then starts fresh) instead of throwing or leaving the cat inside a wall
+function snapOk(sim, sn) {
+  var W = sim.w * sim.h, i;
+  var num = function (v, lo, hi) { return typeof v === 'number' && isFinite(v) && v >= lo && v <= hi; };
+  var cellsOk = function (a, lo, hi) { if (!Array.isArray(a) || a.length !== W) return false; for (var k = 0; k < W; k++) if (!num(a[k], lo, hi)) return false; return true; };
+  if (!sn || typeof sn !== 'object' || sn.v !== 1) return false;
+  if (!cellsOk(sn.grid, 0, 3) || !cellsOk(sn.items, 0, 9) || !cellsOk(sn.fire, -1, 1)) return false;
+  for (i = 0; i < W; i++) if ((sim.grid[i] === HARD) !== (sn.grid[i] === HARD)) return false;   // the pillars never move
+  if (!num(sn.time, 0, sim.limit) || !num(sn.lives, 0, 9) || !num(sn.deaths, 0, 1e6) || !num(sn.kills, 0, 1e6) || !num(sn.rng, 0, 4294967295)) return false;
+  var inside = function (x, y) { return num(x, 0, sim.w) && num(y, 0, sim.h); };
+  if (!Array.isArray(sn.bombs) || sn.bombs.length > 64) return false;
+  for (i = 0; i < sn.bombs.length; i++) { var bm = sn.bombs[i]; if (!bm || !inside(bm.x, bm.y) || bm.x % 1 || bm.y % 1 || !num(bm.range, 1, 20) || !num(bm.t, -1, 10) || !num(bm.slide, -1, 3) || !num(bm.p, 0, 2)) return false; }
+  var me = sn.me;
+  if (!me || typeof me !== 'object' || !inside(me.x, me.y) || !num(me.bombs, 1, 8) || !num(me.fire, 1, 20) || !num(me.speed, 1, 9) || !num(me.placed, 0, 8) || !num(me.dir, 0, 3)) return false;
+  if (!Array.isArray(sn.enemies) || sn.enemies.length > 200) return false;
+  for (i = 0; i < sn.enemies.length; i++) { var e = sn.enemies[i]; if (!e || !num(e.t, 0, ENEMY.length - 1) || e.t % 1 || !inside(e.x, e.y) || !inside(e.tx, e.ty) || !num(e.speed, 0, 20) || !num(e.hp, -9, 20) || !num(e.dir, 0, 3)) return false; }
+  return true;
 }
 function restore(sim, sn) {
-  if (!sn || sn.v !== 1 || sn.grid.length !== sim.grid.length) return false;
-  var i;
+  try { if (!snapOk(sim, sn)) return false; } catch (err) { return false; }
+  var i, n = function (v, d) { return typeof v === 'number' && isFinite(v) ? v : d; };
   for (i = 0; i < sim.grid.length; i++) { sim.grid[i] = sn.grid[i]; sim.items[i] = sn.items[i]; sim.fire[i] = sn.fire[i]; }
-  sim.time = sn.time; sim.lives = sn.lives; sim.doorOpen = sn.doorOpen; sim.deaths = sn.deaths; sim.kills = sn.kills; sim.rng.set(sn.rng);
-  sim.bombs = sn.bombs.slice();
-  var b = sim.bombers[0]; for (var k in sn.me) b[k] = sn.me[k];
-  sim.enemies = sn.enemies.map(function (e) { return Object.assign({ anim: 0 }, e); });
+  sim.time = sn.time; sim.lives = sn.lives; sim.doorOpen = !!sn.doorOpen; sim.deaths = sn.deaths; sim.kills = sn.kills; sim.rng.set(sn.rng);
+  sim.bombs = sn.bombs.map(function (b) { return { x: b.x, y: b.y, owner: 0, range: b.range, t: b.t, slide: b.slide, p: b.p, born: n(b.born, 0) }; });
+  var b = sim.bombers[0], me = sn.me;
+  b.x = me.x; b.y = me.y; b.alive = me.alive !== false; b.deadT = n(me.deadT, 0); b.bombs = me.bombs; b.fire = me.fire; b.speed = me.speed; b.kick = !!me.kick;
+  b.shield = !!me.shield; b.invul = n(me.invul, 0); b.placed = Math.min(me.placed, sim.bombs.length); b.onBomb = n(me.onBomb, -1); b.dir = me.dir;
+  sim.enemies = sn.enemies.map(function (e) {
+    return { t: e.t, x: e.x, y: e.y, tx: e.tx, ty: e.ty, dir: e.dir, speed: e.speed, hp: e.hp, maxHp: n(e.maxHp, e.hp), alive: e.alive !== false, hurt: n(e.hurt, 0), tele: n(e.tele, 0), chg: !!e.chg,
+      rest: n(e.rest, 0), baby: !!e.baby, deadT: n(e.deadT, 0), roarT: e.roarT == null ? undefined : n(e.roarT, 5), dazed: n(e.dazed, 0), chgN: n(e.chgN, 0), anim: 0 };
+  });
   sim.bombVer++;
   return true;
 }
@@ -1102,7 +1129,7 @@ return { DX: DX, DY: DY, EMPTY: EMPTY, HARD: HARD, SOFT: SOFT, IT: IT, FUSE: FUS
   mulberry: mulberry, stageParams: stageParams, genStage: genStage, genBattle: genBattle, createSim: createSim, setInput: setInput, tick: tick,
   stepMove: stepMove, blastOf: blastOf, dangerMap: dangerMap, explode: explode, placeBomb: placeBomb, bfs: bfs, cpuDecide: cpuDecide, enemyChoose: enemyChoose,
   bombAt: bombAt, spiralOrder: spiralOrder, lineHits: lineHits, softAdj: softAdj, killPlayerNow: killPlayerNow, stepOnce: stepOnce,
-  CRATE: CRATE, isBoss: isBoss, REMIX: REMIX, INTRO: INTRO, blastCells: blastCells, snapshot: snapshot, restore: restore, hitEnemy: hitEnemy };
+  CRATE: CRATE, isBoss: isBoss, REMIX: REMIX, INTRO: INTRO, blastCells: blastCells, snapshot: snapshot, restore: restore, snapOk: snapOk, hitEnemy: hitEnemy };
 })();
 /*CORE-END*/
 </script>
@@ -1118,11 +1145,15 @@ var reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce
 var DX = BM.DX, DY = BM.DY, IT = BM.IT;
 
 /* ---------- settings ---------- */
-var prog = sget('progress', {}); if (!prog || typeof prog !== 'object') prog = {};
+var prog = (function (raw) {   // stage -> best stars (1-3); anything else in storage is dropped
+  var out = {}; if (!raw || typeof raw !== 'object') return out;
+  for (var k in raw) { var n = +k, v = raw[k] | 0; if (n >= 1 && n <= 100 && n % 1 === 0 && v >= 1) out[n] = Math.min(3, v); }
+  return out;
+})(sget('progress', {}));
 var unlockAll = !!sget('unlockAll', false);
 var muted = !!sget('mute', false);
 var haptic = sget('haptic', true) !== false;
-var themePref = sget('theme', 'auto');
+var themePref = sget('theme', 'auto'); if (themePref !== 'light' && themePref !== 'dark') themePref = 'auto';
 var wins = sget('wins', 0) | 0;
 var battleN = sget('battleN', 3) | 0, battleS = sget('battleS', 1) | 0;
 if (battleN < 1 || battleN > 3) battleN = 3;
@@ -1177,6 +1208,7 @@ var SFX = {
   sudden: function () { for (var i = 0; i < 3; i++) tone(i & 1 ? 660 : 880, 0.2, 'square', 0.07, 0, i * 0.22); },
   drop: function () { noise(0.15, 0.2, 500, 100); tone(90, 0.2, 'sine', 0.15, 40); },
   click: function () { tone(700, 0.05, 'triangle', 0.06); },
+  deny: function () { tone(180, 0.07, 'square', 0.05, 150); },
   snort: function () { noise(0.22, 0.12, 700, 200, 2); tone(130, 0.25, 'sawtooth', 0.07, 80); },
   split: function () { tone(1300, 0.07, 'square', 0.05, 1700); tone(1500, 0.07, 'square', 0.05, 1900, 0.09); },
   gong: function () { tone(190, 0.7, 'triangle', 0.16, 120); tone(380, 0.4, 'sine', 0.06, 240); }
@@ -1716,8 +1748,10 @@ function startAttract() {
   sim.sudden.at = 45;
 }
 /* a run: clear a stage and go straight on, and the power-ups come along (炮, 火, 鞋, 踢). Failing a stage ends the run. */
-var run = sget('run', null), bestRun = sget('bestRun', 0) | 0, curKit = null;
-if (!run || typeof run !== 'object' || !(run.next >= 1 && run.next <= 100)) run = null;
+var run = sget('run', null), bestRun = Math.max(0, sget('bestRun', 0) | 0), curKit = null;
+if (!run || typeof run !== 'object' || !(run.next >= 1 && run.next <= 100 && run.next % 1 === 0)) run = null;
+else run = { next: run.next, kit: run.kit && typeof run.kit === 'object' ? run.kit : null, streak: Math.max(0, run.streak | 0) };
+wins = Math.max(0, wins);
 function kitOf(b) { return { bombs: b.bombs, fire: b.fire, speed: b.speed, kick: b.kick }; }
 function kitText(k) { if (!k) return ''; var sp = Math.round((k.speed - 3.2) / 0.5); return '炮' + k.bombs + ' 火' + k.fire + (sp > 0 ? ' 鞋' + sp : '') + (k.kick ? ' 踢' : ''); }
 function kitBetter(k) { return k && (k.bombs > 1 || k.fire > 2 || k.speed > 3.3 || k.kick); }
@@ -1741,7 +1775,7 @@ function startStage(n, resume) {
   newSim(BM.genStage(n), { mode: 'stage', cpu: [false], seed: n * 31 + 7, lives: BM.stageParams(n).lives, kit: kit });
   var back = resume && BM.restore(sim, resume.snap);
   if (back) { infoKey = ''; hudPw = ''; updateHud(); }
-  var sub = back ? '還剩 ' + fmtT(sim.limit - sim.time) : stageSub(n, kit);
+  var sub = back ? '還剩 ' + fmtT(sim.limit - sim.time) : resume ? '存檔讀不到，從頭開始' : stageSub(n, kit);
   showBanner(back ? '繼續第 ' + n + ' 關' : '第 ' + n + ' 關', sub ? (document.body.classList.contains('tall') || n > 2 ? 2.2 : 3.2) : 1.3, sub);
   sim.hold = 1.0;   // the intro; any touch on the stick or the bomb button skips it
   saveT = 0;
@@ -1763,7 +1797,8 @@ function startBattle() {
 var saveT = 0;
 function saveResume() { if (mode === 'stage' && playing && sim && sim.status === 'play' && !auto) sset('resume', { n: stageN, kit: curKit, snap: BM.snapshot(sim) }); }
 function clearResume() { sset('resume', null); }
-function getResume() { var r = sget('resume', null); return r && r.snap && r.n >= 1 && r.n <= 100 && r.snap.n === r.n ? r : null; }
+function snapFits(r) { try { return BM.snapOk(BM.createSim(BM.genStage(r.n), { mode: 'stage' }), r.snap); } catch (e) { return false; } }   // a damaged save never offers 繼續
+function getResume() { var r = sget('resume', null); return r && typeof r === 'object' && r.snap && typeof r.snap === 'object' && r.n >= 1 && r.n <= 100 && r.n % 1 === 0 && r.snap.n === r.n && snapFits(r) ? { n: r.n, kit: r.kit && typeof r.kit === 'object' ? r.kit : null, snap: r.snap } : null; }
 function resetInput() { keys = {}; keyStack = []; padDir = -1; bombReq = false; bombHeld = false; setKnob(-1); }
 function finishStage() {
   var won = sim.status === 'won', stars = 0;
@@ -1795,17 +1830,20 @@ function finishStage() {
 function finishBattle() {
   var w = sim.winner;
   if (w === 0) { wins++; sset('wins', wins); }
-  $('bendTitle').textContent = w === 0 ? '你贏了！' : w < 0 ? (sim.timeUp ? '平手' : '同歸於盡') : '被炸飛了…';
-  $('bendName').textContent = w >= 0 ? CAT[w].name + '獲勝' : sim.timeUp ? '時間到，沒有分出勝負' : '沒有貓活下來';
+  $('bendTitle').textContent = w === 0 ? '你贏了！' : sim.out ? '被炸飛了…' : w < 0 ? (sim.timeUp ? '平手' : '同歸於盡') : '被炸飛了…';
+  $('bendName').textContent = sim.out ? '這局第 ' + sim.out + ' 名' : w >= 0 ? CAT[w].name + '獲勝' : sim.timeUp ? '時間到，沒有分出勝負' : '沒有貓活下來';
   $('bendInfo').innerHTML = '對戰勝場 <b>' + wins + '</b>';
   show('ovBattleEnd'); playing = false;
 }
+/* the page is going away during the 1 s win / lose pause: settle the result now, so a win is never lost and a lost
+   stage cannot come back from the last autosave */
+function settleEnd() { if (!playing || !sim || sim.status === 'play' || mode === 'attract') return; if (mode === 'stage') finishStage(); else finishBattle(); }
 function pauseGame() { if (!playing || paused || !sim || sim.status !== 'play') return; paused = true; show('ovPause'); resetInput(); saveResume(); }
 function resumeGame() { paused = false; show(null); last = 0; }
 function quitToStart() { clearResume(); if (mode === 'stage') { run = null; sset('run', null); } show('ovStart'); startAttract(); }
 
 /* ---------- input ---------- */
-var pad = $('pad'), knob = $('knob'), padPid = -1;
+var pad = $('pad'), knob = $('knob'), padPid = -1, PAD_HYST = 1.25;   // the other axis must lead by 25% (about 51 degrees) to turn
 function setKnob(d, dx, dy) {
   var arrs = pad.querySelectorAll('.arr');
   for (var i = 0; i < arrs.length; i++) arrs[i].classList.toggle('lit', d === ['u', 'r', 'd', 'l'].indexOf(arrs[i].classList[1]));
@@ -1815,15 +1853,18 @@ function padMove(e) {
   var r = pad.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
   var dx = e.clientX - cx, dy = e.clientY - cy, m = Math.hypot(dx, dy);
   if (m < 9) { padDir = -1; setKnob(-1); return; }
-  padDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
+  var ax = Math.abs(dx), ay = Math.abs(dy), horiz = ax > ay;
+  if (padDir >= 0 && (padDir % 2 === 1) !== horiz && Math.max(ax, ay) < Math.min(ax, ay) * PAD_HYST) horiz = padDir % 2 === 1;   // near the diagonal: keep the current axis
+  padDir = horiz ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0);
   var k = Math.min(1, m / (r.width * 0.4)) * r.width * 0.3;
   setKnob(padDir, dx / m * k, dy / m * k);
 }
-pad.addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); padPid = e.pointerId; try { pad.setPointerCapture(e.pointerId); } catch (x) {} padMove(e); });
+pad.addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); padPid = e.pointerId; padDir = -1; try { pad.setPointerCapture(e.pointerId); } catch (x) {} padMove(e); });
 pad.addEventListener('pointermove', function (e) { if (e.pointerId === padPid) padMove(e); });
 function padUp(e) { if (e.pointerId === padPid) { padPid = -1; padDir = -1; setKnob(-1); } }
 pad.addEventListener('pointerup', padUp); pad.addEventListener('pointercancel', padUp); pad.addEventListener('lostpointercapture', padUp);
-var bombBtn = $('bombBtn'), hitT = 0;
+var bombBtn = $('bombBtn'), hitT = 0, denyT = 0;
+function denyBomb() { var i = $('bombN'); i.classList.remove('deny'); void i.offsetWidth; i.classList.add('deny'); clearTimeout(denyT); denyT = setTimeout(function () { i.classList.remove('deny'); }, 340); SFX.deny(); buzz(8); }
 bombBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); bombReq = true; bombBtn.classList.add('hit'); clearTimeout(hitT); hitT = setTimeout(function () { bombBtn.classList.remove('hit'); }, 110); });
 $('bombBtn').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); bombReq = true; } });
 var KEYD = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3, w: 0, d: 1, s: 2, a: 3, W: 0, D: 1, S: 2, A: 3 };
@@ -1831,7 +1872,8 @@ addEventListener('keydown', function (e) {
   if (e.target && /^(INPUT|TEXTAREA|BUTTON)$/.test(e.target.tagName) && e.key === ' ' && e.target.tagName === 'BUTTON') return;
   var d = KEYD[e.key];
   if (d != null) { e.preventDefault(); if (!keys[e.key]) { keys[e.key] = true; keyStack.push(d); } return; }
-  if (e.key === ' ' || e.key === 'z' || e.key === 'Z' || e.key === 'j' || e.key === 'J') { if (playing && !paused) e.preventDefault(); audio(); if (!bombHeld) { bombReq = true; bombHeld = true; } return; }
+  if (e.key === ' ' || e.key === 'z' || e.key === 'Z' || e.key === 'j' || e.key === 'J') { audio(); if (!playing || paused || anyOv()) return; e.preventDefault(); if (!bombHeld) { bombReq = true; bombHeld = true; } return; }   // never queued behind a menu, where it would go off on 繼續
+  if (e.key === 'Escape' && !playing) { var back = { ovSelect: 'selBack', ovHow: 'howBack', ovBattle: 'battleBack' }; for (var o in back) if (!$(o).hidden) { $(back[o]).click(); return; } }
   if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { if (playing) { if (paused) resumeGame(); else pauseGame(); } }
 });
 addEventListener('keyup', function (e) {
@@ -1855,11 +1897,19 @@ function step(dt) {
   if (mode !== 'attract') {
     if (sim.status !== 'play') { sim.bombers[0].cpu = false; BM.setInput(sim, 0, -1, false); }   // through the door: the cat stops there
     else if (auto) { sim.bombers[0].cpu = true; sim.bombers[0].skill = 2; }
-    else { sim.bombers[0].cpu = false; BM.setInput(sim, 0, currentDir(), bombReq); }
+    else {
+      var me = sim.bombers[0];
+      if (bombReq && me.alive && sim.status === 'play' && me.placed >= me.bombs) denyBomb();   // all firecrackers are out: say so instead of ignoring the tap
+      me.cpu = false; BM.setInput(sim, 0, currentDir(), bombReq);
+    }
     bombReq = false;
   }
   BM.tick(sim, dt);
   handleEvents();
+  if (mode === 'battle' && playing && sim.status === 'play' && !sim.bombers[0].alive && sim.bombers[0].deadT > 1) {   // knocked out while 2+ CPUs fight on: no need to sit through the rest
+    var left = sim.bombers.filter(function (q) { return q.alive; }).length;
+    if (left >= 2) { sim.status = 'over'; sim.winner = -1; sim.out = left + 1; SFX.lose(); }
+  }
   for (var i = particles.length - 1; i >= 0; i--) { var p = particles[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; if (p.life <= 0) particles.splice(i, 1); }
   if (shake > 0) shake *= Math.pow(0.02, dt);
   if (mode === 'attract') {
@@ -1879,13 +1929,14 @@ function frame(now) {
   if (!document.hidden) raf = requestAnimationFrame(frame);
 }
 document.addEventListener('visibilitychange', function () {
-  if (document.hidden) { if (playing && !paused && sim && sim.status === 'play') pauseGame(); else saveResume(); if (raf) cancelAnimationFrame(raf); raf = 0; }
+  if (document.hidden) { settleEnd(); if (playing && !paused && sim && sim.status === 'play') pauseGame(); else saveResume(); if (raf) cancelAnimationFrame(raf); raf = 0; }
   else { last = 0; if (!raf) raf = requestAnimationFrame(frame); }
 });
 
 /* ---------- menus ---------- */
-addEventListener('pagehide', function () { saveResume(); });
+addEventListener('pagehide', function () { settleEnd(); saveResume(); });
 function refreshStart() {
+  disarmStart();
   var u = unlocked(), r = getResume();
   $('startN').textContent = u; $('startDone').textContent = doneCount(); $('startWins').textContent = wins; $('startBest').textContent = bestRun;
   $('contBtn').hidden = !r; if (r) $('contN').textContent = r.n;
@@ -1904,7 +1955,13 @@ function buildSelect() {
 }
 $('lvgrid').addEventListener('click', function (e) { var b = e.target.closest('button.lv'); if (!b || b.disabled) return; SFX.click(); startStage(+b.dataset.n); });
 $('tgUnlock').addEventListener('click', function () { unlockAll = !unlockAll; sset('unlockAll', unlockAll); buildSelect(); });
-$('startBtn').addEventListener('click', function () { audio(); SFX.click(); startStage(unlocked()); });
+var startArm = 0;   // with a saved stage, 闖關 asks for a second tap before the save is thrown away
+function disarmStart() { if (startArm) { clearTimeout(startArm); startArm = 0; } $('startBtn').innerHTML = '闖關　第 <span id="startN">' + unlocked() + '</span> 關'; }
+$('startBtn').addEventListener('click', function () {
+  audio(); SFX.click();
+  if (getResume() && !startArm) { $('startBtn').textContent = '再按一次・放棄存檔'; startArm = setTimeout(disarmStart, 3000); buzz(15); return; }
+  disarmStart(); startStage(unlocked());
+});
 $('contBtn').addEventListener('click', function () { audio(); SFX.click(); var r = getResume(); if (r) startStage(r.n, r); else refreshStart(); });
 $('selectBtn').addEventListener('click', function () { audio(); SFX.click(); buildSelect(); show('ovSelect'); var nx = $('lvgrid').querySelector('.next'); if (nx) nx.scrollIntoView({ block: 'center' }); });
 $('selBack').addEventListener('click', function () { SFX.click(); show('ovStart'); });

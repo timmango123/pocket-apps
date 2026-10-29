@@ -51,7 +51,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .pad svg{width:26px;height:26px;stroke:var(--teal);fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
 .pad .pn{right:4px;top:4px}.pad .pe{right:4px;bottom:4px}.pad .ps{left:4px;bottom:4px}.pad .pw{left:4px;top:4px}
 .pad .pn svg{transform:rotate(45deg)}.pad .pe svg{transform:rotate(135deg)}.pad .ps svg{transform:rotate(225deg)}.pad .pw svg{transform:rotate(315deg)}
-.pad .lbl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:800;color:var(--ink2);pointer-events:none}
+.pad .lbl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:800;color:var(--ink2);pointer-events:none;background:var(--card);padding:2px 6px;border-radius:8px}
 .ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:calc(var(--sat) + 16px) 16px calc(var(--sab) + 16px);background:var(--ov);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .25s ease}
 @media (max-height:600px){ .ov{align-items:flex-start;overflow-y:auto} }
 @keyframes fade{from{opacity:0}to{opacity:1}}
@@ -502,14 +502,22 @@ var $ = function(id){ return document.getElementById(id); };
 var cv = $('cv'), ctx = cv.getContext('2d');
 var W = 0, H = 0, DPR = 1;
 var NL = LEVELS.length;
-var prog = sget('progress', {}); if (!prog || typeof prog !== 'object') prog = {};
-var unlockAll = !!sget('unlockAll', false);
-var opts = sget('settings', null); if (!opts || typeof opts !== 'object') opts = {};
-if (opts.sound === undefined) opts.sound = true;
-if (opts.vib === undefined) opts.vib = true;
-if (opts.pad === undefined) opts.pad = false;
-if (opts.rot === undefined) opts.rot = false;
-var introSeen = sget('intro', {}); if (!introSeen || typeof introSeen !== 'object') introSeen = {};
+function isObj(o){ return !!o && typeof o === 'object' && !Array.isArray(o); }
+function isInt(v, lo, hi){ return typeof v === 'number' && (v | 0) === v && v >= lo && v <= hi; }
+// stored progress is validated entry by entry: a damaged or hand-edited entry is dropped, never shown as NaN stars
+function cleanProg(p){
+  var o = {}; if (!isObj(p)) return o;
+  for (var k in p) { var n = +k, e = p[k]; if (isInt(n, 1, NL) && isObj(e) && isInt(e.s, 1, 3) && isInt(e.b, 1, 1e6)) o[n] = { s: e.s, b: Math.max(e.b, LEVELS[n-1].o) }; }
+  return o;
+}
+var prog = cleanProg(sget('progress', {}));
+var unlockAll = sget('unlockAll', false) === true;
+var opts = sget('settings', null); if (!isObj(opts)) opts = {};
+var OPT_DEF = { sound: true, vib: true, pad: false, rot: false };
+for (var ok0 in OPT_DEF) if (typeof opts[ok0] !== 'boolean') opts[ok0] = OPT_DEF[ok0];
+if (opts.zoom !== undefined && typeof opts.zoom !== 'boolean') delete opts.zoom;
+var introSeen = sget('intro', {}); if (!isObj(introSeen)) introSeen = {};
+function lastLevel(){ var n = sget('last', 1); return isInt(n, 1, NL) ? n : 1; }
 var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 var dark = !!(mq && mq.matches);
 if (mq) { var onMq = function(){ dark = mq.matches; floorDirty = true; }; if (mq.addEventListener) mq.addEventListener('change', onMq); else if (mq.addListener) mq.addListener(onMq); }
@@ -601,14 +609,22 @@ function layout(){
   }
   // units: X in hw (=s), Y in hh (=s/2); block can rise 2 units (zh = s); slab below 0.35*s
   var wU = maxX - minX, hU = (maxY - minY) * 0.5 + 2.1 + 0.5;
-  var s = Math.min((right - left) / wU, (bottom - top) / hU, 40);
+  var fitS = function(l, r, t, b){ return Math.min((r - l) / wU, (b - t) / hU, 40); };
+  // the on-screen pad must never sit on the board: fit the board above it or beside it, whichever leaves it bigger
+  var pe = $('pad'), pr = pe.classList.contains('hidden') ? null : pe.getBoundingClientRect();
+  if (pr && pr.width) {
+    var b1 = Math.min(bottom, pr.top - 6), r2 = Math.min(right, pr.left - 8);
+    var s1 = b1 - top >= 120 ? fitS(left, right, top, b1) : 0, s2 = r2 - left >= 120 ? fitS(left, r2, top, bottom) : 0;
+    if (s1 >= s2 && s1 > 0) bottom = b1; else if (s2 > 0) right = r2;
+  }
+  var s = fitS(left, right, top, bottom);
   camFit.s = s;
   camFit.ox = (left + right) / 2 - (minX + maxX) / 2 * s;
   camFit.oy = top + ((bottom - top) - hU * s) / 2 + 2.1 * s - minY * s * 0.5;
   camFit.cx = (left + right) / 2; camFit.cy = (top + bottom) / 2;
   camFit.canZoom = s < 30;
   $('bZoom').classList.toggle('hidden', !camFit.canZoom || status !== 'play' && status !== 'paused');
-  zoom = camFit.canZoom && (opts.zoom === undefined ? s < 12.5 : !!opts.zoom); $('bZoom').classList.toggle('on', zoom);
+  zoom = camFit.canZoom && (opts.zoom === undefined ? s < 12.5 : !!opts.zoom); $('bZoom').classList.toggle('on', zoom); $('bZoom').setAttribute('aria-pressed', zoom ? 'true' : 'false');
   var t = camTarget(); cam.s = t.s; cam.ox = t.ox; cam.oy = t.oy;
 }
 var camFit = { s: 24, ox: 0, oy: 0, cx: 0, cy: 0, canZoom: false }, zoom = false;
@@ -849,7 +865,7 @@ function drawClouds(t, layer){
 var ROLL = 0.16;
 function tryMove(d){
   if (demo && !demo.running) return;
-  if (anim) { if (!queued) queued = d; return; }
+  if (anim) { if (queued == null && status === 'play') queued = d; return; }
   if (status !== 'play') return;
   audio();
   var which = 0;
@@ -857,7 +873,7 @@ function tryMove(d){
   var mv = d + 4 * which;
   var r = doMove(L, S, mv);
   hint = null; tutMoves++;
-  hist.push({ S: S, active: activeCell });
+  hist.push({ S: S, active: activeCell, mv: mv });
   var from = S;
   var box, rot;
   if (S.s) box = boxOf(S.p, S.o); else box = cubeBox(which ? S.b : S.a);
@@ -895,7 +911,7 @@ function finishRoll(a){
     anim = { kind: 'split', t: 0, dur: 0.45, from: ev.splitFrom, to: [sa, sb] };
     if (ev.merge) { anim.merge = true; }
     toastOnce('split', '石碑分裂成兩個小方塊！點「切換」或點方塊來換手操控。');
-    updateHud();
+    updateHud(); saveGame();
     return;
   }
   if (ev.merge) { SFX.merge(); vib(20); var mp = occupied(L, S); flash.push({ c: mp, t: 0.5 }); burst(mp[0] % L.w + 1, ((mp[0] / L.w) | 0) + 0.5, 0.5, 14, ['#7ad3e8', '#e6bd4a'], 1.2); activeCell = -1; }
@@ -903,7 +919,7 @@ function finishRoll(a){
     anim = { kind: 'win', t: 0, dur: 1.1 }; SFX.win(); vib([20, 40, 20, 40, 60]);
     updateHud(); return;
   }
-  updateHud();
+  updateHud(); saveGame();
   afterMove();
 }
 function afterMove(){
@@ -922,27 +938,46 @@ function endFail(){
   // rewind to the state before the fatal move; the failed roll still counts as a move
   var h = hist.pop(); S = h.S; activeCell = h.active; falls++; brokenCell = -1; anim = null; queued = null;
   floorDirty = true;
-  if (demo) { stopDemo(); }
+  if (demo) { endDemo(''); return; }
   toast('掉進雲海了！已退回上一步（計 1 步）');
-  updateHud();
+  updateHud(); saveGame();
+}
+// Finish a running roll (or split) right now, so a tap on 悔棋 / 提示 / 切換 during the 0.16 s roll is acted on
+// instead of silently dropped. Returns false when nothing more should happen: the roll fell (and was already
+// stepped back, which is what 悔棋 wanted anyway) or it reached the goal.
+function settleAnim(){
+  queued = null;
+  for (var guard = 0; anim && guard < 4; guard++) {
+    var a = anim;
+    if (a.kind === 'roll') { anim = null; finishRoll(a); }
+    else if (a.kind === 'split') { anim = null; if (a.merge) activeCell = -1; updateHud(); }
+    else if (a.kind === 'tumble' || a.kind === 'drop') { endFail(); return false; }
+    else return false;
+  }
+  return !anim;
 }
 function undo(){
-  if (status !== 'play' || anim || !hist.length) return;
-  stopDemo();
-  var h = hist.pop(); S = h.S; activeCell = h.active; hint = null; SFX.ui(); floorDirty = true; updateHud();
+  if (status !== 'play') return;
+  if (interruptDemo()) return;
+  if (anim && !settleAnim()) return;
+  if (!hist.length) return;
+  var h = hist.pop(); S = h.S; activeCell = h.active; hint = null; SFX.ui(); floorDirty = true; updateHud(); saveGame();
 }
 function restart(){
   if (status !== 'play') return;
-  stopDemo();
+  demo = null; // 重來 during a demo starts the level over (no restore of the pre-demo position)
   S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; activeCell = -1; brokenCell = -1;
-  syncBridges(true); SFX.ui(); updateHud();
+  syncBridges(true); SFX.ui(); updateHud(); saveGame();
 }
 function syncBridges(instant){ for (var c = 0; c < L.N; c++) if (L.kind[c] === 4 && instant) bridgeVis[c] = (S.m >> L.grp[c]) & 1; floorDirty = true; }
 function swapCube(){
-  if (status !== 'play' || !S || S.s) return;
-  if (anim) return;
+  if (status !== 'play' || !S) return;
+  if (interruptDemo()) return;
+  if (anim && !settleAnim()) return;
+  if (S.s) return;
   activeCell = activeCell === S.a ? S.b : S.a; SFX.ui(); vib(8);
   var c = activeCell; flash.push({ c: [c], t: 0.35 });
+  saveGame();
 }
 
 /* ---------------- particles ---------------- */
@@ -987,7 +1022,7 @@ function update(dt){
   if (demo && demo.running && !anim && status === 'play') {
     demo.wait -= dt;
     if (demo.wait <= 0) {
-      if (demo.i >= demo.sol.length) { stopDemo(); }
+      if (demo.i >= demo.sol.length) { endDemo(''); }
       else { var mv = demo.sol[demo.i++]; if (!S.s) activeCell = (mv >> 2) ? S.b : S.a; tryMove(mv & 3); }
     }
   }
@@ -1080,6 +1115,7 @@ function pieceCenter(){ if (!S) return null; if (S.s) { var b = boxOf(S.p, S.o);
 function drawHint(){
   if (!hint || anim) return;
   var pc = pieceCenter(); if (!pc) return;
+  if (hint.cube >= 0 && !S.s) pc = [hint.cube % L.w + 0.5, ((hint.cube / L.w) | 0) + 0.5, cubeBox(hint.cube)]; // stays on the cube it is for, even after 切換
   var b = pc[2], d = hint.d, off = (d & 1 ? b.sx : b.sy) / 2 + 0.15;
   var cx = pc[0] + [0, 1, 0, -1][d] * off, cy = pc[1] + [-1, 0, 1, 0][d] * off;
   var pulse = 0.65 + 0.35 * Math.sin(tAll * 7);
@@ -1138,15 +1174,53 @@ var MECH = [
   { lv: 40, key: 'split', name: '分裂傳送陣', kinds: [7], desc: '石碑<b>直立</b>踩上青色傳送陣，會分裂成兩個小方塊，分別送到兩處。<br>點「切換」或點方塊來換手操控；兩個小方塊<b>相鄰時自動合體</b>。小方塊只能觸發圓形開關。' }
 ];
 
-function startLevel(n){
+/* ---------------- in-level save ----------------
+   Every level in progress is kept as the list of moves from the start (plus falls, hints left and the selected cube),
+   at most SAVE_MAX levels, newest first. On load the moves are replayed with the game's own rules: a save that does not
+   replay cleanly (wrong level, a move that falls or wins, bad numbers) is dropped instead of putting the slab somewhere
+   it can't be. Written after every settled move and again on pagehide / when the tab is hidden. */
+var SAVE_MAX = 8;
+function readSaves(){ var o = sget('saves', {}); return isObj(o) ? o : {}; }
+function saveGame(){
+  if (!L || demo || (status !== 'play' && status !== 'paused' && status !== 'intro')) return;
+  var mv = hist.map(function(h){ return h.mv; }), f = falls;
+  // a roll still in the air: keep it only once it is known to land safely (a fall counts as a step, a win isn't saved)
+  if (anim && (anim.kind === 'tumble' || anim.kind === 'drop' || anim.kind === 'roll' && (anim.r.ev.fail || anim.r.ev.win) || anim.kind === 'win')) { mv.pop(); if (anim.kind !== 'win' && !(anim.kind === 'roll' && anim.r.ev.win)) f++; }
+  if (!mv.length && !f && hintsLeft === 3) { clearSave(levelN); return; }
+  var sv = readSaves(), sel = S && !S.s && !(anim && anim.kind !== 'split') ? (activeCell === S.b ? 1 : 0) : 0;
+  sv[levelN] = { mv: mv, f: f, hl: hintsLeft, act: sel, t: Date.now() };
+  var ks = Object.keys(sv).sort(function(a, b){ return ((sv[b] && sv[b].t) || 0) - ((sv[a] && sv[a].t) || 0); });
+  for (var i = SAVE_MAX; i < ks.length; i++) delete sv[ks[i]];
+  sset('saves', sv);
+}
+function clearSave(n){ var sv = readSaves(); if (sv[n]) { delete sv[n]; sset('saves', sv); } }
+function loadSave(n, L2){
+  var g = readSaves()[n];
+  if (!isObj(g) || !Array.isArray(g.mv) || g.mv.length > 20000 || !isInt(g.f, 0, 1e6) || !isInt(g.hl, 0, 3) || !isInt(g.act, 0, 1)) return null;
+  var s = initState(L2), h = [];
+  for (var i = 0; i < g.mv.length; i++) {
+    var mv = g.mv[i]; if (!isInt(mv, 0, s.s ? 3 : 7)) return null;
+    var r = doMove(L2, s, mv); if (r.ev.fail || r.ev.win) return null;
+    h.push({ S: s, active: s.s ? -1 : (mv >> 2 ? s.b : s.a), mv: mv }); s = r.S;
+  }
+  if (!h.length && !g.f && g.hl === 3) return null;
+  return { S: s, hist: h, falls: g.f, hl: g.hl, active: s.s ? -1 : (g.act ? s.b : s.a) };
+}
+function hasSave(n){ var g = isInt(n, 1, NL) && loadSave(n, parseLevel(LEVELS[n-1])); return !!g && (g.hist.length > 0 || g.falls > 0); }
+
+function startLevel(n, fresh){
   levelN = n; L = getLevel(n); L.hinge = {}; for (var c = 0; c < L.N; c++) if (L.kind[c] === 4) L.hinge[c] = hingeOf(c);
   S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; hintsLeft = 3; activeCell = -1; brokenCell = -1; tutMoves = 0;
-  bridgeVis = new Float32Array(L.N); swGlow = {}; particles.length = 0; flash.length = 0; stopDemo();
+  bridgeVis = new Float32Array(L.N); swGlow = {}; particles.length = 0; flash.length = 0; demo = null;
+  var g = fresh ? null : loadSave(n, L);
+  if (g) { S = g.S; hist = g.hist; falls = g.falls; hintsLeft = g.hl; activeCell = g.active; tutMoves = 4; }
   syncBridges(true);
   status = 'play';
   sset('last', n);
   showOnly(null); showGameUi(true);
   layout(); updateHud();
+  if (g) { toast('接續上次進度：第 ' + n + ' 關・已走 ' + moveCount() + ' 步'); return; }
+  saveGame();
   var m = null; for (var i = 0; i < MECH.length; i++) if (MECH[i].lv === n) m = MECH[i];
   if (m && !introSeen[m.key]) { introSeen[m.key] = 1; sset('intro', introSeen); showIntro(m); }
   else if (n === 1) toast('在畫面任意處滑動，讓石碑朝該方向翻滾', 3000);
@@ -1181,14 +1255,15 @@ function buildHelp(){
   var h = '<p>操控長方石碑在雲端石板路上翻滾，最後必須<b>直立</b>落進金框洞口。</p>' +
     '<p><b>操作</b>：在畫面任意處滑動，石碑往該斜向翻滾（右上＝北、右下＝東、左下＝南、左上＝西）。也可開啟右下角方向鍵；桌機用方向鍵／WASD，空白鍵切換小方塊，Z 悔棋，R 重來，H 提示。</p>' +
     '<p><b>掉落</b>：石碑任何一格懸空就會掉進雲海，會自動退回上一步並多計 1 步。</p>' +
-    '<p><b>評星</b>：步數 ≤ 最少步數 ★★★；≤ 最少 ×1.5 ★★；其他 ★。每關可用 3 次提示。</p>';
+    '<p><b>評星</b>：步數 ≤ 最少步數 ★★★；≤ 最少 ×1.5 ★★；其他 ★。每關可用 3 次提示。</p>' +
+    '<p><b>存檔</b>：每一步都會自動保存，關掉再打開可以從同一步接著玩；看示範不會弄亂你的進度。</p>';
   var m = MECH.map(mechHtml).join('');
   $('helpBody').innerHTML = h + m; paintMechCanvases($('helpBody'));
 }
 function openHelp(){ buildHelp(); showOnly('help'); }
 
 function buildSelect(){
-  var g = $('grid'), html = '', cur = sget('last', 1);
+  var g = $('grid'), html = '', cur = lastLevel();
   for (var sgi = 0; sgi < 4; sgi++) {
     html += '<div class="seg"><i style="background:' + SEGS[sgi].sw + '"></i>' + SEGS[sgi].name + ' <span>' + SEGS[sgi].sub + '</span></div><div class="lgrid">';
     for (var n = sgi * 25 + 1; n <= sgi * 25 + 25; n++) {
@@ -1207,10 +1282,10 @@ function buildSelect(){
 }
 function openSelect(){
   status = 'select'; stopDemo(); buildSelect(); showOnly('select'); showGameUi(false);
-  var cur = sget('last', 1), el = document.querySelector('.lt[data-n="' + cur + '"]');
+  var cur = lastLevel(), el = document.querySelector('.lt[data-n="' + cur + '"]');
   if (el && el.scrollIntoView) setTimeout(function(){ try{ el.scrollIntoView({ block: 'center' }); }catch(e){} }, 30);
 }
-function openTitle(){ status = 'title'; stopDemo(); showOnly('title'); showGameUi(false); $('tPlay').textContent = clearedCount() ? '繼續冒險' : '開始遊戲'; }
+function openTitle(){ status = 'title'; stopDemo(); showOnly('title'); showGameUi(false); var n = playTarget(); $('tPlay').textContent = hasSave(n) ? '繼續第 ' + n + ' 關' : clearedCount() ? '繼續冒險' : '開始遊戲'; }
 function openSettings(back){
   settingsBack = back;
   $('oSound').setAttribute('aria-checked', opts.sound ? 'true' : 'false');
@@ -1227,8 +1302,8 @@ function updateMuteIcon(){
 
 function stars3(moves){ return moves <= L.opt ? 3 : moves <= Math.floor(L.opt * 1.5) ? 2 : 1; }
 function onWin(){
-  if (demo) { stopDemo(); toast('示範完成！換你試試看'); setTimeout(function(){ if (status === 'play') restartQuiet(); }, 900); return; }
-  status = 'won';
+  if (demo) { endDemo('示範完成！換你試試看'); return; }
+  status = 'won'; clearSave(levelN);
   var mv = moveCount(), st = stars3(mv), pr = prog[levelN] || { s: 0, b: 0 };
   var newBest = !pr.b || mv < pr.b;
   prog[levelN] = { s: Math.max(pr.s || 0, st), b: pr.b ? Math.min(pr.b, mv) : mv };
@@ -1248,38 +1323,80 @@ function onWin(){
 function restartQuiet(){ S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; activeCell = -1; brokenCell = -1; syncBridges(true); updateHud(); }
 
 /* ---------------- hints & demo ---------------- */
-function solutionFrom(S0, cb){
-  var key = S0 === null ? 'start' : null;
-  if (key && solCache[levelN]) { cb(solCache[levelN]); return; }
+var hintMemo = {};
+// what the game looks like right now; a hint or demo whose search finishes after this changed is thrown away
+function sig(){ return levelN + '|' + status + '|' + hist.length + '|' + falls + '|' + (S ? stateKey(L, S) : '') + '|' + (anim ? 1 : 0) + '|' + (demo ? 1 : 0); }
+function solutionFrom(cb){
+  if (solCache[levelN]) { cb(solCache[levelN]); return; }
   toast('神殿推算中…', 900);
+  var n = levelN, L0 = L;
   setTimeout(function(){
-    var r = solve(L, S0 ? cloneS(S0) : null, { limit: 2500000 });
-    if (key && r && r.len > 0) solCache[levelN] = r;
+    if (levelN !== n || L !== L0) return;
+    var r = solve(L0, null, { limit: 2500000 });
+    if (r && r.len > 0) solCache[n] = r;
     cb(r);
   }, 40);
 }
+// index of the current position on the cached shortest path from the start (-1 when off it)
+function pathIndex(r){
+  if (!r.keys) { var s = initState(L); r.keys = [stateKey(L, s)]; for (var i = 0; i < r.sol.length - 1; i++) { s = doMove(L, s, r.sol[i]).S; r.keys.push(stateKey(L, s)); } }
+  return r.keys.indexOf(stateKey(L, S));
+}
 function cloneS(s){ return { s: s.s, p: s.p, o: s.o, a: s.a, b: s.b, m: s.m }; }
 function useHint(){
-  if (status !== 'play' || anim || hintsLeft <= 0) return;
-  stopDemo(); audio(); SFX.ui();
-  solutionFrom(S, function(r){
-    if (!r || r.len <= 0) { toast('這個局面已經走不到終點了，試試悔棋或重來。', 2800); return; }
-    hintsLeft--; var mv = r.sol[0];
-    if (!S.s) activeCell = (mv >> 2) ? S.b : S.a;
-    hint = { d: mv & 3 };
-    toast('照箭頭方向翻滾（剩 ' + hintsLeft + ' 次提示，還需 ' + r.len + ' 步）', 2600);
-    updateHud();
-  });
+  if (status !== 'play' || hintsLeft <= 0) return;
+  interruptDemo();
+  if (anim && !settleAnim()) return;
+  audio(); SFX.ui();
+  var k = stateKey(L, S);
+  // the arrow is already showing for this exact position: point at it again instead of charging a second hint
+  if (hint && hint.k === k) { if (hint.cube >= 0) activeCell = hint.cube; toast('照箭頭方向翻滾（還需 ' + hint.len + ' 步）', 2000); return; }
+  var give = function(mv, len){
+    hintsLeft--; hint = { d: mv & 3, k: k, cube: S.s ? -1 : (mv >> 2 ? S.b : S.a), len: len };
+    if (hint.cube >= 0) activeCell = hint.cube;
+    toast('照箭頭方向翻滾（剩 ' + hintsLeft + ' 次提示，還需 ' + len + ' 步）', 2600);
+    updateHud(); saveGame();
+  };
+  var c = solCache[levelN], i = c ? pathIndex(c) : -1;
+  if (i >= 0) { give(c.sol[i], c.len - i); return; }
+  var mk = levelN + ':' + k;
+  if (hintMemo[mk]) { give(hintMemo[mk].mv, hintMemo[mk].len); return; }
+  toast('神殿推算中…', 900);
+  var sg = sig();
+  setTimeout(function(){
+    if (sig() !== sg) return; // the player moved meanwhile: no hint for a stale position, nothing charged
+    var r = solve(L, cloneS(S), { limit: 2500000 });
+    if (sig() !== sg) return;
+    if (r.len === -2) toast('這個局面太複雜，推算不出來；悔棋幾步再試（沒有扣提示）', 2800);
+    else if (r.len < 0) toast('這個局面已經走不到終點了，試試悔棋或重來（沒有扣提示）', 2800);
+    else { hintMemo[mk] = { mv: r.sol[0], len: r.len }; give(r.sol[0], r.len); }
+  }, 40);
 }
+// 看示範 from the pause menu keeps the player's own position and puts it back when the demo ends or is stopped,
+// so a demo can neither wipe a half-played level nor be finished by the player for stars.
 function startDemo(){
-  restartQuiet(); status = 'play'; showOnly(null); showGameUi(true); layout();
-  solutionFrom(null, function(r){
-    if (!r || r.len <= 0) return;
-    demo = { sol: r.sol, i: 0, wait: 0.5, running: true };
+  var snap = status === 'paused' && (hist.length || falls) ? { S: S, hist: hist.slice(), falls: falls, active: activeCell, hl: hintsLeft } : null;
+  hint = null; demo = null;
+  status = 'play'; showOnly(null); showGameUi(true); layout();
+  var n = levelN;
+  solutionFrom(function(r){
+    if (levelN !== n || status !== 'play' || demo) return;
+    if (!r || r.len <= 0) { toast('示範暫時無法使用'); return; }
+    restartQuiet();
+    demo = { sol: r.sol, i: 0, wait: 0.5, running: true, snap: snap };
     toast('示範中：最短 ' + r.len + ' 步（點畫面可停止）', 2500);
   });
 }
-function stopDemo(){ if (demo) { demo = null; } }
+function endDemo(msg){
+  var d = demo; if (!d) return false;
+  demo = null; anim = null; queued = null; hint = null; brokenCell = -1;
+  if (d.snap) { S = d.snap.S; hist = d.snap.hist; falls = d.snap.falls; activeCell = d.snap.active; hintsLeft = d.snap.hl; syncBridges(true); updateHud(); }
+  else restartQuiet();
+  if (msg) toast(msg + (d.snap ? '（已回到你原本的位置）' : ''));
+  return true;
+}
+function interruptDemo(){ return endDemo('已停止示範'); }
+function stopDemo(){ endDemo(''); }
 
 /* ---------------- share ---------------- */
 function shareResult(){
@@ -1301,48 +1418,53 @@ function shareResult(){
 }
 
 /* ---------------- input ---------------- */
-var ptr = null;
+// one record per finger, so a second thumb that lands before the first has lifted never cancels the first one's swipe
+var ptrs = {};
 function mapSwipe(dx, dy){
   if (opts.rot) { if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 1 : 3; return dy < 0 ? 0 : 2; }
   if (dx >= 0 && dy < 0) return 0; if (dx >= 0 && dy >= 0) return 1; if (dx < 0 && dy >= 0) return 2; return 3;
 }
+var SWIPE = 24;
 cv.addEventListener('pointerdown', function(e){
   audio();
   if (status !== 'play') return;
-  if (demo) { stopDemo(); toast('已停止示範'); restartQuiet(); }
-  ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), done: false };
-  try{ cv.setPointerCapture(e.pointerId); }catch(_){}
   e.preventDefault();
+  // a touch that stops the demo only stops it: it doesn't also roll the slab
+  if (interruptDemo()) { ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, done: true }; return; }
+  ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, done: false };
+  try{ cv.setPointerCapture(e.pointerId); }catch(_){}
 });
 cv.addEventListener('pointermove', function(e){
-  if (!ptr || ptr.id !== e.pointerId || ptr.done) return;
-  var dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
-  if (dx * dx + dy * dy >= 24 * 24) { ptr.done = true; tryMove(mapSwipe(dx, dy)); }
+  var p = ptrs[e.pointerId]; if (!p || p.done) return;
+  var dx = e.clientX - p.x, dy = e.clientY - p.y;
+  if (dx * dx + dy * dy >= SWIPE * SWIPE) { p.done = true; tryMove(mapSwipe(dx, dy)); }
   e.preventDefault();
 });
 cv.addEventListener('pointerup', function(e){
-  if (!ptr || ptr.id !== e.pointerId) return;
-  var dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
-  if (!ptr.done) {
-    if (dx * dx + dy * dy >= 24 * 24) tryMove(mapSwipe(dx, dy));
-    else if (S && !S.s && !anim) { // tap a cube to select it
-      var w = toWorld(e.clientX, e.clientY + cam.s * 0.5), best = -1, bd = 1.6;
-      [S.a, S.b].forEach(function(c){ var d = Math.hypot(c % L.w + 0.5 - w[0], ((c / L.w) | 0) + 0.5 - w[1]); if (d < bd) { bd = d; best = c; } });
-      if (best >= 0 && best !== activeCell) { activeCell = best; SFX.ui(); vib(8); flash.push({ c: [best], t: 0.35 }); }
-    }
-  }
-  ptr = null;
+  var p = ptrs[e.pointerId]; if (!p) return;
+  delete ptrs[e.pointerId];
+  if (p.done || status !== 'play') return;
+  var dx = e.clientX - p.x, dy = e.clientY - p.y;
+  if (dx * dx + dy * dy >= SWIPE * SWIPE) { tryMove(mapSwipe(dx, dy)); return; }
+  if (!S || S.s || demo) return;
+  // tap a cube to select it (also right after a cube's roll: the roll is finished first instead of the tap being lost)
+  if (anim && anim.kind !== 'roll' && anim.kind !== 'split') return;
+  if (anim && !settleAnim()) return;
+  if (S.s) return;
+  var w = toWorld(e.clientX, e.clientY + cam.s * 0.5), best = -1, bd = 1.6;
+  [S.a, S.b].forEach(function(c){ var d = Math.hypot(c % L.w + 0.5 - w[0], ((c / L.w) | 0) + 0.5 - w[1]); if (d < bd) { bd = d; best = c; } });
+  if (best >= 0 && best !== activeCell) { activeCell = best; SFX.ui(); vib(8); flash.push({ c: [best], t: 0.35 }); saveGame(); }
 });
-cv.addEventListener('pointercancel', function(){ ptr = null; });
+cv.addEventListener('pointercancel', function(e){ delete ptrs[e.pointerId]; });
 var padBtns = document.querySelectorAll('#pad button');
 for (var pb = 0; pb < padBtns.length; pb++) (function(b){
-  b.addEventListener('pointerdown', function(e){ e.preventDefault(); if (demo) { stopDemo(); restartQuiet(); } tryMove(+b.getAttribute('data-d')); });
+  b.addEventListener('pointerdown', function(e){ e.preventDefault(); if (status !== 'play' || interruptDemo()) return; tryMove(+b.getAttribute('data-d')); });
 })(padBtns[pb]);
 window.addEventListener('keydown', function(e){
   var k = e.key;
   if (status === 'play') {
     var map = { ArrowUp: 0, w: 0, W: 0, ArrowRight: 1, d: 1, D: 1, ArrowDown: 2, s: 2, S: 2, ArrowLeft: 3, a: 3, A: 3 };
-    if (map[k] !== undefined) { e.preventDefault(); if (demo) { stopDemo(); restartQuiet(); } tryMove(map[k]); return; }
+    if (map[k] !== undefined) { e.preventDefault(); if (e.repeat && anim) return; if (interruptDemo()) return; tryMove(map[k]); return; }
     if (k === ' ') { e.preventDefault(); swapCube(); return; }
     if (k === 'z' || k === 'Z') { undo(); return; }
     if (k === 'r' || k === 'R') { restart(); return; }
@@ -1356,9 +1478,11 @@ function pauseGame(){
   var pr = prog[levelN]; $('pInfo').textContent = '第 ' + levelN + ' 關・難度 ' + diffN(levelN) + '・最少 ' + L.opt + ' 步' + (pr ? '・最佳 ' + pr.b + ' 步' : '');
   showOnly('pause');
 }
-function resume(){ status = 'play'; showOnly(null); showGameUi(true); }
+function resume(){ status = 'play'; showOnly(null); showGameUi(true); layout(); }
 function on(id, fn){ $(id).addEventListener('click', function(e){ audio(); fn(e); }); }
-on('tPlay', function(){ SFX.ui(); var n = 1; for (var i = 1; i <= NL; i++) if (!prog[i]) { n = i; break; } if (clearedCount() >= NL) n = sget('last', 1); startLevel(Math.min(n, NL)); });
+on('tPlay', function(){ SFX.ui(); startLevel(playTarget()); });
+// 繼續冒險 goes back to a half-played level first, else to the first level not yet cleared
+function playTarget(){ var n = lastLevel(); if (hasSave(n) && isUnlocked(n)) return n; for (var i = 1; i <= NL; i++) if (!prog[i]) return i; return n; }
 on('tSelect', function(){ SFX.ui(); openSelect(); });
 on('tHelp', function(){ SFX.ui(); helpBack = 'title'; openHelp(); });
 on('tSet', function(){ SFX.ui(); openSettings('title'); });
@@ -1398,15 +1522,19 @@ swToggle('oSound', 'sound'); swToggle('oVib', 'vib'); swToggle('oPad', 'pad'); s
 on('oOk', function(){ SFX.ui(); if (settingsBack === 'pause') { showOnly('pause'); } else openTitle(); });
 
 window.addEventListener('resize', function(){ layout(); });
+window.addEventListener('pagehide', function(){ saveGame(); });
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden) { running = false; if (raf) cancelAnimationFrame(raf); raf = 0; if (status === 'play' && !anim) pauseGame(); }
+  if (document.hidden) { saveGame(); running = false; if (raf) cancelAnimationFrame(raf); raf = 0; if (status === 'play' && !anim) pauseGame(); }
   else { running = true; last = 0; if (!raf) raf = requestAnimationFrame(frame); }
 });
 
 /* ---------------- test hooks ---------------- */
 window.__game = {
   state: function(){ return { status: status, level: levelN, moves: moveCount(), animating: !!anim, split: !!(S && !S.s), active: S && !S.s ? (activeCell === S.b ? 1 : 0) : 0, cubes: S && !S.s ? [S.a, S.b] : null, opt: L ? L.opt : 0 }; },
-  center: function(c){ var p = P(c % L.w + 0.5, ((c / L.w) | 0) + 0.5, 0.5); return { x: p[0], y: p[1] }; }
+  center: function(c){ var p = P(c % L.w + 0.5, ((c / L.w) | 0) + 0.5, 0.5); return { x: p[0], y: p[1] }; },
+  more: function(){ return { falls: falls, hints: hintsLeft, hint: hint ? hint.d : -1, hintCube: hint ? hint.cube : -1, demo: !!demo, hist: hist.map(function(h){ return h.mv; }), key: S ? stateKey(L, S) : -1, activeCell: activeCell, zoom: zoom }; },
+  // screen box of the whole board (top faces) under the settled camera
+  board: function(){ var t = camTarget(), x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (var c = 0; c < L.N; c++) if (L.kind[c]) for (var k = 0; k < 4; k++) { var x = c % L.w + (k & 1), y = ((c / L.w) | 0) + (k >> 1), px = t.ox + (x - y) * t.s, py = t.oy + (x + y) * t.s * 0.5; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } return { l: x0, r: x1, t: y0, b: y1, s: t.s }; }
 };
 
 updateMuteIcon();

@@ -1,5 +1,8 @@
-// Core tests for 彈幕射擊 (bullet-hell): pools, bullet physics, scoring, difficulty, every boss pattern, stage timelines.
-// Usage: node tests.js
+// Tests for 彈幕射擊 (bullet-hell): pools, bullet physics, scoring, difficulty, every boss pattern, stage timelines,
+// then the page in Chromium with real CDP touch for the 9.5 release re-review fixes (run checkpoints + resume,
+// pagehide flush, storage validation, rotation pause, safe-area HUD, lost-finger pickup, result-screen tap guard,
+// frame-rate independent stepping).
+// Usage: node tests.js   (about 20 s)
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
@@ -130,5 +133,168 @@ ok(C.DIFFS.every(d => d.blurb && d.blurb.indexOf((d.lives + 1) + ' 條命') === 
   ok(C.stageWaves(2).waves.length > C.stageWaves(1).waves.length && C.stageWaves(1).waves.length > C.stageWaves(0).waves.length, 'later stages have more waves');
   ok(C.STAGE_NAMES.length === C.BOSSES.length, 'one name per stage');
 }
-console.log(pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+
+// ---------------- the page, with real touch ----------------
+(async () => {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+  const browser = await chromium.launch();
+  const errors = [];
+  const KEY = 'bullet-hell:v1:';
+  async function open(w = 390, h = 844, ctx) {
+    ctx = ctx || await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    await p.goto(URL); await p.waitForFunction(() => window.__game);
+    const cdp = await ctx.newCDPSession(p);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((q, i) => ({ x: q[0], y: q[1], id: q[2] || i + 1 })) });
+    const frames = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const center = sel => p.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+    const tap = async sel => { const c = await center(sel); await touch('touchStart', [c]); await touch('touchEnd', []); await frames(); };
+    const st = () => p.evaluate(() => window.__game.state());
+    const ls = k => p.evaluate(k => JSON.parse(localStorage.getItem(k)), KEY + k);
+    const vis = sel => p.$eval(sel, e => !e.classList.contains('hidden') && !e.closest('.hidden'));
+    return { ctx, p, touch, tap, frames, center, st, ls, vis };
+  }
+
+  // 1. checkpoints: saved at stage and pattern starts, flushed on pagehide without handing back lives, resumed from the title
+  {
+    const t = await open();
+    ok(!(await t.vis('#bLoad')), 'no 繼續上次 button without a saved run');
+    await t.p.evaluate(() => window.__game.start(2));
+    let ck = await t.ls('run');
+    ok(ck && ck.d === 2 && ck.stage === 0 && ck.pat === -1 && ck.score === 0 && ck.lives === 3, 'starting a run saves a stage-1 checkpoint: ' + JSON.stringify(ck));
+    await t.p.evaluate(() => { window.__game.hold(true); window.__game.god(true); window.__game.skipToBoss(); window.__game.tick(200); window.__game.skipPattern(); window.__game.tick(400); });
+    let s = await t.st();
+    ck = await t.ls('run');
+    ok(s.boss && s.boss.idx === 1 && ck.pat === 1 && ck.spells === 0 && ck.score > 0 && ck.score <= s.score, 'a boss pattern start saves a checkpoint (pattern 1, score ' + (ck && ck.score) + ', spells counted before it)');
+    const ckScore = ck.score;
+    await t.p.evaluate(() => { window.__game.god(false); window.__game.die(); window.__game.tick(5); window.dispatchEvent(new Event('pagehide')); });
+    s = await t.st(); ck = await t.ls('run');
+    ok(s.lives === 2 && ck.lives === 2 && ck.score === ckScore, 'pagehide after losing a life saves the lower lives, keeps the checkpoint score');
+    ok((await t.ls('hi')).hard === s.score, 'pagehide banks the run score as the 困難 high score');
+    await t.p.reload(); await t.p.waitForFunction(() => window.__game);
+    ok(await t.vis('#bLoad'), 'after a reload the title offers 繼續上次');
+    const label = await t.p.textContent('#loadInfo');
+    ok(/困難/.test(label) && /第一面/.test(label) && /妖符「迴旋狐尾」/.test(label) && label.includes(ckScore.toLocaleString('en-US')), 'the button names difficulty, stage, spell and score: ' + label);
+    ok(await t.p.$eval('#bStart', e => e.classList.contains('sec')), '開始遊戲 steps back to a secondary button while a save exists');
+    await t.tap('#bLoad');
+    s = await t.st();
+    ok(s.st === 'boss' && s.stage === 0 && s.score === ckScore && s.lives === 2 && !s.practice, 'tapping it resumes stage 1 boss with the saved score and lives');
+    await t.p.evaluate(() => { window.__game.hold(true); window.__game.god(true); window.__game.tick(150); });
+    s = await t.st();
+    ok(s.boss.idx === 1 && s.boss.name === '妖符「迴旋狐尾」' && s.spells === 1, 'the saved spell starts again (attempt counted once)');
+    ok((await t.ls('diff')) === 2, 'the resumed run brings its difficulty back to the title');
+
+    // 回主選單 keeps the save; a spell practice never overwrites it
+    await t.p.evaluate(() => window.__game.pause()); await t.tap('#bMenu');
+    ok(await t.vis('#bLoad') && (await t.ls('run')).pat === 1, '回主選單 keeps the run for 繼續上次');
+    await t.tap('#bPrac'); await t.tap('#pList .prow:not([disabled])');
+    s = await t.st();
+    ok(s.practice && s.st === 'boss' && (await t.ls('run')).pat === 1 && (await t.ls('run')).stage === 0, 'a spell practice leaves the saved run alone');
+
+    // game over clears the save, 續關 writes it back, a new game replaces it
+    await t.p.evaluate(() => window.__game.pause()); await t.tap('#bMenu'); await t.tap('#bLoad');
+    await t.p.evaluate(() => { window.__game.hold(true); window.__game.lives(0); window.__game.die(); window.__game.tick(120); });
+    ok((await t.st()).st === 'over' && (await t.ls('run')) === null, 'game over clears the saved run');
+    // the result screen ignores taps for a moment (a finger still hammering bomb/field must not choose for you)
+    await t.tap('#bAgain');
+    ok((await t.st()).st === 'over', 'a tap in the first instant of the result screen does nothing');
+    await t.p.waitForTimeout(500);
+    await t.tap('#bContinue');
+    s = await t.st(); ck = await t.ls('run');
+    ok(s.st === 'boss' && s.conts === 1 && ck && ck.conts === 1 && ck.score === 1 && ck.lives === 3 && ck.pat === 1, '續關 saves the continued run again: ' + JSON.stringify(ck));
+    await t.p.evaluate(() => window.__game.pause()); await t.tap('#bRestart');
+    ck = await t.ls('run');
+    ok(ck.stage === 0 && ck.pat === -1 && ck.conts === 0 && ck.score === 0, '重新開始 replaces the save with the new run');
+    await t.ctx.close();
+  }
+
+  // 2. damaged storage never breaks the title
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await ctx.addInitScript(K => {
+      if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', 1);
+      localStorage.setItem(K + 'hi', JSON.stringify({ normal: 'abc', hard: -5, easy: 1234.7 }));
+      localStorage.setItem(K + 'run', JSON.stringify({ v: 1, d: 1, stage: 5, pat: 0, score: 10 }));
+      localStorage.setItem(K + 'clears', '"lots"'); localStorage.setItem(K + 'diff', '1.5');
+    }, KEY);
+    const t = await open(390, 844, ctx);
+    ok(await t.p.textContent('#tBest') === '0' && await t.p.textContent('#tClears') === '0', 'junk high score / clears show 0');
+    ok(!(await t.vis('#bLoad')) && (await t.ls('run')) === null, 'an invalid saved run is dropped, no 繼續上次');
+    ok(await t.p.$eval('#diffs [aria-checked="true"]', e => e.textContent) === '普通', 'a fractional difficulty falls back to 普通');
+    await t.p.click('.diff:nth-child(1)');
+    ok(await t.p.textContent('#tBest') === '1,234', 'a valid entry next to junk survives (簡單 1,234)');
+    await ctx.close();
+  }
+
+  // 3. rotation pauses, a toolbar height change does not; the HUD follows the top safe area
+  {
+    const t = await open();
+    await t.p.evaluate(() => window.__game.start(1)); await t.frames();
+    await t.p.setViewportSize({ width: 390, height: 760 }); await t.frames();
+    ok((await t.st()).st === 'stage', 'a height-only resize (Safari toolbar) keeps playing');
+    await t.p.setViewportSize({ width: 844, height: 390 }); await t.frames();
+    let s = await t.st();
+    ok(s.st === 'paused' && await t.vis('#pause'), 'turning the phone mid-run pauses');
+    ok(s.pl.x >= 8 && s.pl.x <= 352 && s.pl.y >= 12 && s.pl.y <= s.FH - 12, 'the crane stays inside the reshaped field');
+    await t.tap('#bResume'); ok((await t.st()).st === 'stage', '繼續 resumes in landscape');
+    await t.p.setViewportSize({ width: 390, height: 844 }); await t.frames();
+    await t.p.evaluate(() => { document.documentElement.style.setProperty('--sat', '47px'); dispatchEvent(new Event('resize')); });
+    s = await t.st();
+    ok(Math.abs(s.hudTop - (8 + 47 / s.S)) < 0.01, 'HUD moves below a 47 px top safe area (top ' + s.hudTop.toFixed(1) + ' field units)');
+    const pb = await t.p.$eval('#bPause', e => e.getBoundingClientRect().top);
+    ok(Math.abs(s.hudTop * s.S - pb) < 1, 'HUD top lines up with the pause button (' + (s.hudTop * s.S).toFixed(1) + ' vs ' + pb + ')');
+    await t.ctx.close();
+  }
+
+  // 4. a finger the page lost track of (window blur mid-drag) is picked up again on its next move
+  {
+    const t = await open();
+    await t.p.evaluate(() => { window.__game.start(1); window.__game.god(true); }); await t.frames();
+    await t.p.evaluate(() => window.__game.hold(true));
+    let s = await t.st(); const y0 = s.pl.y;
+    await t.touch('touchStart', [[200, 600]]); await t.touch('touchMove', [[200, 560]]); await t.frames();
+    s = await t.st(); const y1 = s.pl.y;
+    ok(y1 < y0 - 30, 'a drag moves the crane (' + y0.toFixed(0) + ' → ' + y1.toFixed(0) + ')');
+    await t.p.evaluate(() => dispatchEvent(new Event('blur')));
+    await t.touch('touchMove', [[200, 540]]); await t.touch('touchMove', [[200, 500]]); await t.frames();
+    s = await t.st();
+    ok(s.pl.y < y1 - 30, 'after a window blur the same finger keeps steering (' + y1.toFixed(0) + ' → ' + s.pl.y.toFixed(0) + ')');
+    await t.touch('touchEnd', []); await t.frames();
+    await t.touch('touchStart', [[100, 600]]); await t.touch('touchMove', [[140, 600]]); await t.frames();
+    s = await t.st();
+    ok(!s.focus, 'the re-adopted finger was released on lift (a new finger is not counted as two)');
+    await t.touch('touchEnd', []);
+    await t.ctx.close();
+  }
+
+  // 5. frame-rate independence: the same second of play at 24, 60 and 144 Hz
+  {
+    const t = await open();
+    await t.p.evaluate(() => { window.__game.start(1); window.__game.god(true); window.__game.hold(true); });
+    const run = fps => t.p.evaluate(fps => {
+      const g = window.__game; g.start(1); g.god(true); g.hold(true);
+      g.item(60, 120, 1, 60);
+      const n = Math.round(fps), t0 = g.state();
+      for (let i = 0; i < n; i++) g.advance(1 / fps);
+      const s = g.state(), it = s.items[s.items.length - 1];
+      return { x: it[0], y: it[1], t: s.t - t0.t };
+    }, fps);
+    const r24 = await run(24), r60 = await run(60), r144 = await run(144);
+    ok(Math.abs(r24.x - r60.x) < 0.6 && Math.abs(r144.x - r60.x) < 0.6, 'item drift is the same at 24/60/144 Hz (x ' + [r24, r60, r144].map(r => r.x.toFixed(2)).join(' / ') + ')');
+    ok(Math.abs(r24.y - r60.y) < 1.5 && Math.abs(r144.y - r60.y) < 1.5, 'item fall is the same at 24/60/144 Hz (y ' + [r24, r60, r144].map(r => r.y.toFixed(2)).join(' / ') + ')');
+    ok([r24, r60, r144].every(r => Math.abs(r.t - 1) < 0.01), 'a second of frames advances the stage clock by one second at every rate');
+    // a 24 Hz frame runs as three 1/72 s updates: a shot (900 units/s) moves 12.5 units per update, so it can't skip
+    // over a swarmer 21 units across (one 1/48 s step would move it 18.75, two 1/24 s halves used to allow 22.5 at 20 Hz)
+    const steps = await t.p.evaluate(() => { const g = window.__game, a = g.updates(); g.advance(1 / 24); const b = g.updates(); g.advance(1 / 144); return [b - a, g.updates() - b]; });
+    ok(steps[0] === 3 && steps[1] === 1, 'frames are split into ≤1/60 s updates: 24 Hz → 3, 144 Hz → 1 (' + steps + ')');
+    await t.ctx.close();
+  }
+
+  ok(/自動存檔/.test(html) && /繼續上次/.test(html), 'help explains the autosave and 繼續上次');
+  ok(errors.length === 0, 'no page or console errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
+  await browser.close();
+  console.log(pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.log('FAIL', e.stack || e); process.exit(1); });
