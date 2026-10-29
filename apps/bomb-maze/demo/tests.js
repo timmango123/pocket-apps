@@ -1,6 +1,8 @@
 // Core logic tests for 鞭炮貓老街 (bomb-maze). Loads the engine between the CORE markers of ../index.html and
 // checks generation, movement with corner assist, bombs, chain reactions, power-ups, enemies, the CPU brain and
-// whole-stage / whole-battle simulations. Usage: node tests.js
+// whole-stage / whole-battle simulations, then (9.5 re-review) save validation and the page in Chromium with real CDP
+// touch: damaged saves, win/lose settled on pagehide, 闖關 confirm, empty-bomb feedback, stick hysteresis, rotation,
+// HUD contrast. Usage: node tests.js (about 15 s)
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const BM = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return BM;')();
@@ -369,5 +371,168 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
   }
   ok(won >= 8, 'CPU clears most early stages and the first stages with new things (' + won + '/11)');
 }
-console.log(pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+// ---- 9.5 re-review: saves from storage are checked before they are used ----
+{
+  const mk = n => BM.createSim(BM.genStage(n), { mode: 'stage' });
+  let rejected = 0, accepted = 0;
+  for (const n of [1, 20, 33, 56, 90, 100]) {
+    const a = BM.createSim(BM.genStage(n), { mode: 'stage', cpu: [true], seed: n, skill: 2, lives: 3 });
+    for (let i = 0; i < 60 * 90 && a.status === 'play'; i++) { BM.tick(a, 1 / 60); a.events.length = 0; if (i % 45 === 0) { if (BM.restore(mk(n), JSON.parse(JSON.stringify(BM.snapshot(a))))) accepted++; else rejected++; } }
+  }
+  ok(rejected === 0 && accepted > 200, 'every real autosave is accepted (' + accepted + ' saves, ' + rejected + ' refused)');
+  const base = () => { const a = BM.createSim(BM.genStage(57), { mode: 'stage', cpu: [true], seed: 3, skill: 2, lives: 3 }); for (let i = 0; i < 600; i++) { BM.tick(a, 1 / 60); a.events.length = 0; } return JSON.parse(JSON.stringify(BM.snapshot(a))); };
+  const bad = {
+    'no bomb list': s => { s.bombs = 5; }, 'null player': s => { s.me = null; }, 'enemies not a list': s => { s.enemies = 'x'; },
+    'short grid': s => { s.grid = s.grid.slice(1); }, 'missing fire': s => { s.fire = null; }, 'NaN time': s => { s.time = NaN; }, 'string lives': s => { s.lives = '3'; },
+    'cat outside the map': s => { s.me.x = 99; }, 'unknown monster': s => { s.enemies[0].t = 42; }, 'pillar removed': s => { s.grid[s.grid.indexOf(BM.HARD)] = BM.EMPTY; },
+    'bomb off the grid': s => { s.bombs.push({ x: 1.5, y: 1, range: 2, t: 1, slide: -1, p: 0 }); }, 'time past the limit': s => { s.time = 1e5; }
+  };
+  for (const k in bad) {
+    const sn = base(); bad[k](sn); const sim = mk(57), before = JSON.stringify(sim.grid);
+    let threw = false, r; try { r = BM.restore(sim, sn); } catch (e) { threw = true; }
+    ok(!threw && r === false && JSON.stringify(sim.grid) === before && sim.time === 0, 'a damaged save is refused without touching the stage: ' + k);
+  }
+  const boss = BM.createSim(BM.genStage(20), { mode: 'stage' }); boss.enemies[0].roarT = 1.25;
+  const back = BM.createSim(BM.genStage(20), { mode: 'stage' }); BM.restore(back, JSON.parse(JSON.stringify(BM.snapshot(boss))));
+  ok(back.enemies[0].roarT === 1.25, 'the boss keeps its roar timer across a reload');
+}
+
+// ---- the page in Chromium (real CDP touch) ----
+(async () => {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const os = require('os');
+  const WRAP = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bomb-maze-')), 'index.html');
+  fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + html + '</body></html>');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const errors = [];
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const p = await ctx.newPage();
+  p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); p.on('pageerror', e => errors.push(e.message));
+  const cdp = await ctx.newCDPSession(p);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((q, i) => ({ x: q[0], y: q[1], id: i + 1 })) });
+  const frames = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const center = sel => p.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+  const tap = async sel => { const c = await center(sel); await touch('touchStart', [c]); await touch('touchEnd', []); await frames(); };
+  const open = async (store) => {
+    await p.goto('file://' + WRAP);
+    await p.evaluate(st => { localStorage.clear(); for (const k in st || {}) localStorage.setItem('bomb-maze:v1:' + k, JSON.stringify(st[k])); }, store);
+    await p.reload(); await p.waitForFunction(() => window.__game && window.__game.sim()); await frames();
+  };
+  const vis = () => p.evaluate(() => [...document.querySelectorAll('.ov')].filter(o => !o.hidden).map(o => o.id).join());
+  const store = k => p.evaluate(k => JSON.parse(localStorage.getItem('bomb-maze:v1:' + k)), k);
+  try {
+    // damaged saves: no 繼續, no crash, the clock does not run behind the menu
+    await open({ resume: { n: 3, kit: null, snap: { v: 1, n: 3, grid: [1, 2], bombs: 5 } }, progress: { 1: 3, 2: 'x', 900: 3, '-4': 2, 3: 99 }, run: { next: 'a' } });
+    ok(await p.$eval('#contBtn', e => e.hidden), 'a damaged save offers no 繼續 button');
+    ok(await p.evaluate(() => document.getElementById('startDone').textContent) === '2' && JSON.stringify(await p.evaluate(() => window.__game.progress())) === '{"1":3,"3":3}', 'progress from storage is cleaned (only stages 1-100, at most 3 stars)');
+    await p.evaluate(() => window.__game.startStage(3, { n: 3, kit: null, snap: { v: 1, n: 3, grid: [], bombs: 5 } }));
+    const st = await p.evaluate(() => window.__game.state());
+    ok(st.mode === 'stage' && st.playing && (await vis()) === '' && /存檔讀不到/.test((await p.evaluate(() => window.__game.banner())).sub), 'a save that cannot be read starts the stage fresh and says so');
+
+    // a real autosave round-trips through a reload and waits on the pause panel
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(5); g.input(1); g.tick(3000); g.input(-1); window.dispatchEvent(new Event('pagehide')); });
+    const saved = await store('resume');
+    ok(saved && saved.n === 5 && saved.snap.time > 1.5, 'pagehide writes the stage in progress');
+    await p.reload(); await p.waitForFunction(() => window.__game && window.__game.sim()); await frames();
+    ok(!(await p.$eval('#contBtn', e => e.hidden)), 'after a reload 繼續 is offered');
+    await tap('#contBtn');
+    const r2 = await p.evaluate(() => ({ s: window.__game.state(), t: window.__game.sim().time }));
+    ok((await vis()) === 'ovPause' && r2.s.paused && Math.abs(r2.t - saved.snap.time) < 1e-6, '繼續 restores the stage and waits on the pause panel');
+
+    // a win (or loss) is settled when the page goes away during the 1 s pause before the result panel
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(1); g.auto(true); let k = 0; while (g.state().status === 'play' && k++ < 3000) { g.tick(100); if (k === 20) localStorage.setItem('bomb-maze:v1:resume', JSON.stringify({ n: 1, kit: null, snap: BM.snapshot(g.sim()) })); }   // the last autosave before the door
+      g.auto(false); });
+    ok((await p.evaluate(() => window.__game.state().status)) === 'won', 'the built-in brain clears stage 1');
+    await p.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); delete document.hidden; });
+    ok((await p.evaluate(() => window.__game.progress()[1])) >= 1 && (await store('run')).next === 2 && (await store('resume')) === null && (await vis()) === 'ovResult', 'hiding the app right after the door: the stars are kept, the run moves on, no stale autosave');
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(7); g.tick(1500); window.dispatchEvent(new Event('pagehide'));
+      const s = g.sim(); s.lives = 1; s.bombers[0].shield = false; s.bombers[0].invul = 0; s.bombers[0].alive = false; s.bombers[0].deadT = 0; s.lives = 0; g.tick(1400); });
+    ok((await p.evaluate(() => window.__game.state().status)) === 'lost', 'stage lost');
+    await p.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    ok((await store('resume')) === null && (await store('run')) === null, 'closing the app during the lose pause does not leave the stage to come back from the last autosave');
+
+    // keys pressed behind the pause panel do nothing on 繼續
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(4); g.tick(1200); });
+    await p.keyboard.press('p'); await p.keyboard.press(' ');
+    ok((await vis()) === 'ovPause', 'P pauses');
+    await p.keyboard.press('p'); await p.evaluate(() => window.__game.tick(100));
+    ok((await p.evaluate(() => window.__game.state().bombs)) === 0, 'space pressed while paused is not queued into a bomb on 繼續');
+    await p.keyboard.press(' '); await p.evaluate(() => window.__game.tick(100));
+    ok((await p.evaluate(() => window.__game.state().bombs)) === 1, 'space places a bomb while playing');
+    await p.evaluate(() => { const g = window.__game; g.manual(false); });
+    await p.keyboard.press('Escape'); await p.click('#quitBtn');
+    await p.click('#selectBtn'); await p.keyboard.press('Escape');
+    ok((await vis()) === 'ovStart', 'Escape backs out of the stage list');
+
+    // 闖關 with a saved stage needs a second tap
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(1); g.tick(2500); window.dispatchEvent(new Event('pagehide')); });
+    await p.reload(); await p.waitForFunction(() => window.__game && window.__game.sim()); await frames();
+    await tap('#startBtn');
+    ok((await vis()) === 'ovStart' && (await store('resume')) && /再按一次/.test(await p.textContent('#startBtn')), 'first tap on 闖關 with a save only asks again');
+    await tap('#startBtn');
+    ok((await vis()) === '' && (await store('resume')) === null && (await p.evaluate(() => window.__game.sim().time)) === 0, 'second tap starts fresh');
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(1); g.tick(2500); window.dispatchEvent(new Event('pagehide')); });
+    await p.reload(); await p.waitForFunction(() => window.__game && window.__game.sim()); await frames();
+    await tap('#startBtn'); await sleep(3300);
+    ok(/闖關/.test(await p.textContent('#startBtn')) && (await p.$eval('#startN', e => e.textContent)) === '1', 'the question goes away after 3 s');
+
+    // touch: the bomb button says so when every firecracker is out; the stick keeps its axis near the diagonal
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(false); g.startStage(3); });
+    await tap('#bombBtn'); await sleep(120);
+    ok((await p.evaluate(() => window.__game.state().bombs)) === 1, 'a tap on 放炮 places a bomb');
+    await p.evaluate(() => { window.__game.input(1); }); await sleep(450); await p.evaluate(() => window.__game.input(-1));
+    await tap('#bombBtn'); await sleep(40);
+    ok((await p.evaluate(() => window.__game.state().bombs)) === 1 && (await p.$eval('#bombN', e => e.classList.contains('deny'))), 'a tap with no firecracker left shakes the counter instead of doing nothing');
+    await p.evaluate(() => { const g = window.__game; g.manual(true); });
+    const pc = await center('#pad'), dir = () => p.evaluate(() => { const k = document.getElementById('knob').style.transform; const a = [...document.querySelectorAll('#pad .arr.lit')].map(e => e.classList[1]); return a.join(); });
+    await touch('touchStart', [[pc[0] + 40, pc[1]]]); await frames();
+    ok((await dir()) === 'r', 'stick: push right');
+    await touch('touchMove', [[pc[0] + 40, pc[1] + 45]]); await frames();
+    ok((await dir()) === 'r', 'stick: a thumb that drifts just past the diagonal keeps the cat going right');
+    await touch('touchMove', [[pc[0] + 40, pc[1] + 56]]); await frames();
+    ok((await dir()) === 'd', 'stick: a clear push down turns');
+    await touch('touchMove', [[pc[0] + 46, pc[1] + 40]]); await frames();
+    ok((await dir()) === 'd', 'stick: and holds the new axis the same way');
+    await touch('touchEnd', []); await frames();
+    ok((await dir()) === '', 'stick: lifting the thumb stops');
+
+    // battle: knocked out while two or more CPUs fight on goes to the result instead of a long wait
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startBattle(3, 0); g.tick(1200); const s = g.sim(); const b = s.bombers[0]; b.shield = false; b.invul = 0; b.alive = false; b.deadT = 0; g.tick(2600); });
+    ok((await vis()) === 'ovBattleEnd' && /第 [34] 名/.test(await p.textContent('#bendName')), 'knocked out in a battle: result with your place within 3 s (' + (await p.textContent('#bendName')) + ')');
+
+    // rotation mid-stage: the maze and both controls stay on screen
+    await open({});
+    await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(13); g.tick(1500); });
+    for (const [w, h] of [[844, 390], [390, 844], [667, 375]]) {
+      await p.setViewportSize({ width: w, height: h }); await frames(); await frames();
+      const r = await p.evaluate(() => { const q = id => document.getElementById(id).getBoundingClientRect(); const c = q('cv'), a = q('pad'), b = q('bombBtn'); return { c: [c.left, c.top, c.right, c.bottom], a: [a.left, a.top, a.right, a.bottom], b: [b.left, b.top, b.right, b.bottom], sw: document.documentElement.scrollWidth, land: document.body.classList.contains('land') }; });
+      const inView = q => q[0] >= -0.5 && q[1] >= -0.5 && q[2] <= w + 0.5 && q[3] <= h + 0.5, apart = (x, y) => x[2] <= y[0] || y[2] <= x[0] || x[3] <= y[1] || y[3] <= x[1];
+      ok(inView(r.c) && inView(r.a) && inView(r.b) && apart(r.c, r.a) && apart(r.c, r.b) && r.sw <= w && r.land === (w > h), 'rotate to ' + w + 'x' + h + ': maze, stick and 放炮 all on screen, nothing overlaps');
+    }
+    await p.setViewportSize({ width: 390, height: 844 });
+
+    // small HUD text is readable in both themes
+    for (const theme of ['light', 'dark']) {
+      await open({ theme });
+      await p.evaluate(() => { const g = window.__game; g.manual(true); g.startStage(20); const b = g.sim().bombers[0]; b.kick = true; b.speed = 4.2; g.tick(1200); const s = g.sim(); s.time = s.limit - 10; g.tick(100); });
+      const cr = await p.evaluate(() => {
+        const rgb = c => c.match(/[\d.]+/g).slice(0, 3).map(Number), L = c => { const v = rgb(c).map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+        const ratio = el => { const cs = getComputedStyle(el), a = L(cs.color), b = L(cs.backgroundColor); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
+        return { chip: ratio(document.querySelector('#hudPw span.on')), low: ratio(document.querySelector('#hudTime.low')) };
+      });
+      ok(cr.chip >= 4.5 && cr.low >= 4.5, theme + ': power-up chips and the low clock reach 4.5:1 (' + cr.chip.toFixed(2) + ', ' + cr.low.toFixed(2) + ')');
+    }
+    ok(errors.length === 0, 'no page or console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
+  } catch (e) { fail++; console.log('FAIL browser block threw:', e.message); }
+  await browser.close();
+  console.log(pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+})();
