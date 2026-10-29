@@ -44,6 +44,10 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .abtn:active:not([disabled]){transform:scale(.94)}
 .abtn[disabled]{opacity:.42}
 #act .sp{flex:1}
+.land #act{display:grid;grid-template-columns:1fr 1.5fr;gap:6px;height:auto}
+.land #act .sp{display:none}
+.land #act .abtn{min-width:0}
+.land #bPass{margin-right:0}
 #bPass{min-width:64px;margin-right:24px}
 #bPlay{min-width:112px;background:linear-gradient(180deg,#e2563f,#b52b22);color:#fff6dc;border-color:#f0b94a;box-shadow:0 4px 0 #7d1a14,0 6px 16px #7d1a1455}
 #bPlay small{color:#ffe7a8}
@@ -134,6 +138,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .log .ps{color:var(--ink2)}
 .mc{display:inline-block;padding:0 3px;margin-right:2px;border-radius:4px;background:#fffdf5;color:#1c1a24;font-weight:800;font-size:12px;border:1px solid #0002}
 .mc.r{color:#c42032}
+@media (hover:none) and (pointer:coarse){ .kb{display:none !important} }
 </style>
 <style id="mobile-shim">
 /* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
@@ -173,10 +178,10 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </div>
 <div id="counter" class="hidden" aria-label="記牌器"></div>
 <div id="act" class="hidden">
-  <button class="abtn" id="bHint">提示<small>H</small></button>
+  <button class="abtn" id="bHint">提示<small class="kb">H</small></button>
   <button class="abtn" id="bSort">排序<small id="sortLbl">點數</small></button>
   <div class="sp"></div>
-  <button class="abtn" id="bPass">過<small>P</small></button>
+  <button class="abtn" id="bPass">過<small class="kb">P</small></button>
   <button class="abtn" id="bPlay" disabled>出牌<small id="playLbl">選牌</small></button>
 </div>
 <div id="toast"></div>
@@ -209,6 +214,8 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <div class="sec-t">規則預設</div>
     <div class="seg" id="segPre"><button data-v="tw">台灣標準</button><button data-v="twf">含同花</button><button data-v="hk">港式</button></div>
     <div id="rsw"></div>
+    <div class="sec-t">電腦出牌速度</div>
+    <div class="seg" id="segSpeed"><button data-v="normal">一般</button><button data-v="fast">快速</button></div>
     <div class="sec-t">局數</div>
     <div class="seg" id="segRounds"><button data-v="4">4 局</button><button data-v="8">8 局</button><button data-v="16">16 局</button></div>
     <div class="sec-t">輔助與介面</div>
@@ -235,7 +242,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <h3>計分</h3>
     <ul><li>輸家罰分 = 剩餘張數；剩 8–12 張 ×2，13 張全沒出 ×3。</li><li>手上每有一張 2 再 ×2（可在設定關閉）。</li><li>贏家拿走三家罰分總和。打滿局數或有人累積到 −100 時結束，總分最高者勝。</li></ul>
     <h3>操作</h3>
-    <ul><li>點牌選取、再點取消；手指橫向滑過可連續選多張。</li><li>長按一張牌再拖曳可以重新排列。</li><li>「提示」會由小到大輪流選出能壓過的組合。</li><li>鍵盤：Enter 出牌、P 過、H 提示、S 排序。</li></ul>
+    <ul><li>點牌選取、再點取消；手指橫向滑過可連續選多張。</li><li>按住一張牌半秒再拖曳可以重新排列。</li><li>發牌時點一下牌桌可以跳過發牌動畫。</li><li>「提示」會由小到大輪流選出能壓過的組合。</li><li class="kb">鍵盤：Enter 出牌、P 過、H 提示、S 排序。</li></ul>
   </div>
   <button class="btn" id="hOk">知道了</button>
 </div></div>
@@ -264,6 +271,12 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div class="sub" id="meSub"></div>
   <div class="scroll"><table class="rt" id="meTbl"></table></div>
   <div class="row2"><button class="btn sec" id="meHome">主畫面</button><button class="btn" id="meAgain">再來一場</button></div>
+</div></div>
+
+<div class="ov hidden" id="confirm"><div class="pnl">
+  <h2>開新牌局？</h2>
+  <p class="sub" id="cfTxt" style="font-size:15px;line-height:1.6"></p>
+  <div class="row2"><button class="btn sec" id="cfNo">繼續原本的</button><button class="btn" id="cfYes">放棄，開新局</button></div>
 </div></div>
 
 <script id="coreScript">
@@ -680,10 +693,13 @@ function thinkExpert(view, r, pers, ms) {
 }
 var now = (typeof performance !== 'undefined' && performance.now) ? function () { return performance.now(); } : function () { return Date.now(); };
 // main AI entry. job = {view, level, seed, persona, ms}
+var PASS_SOFT = 0.35;
 function think(job) {
   var t0 = now(), v = job.view, r = rng(job.seed || 1), pers = job.persona || { aggr: 0.5, keep: 0.5 }, cards;
   if (job.level === 0) cards = thinkEasy(v, r, pers);
-  else if (job.level === 1) cards = thinkNormal(v, r, pers);
+  // 一般: the computer seats (1-3; seat 0 is always the player) sometimes let a trick go while nobody is close to
+  // going out, so whoever plans for taking control (rather than just beating every card) is rewarded
+  else if (job.level === 1) cards = v.me !== 0 && v.lead && danger(v) > 2 && r() < PASS_SOFT ? null : thinkNormal(v, r, pers);
     else cards = thinkExpert(v, r, pers, job.ms || 110);
   if (cards && v.lead === null && v.first && cards.indexOf(0) < 0) cards = [0];
   return { cards: cards ? cards.slice().sort(asc) : null, ms: Math.round((now() - t0) * 10) / 10 };
@@ -730,7 +746,7 @@ var ACH = [
 function load(k, d) { try { var v = localStorage.getItem('bigtwo:' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
 function save(k, v) { try { localStorage.setItem('bigtwo:' + k, JSON.stringify(v)); } catch (e) {} }
 function drop(k) { try { localStorage.removeItem('bigtwo:' + k); } catch (e) {} }
-var S = Object.assign({ level: 1, preset: 'tw', rules: B2.mkRules(B2.PRESETS.tw.rules), rounds: 8, counter: true, sound: true, vib: true, theme: 'auto', seenTable: false, sort: 'rank' }, load('settings', {}));
+var S = Object.assign({ speed: 'normal', level: 1, preset: 'tw', rules: B2.mkRules(B2.PRESETS.tw.rules), rounds: 8, counter: true, sound: true, vib: true, theme: 'auto', seenTable: false, sort: 'rank' }, load('settings', {}));
 S.rules = B2.mkRules(S.rules);
 var ST = Object.assign({ rounds: 0, wins: 0, matches: 0, matchWins: 0, types: {}, fastest: 0, ach: {}, daily: {}, best: 0 }, load('stats', {}));
 function saveS() { save('settings', S); }
@@ -791,20 +807,26 @@ function layout() {
   SA = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
   var land = W > H * 1.15; document.body.classList.toggle('land', land);
   var cardH = Math.round(Math.max(76, Math.min(112, land ? H * 0.2 : W * 0.2))), cardW = Math.round(cardH * 0.7);
-  var L = { land: land, cardH: cardH, cardW: cardW };
+  // portrait: two rows whenever one row would leave cards under 40px wide; short screens use slightly smaller cards for it
+  var short = !land && (H - SA.t - SA.b) < 600, two = !land && (W - SA.l - SA.r - 24 - cardW) / 12 < 40;
+  if (two && short) { cardH = 68; cardW = Math.round(cardH * 0.7); }
+  var L = { land: land, cardH: cardH, cardW: cardW, twoRow: false, rowGap: 0 };
   var topB = SA.t + 56;
   if (!land) {
     L.handX = SA.l + 12; L.handW = W - SA.l - SA.r - 24; L.handY = H - SA.b - 12 - cardH;
-    L.actX = SA.l + 14; L.actW = W - SA.l - SA.r - 28; L.actY = L.handY - 22 - 52;
+    L.twoRow = two; L.rowGap = !two ? 0 : short ? 42 : Math.max(46, Math.round(cardH * 0.6));
+    L.actX = SA.l + 14; L.actW = W - SA.l - SA.r - 28; L.actY = L.handY - L.rowGap - 22 - 52;
     L.cntY = L.actY - 38;
     L.seats = [null, { x: W - SA.r - 40, y: 0, side: 'r' }, { x: W / 2, y: topB + 44, side: 't' }, { x: SA.l + 40, y: 0, side: 'l' }];
     var midTop = topB + 100, midBot = L.cntY - 6;
     L.cx = W / 2; L.cy = (midTop + midBot) / 2 + 6;
+    L.cy = Math.min(L.cy, L.cntY - 10 - 24 - 18 - Math.round(cardH * 0.95) / 2); // keep the play label clear of the card counter
     L.seats[1].y = L.seats[3].y = Math.max(midTop + 30, L.cy - 70);
   } else {
-    var actW = Math.min(330, W * 0.42);
+    // landscape: the four buttons sit in a 2×2 block so the hand row gets most of the width
+    var actW = 196;
     L.actW = actW; L.actX = W - SA.r - 16 - actW; L.handY = H - SA.b - 10 - cardH;
-    L.handX = SA.l + 16; L.handW = L.actX - 14 - L.handX; L.actY = L.handY + cardH / 2 - 26 - 4;
+    L.handX = SA.l + 16; L.handW = L.actX - 14 - L.handX; L.actY = H - SA.b - 10 - 102;
     L.cntY = L.handY - 52;
     L.seats = [null, { x: W - SA.r - 56, y: H * 0.36, side: 'r' }, { x: W / 2, y: SA.t + 34, side: 't' }, { x: SA.l + 56, y: H * 0.36, side: 'l' }];
     L.cx = W / 2; L.cy = (SA.t + 96 + L.handY - 18) / 2;
@@ -814,7 +836,10 @@ function layout() {
   LAY = L;
   var act = $('act'); act.style.left = L.actX + 'px'; act.style.width = L.actW + 'px'; act.style.top = L.actY + 'px';
   var cn = $('counter'); cn.style.left = (land ? L.handX : (W - 13 * 24 + 2) / 2) + 'px'; cn.style.top = L.cntY + 'px';
-  faceCache = {}; bgDirty = true; layoutHand(true);
+  faceCache = {}; faceN = 0; pills = []; bgDirty = true; layoutHand(true);
+  // cards already on the table follow the new layout (rotation / resize)
+  table.forEach(function (it) { it.pos = tablePos(it.cards.length); });
+  flying.forEach(function (f) { if (f.face && G && phase === 'play') { f.t0 = -1e9; } }); // finish in-flight plays at their new spot
 }
 // ---------- drawing primitives ----------
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
@@ -826,11 +851,15 @@ function suitPath(c, s, x, y, z) { // centred at x,y, size z
   else { var r = z * 0.21; c.arc(x, y - z * 0.22, r, 0, 7); c.moveTo(x - z * 0.2 + r, y + z * 0.08); c.arc(x - z * 0.22, y + z * 0.08, r, 0, 7); c.moveTo(x + z * 0.22 + r, y + z * 0.08); c.arc(x + z * 0.22, y + z * 0.08, r, 0, 7); c.moveTo(x - z * 0.07, y); c.lineTo(x + z * 0.07, y); c.lineTo(x + z * 0.17, y + z * 0.5); c.lineTo(x - z * 0.17, y + z * 0.5); c.closePath(); }
   c.fill();
 }
-var faceCache = {};
+var faceCache = {}, faceN = 0;
+// card images are cached per size; sizes that change every frame (cards in flight) snap to 6px steps so a flight
+// reuses a handful of images instead of painting a new one each frame
+function cardSize(w, h) { if (w === Math.round(w) && h === Math.round(h)) return [w, h]; var rw = Math.max(6, Math.round(w / 6) * 6); return [rw, Math.round(rw * h / w)]; }
+function cacheFull() { if (++faceN > 400) { faceCache = {}; faceN = 0; } }
 function suitColor(s) { return (s === 1 || s === 2) ? '#c42032' : '#1d1a26'; }
 function renderFace(card, w, h) {
   var k = card + ':' + w + 'x' + h; if (faceCache[k]) return faceCache[k];
-  var c = document.createElement('canvas'); c.width = Math.round(w * DPR); c.height = Math.round(h * DPR); var g = c.getContext('2d'); g.scale(DPR, DPR);
+  cacheFull(); var c = document.createElement('canvas'); c.width = Math.round(w * DPR); c.height = Math.round(h * DPR); var g = c.getContext('2d'); g.scale(DPR, DPR);
   var r = B2.rk(card), s = B2.st(card), col = suitColor(s), rad = Math.max(4, w * 0.11);
   rr(g, 0.5, 0.5, w - 1, h - 1, rad); var gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#fffdf6'); gr.addColorStop(1, '#f3ead6'); g.fillStyle = gr; g.fill();
   g.lineWidth = 1; g.strokeStyle = '#00000038'; g.stroke();
@@ -860,7 +889,7 @@ function renderFace(card, w, h) {
 }
 function renderBack(w, h) {
   var k = 'back:' + w + 'x' + h; if (faceCache[k]) return faceCache[k];
-  var c = document.createElement('canvas'); c.width = Math.round(w * DPR); c.height = Math.round(h * DPR); var g = c.getContext('2d'); g.scale(DPR, DPR);
+  cacheFull(); var c = document.createElement('canvas'); c.width = Math.round(w * DPR); c.height = Math.round(h * DPR); var g = c.getContext('2d'); g.scale(DPR, DPR);
   var rad = Math.max(3, w * 0.11);
   rr(g, 0.5, 0.5, w - 1, h - 1, rad); var gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#a3242b'); gr.addColorStop(1, '#5e0f15'); g.fillStyle = gr; g.fill();
   g.strokeStyle = '#e7b94a'; g.lineWidth = Math.max(1, w * 0.04); rr(g, w * 0.09, w * 0.09, w - w * 0.18, h - w * 0.18, rad * 0.6); g.stroke();
@@ -877,7 +906,7 @@ function renderBack(w, h) {
 function drawCard(card, x, y, w, h, rot, faceUp, alpha, glow) { // x,y = centre
   ctx.save(); ctx.translate(x, y); if (rot) ctx.rotate(rot); if (alpha != null) ctx.globalAlpha = alpha;
   ctx.shadowColor = '#00000055'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 2;
-  var img = faceUp ? renderFace(card, w, h) : renderBack(w, h);
+  var sz = cardSize(w, h), img = faceUp ? renderFace(card, sz[0], sz[1]) : renderBack(sz[0], sz[1]);
   ctx.drawImage(img, -w / 2, -h / 2, w, h);
   ctx.shadowColor = 'transparent';
   if (glow) { ctx.strokeStyle = glow; ctx.lineWidth = 2.5; rr(ctx, -w / 2 + 1, -h / 2 + 1, w - 2, h - 2, w * 0.11); ctx.stroke(); }
@@ -928,7 +957,7 @@ function drawBg() {
   else { gr.addColorStop(0, '#fbf1dc'); gr.addColorStop(0.5, '#f0dfbf'); gr.addColorStop(1, '#dcc39a'); }
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
   // table (wood ellipse)
-  var L = LAY, tx = L.cx, ty = L.cy, rx = Math.min(W * 0.46, L.land ? W * 0.3 : W * 0.46), ry = L.land ? (L.handY - 20 - (SA.t + 70)) * 0.52 : Math.min(H * 0.24, rx * 1.05);
+  var L = LAY, tx = L.cx, ty = L.cy, rx = Math.min(W * 0.46, L.land ? W * 0.3 : W * 0.46), ry = L.land ? (L.handY - 20 - (SA.t + 70)) * 0.52 : Math.max(60, Math.min(H * 0.24, rx * 1.05, L.actY - 8 - L.cy));
   g.save(); g.translate(tx, ty);
   g.fillStyle = '#00000044'; g.beginPath(); g.ellipse(0, 10, rx + 4, ry + 6, 0, 0, 7); g.fill();
   var wg = g.createRadialGradient(0, -ry * 0.3, 10, 0, 0, rx * 1.1); if (dark) { wg.addColorStop(0, '#8e5a30'); wg.addColorStop(1, '#5e3418'); } else { wg.addColorStop(0, '#c48a52'); wg.addColorStop(1, '#94592c'); }
@@ -940,9 +969,18 @@ function drawBg() {
   g.strokeStyle = '#3a1a0a66'; g.lineWidth = 2; g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, 7); g.stroke();
   g.restore();
   lanterns = [];
-  var n = Math.max(3, Math.round(W / 130));
-  for (var k = 0; k < n; k++) lanterns.push({ x: (k + 0.5) * W / n, y: SA.t + (L.land ? 10 : 70) + (k % 2) * 16, s: L.land ? 0.55 : 0.75, ph: k * 1.3 });
+  if (L.land) { // landscape: only in the gaps between the round info, the top seat and the top-right buttons
+    var gaps = [[Math.max(SA.l + 150, infoRight() + 40), W / 2 - L.R - 70], [W / 2 + L.R + 100, W - SA.r - 120]];
+    gaps.forEach(function (gp, k) { var gw = gp[1] - gp[0]; if (gw < 40) return; var m = gw >= 170 ? 2 : 1; for (var q = 0; q < m; q++) lanterns.push({ x: gp[0] + gw * (q + 0.5) / m, y: SA.t + 14 + (q % 2) * 10, s: 0.55, ph: k * 1.3 + q }); });
+  } else {
+    var n = Math.max(3, Math.round(W / 130));
+    for (var k = 0; k < n; k++) lanterns.push({ x: (k + 0.5) * W / n, y: SA.t + 70 + (k % 2) * 16, s: 0.75, ph: k * 1.3 });
+  }
   bgDirty = false;
+}
+function infoRight() { // right edge of the round info text (not of its flex box)
+  var r = 0; ['iRound', 'iSub'].forEach(function (id) { try { var rg = document.createRange(); rg.selectNodeContents($(id)); r = Math.max(r, rg.getBoundingClientRect().right); } catch (e) {} });
+  return r || SA.l + 200;
 }
 function drawLanterns(t) {
   lanterns.forEach(function (l) {
@@ -962,6 +1000,21 @@ function drawLanterns(t) {
 // ---------- game/match state ----------
 var M = null, G = null, phase = 'title', hand = [], sel = {}, disp = {}, table = [], flying = [], parts = [], emote = [null, null, null, null], passFlag = [false, false, false, false];
 var thinking = -1, turnToken = 0, paused = false, shake = 0, hintList = null, hintIdx = 0, busy = false, lastThink = null, centerMsg = '', dealing = false;
+// every game-flow timer goes through later(): resetFlow() (new match / restore / back to title) cancels them all,
+// and a callback from an older flow never runs against the new (or null) G.
+var flowGen = 0, timers = [], dealSkip = null;
+function later(fn, ms) {
+  var g = flowGen, id = setTimeout(function () { var k = timers.indexOf(id); if (k >= 0) timers.splice(k, 1); if (g === flowGen) fn(); }, ms);
+  timers.push(id); return id;
+}
+function resetFlow() {
+  flowGen++; timers.forEach(clearTimeout); timers = [];
+  paused = false; pendingAI = null; busy = false; thinking = -1; turnToken++; dealing = false; dealCount = null; dealSkip = null;
+  flying = []; parts = []; table = []; shake = 0; fwUntil = 0; centerMsg = ''; hintList = null;
+  if (gest) { clearTimeout(gest.lp); gest = null; }
+  Object.keys(bubbles).forEach(function (k) { clearTimeout(bubbles[k].tm); bubbles[k].remove(); delete bubbles[k]; });
+}
+function speedK() { return S.speed === 'fast' ? 0.4 : 1; }
 function persist() {
   if (!M || !G) return;
   save('match', { M: M, G: G.snapshot(), hand: hand, phase: phase });
@@ -971,22 +1024,29 @@ function hashStr(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h
 function newMatch(daily) {
   var seed = daily ? hashStr('bigtwo-' + dateKey()) : ((Date.now() ^ (Math.random() * 1e9)) >>> 0);
   var q = new URLSearchParams(location.search); if (q.get('seed')) seed = +q.get('seed');
+  resetFlow();
   M = { rules: B2.mkRules(daily ? B2.PRESETS.tw.rules : S.rules), level: daily ? 1 : S.level, rounds: daily ? 1 : S.rounds, roundNo: 0, totals: [0, 0, 0, 0], daily: daily ? dateKey() : null, seed: seed, preset: daily ? 'tw' : S.preset };
-  ST.matches++; saveST();
-  hideAll(); startRound();
-  if (!S.seenTable) { S.seenTable = true; saveS(); setTimeout(function () { openOv('help'); paused = true; }, 2200); }
+  if (daily) M.ranked = !(ST.dailyTried && ST.dailyTried[M.daily]);
+  G = null; hand = []; hideAll();
+  // first visit: the rules come up before the deal (not on top of the cards), the round starts when they are closed
+  if (!S.seenTable) { S.seenTable = true; saveS(); phase = 'intro'; showHud(false); openOv('help'); return; }
+  startRound();
 }
 function startRound() {
   M.roundNo++;
   G = new B2.Game({ seed: (M.seed + M.roundNo * 7919) >>> 0, rules: M.rules });
   table = []; flying = []; passFlag = [false, false, false, false]; emote = [null, null, null, null]; hand = []; sel = {}; disp = {}; hintList = null;
   phase = 'deal'; showHud(true); updateInfo();
-  dealAnim(function () { phase = 'play'; persist(); step(); });
+  if (!M.counted && M.roundNo === 1) { // the match (and today's daily try) count once the first deal is on the table
+    M.counted = true; ST.matches++; if (M.daily) { ST.dailyTried = ST.dailyTried || {}; ST.dailyTried[M.daily] = 1; } saveST();
+  }
+  dealAnim(function () { phase = 'play'; persist(); step(); updateButtons(); });
 }
 function updateInfo() {
   if (!M) return;
   $('iRound').textContent = M.daily ? '每日牌局 ' + M.daily.slice(5) : '第 ' + M.roundNo + '/' + M.rounds + ' 局　你 ' + fmt(M.totals[0]);
   $('iSub').textContent = LV_NAMES[M.level] + '・' + (M.preset && B2.PRESETS[M.preset] ? B2.PRESETS[M.preset].name : '自訂規則');
+  if (LAY.land) bgDirty = true; // landscape lanterns keep clear of this text
   renderCounter();
 }
 function fmt(n) { return (n > 0 ? '+' : '') + n; }
@@ -1006,10 +1066,19 @@ function sortHand() {
   else if (S.sort === 'suit') hand.sort(function (a, b) { return ((a & 3) - (b & 3)) || (a - b); });
   $('sortLbl').textContent = S.sort === 'rank' ? '點數' : S.sort === 'suit' ? '花色' : '自訂';
 }
+// tall portrait screens hold the hand in two rows (front row overlaps the lower part of the back row), so every card
+// shows a strip at least 44px wide and tall; otherwise one fanned row
 function handPos(i, n) {
-  var L = LAY, w = L.cardW, step = Math.min(w * 0.66, n > 1 ? (L.handW - w) / (n - 1) : 0), tot = w + step * (n - 1);
-  var x0 = L.handX + (L.handW - tot) / 2, mid = (n - 1) / 2, d = i - mid;
-  return { x: x0 + i * step + w / 2, y: L.handY + L.cardH / 2 + d * d * 0.22, rot: d * 0.012, step: step };
+  var L = LAY, w = L.cardW, two = L.twoRow && n > 7, k = two ? Math.ceil(n / 2) : n, row = two && i >= k ? 1 : 0, j = row ? i - k : i, m = row ? n - k : k;
+  var step = Math.min(w * (L.twoRow || L.land ? 0.86 : 0.66), k > 1 ? (L.handW - w) / (k - 1) : 0), tot = w + step * (m - 1);
+  var x0 = L.handX + (L.handW - tot) / 2, mid = (m - 1) / 2, d = j - mid;
+  var y = L.handY + L.cardH / 2 + d * d * (L.twoRow ? 0.12 : 0.22) - (L.twoRow ? (two ? (row ? 0 : L.rowGap) : L.rowGap / 2) : 0);
+  return { x: x0 + j * step + w / 2, y: y, rot: d * 0.012, step: step, first: j === 0, last: j === m - 1, back: two && !row, visH: two && !row ? L.rowGap : L.cardH };
+}
+function slotAt(x, y) { // nearest hand slot to a point (for drag reordering)
+  var best = 0, bd = 1e9, n = hand.length;
+  for (var i = 0; i < n; i++) { var p = handPos(i, n), cx = p.x - LAY.cardW / 2 + Math.min(p.last ? LAY.cardW : p.step, LAY.cardW) / 2, cy = p.y - LAY.cardH / 2 + p.visH / 2, dd = (x - cx) * (x - cx) + (y - cy) * (y - cy) * 0.5; if (dd < bd) { bd = dd; best = i; } }
+  return best;
 }
 function layoutHand(snapNow) {
   hand.forEach(function (c, i) { var p = handPos(i, hand.length); if (!disp[c] || snapNow) disp[c] = { x: p.x, y: p.y, l: 0 }; });
@@ -1017,8 +1086,11 @@ function layoutHand(snapNow) {
 function handHit(x, y) {
   var L = LAY;
   for (var i = hand.length - 1; i >= 0; i--) {
-    var p = handPos(i, hand.length), c = hand[i], lift = sel[c] ? 14 : 0, left = p.x - L.cardW / 2, right = i === hand.length - 1 ? left + L.cardW : left + p.step;
-    if (x >= left - (i === 0 ? 6 : 0) && x <= right + (i === hand.length - 1 ? 6 : 0) && y >= p.y - L.cardH / 2 - lift - 8 && y <= p.y + L.cardH / 2 + 12) return i;
+    var p = handPos(i, hand.length), c = hand[i], lift = sel[c] ? 14 : 0, left = p.x - L.cardW / 2, right = p.last ? left + L.cardW : left + p.step;
+    // in two rows a front card only answers where it is actually drawn (no extra slop above it, even when raised), so
+    // the back-row strip above it keeps its taps
+    var slop = L.twoRow && hand.length > 7 && !p.back ? 0 : 8;
+    if (x >= left - (p.first ? 6 : 0) && x <= right + (p.last ? 6 : 0) && y >= p.y - L.cardH / 2 - lift - slop && y <= p.y + L.cardH / 2 + 12) return i;
   }
   return -1;
 }
@@ -1026,16 +1098,21 @@ function selected() { return hand.filter(function (c) { return sel[c]; }); }
 // ---------- deal ----------
 function seatPos(p) { if (p === 0) return { x: W / 2, y: LAY.handY + LAY.cardH / 2 }; return LAY.seats[p]; }
 function dealAnim(done) {
-  dealing = true; var t0 = now() + 250, order = [], k = 0;
+  // the first deal ever plays out in full; later deals are quicker (about 1.2 s)
+  var quick = ST.rounds > 0 || M.roundNo > 1, gap = quick ? 12 : 26, dur = quick ? 260 : 340, pre = quick ? 120 : 250;
+  dealing = true; var t0 = now() + pre, order = [], k = 0;
   for (var i = 0; i < 13; i++) for (var p = 0; p < 4; p++) order.push({ p: (G.starter + p) % 4, c: G.hands[(G.starter + p) % 4][i] });
   var finalHand = G.hands[0].slice(), shown = [];
   order.forEach(function (o, idx) {
     var tgt = seatPos(o.p);
-    flying.push({ c: o.c, face: false, x0: LAY.cx, y0: LAY.cy, r0: 0, x1: tgt.x, y1: tgt.y, r1: (idx % 2 ? 1 : -1) * 6.3, w0: LAY.tW * 0.7, w1: o.p ? 22 : LAY.cardW, t0: t0 + idx * 26, d: 340, snd: idx % 2 === 0,
+    flying.push({ c: o.c, face: false, x0: LAY.cx, y0: LAY.cy, r0: 0, x1: tgt.x, y1: tgt.y, r1: (idx % 2 ? 1 : -1) * 6.3, w0: LAY.tW * 0.7, w1: o.p ? 22 : LAY.cardW, t0: t0 + idx * gap, d: dur, snd: idx % (quick ? 4 : 2) === 0,
       end: function () { if (o.p === 0) { shown.push(o.c); hand = shown.slice(); sortHand(); layoutHand(); } dealt[o.p]++; } });
   });
   var dealt = [0, 0, 0, 0]; dealCount = dealt;
-  setTimeout(function () { hand = finalHand; sortHand(); layoutHand(); dealing = false; dealCount = null; renderCounter(); done(); }, 250 + order.length * 26 + 420);
+  function finish() { if (!dealing) return; clearTimeout(tm); dealSkip = null; hand = finalHand; sortHand(); layoutHand(); dealing = false; dealCount = null; renderCounter(); done(); }
+  var tm = later(finish, pre + order.length * gap + dur + 80);
+  // a tap on the table while dealing skips the animation
+  dealSkip = function () { flying.slice().forEach(function (f) { if (f.end) f.end(); }); flying = []; finish(); };
 }
 var dealCount = null;
 function now() { return performance.now(); }
@@ -1062,10 +1139,12 @@ function step() {
   if (G.turn === 0) { thinking = -1; hintList = null; if (!G.lead) centerMsg = G.first ? '輪到你：第一手須含 ♣3' : '你拿到出牌權'; else centerMsg = ''; sfx('turn'); return; }
   var p = G.turn, tok = ++turnToken, t0 = now(); thinking = p; centerMsg = '';
   if (!G.lead) emote[p] = null;
+  var gen = flowGen;
   askAI({ view: B2.aiView(G, p), level: M.level, seed: (M.seed ^ (G.log.length * 2654435761)) >>> 0, persona: PERS[p], ms: 110 }, function (res) {
-    var wait = Math.max(0, 520 + Math.random() * 380 - (now() - t0));
-    setTimeout(function () {
-      if (tok !== turnToken || phase !== 'play' || G.turn !== p) return;
+    if (gen !== flowGen) return;
+    var wait = Math.max(0, (520 + Math.random() * 380) * speedK() - (now() - t0));
+    later(function () {
+      if (tok !== turnToken || phase !== 'play' || !G || G.turn !== p) return;
       if (paused || document.hidden) { pendingAI = { p: p, res: res, tok: tok }; return; }
       applyMove(p, res.cards);
     }, wait);
@@ -1082,10 +1161,16 @@ function showBubble(p, text) {
   if (bubbles[p]) { bubbles[p].remove(); clearTimeout(bubbles[p].tm); }
   var b = document.createElement('div'); b.className = 'bubble'; b.textContent = text; document.body.appendChild(b);
   var s = LAY.seats[p], R = LAY.R, bw = b.offsetWidth, bh = b.offsetHeight, x, y;
-  if (s.side === 't') { x = s.x + R + 10; y = s.y - bh / 2 - 6; }
+  var pl = seatPill(p);
+  if (s.side === 't') { x = pl.x + pl.w + 6; y = s.y - bh / 2; }
   else if (s.side === 'r') { x = s.x - R - 10 - bw; y = s.y - R - bh - 2; }
   else { x = s.x + R + 10 - 18; y = s.y - R - bh - 2; }
   x = Math.max(8, Math.min(W - bw - 8, x)); y = Math.max(SA.t + 56, y);
+  // keep at least 4px clear of every name pill: move above the pill, or below it when there is no room above
+  for (var q = 1; q < 4; q++) {
+    var o = seatPill(q);
+    if (x < o.x + o.w + 4 && x + bw > o.x - 4 && y < o.y + o.h + 4 && y + bh > o.y - 4) y = o.y - bh - 4 >= SA.t + 56 ? o.y - bh - 4 : o.y + o.h + 4;
+  }
   b.style.left = x + 'px'; b.style.top = y + 'px';
   b.tm = setTimeout(function () { b.remove(); if (bubbles[p] === b) delete bubbles[p]; }, 2300);
   bubbles[p] = b;
@@ -1124,12 +1209,13 @@ function applyMove(p, cards) {
 function typeKey(ev) { return ev.n === 1 ? '單張' : ev.n === 2 ? '對子' : ev.n === 3 ? '三條' : B2.CAT_NAMES[ev.cat]; }
 function afterMove(reset, delay) {
   persist();
-  setTimeout(function () {
+  later(function () {
+    if (!G) return;
     if (G.winner >= 0) { busy = false; endRound(); return; }
     if (reset) {
       sweepTable(G.turn, function () { passFlag = [false, false, false, false]; for (var q = 1; q < 4; q++) if (emote[q] === 'think') emote[q] = null; busy = false; step(); });
     } else { busy = false; step(); }
-  }, delay);
+  }, delay * (reset ? 1 : speedK()));
 }
 function flyToTable(p, cards, ev, done) {
   var n = cards.length, L = LAY, step2 = Math.min(L.tW * 0.62, (W * 0.8 - L.tW) / Math.max(1, n - 1)), tot = L.tW + step2 * (n - 1), t0 = now(), rot = (Math.random() - 0.5) * 0.12;
@@ -1139,7 +1225,7 @@ function flyToTable(p, cards, ev, done) {
     if (p === 0 && disp[c]) src = { x: disp[c].x, y: disp[c].y - (sel[c] ? 14 : 0), w: L.cardW, face: true };
     else { var s = L.seats[p]; src = { x: s.x, y: s.y, w: 24, face: false }; }
     item.pos.push({ x: tx, y: ty });
-    flying.push({ c: c, face: true, x0: src.x, y0: src.y, r0: p === 0 ? 0 : (Math.random() - 0.5), x1: tx, y1: ty, r1: rot, w0: src.w, w1: L.tW, t0: t0 + i * 35, d: 300, end: i === n - 1 ? function () { item.landed = true; done(); } : null });
+    flying.push({ c: c, face: true, x0: src.x, y0: src.y, r0: p === 0 ? 0 : (Math.random() - 0.5), x1: tx, y1: ty, r1: rot, w0: src.w, w1: L.tW, t0: t0 + i * 35, d: 300, end: i === n - 1 ? function () { item.landed = true; if (G) done(); } : null });
   });
   if (p === 0) { hand = hand.filter(function (c) { return cards.indexOf(c) < 0; }); cards.forEach(function (c) { delete sel[c]; }); layoutHand(); }
   table.push(item); if (table.length > 3) table.shift();
@@ -1148,7 +1234,7 @@ function sweepTable(winnerSeat, done) {
   sfx('sweep');
   var t0 = now(), tgt = seatPos(winnerSeat);
   table.forEach(function (it) { it.sweep = { t0: t0, x: tgt.x - LAY.cx, y: tgt.y - LAY.cy }; });
-  setTimeout(function () { table = []; done(); }, 380);
+  later(function () { table = []; done(); }, 380);
 }
 // ---------- human actions ----------
 function humanCanAct() { return phase === 'play' && G && G.turn === 0 && !busy && !paused && G.winner < 0; }
@@ -1191,35 +1277,45 @@ function doSort() {
 var gest = null;
 cv.addEventListener('pointerdown', function (e) {
   audio();
+  if (dealing && dealSkip) { dealSkip(); return; }
   if (phase === 'title' || !G || dealing) return;
   var i = handHit(e.clientX, e.clientY); if (i < 0) return;
+  if (gest) {
+    // another finger is still down: its tap already counted when it landed, so the new finger simply starts its own
+    // gesture; during a sweep or drag the new finger is a plain tap
+    if (gest.mode === 'sweep' || gest.mode === 'drag') { setSel(hand[i], !sel[hand[i]]); return; }
+    clearTimeout(gest.lp); gest = null;
+  }
   try { cv.setPointerCapture(e.pointerId); } catch (er) {}
   var c = hand[i];
-  gest = { id: e.pointerId, x: e.clientX, y: e.clientY, i0: i, c0: c, mode: 'tap', target: !sel[c], touched: {} };
-  gest.lp = setTimeout(function () { if (gest && gest.mode === 'tap') { gest.mode = 'drag'; gest.dx = null; buzz(20); sfx('tick'); } }, 380);
+  // the card toggles as the finger lands; a long press undoes that and picks the card up to reorder instead
+  gest = { id: e.pointerId, x: e.clientX, y: e.clientY, i0: i, c0: c, mode: 'tap', target: !sel[c], touched: {}, t0: e.timeStamp };
+  gest.touched[c] = 1; setSel(c, gest.target);
+  gest.lp = setTimeout(function () { if (gest && gest.mode === 'tap') { gest.mode = 'drag'; gest.dx = null; setSel(gest.c0, !gest.target); buzz(20); toast('拖曳到想放的位置，放開即可排好'); } }, 500);
 });
 cv.addEventListener('pointermove', function (e) {
   if (!gest || e.pointerId !== gest.id) return;
   var dx = e.clientX - gest.x, dy = e.clientY - gest.y;
   if (gest.mode === 'tap' && (Math.abs(dx) > 9 || Math.abs(dy) > 12)) {
     clearTimeout(gest.lp);
-    if (Math.abs(dx) >= Math.abs(dy) * 0.7) { gest.mode = 'sweep'; setSel(gest.c0, gest.target); gest.touched[gest.c0] = 1; } else gest.mode = 'none';
+    gest.mode = Math.abs(dx) >= Math.abs(dy) * 0.7 ? 'sweep' : 'none';
+    if (gest.mode === 'none') setSel(gest.c0, !gest.target); // a vertical swipe is not a tap: undo the touch-down toggle
   }
-  if (gest.mode === 'sweep') { var i = handHit(e.clientX, Math.min(e.clientY, LAY.handY + LAY.cardH / 2)); if (i >= 0 && !gest.touched[hand[i]]) { gest.touched[hand[i]] = 1; setSel(hand[i], gest.target); } }
+  if (gest.mode === 'sweep') { var i = handHit(e.clientX, LAY.twoRow ? e.clientY : Math.min(e.clientY, LAY.handY + LAY.cardH / 2)); if (i >= 0 && !gest.touched[hand[i]]) { gest.touched[hand[i]] = 1; setSel(hand[i], gest.target); } }
   else if (gest.mode === 'drag') { gest.dx = e.clientX; gest.dy = e.clientY; }
 });
 function endGest(e) {
   if (!gest || (e && e.pointerId !== gest.id)) return;
   clearTimeout(gest.lp);
-  if (gest.mode === 'tap') setSel(gest.c0, gest.target);
-  else if (gest.mode === 'drag' && gest.dx != null && Math.abs(gest.dx - gest.x) > 14) {
-    var from = hand.indexOf(gest.c0), p0 = handPos(0, hand.length), to = Math.round((gest.dx - p0.x) / Math.max(1, p0.step));
-    to = Math.max(0, Math.min(hand.length - 1, to));
+  // a busy page can fire the long-press timer late; a finger that really lifted within the threshold is still a tap
+  if (gest.mode === 'drag' && gest.dx == null && e && e.type === 'pointerup' && e.timeStamp - gest.t0 < 480) setSel(gest.c0, gest.target);
+  if (gest.mode === 'drag' && gest.dx != null && Math.hypot(gest.dx - gest.x, gest.dy - gest.y) > 14) {
+    var from = hand.indexOf(gest.c0), to = slotAt(gest.dx, gest.dy);
     if (to !== from) { hand.splice(from, 1); hand.splice(to, 0, gest.c0); S.sort = 'custom'; $('sortLbl').textContent = '自訂'; layoutHand(); persist(); }
   }
   gest = null;
 }
-cv.addEventListener('pointerup', endGest); cv.addEventListener('pointercancel', function (e) { if (gest && gest.mode === 'tap') gest.mode = 'none'; endGest(e); });
+cv.addEventListener('pointerup', endGest); cv.addEventListener('pointercancel', function (e) { if (gest && gest.mode === 'tap' && (!e || e.pointerId === gest.id)) { setSel(gest.c0, !gest.target); gest.mode = 'none'; } endGest(e); });
 function setSel(c, v) { if (!!sel[c] === v) return; if (v) sel[c] = true; else delete sel[c]; sfx('tick'); buzz(6); hintList = hintList && v ? hintList : null; updateButtons(); }
 $('bPlay').onclick = doPlay; $('bPass').onclick = doPass; $('bHint').onclick = doHint; $('bSort').onclick = doSort;
 document.addEventListener('keydown', function (e) {
@@ -1244,17 +1340,20 @@ function endRound() {
     if (!ST.fastest || humanPlays < ST.fastest) ST.fastest = humanPlays;
     sfx('win'); fireworks(2200); buzz([20, 60, 20]);
   } else { sfx('lose'); emote[w] = 'happy'; say(w, 'win'); for (var q = 1; q < 4; q++) if (q !== w) emote[q] = 'sad'; }
-  if (M.daily) { ach('daily'); var best = ST.daily[M.daily]; if (w === 0 && (!best || humanPlays < best)) ST.daily[M.daily] = humanPlays; }
+  // daily deal: only the first attempt of the day counts (replays are practice), so the best can't be farmed by replaying
+  if (M.daily) { ach('daily'); if (M.ranked !== false && ST.daily[M.daily] == null) ST.daily[M.daily] = w === 0 ? humanPlays : 0; }
   saveST(); updateInfo();
   var over = M.roundNo >= M.rounds || M.totals.some(function (t) { return t <= -100; });
-  M.over = over; persist();
-  setTimeout(function () { showRoundEnd(d, over); }, 1300);
+  M.over = over;
+  if (over && !M.daily) recordMatch(); // the match result is saved now, not when the summary is opened (survives a reload)
+  persist();
+  later(function () { showRoundEnd(d, over); }, S.speed === 'fast' ? 800 : 1300);
 }
 function cardsHtml(cs) { return cs.map(function (c) { var s = c & 3; return '<span class="mc' + (s === 1 || s === 2 ? ' r' : '') + '">' + B2.SUITS[s] + B2.RANKS[c >> 2] + '</span>'; }).join(''); }
 function showRoundEnd(d, over) {
   var w = G.winner;
   $('reTitle').textContent = w === 0 ? '你清手了！' : NAMES[w] + ' 清手';
-  $('reSub').textContent = M.daily ? (w === 0 ? '每日牌局：你用了 ' + G.plays[0] + ' 手清完' + (ST.daily[M.daily] ? '（今日最佳 ' + ST.daily[M.daily] + ' 手）' : '') : '每日牌局：這次沒清完，明天再挑戰') : '第 ' + M.roundNo + '/' + M.rounds + ' 局結算';
+  $('reSub').textContent = M.daily ? (M.ranked === false ? '每日牌局練習（今天只算第一次）：' + (w === 0 ? '你用了 ' + G.plays[0] + ' 手清完' : '這次沒清完') : w === 0 ? '每日牌局：你用了 ' + G.plays[0] + ' 手清完，已記成今日成績' : '每日牌局：這次沒清完，明天再挑戰') : '第 ' + M.roundNo + '/' + M.rounds + ' 局結算';
   var h = '';
   [0, 1, 2, 3].forEach(function (p) {
     var hh = G.hands[p], n = hh.length, twos = hh.filter(function (c) { return (c >> 2) === 12; }).length, note;
@@ -1272,13 +1371,25 @@ $('reNext').onclick = function () {
   else startRound();
 };
 $('reLog').onclick = function () { showLog(); };
+function matchPlace() { var order = [0, 1, 2, 3].sort(function (a, b) { return M.totals[b] - M.totals[a] || a - b; }); return { order: order, place: order.indexOf(0) + 1 }; }
+// long-term goals: a rank that grows with championships, and the best final score of a full match
+var RANKS = [[0, '夜市新手'], [1, '夜市常客'], [3, '牌桌老手'], [6, '廟口高手'], [10, '夜市牌王'], [20, '廟口傳說']];
+function rankOf(w) { var r = RANKS[0][1]; RANKS.forEach(function (x) { if (w >= x[0]) r = x[1]; }); return r; }
+function recordMatch() {
+  if (M.recorded) return; M.recorded = true;
+  var before = rankOf(ST.matchWins || 0);
+  if (matchPlace().place === 1) { ST.matchWins++; ach('match'); if (M.level === 2) ach('expert'); }
+  if (ST.bestTotal == null || M.totals[0] > ST.bestTotal) { M.newBest = ST.bestTotal != null || M.totals[0] > 0; ST.bestTotal = M.totals[0]; }
+  var after = rankOf(ST.matchWins); if (after !== before) M.rankUp = after;
+  saveST();
+}
 function showMatchEnd() {
-  phase = 'matchEnd';
-  var order = [0, 1, 2, 3].sort(function (a, b) { return M.totals[b] - M.totals[a] || a - b; }), place = order.indexOf(0) + 1;
-  ST.matches = ST.matches || 0; if (place === 1) { ST.matchWins++; ach('match'); if (M.level === 2) ach('expert'); }
-  saveST(); drop('match');
+  phase = 'matchEnd'; resetFlow();
+  recordMatch(); // older saves from before results were recorded at round end
+  var mp = matchPlace(), order = mp.order, place = mp.place;
+  drop('match');
   $('meTitle').textContent = place === 1 ? '夜市牌王就是你！' : '第 ' + place + ' 名';
-  $('meSub').textContent = M.roundNo + ' 局結束・' + LV_NAMES[M.level] + '難度';
+  $('meSub').textContent = M.roundNo + ' 局結束・' + LV_NAMES[M.level] + '難度' + (M.newBest ? '・整場最高分新紀錄！' : '') + (M.rankUp ? '・段位升到「' + M.rankUp + '」' : '');
   $('meTbl').innerHTML = order.map(function (p, i) { return '<tr><td class="n">' + ['🥇', '🥈', '🥉', '４'][i].replace('４', '4') + '</td><td class="n">' + NAMES[p] + (p ? '<br><small style="font-weight:500;color:var(--ink2)">' + ROLES[p] + '</small>' : '') + '</td><td class="v ' + (M.totals[p] >= 0 ? 'pos' : 'neg') + '">' + fmt(M.totals[p]) + '</td></tr>'; }).join('');
   openOv('matchEnd');
   if (place === 1) { sfx('win'); fireworks(4000); } else sfx('lose');
@@ -1291,22 +1402,42 @@ function ach(id) {
   var a = ACH.filter(function (x) { return x[0] === id; })[0]; if (a) setTimeout(function () { toast('🏅 成就解鎖：' + a[1]); }, 600);
 }
 var toastTm = 0;
-function toast(t) { var el = $('toast'); el.textContent = t; el.style.top = (LAY.land ? SA.t + 62 : LAY.cy - 120) + 'px'; el.classList.add('on'); clearTimeout(toastTm); toastTm = setTimeout(function () { el.classList.remove('on'); }, 1800); }
+function toast(t) { var el = $('toast'); el.textContent = t; el.style.top = (LAY.land ? SA.t + 62 : LAY.cntY - 2) + 'px'; /* portrait: just above the buttons, clear of the players */ el.classList.add('on'); clearTimeout(toastTm); toastTm = setTimeout(function () { el.classList.remove('on'); }, 1800); }
 // ---------- overlays ----------
 function openOv(id) { $(id).classList.remove('hidden'); }
 function hideAll() { document.querySelectorAll('.ov').forEach(function (o) { o.classList.add('hidden'); }); }
 function closeOv(id) { $(id).classList.add('hidden'); if (!document.querySelector('.ov:not(.hidden)') && phase === 'play') resume(); }
 function goTitle() {
-  hideAll(); phase = 'title'; G = null; M = null; table = []; hand = []; turnToken++; showHud(false); refreshTitle(); openOv('title');
+  resetFlow(); hideAll(); phase = 'title'; G = null; M = null; hand = []; sel = {}; showHud(false); refreshTitle(); openOv('title');
 }
-function refreshTitle() { var m = load('match', null); $('tCont').classList.toggle('hidden', !(m && m.M && !m.M.over)); var d = ST.daily[dateKey()]; $('tDaily').textContent = '每日牌局' + (d ? '（今日最佳 ' + d + ' 手）' : ''); }
-$('tNew').onclick = function () { audio(); newMatch(false); };
-$('tDaily').onclick = function () { audio(); newMatch(true); };
+function savedMatch() { var m = load('match', null); return m && m.M && m.G ? m : null; }
+function refreshTitle() {
+  var m = savedMatch(), fin = m && m.M.over && m.G.winner >= 0;
+  $('tCont').classList.toggle('hidden', !m); $('tCont').textContent = fin ? (m.M.daily ? '看每日牌局結算' : '看總結') : '繼續牌局';
+  var k = dateKey(), d = ST.daily[k], tried = ST.dailyTried && ST.dailyTried[k];
+  $('tDaily').textContent = '每日牌局' + (d ? '（今日 ' + d + ' 手清完）' : tried ? '（今日已挑戰・可練習）' : '');
+}
+// starting over while a match is saved: confirm first; the abandoned round counts as a played (lost) round,
+// so restarting a bad hand can't be used to raise the clear rate
+function unfinished() { var m = savedMatch(); return m && !(m.M.over && m.G.winner >= 0) ? m : null; }
+var confirmGo = null;
+function askNew(go) {
+  if (phase === 'play' || phase === 'deal' || phase === 'roundEnd') persist();
+  var m = unfinished(); if (!m) { go(); return; }
+  var playing = m.G.winner < 0;
+  $('cfTxt').innerHTML = '目前的牌局（第 ' + m.M.roundNo + '/' + m.M.rounds + ' 局）還沒打完。' + (playing ? '<br>放棄的話，<b>這一局算你輸</b>（記進戰績的局數）。' : '');
+  confirmGo = function () { if (playing) { ST.rounds++; saveST(); } drop('match'); go(); };
+  paused = true; openOv('confirm');
+}
+$('tNew').onclick = function () { audio(); askNew(function () { newMatch(false); }); };
+$('tDaily').onclick = function () { audio(); askNew(function () { newMatch(true); }); };
+$('cfYes').onclick = function () { var go = confirmGo; confirmGo = null; $('confirm').classList.add('hidden'); if (go) go(); };
+$('cfNo').onclick = function () { confirmGo = null; closeOv('confirm'); };
 $('tCont').onclick = function () { audio(); restore(); };
 $('tSet').onclick = function () { openSetup(); };
 $('tStats').onclick = function () { showStats(); };
 $('tHelp').onclick = function () { openOv('help'); };
-$('hOk').onclick = function () { closeOv('help'); };
+$('hOk').onclick = function () { closeOv('help'); if (phase === 'intro' && M) startRound(); };
 $('stOk').onclick = function () { closeOv('statsOv'); };
 $('lgOk').onclick = function () { closeOv('logOv'); };
 function openMenu() { if (phase === 'title') return; paused = true; openOv('menu'); }
@@ -1334,7 +1465,7 @@ function showStats() {
   var rate = ST.rounds ? Math.round(ST.wins / ST.rounds * 100) : 0, mx = 1, h;
   TYPE_KEYS.forEach(function (k) { mx = Math.max(mx, ST.types[k] || 0); });
   var fav = TYPE_KEYS.slice().sort(function (a, b) { return (ST.types[b] || 0) - (ST.types[a] || 0); })[0];
-  h = '<div class="stats"><div><b>' + ST.rounds + '</b>局數</div><div><b>' + rate + '%</b>清手率</div><div><b>' + (ST.fastest || '—') + '</b>最快清手(手)</div><div><b>' + ST.matchWins + '/' + ST.matches + '</b>牌局冠軍</div><div><b>' + ((ST.types[fav] && fav) || '—') + '</b>最常出</div><div><b>' + Object.keys(ST.ach).length + '/' + ACH.length + '</b>成就</div></div>';
+  h = '<div class="stats"><div><b>' + rankOf(ST.matchWins || 0) + '</b>段位</div><div><b>' + (ST.bestTotal == null ? '—' : fmt(ST.bestTotal)) + '</b>整場最高分</div><div><b>' + (RANKS.filter(function (x) { return x[0] > (ST.matchWins || 0); }).map(function (x) { return x[0] - (ST.matchWins || 0); })[0] || '—') + '</b>再贏幾場升段</div><div><b>' + ST.rounds + '</b>局數</div><div><b>' + rate + '%</b>清手率</div><div><b>' + (ST.fastest || '—') + '</b>最快清手(手)</div><div><b>' + ST.matchWins + '/' + ST.matches + '</b>牌局冠軍</div><div><b>' + ((ST.types[fav] && fav) || '—') + '</b>最常出</div><div><b>' + Object.keys(ST.ach).length + '/' + ACH.length + '</b>成就</div></div>';
   h += '<div class="sec-t">出過的牌型</div><div class="bars">' + TYPE_KEYS.map(function (k) { var v = ST.types[k] || 0; return '<div><span>' + k + '</span><i style="width:' + Math.round(v / mx * 60) + '%"></i><em>' + v + '</em></div>'; }).join('') + '</div>';
   h += '<div class="sec-t">成就</div><div class="ach">' + ACH.map(function (a) { return '<div class="' + (ST.ach[a[0]] ? 'on' : '') + '"><b>' + (ST.ach[a[0]] ? '🏅 ' : '') + a[1] + '</b>' + a[2] + '</div>'; }).join('') + '</div>';
   $('statsBody').innerHTML = h; openOv('statsOv');
@@ -1346,7 +1477,7 @@ function swHtml(list, pre) { return list.map(function (r) { return '<button clas
 $('rsw').innerHTML = swHtml(RULE_SW, 'r'); $('usw').innerHTML = swHtml(UI_SW, 'u');
 function syncSetup() {
   document.querySelectorAll('#setup .sw').forEach(function (b) { var k = b.dataset.k, v = b.dataset.g === 'r' ? S.rules[k] : S[k]; b.setAttribute('aria-checked', v ? 'true' : 'false'); });
-  var segs = { segLv: S.level, segPre: S.preset, segRounds: S.rounds, segTheme: S.theme };
+  var segs = { segLv: S.level, segPre: S.preset, segRounds: S.rounds, segTheme: S.theme, segSpeed: S.speed };
   Object.keys(segs).forEach(function (id) { $(id).querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v) === String(segs[id]) ? 'true' : 'false'); }); });
   $('setNote').textContent = M && phase !== 'title' ? '規則、難度與局數的變更在下一場牌局生效。' : '';
 }
@@ -1363,9 +1494,10 @@ function segBind(id, fn) { $(id).querySelectorAll('button').forEach(function (b)
 segBind('segLv', function (v) { S.level = +v; });
 segBind('segPre', function (v) { S.preset = v; S.rules = B2.mkRules(B2.PRESETS[v].rules); });
 segBind('segRounds', function (v) { S.rounds = +v; });
+segBind('segSpeed', function (v) { S.speed = v; });
 segBind('segTheme', function (v) { S.theme = v; applyTheme(); });
 $('sBack').onclick = function () { closeOv('setup'); };
-$('sNew').onclick = function () { newMatch(false); };
+$('sNew').onclick = function () { askNew(function () { newMatch(false); }); };
 function rankTable() {
   var rows = [['同花順', '同花色的順子', '最大'], ['鐵支', '四張同點＋任一張', ''], ['葫蘆', '三張同點＋一對', ''], ['同花', '五張同花色（規則開啟時）', ''], ['順子', '五張連續點數', '最小']];
   $('rankTbl').innerHTML = rows.map(function (r) { return '<div><b>' + r[0] + '</b><span>' + r[1] + (r[2] ? '・' + r[2] : '') + '</span></div>'; }).join('');
@@ -1373,6 +1505,7 @@ function rankTable() {
 // ---------- restore ----------
 function restore() {
   var m = load('match', null); if (!m || !m.M) { newMatch(false); return; }
+  resetFlow();
   try {
     M = m.M; G = B2.Game.restore(m.G); hand = (m.hand && m.hand.length === G.hands[0].length) ? m.hand : G.hands[0].slice(); sel = {}; disp = {};
     table = []; passFlag = [false, false, false, false];
@@ -1380,8 +1513,8 @@ function restore() {
     for (var i = G.log.length - 1; i >= 0 && !G.log[i].trick; i--) if (G.log[i].pass) passFlag[G.log[i].p] = true;
     hideAll(); showHud(true); sortHand(); layoutHand(true); updateInfo();
     phase = m.phase === 'roundEnd' || G.winner >= 0 ? 'play' : 'play';
-    if (G.winner >= 0) { phase = 'roundEnd'; showRoundEnd([0, 0, 0, 0].map(function (_, p) { return 0; }), M.over); return; }
-    step();
+    if (G.winner >= 0) { phase = 'roundEnd'; if (M.over && !M.daily) recordMatch(); persist(); showRoundEnd(B2.roundDeltas(G.hands, G.winner, M.rules), M.over); return; }
+    step(); updateButtons();
   } catch (e) { drop('match'); newMatch(false); }
 }
 function tablePos(n) { var L = LAY, s2 = Math.min(L.tW * 0.62, (W * 0.8 - L.tW) / Math.max(1, n - 1)), tot = L.tW + s2 * (n - 1), a = []; for (var i = 0; i < n; i++) a.push({ x: L.cx - tot / 2 + L.tW / 2 + i * s2, y: L.cy - 4 }); return a; }
@@ -1411,6 +1544,11 @@ function drawTitleCards(t) {
   var L = LAY, cs = [44, 45, 46, 47, 51], w = Math.min(84, W * 0.18), h = w / 0.7, cx = W / 2, cy = L.land ? H * 0.52 : H * 0.47;
   cs.forEach(function (c, i) { var a = (i - 2) * 0.2 + Math.sin(t * 0.8) * 0.02; drawCard(c, cx + Math.sin(a) * h * 0.9, cy - Math.cos(a) * h * 0.9 + h * 0.9 + Math.sin(t * 1.2 + i) * 2, w, h, a, true); });
 }
+var pills = [];
+function seatPill(p) { // the name pill's box (also before the first frame draws it)
+  if (pills[p]) return pills[p]; var s = LAY.seats[p], R = LAY.R, pw = 56, ny = !LAY.land && s.side !== 't' ? s.y - R - 22 : s.y + R + 13;
+  return s.side === 't' ? { x: s.x + R + 3, y: s.y - 20, w: pw, h: 40 } : { x: s.x - pw / 2, y: ny - 20, w: pw, h: 40 };
+}
 function drawSeats(t) {
   for (var p = 1; p < 4; p++) {
     var s = LAY.seats[p], R = LAY.R, n = G ? (dealCount ? dealCount[p] : G.hands[p].length) : 0;
@@ -1434,6 +1572,12 @@ function drawSeats(t) {
     // name + score
     var ny = s.y + R + 13, tc = dark ? '#f7e8c8' : '#3b2416';
     if (!LAY.land && s.side !== 't') ny = s.y - R - 22;
+    // name + score sit on a pill so they stay readable over the table edge in either theme
+    ctx.font = '700 13px system-ui,sans-serif'; var pw = Math.max(ctx.measureText(NAMES[p]).width, 40) + 16;
+    ctx.fillStyle = dark ? '#1a0508b8' : '#fff8eee8'; ctx.strokeStyle = dark ? '#e7b94a55' : '#b8862a55'; ctx.lineWidth = 1;
+    var pill = s.side === 't' ? { x: s.x + R + 3, y: s.y - 20, w: pw, h: 40 } : { x: s.x - pw / 2, y: ny - 20, w: pw, h: 40 };
+    pills[p] = pill; rr(ctx, pill.x, pill.y, pill.w, pill.h, 10);
+    ctx.fill(); ctx.stroke();
     if (s.side === 't') { ctx.textAlign = 'left'; ctx.fillStyle = tc; ctx.font = '700 13px system-ui,sans-serif'; ctx.fillText(NAMES[p], s.x + R + 10, s.y - 7); ctx.font = '600 12px system-ui,sans-serif'; ctx.fillStyle = dark ? '#d3b48c' : '#7a5a3e'; ctx.fillText(M ? fmt(M.totals[p]) + ' 分' : '', s.x + R + 10, s.y + 10); }
     else { ctx.textAlign = 'center'; ctx.fillStyle = tc; ctx.font = '700 13px system-ui,sans-serif'; ctx.fillText(NAMES[p], s.x, ny - 8); ctx.font = '600 12px system-ui,sans-serif'; ctx.fillStyle = dark ? '#d3b48c' : '#7a5a3e'; ctx.fillText(M ? fmt(M.totals[p]) + ' 分' : '', s.x, ny + 8); }
     if (passFlag[p] && phase === 'play') {
@@ -1443,11 +1587,17 @@ function drawSeats(t) {
     }
   }
 }
+var ghostTop = null;
 function drawTable(t) {
-  var L = LAY;
+  var L = LAY; ghostTop = null;
   table.forEach(function (it, idx) {
     if (!it.landed) return;
     var top = idx === table.length - 1, a = top ? 1 : 0.5, sc = top ? 1 : 0.82, oy = top ? 0 : -(table.length - 1 - idx) * 22 - 14, ox = 0;
+    if (!top) { // older plays peek out above the newest one but never reach the top player's avatar and name
+      var s2 = L.seats[2], minOy = s2.y + L.R + 8 + L.tH * sc / 2 - (L.cy - 4);
+      if (oy < minOy) { if (minOy > -8) return; oy = minOy; }
+      if (!it.sweep) ghostTop = Math.min(ghostTop == null ? 1e9 : ghostTop, L.cy - 4 + oy - L.tH * sc / 2);
+    }
     if (it.sweep) { var k = Math.min(1, (t - it.sweep.t0) / 350); ox = it.sweep.x * k; oy += it.sweep.y * k; a *= 1 - k; }
     var pos = it.pos.length === it.cards.length ? it.pos : tablePos(it.cards.length);
     it.cards.forEach(function (c, i) { var p = pos[i]; drawCard(c, L.cx + (p.x - L.cx) * sc + ox, p.y + oy, L.tW * sc, L.tH * sc, it.rot, true, a); });
@@ -1457,6 +1607,7 @@ function drawTable(t) {
       ctx.fillStyle = '#1a0508cc'; rr(ctx, L.cx - tw / 2, ty - 12, tw, 24, 12); ctx.fill(); ctx.fillStyle = '#f3cf6c'; ctx.fillText(label, L.cx, ty + 0.5);
     }
   });
+  if (dealing && dealSkip) { ctx.font = '700 14px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f7e8c8cc'; ctx.fillText('點一下跳過', L.cx, L.cy + L.tH / 2 + 18); }
   if (!table.length && phase === 'play' && G && !busy) {
     var msg = G.turn === 0 ? centerMsg || '輪到你出牌' : NAMES[G.turn] + ' 取得出牌權';
     if (G.first && G.turn !== 0) msg = NAMES[G.turn] + ' 有梅花 3，先出';
@@ -1472,7 +1623,7 @@ function drawHand(dt) {
     if (c === dragC) continue;
     drawCard(c, d.x, d.y - d.l, L.cardW, L.cardH, p.rot, true, null, sel[c] ? '#e7b94a' : null);
   }
-  if (dragC >= 0 && gest.dx != null) drawCard(dragC, gest.dx, L.handY + L.cardH / 2 - 26, L.cardW, L.cardH, 0.05, true, null, '#7ab8ff');
+  if (dragC >= 0 && gest.dx != null) drawCard(dragC, gest.dx, (L.twoRow ? Math.min(gest.dy, L.handY + L.cardH / 2) : L.handY + L.cardH / 2) - 26, L.cardW, L.cardH, 0.05, true, null, '#7ab8ff');
 }
 function drawFlying(t) {
   for (var i = flying.length - 1; i >= 0; i--) {
@@ -1502,8 +1653,10 @@ document.addEventListener('visibilitychange', function () {
 window.addEventListener('resize', function () { layout(); });
 // ---------- test hooks ----------
 window.__b2 = {
-  info: function () { return { phase: phase, turn: G ? G.turn : -1, busy: busy || dealing, paused: paused, hand: hand.slice(), counts: G ? G.hands.map(function (h) { return h.length; }) : null, lead: G && G.lead ? G.lead : null, first: G ? G.first : false, winner: G ? G.winner : -1, totals: M ? M.totals : null, round: M ? M.roundNo : 0, rounds: M ? M.rounds : 0, sel: selected(), view: G ? B2.aiView(G, 0) : null, overlay: (document.querySelector('.ov:not(.hidden)') || {}).id || null }; },
-  cardCenter: function (c) { var i = hand.indexOf(c); if (i < 0) return null; var p = handPos(i, hand.length), L = LAY, lift = sel[c] ? 14 : 0, right = i === hand.length - 1 ? L.cardW : p.step; return { x: p.x - L.cardW / 2 + Math.min(right, L.cardW) / 2, y: p.y - lift + L.cardH * 0.2 }; },
+  info: function () { return { phase: phase, turn: G ? G.turn : -1, busy: busy || dealing, paused: paused, hand: hand.slice(), counts: G ? G.hands.map(function (h) { return h.length; }) : null, lead: G && G.lead ? G.lead : null, first: G ? G.first : false, winner: G ? G.winner : -1, totals: M ? M.totals : null, round: M ? M.roundNo : 0, rounds: M ? M.rounds : 0, sel: selected(), view: G ? B2.aiView(G, 0) : null, overlay: (document.querySelector('.ov:not(.hidden)') || {}).id || null, moves: G ? G.log.length : 0, ranked: M ? M.ranked : null, speed: S.speed, table: table.map(function (it) { return it.pos.map(function (q) { return { x: q.x, y: q.y }; }); }), matches: ST.matches, layout: { ghostTop: ghostTop, topSeatBottom: LAY.seats ? LAY.seats[2].y + LAY.R : 0, handY: LAY.handY, cardW: LAY.cardW, twoRow: LAY.twoRow, cy: LAY.cy, cntY: LAY.cntY, tH: LAY.tH, actY: LAY.actY, lanterns: lanterns.map(function (l) { return { x: l.x, y: l.y }; }), seats: LAY.seats } }; },
+  cardCenter: function (c) { var i = hand.indexOf(c); if (i < 0) return null; var p = handPos(i, hand.length), L = LAY, lift = sel[c] ? 14 : 0, right = p.last ? L.cardW : p.step; return { x: p.x - L.cardW / 2 + Math.min(right, L.cardW) / 2, y: p.back ? p.y - L.cardH / 2 - lift + p.visH / 2 : p.y - lift + L.cardH * 0.2, w: Math.min(right, L.cardW), h: p.visH }; },
+  flow: function () { return { timers: timers.length, flying: flying.length, pendingAI: !!pendingAI, dealing: dealing }; },
+  hitAt: function (x, y) { var i = handHit(x, y); return i < 0 ? null : hand[i]; },
   lastThink: function () { return lastThink; },
   worker: function () { return !!worker; }
 };
