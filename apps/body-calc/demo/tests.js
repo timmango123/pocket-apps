@@ -4,7 +4,9 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'body-calc-'));
 const WRAP = path.join(DIR, 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP;
+// served over http, not file://: Chromium can drop a localStorage write across a reload of a file:// page
+const server = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(WRAP)); });
+let URL;
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
@@ -14,6 +16,8 @@ const fmt = n => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).fo
 const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
 (async () => {
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  URL = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch();
   async function open(init, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, ...opt });
@@ -226,7 +230,7 @@ const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.ge
     }
   }
 
-  await browser.close();
+  await browser.close(); server.close();
   fs.rmSync(DIR, { recursive: true, force: true });
   assert(errors.length === 0, '無 console / page error ' + JSON.stringify(errors));
   console.log(fails ? `${fails} 項失敗` : '全部通過');
