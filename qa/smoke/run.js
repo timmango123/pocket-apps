@@ -91,7 +91,9 @@ function serve() {
     const ok = r.status === 0 && !/^FAIL/m.test(r.stdout);
     testRows.push(`| ${a} | ${ok ? '通過' : '**失敗**'} | ${last.slice(0, 160).replace(/\|/g, '\\|')} |`);
     if (!ok) fails.push(a + '（單元測試）');
-    process.stdout.write(ok ? '.' : `\n  ✗ ${a}: ${last}\n`);
+    // on failure also show which checks failed, so a CI-only failure can be diagnosed from the log
+    const why = ok ? [] : out.filter(l => l !== last && /FAIL|✗|失敗|not ok|Error|timeout/i.test(l)).slice(0, 8);
+    process.stdout.write(ok ? '.' : `\n  ✗ ${a}: ${last}\n${why.map(l => '      ' + l.trim().slice(0, 200) + '\n').join('')}`);
   }
 
   const date = new Date().toISOString().slice(0, 10);

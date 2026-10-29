@@ -303,6 +303,8 @@ const unlock = () => { try { if (!sessionStorage.getItem('seeded')) { localStora
     await T.drag(px, py, tb.x + tb.width / 2, tb.y + tb.height / 2 + 44);
     let st = await T.st();
     ok(st.pl === 0 && st.moves === 1, `dragging a gear back to the box removes it without a move (gears ${st.pl}, moves ${st.moves})`);
+    // let the drag's fling settle first: Chromium swallows a tap that stops a fling (no click), as on a real phone
+    await page.waitForTimeout(600);
     await T.tapSel('#undoBtn');
     st = await T.st();
     ok(st.pl === 1 && st.moves === 1, `undo puts a removed gear back (gears ${st.pl}, moves ${st.moves})`);
