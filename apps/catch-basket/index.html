@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .bbar.hot i{background:linear-gradient(90deg,#f07a2a,#e0412b)}
 .btxt{min-width:84px;text-align:right;font-variant-numeric:tabular-nums}
 .harv .hp{box-shadow:0 0 0 2px #ffd04a,0 0 18px #ffc53199}
-.dumpb{position:fixed;right:calc(var(--sar) + 14px);bottom:calc(var(--sab) + 14px);z-index:6;width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe7a8,#f3a23a 60%,#c9681c);box-shadow:0 4px 0 #9a4a12,0 8px 18px #0004;display:grid;place-items:center;color:#4a1f00}
+.dumpb{position:fixed;right:calc(var(--sar) + 14px);bottom:calc(var(--sab) + 22px);z-index:6;width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffe7a8,#f3a23a 60%,#c9681c);box-shadow:0 4px 0 #9a4a12,0 8px 18px #0004;display:grid;place-items:center;color:#4a1f00}
 .dumpb svg{width:30px;height:30px;stroke:#5a2a06;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .dumpb .cnt{position:absolute;top:-4px;right:-4px;min-width:24px;height:24px;border-radius:12px;background:#fff;color:#7a3a0a;font-size:13px;font-weight:800;display:grid;place-items:center;padding:0 5px;box-shadow:0 2px 6px #0003;font-variant-numeric:tabular-nums}
 .dumpb .lbl{position:absolute;bottom:-17px;left:50%;transform:translateX(-50%);font-size:11px;font-weight:700;color:var(--ink);white-space:nowrap;text-shadow:0 1px 2px var(--bg)}
@@ -132,6 +132,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="probe" aria-hidden="true" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:var(--sat) var(--sar) var(--sab) var(--sal)"></div>
 
 <div class="hud hidden" id="hud">
   <button class="ibtn" id="bPause" aria-label="暫停"><svg viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg></button>
@@ -210,13 +211,14 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <p><b>倒籃</b>：籃子最多裝 20 件，每件讓籃子變慢 2%（最多 −40%）。<b>連點兩下</b>畫面或按右下「倒籃」，把籃中物換成分數，並加碼 件數² 分。籃滿會自動倒，但沒有加碼。</p>
     <p><b>豐年雨</b>：每 45 秒有 10 秒只掉好東西，快衝分！</p>
     <p>難度每 15 秒上升：落得更快、更密，之後會有成串落下與被風吹斜的果子。命用完就結束，籃中剩下的照原價計分。</p>
+    <p><b>暫停</b>：切到其他 App、轉動手機或按左上角都會暫停。目前的分數（含籃中件數）隨時記入紀錄，中途離開也不會白收。</p>
   </div>
   <button class="btn" id="hOk">知道了</button>
 </div></div>
 
 <script>
 /*CORE-START*/
-const WH = 640, MOUTH = 556, GROUND = 598, SPAWN_Y = 108, BW = 72, BASE_V = 620, CAP = 20, ACC = 7000, MAXLIFE = 5;
+const STEP = 1 / 120, WH = 640, MOUTH = 556, GROUND = 598, SPAWN_Y = 108, BW = 72, BASE_V = 620, CAP = 20, ACC = 7000, MAXLIFE = 5;
 const KINDS = {
   apple: { good: 1, val: 10, r: 13, name: '蘋果' }, pear: { good: 1, val: 15, r: 13, name: '梨' },
   grape: { good: 1, val: 25, r: 15, name: '葡萄' }, chest: { good: 1, val: 50, r: 12, name: '金栗' },
@@ -269,7 +271,7 @@ function makeSim(o) {
   }
   S.fairOf = () => { spT = S.t; return feasible(pendingBads([])); };
   function spawnEvent(t) {
-    spT = fixed ? t : S.t; if (fixed) R = mkRng(((o.seed || 1) + Math.imul(++evN, 0x9E3779B1)) >>> 0);
+    spT = t; if (fixed) R = mkRng(((o.seed || 1) + Math.imul(++evN, 0x9E3779B1)) >>> 0);
     const rain = isRain(t); let n = 1;
     if (rain) n = R() < 0.4 ? 2 : 1; else if (t >= 60 && R() < Math.min(0.55, 0.25 + (t - 60) * 0.006)) n = R() < 0.5 ? 2 : 3;
     const vyB = fallSpeed(t), group = [];
@@ -331,7 +333,7 @@ function makeSim(o) {
       S.x += S.v * dt; if (S.x < lo) { S.x = lo; S.v = 0; } if (S.x > hi) { S.x = hi; S.v = 0; }
     }
     if (S.shake > 0) S.shake = Math.max(0, S.shake - dt);
-    while (t >= S.nextSpawn) { const ts = fixed ? S.nextSpawn : t; spawnEvent(ts); const iv = spawnInterval(ts); S.nextSpawn += (fixed ? isRain(ts) : rn) ? Math.max(0.17, iv * 0.38) : iv; }
+    while (t >= S.nextSpawn) { const ts = S.nextSpawn; spawnEvent(ts); const iv = spawnInterval(ts); S.nextSpawn += isRain(ts) ? Math.max(0.17, iv * 0.38) : iv; } // spawn at the scheduled instant, not the frame that noticed it
     const bx = S.basketX(); let on = 0;
     for (const it of S.items) {
       if (!it.alive) continue; on++;
@@ -346,6 +348,8 @@ function makeSim(o) {
     if (S.items.length > 40) S.items = S.items.filter(i => i.alive);
     if (S.limit && t >= S.limit) end('time');
   };
+  // one display frame: split into updates of at most 1/120 s so 30, 60 and 120 Hz play out the same
+  S.advance = dt => { let rem = dt; while (rem > 1e-9 && !S.dead) { const h = Math.min(rem, STEP); S.step(h); rem -= h; } };
   return S;
 }
 /*CORE-END*/
@@ -360,12 +364,20 @@ const MQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null
 // ---------- storage (try/catch: private mode, blocked storage) ----------
 const ld = (k, d) => { try { const v = localStorage.getItem('basket.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
 const sv = (k, v) => { try { localStorage.setItem('basket.' + k, JSON.stringify(v)); } catch (e) {} };
-const set = Object.assign({ sound: true, vib: true, theme: 'auto', skin: 0, sens: 1 }, ld('settings', {}));
-let best = Object.assign({ endless: 0, timed: 0 }, typeof ld('best', 0) === 'object' ? ld('best', {}) : { endless: ld('best', 0) });
-const stats = Object.assign({ games: 0, total: 0, longest: 0, bestDump: 0, bestDumpN: 0, maxStreak: 0, fruit: {} }, ld('stats', {}));
-const achs = ld('ach', {});
-const today = (() => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); })();
-let daily = ld('daily', { date: 0, best: 0, plays: 0 }); if (daily.date !== today) daily = { date: today, best: 0, plays: 0 };
+// everything read back is validated: a damaged or hand-edited value falls back to its default instead of breaking play
+const obj = v => v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+const int = (v, d, hi) => Number.isInteger(v) && v >= 0 && v <= (hi || 1e9) ? v : d;
+const num = (v, d, lo, hi) => typeof v === 'number' && isFinite(v) && v >= lo && v <= hi ? v : d;
+const set = (s => ({ sound: typeof s.sound === 'boolean' ? s.sound : true, vib: typeof s.vib === 'boolean' ? s.vib : true, theme: ['auto', 'light', 'dark'].includes(s.theme) ? s.theme : 'auto',
+  skin: int(s.skin, 0, 2), sens: Math.round(num(s.sens, 1, 0.7, 1.8) * 10) / 10 }))(obj(ld('settings', {})));
+const best = (b => typeof b === 'number' ? { endless: int(b, 0), timed: 0 } : (b = obj(b), { endless: int(b.endless, 0), timed: int(b.timed, 0) }))(ld('best', 0));
+const stats = (s => { const f = obj(s.fruit), fruit = {}; for (const k in KINDS) if (int(f[k], 0)) fruit[k] = f[k];
+  return { games: int(s.games, 0), total: int(s.total, 0, 1e12), longest: num(s.longest, 0, 0, 1e6), bestDump: int(s.bestDump, 0), bestDumpN: int(s.bestDumpN, 0, CAP), maxStreak: int(s.maxStreak, 0), fruit }; })(obj(ld('stats', {})));
+const achs = (a => { const o = {}; for (const k in a) if (num(a[k], 0, 1, 1e14)) o[k] = a[k]; return o; })(obj(ld('ach', {})));
+const dayNum = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+let today = dayNum(), daily;
+function loadDaily() { today = dayNum(); const d = obj(daily || ld('daily', {})); daily = d.date === today ? { date: today, best: int(d.best, 0), plays: int(d.plays, 0) } : { date: today, best: 0, plays: 0 }; }
+loadDaily();
 
 // ---------- theme ----------
 let dark = false;
@@ -428,15 +440,20 @@ const sfx = {
 const vib = p => { if (set.vib && navigator.vibrate) try { navigator.vibrate(p); } catch (e) {} };
 
 // ---------- layout ----------
-let dpr = 1, cw = 0, ch = 0, sc = 1, ox = 0, oy = 0, Wn = 360, bg = null;
+let dpr = 1, cw = 0, ch = 0, sc = 1, ox = 0, oy = 0, Wn = 360, bg = null, ins = { t: 0, r: 0, b: 0, l: 0 };
 let sim = null, demo = null, state = 'title';
+// Fit the field so everything that matters stays in view: spawning starts below the HUD (and the notch), the ground stays
+// above the home indicator, and where the field runs under the 倒籃 button the whole basket stays above it.
 function layout() {
   dpr = Math.min(2, window.devicePixelRatio || 1); cw = innerWidth; ch = innerHeight;
   cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
-  const w = (sim && state !== 'title') ? sim.W : null;
-  if (w) sc = Math.min(cw / w, ch / WH);
-  else { sc = Math.min(cw / 360, ch / WH); Wn = Math.max(360, Math.min(600, Math.round(cw / sc))); }
-  const W = w || Wn; ox = (cw - W * sc) / 2; oy = (ch - WH * sc) * 0.62;
+  const pc = getComputedStyle($('probe')); ins = { t: parseFloat(pc.paddingTop) || 0, r: parseFloat(pc.paddingRight) || 0, b: parseFloat(pc.paddingBottom) || 0, l: parseFloat(pc.paddingLeft) || 0 };
+  const w = (sim && state !== 'title') ? sim.W : null, top = ins.t + 58, bot = ch - ins.b, btnTop = bot - 90;
+  const pickW = s => w || Math.max(360, Math.min(600, Math.round(cw / s)));
+  sc = Math.max(0.3, Math.min(cw / (w || 360), (bot - top) / 514)); let W = pickW(sc), low = bot - 610 * sc;
+  if ((cw + W * sc) / 2 > cw - ins.r - 80) { sc = Math.max(0.3, Math.min(sc, (btnTop - top) / 506)); W = pickW(sc); low = btnTop - 602 * sc; }
+  if (!w) Wn = W;
+  ox = (cw - W * sc) / 2; oy = Math.min(low, Math.max(top - 96 * sc, (ch - WH * sc) * 0.62));
   buildBg(); buildSprites(); scoreTarget = null;
 }
 const curW = () => (state === 'title' || !sim) ? Wn : sim.W;
@@ -702,13 +719,18 @@ function tryDump() { if (state !== 'play' || !sim || resumeT > 0) return; if (!s
 cv.addEventListener('pointerdown', e => {
   AU.init(); if (state !== 'play') return;
   e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (er) {}
+  if (e.isPrimary) { ptrs.clear(); dragId = null; } // first finger of a fresh touch: anything still listed lost its pointerup (app switch, system gesture)
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: 0, mouse: e.pointerType === 'mouse' });
   if (dragId == null || !ptrs.has(dragId)) dragId = e.pointerId;
 });
 cv.addEventListener('pointermove', e => {
   if (state !== 'play' || !sim) return;
   if (e.pointerType === 'mouse') { sim.setTarget(toWorldX(e.clientX)); const p = ptrs.get(e.pointerId); if (p) p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.sx, e.clientY - p.sy)); return; }
-  const p = ptrs.get(e.pointerId); if (!p) return;
+  let p = ptrs.get(e.pointerId);
+  if (!p) { // a finger we lost track of (blur, pause mid-drag) is picked up again on its next move instead of going dead
+    p = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: 0, moved: 99 }; ptrs.set(e.pointerId, p);
+    if (dragId == null || !ptrs.has(dragId)) dragId = e.pointerId;
+  }
   const dx = e.clientX - p.x; p.x = e.clientX; p.y = e.clientY; p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.sx, e.clientY - p.sy));
   if (e.pointerId === dragId) sim.setTarget(sim.tx + dx / sc * set.sens);
 });
@@ -736,19 +758,22 @@ $('bDump').addEventListener('pointerdown', e => { e.preventDefault(); AU.init();
 let curMode = 'endless';
 function show(id) { for (const o of ['title', 'pause', 'over', 'settings', 'records', 'help', 'shareOv']) $(o).classList.toggle('hidden', o !== id); }
 function start(mode) {
-  AU.init(); curMode = mode || curMode;
+  AU.init(); if (sim && (state === 'pause' || state === 'play')) commit(sim, false); // 重新開始 keeps what the abandoned run already earned
+  curMode = mode || curMode; if (curMode === 'daily') loadDaily();
   const W = curMode === 'daily' ? 360 : Wn, seed = curMode === 'daily' ? today * 7 + 13 : (Math.random() * 1e9) >>> 0;
   state = 'play'; sim = makeSim({ W, seed, mode: curMode === 'timed' ? 'timed' : 'endless', fixed: curMode === 'daily' });
-  layout(); parts.length = floats.length = coins.length = 0; scoreShown = 0; lastLives = lastN = lastD = lastT = -1; lastHarv = null; resumeT = 1.2; endT = 0; ptrs.clear(); dragId = null; lastTap = null;
+  layout(); parts.length = floats.length = coins.length = 0; scoreShown = 0; lastLives = lastN = lastD = lastT = -1; lastHarv = null; resumeT = 1.2; endT = 0; dropTouches(); newAch = [];
+  sim.prevBest = curMode === 'daily' ? daily.best : best[curMode === 'timed' ? 'timed' : 'endless'];
   $('hTw').firstChild.textContent = curMode === 'timed' ? '剩' : '時間';
   show(null); $('hud').classList.remove('hidden'); $('bDump').classList.remove('hidden'); $('hud').classList.remove('harv');
   updHud(); measureScoreTarget(); initDeco();
   if (curMode === 'daily') banner('每日果園<small>' + String(today).replace(/(\d{4})(\d\d)(\d\d)/, '$1/$2/$3') + ' 的落果都一樣</small>');
   else if (curMode === 'timed') banner('限時收成<small>90 秒內衝高分</small>');
 }
-function pause() { if (state !== 'play') return; state = 'pause'; $('pInfo').textContent = '分數 ' + sim.score + '・難度 ' + sim.lvl + '・籃中 ' + sim.basket.length + ' 件'; show('pause'); }
+function dropTouches() { ptrs.clear(); dragId = null; lastTap = null; keyL = keyR = false; }
+function pause() { if (state !== 'play') return; state = 'pause'; dropTouches(); commit(sim, false); $('pInfo').textContent = '分數 ' + sim.score + '・難度 ' + sim.lvl + '・籃中 ' + sim.basket.length + ' 件'; show('pause'); }
 function resume() { if (state !== 'pause') return; state = 'play'; resumeT = 1.2; show(null); }
-function toTitle() { state = 'title'; sim = null; layout(); show('title'); $('hud').classList.add('hidden'); $('bDump').classList.add('hidden'); refreshTitle(); initDeco(); }
+function toTitle() { if (sim && state === 'pause') commit(sim, false); loadDaily(); state = 'title'; sim = null; layout(); show('title'); $('hud').classList.add('hidden'); $('bDump').classList.add('hidden'); refreshTitle(); initDeco(); }
 function refreshTitle() { const p = []; if (best.endless) p.push('最高分 ' + best.endless); if (best.timed) p.push('限時 ' + best.timed); if (daily.best) p.push('今日果園 ' + daily.best); $('tBest').textContent = p.join('・') || '拖曳籃子，接住秋天的收成'; }
 
 const ACH = [
@@ -758,25 +783,33 @@ const ACH = [
   ['rain', '雨中全收', '一次豐年雨接 15 個以上且不漏接'], ['timed', '限時高手', '限時收成 2,500 分'], ['daily', '每日果農', '完成一次每日果園']];
 let newAch = [];
 function unlock(id) { if (achs[id]) return; achs[id] = Date.now(); sv('ach', achs); const a = ACH.find(x => x[0] === id); if (a) newAch.push(a[1]); }
-function gameOver() {
-  const S = sim; state = 'end'; endT = 1.1;
-  stats.games++; stats.total += S.score; stats.longest = Math.max(stats.longest, S.t); stats.bestDump = Math.max(stats.bestDump, S.bestDump); stats.bestDumpN = Math.max(stats.bestDumpN, S.bestDumpN); stats.maxStreak = Math.max(stats.maxStreak, S.maxStreak);
-  for (const k in S.caught) stats.fruit[k] = (stats.fruit[k] || 0) + S.caught[k];
+// What the run is already sure to score: the basket is always paid out at face value when the run ends.
+function secured(S) { if (S.dead) return S.score; let v = S.score; for (const b of S.basket) v += b.v; return v; }
+// Books the run into best / stats / achievements. Called mid-run (pagehide, pause, quitting) and at the end; only the
+// part not booked yet is added, so a run is never counted twice and nothing it earned is lost if the tab dies.
+function commit(S, final) {
+  if (!S || S.final) return; const c = S.cm || (S.cm = { g: 0, caught: {} }), g = secured(S);
+  stats.total += g - c.g; c.g = g; if (final) { stats.games++; S.final = true; }
+  stats.longest = Math.max(stats.longest, S.t); stats.bestDump = Math.max(stats.bestDump, S.bestDump); stats.bestDumpN = Math.max(stats.bestDumpN, S.bestDumpN); stats.maxStreak = Math.max(stats.maxStreak, S.maxStreak);
+  for (const k in S.caught) { stats.fruit[k] = (stats.fruit[k] || 0) + S.caught[k] - (c.caught[k] || 0); c.caught[k] = S.caught[k]; }
   sv('stats', stats);
-  if (S.score >= 1000) unlock('s1000'); if (S.score >= 5000) unlock('s5000'); if (S.score >= 15000) unlock('s15000');
+  if (g >= 1000) unlock('s1000'); if (g >= 5000) unlock('s5000'); if (g >= 15000) unlock('s15000');
   if (S.maxStreak >= 50) unlock('streak50'); if (S.bestDumpN >= 20) unlock('dump20'); if (S.bestDump >= 600) unlock('bigdump');
   if (S.mode === 'endless' && S.t >= 120) unlock('t120'); if ((stats.fruit.chest || 0) >= 10) unlock('chest10'); if (S.maxLives >= 5) unlock('life5');
-  if (curMode === 'timed' && S.score >= 2500) unlock('timed'); if (curMode === 'daily') unlock('daily');
-  let rec = false;
-  if (curMode === 'daily') { daily.plays++; if (S.score > daily.best) { daily.best = S.score; rec = true; } sv('daily', daily); }
-  const bk = curMode === 'timed' ? 'timed' : 'endless'; if (curMode !== 'daily' && S.score > best[bk]) { best[bk] = S.score; rec = true; sv('best', best); }
-  S.rec = rec; S.ach = newAch.slice(); newAch = [];
+  if (curMode === 'timed' && g >= 2500) unlock('timed'); if (curMode === 'daily' && final) unlock('daily');
+  if (curMode === 'daily') { if (final) daily.plays++; if (g > daily.best) { daily.best = g; S.rec = true; } sv('daily', daily); }
+  else { const bk = curMode === 'timed' ? 'timed' : 'endless'; if (g > best[bk]) { best[bk] = g; S.rec = true; sv('best', best); } }
+}
+function gameOver() {
+  const S = sim; state = 'end'; endT = 1.1;
+  commit(S, true); S.ach = newAch.slice(); newAch = [];
   if (S.endBy === 'time') sfx.win(); else sfx.over();
   if (S.settle) floatTxt(S.x, MOUTH - 50, '籃中結算 +' + S.settle, '#ffb000', true);
   window.__lastRun = { t: S.t, score: S.score, by: S.endBy, maxStreak: S.maxStreak, bestDump: S.bestDump, caught: S.caught, lvl: S.lvl };
 }
+let overAt = 0; const overReady = () => performance.now() - overAt > 450; // a finger still hammering the field must not pick a button for you
 function showOver() {
-  const S = sim; state = 'over';
+  const S = sim; state = 'over'; overAt = performance.now();
   $('oTitle').textContent = S.endBy === 'time' ? '時間到！豐收！' : curMode === 'daily' ? '今日果園收工' : '收成結束';
   $('oNew').classList.toggle('hidden', !S.rec); $('oNew').textContent = curMode === 'daily' ? '今日新紀錄！' : '新紀錄！';
   $('oScore').textContent = S.score; $('oTime').textContent = Math.floor(S.t) + ' 秒'; $('oDump').textContent = S.bestDump;
@@ -840,14 +873,20 @@ $('tRec').onclick = () => {
   show('records');
 };
 $('rOk').onclick = () => show('title');
-$('oRetry').onclick = () => start(curMode); $('oMenu').onclick = () => toTitle(); $('oShare').onclick = () => shareCard(); $('shOk').onclick = () => show('over');
+$('oRetry').onclick = () => { if (overReady()) start(curMode); }; $('oMenu').onclick = () => { if (overReady()) toTitle(); }; $('oShare').onclick = () => { if (overReady()) shareCard(); }; $('shOk').onclick = () => show('over');
 function buildLegend() {
   const L = $('legend'); if (!L) return; const desc = { apple: '<b>蘋果</b> 10', pear: '<b>梨</b> 15', grape: '<b>葡萄</b> 25', chest: '<b>金栗</b> 50 稀有', clover: '<b>四葉草</b> +1 命', rotten: '<b>爛果</b> −1 命', stone: '<b>石頭</b> −1 命・暈 1 秒', hive: '<b>蜂巢</b> 籃子亂抖 3 秒' };
   L.innerHTML = ''; for (const k in desc) { const d = document.createElement('div'), c = document.createElement('canvas'); c.width = c.height = 56; const g = c.getContext('2d'); g.translate(28, 30); g.scale(1.45, 1.45); drawKind(g, k, KINDS[k].r); d.appendChild(c); const s = document.createElement('span'); s.innerHTML = desc[k]; d.appendChild(s); L.appendChild(d); }
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') pause(); });
-addEventListener('blur', () => { keyL = keyR = false; });
-addEventListener('resize', () => { layout(); if (state === 'play' || state === 'pause') measureScoreTarget(); });
+addEventListener('blur', dropTouches);
+// leaving the page (app switch, tab close, iOS killing the tab) banks the run so far: best score, stats, achievements
+function flush() { if (sim && (state === 'play' || state === 'pause')) commit(sim, false); }
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+// turning the phone changes the field's scale under the finger: pause instead of letting the drag jump (height-only toolbar changes keep playing)
+let lastCW = innerWidth;
+addEventListener('resize', () => { const turned = innerWidth !== lastCW; lastCW = innerWidth; layout(); if (turned) pause(); if (state === 'play' || state === 'pause') measureScoreTarget(); });
 
 // ---------- title attract mode: a tiny follow-bot plays behind the title ----------
 function demoStep(dt) {
@@ -861,6 +900,13 @@ function demoStep(dt) {
 }
 
 // ---------- main loop ----------
+let hold = false;
+function playStep(dt) {
+  sim.advance(dt); handleEvents(sim, false);
+  if (!sim.recShown && sim.prevBest > 0 && secured(sim) > sim.prevBest) { sim.recShown = true; banner('新紀錄！<small>超越 ' + sim.prevBest + ' 分</small>'); sfx.level(); vib(15); }
+  if (sim.harvest) { tambT -= dt; if (tambT <= 0) { tambT = .28; sfx.tamb(); } }
+  if (sim.dead) gameOver();
+}
 let last = performance.now(), fpsN = 0, fpsT = 0, fps = 60;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -871,10 +917,7 @@ function frame(now) {
     if (resumeT > 0) resumeT -= dt;
     else {
       if (keyL || keyR) { keyT += dt; const v = 320 + Math.min(1, keyT / .45) * 640; sim.setTarget((keyL && !keyR ? Math.min(sim.tx, sim.x + 20) - v * dt : Math.max(sim.tx, sim.x - 20) + v * dt)); } else keyT = 0;
-      let rem = dt; while (rem > 1e-6 && !sim.dead) { const h = Math.min(rem, 1 / 120); sim.step(h); rem -= h; }
-      handleEvents(sim, false);
-      if (sim.harvest) { tambT -= dt; if (tambT <= 0) { tambT = .28; sfx.tamb(); } }
-      if (sim.dead) gameOver();
+      if (!hold) playStep(dt);
     }
   } else if (state === 'end') { endT -= dt; if (endT <= 0) showOver(); }
   updateFx(dt, state === 'title' ? demo : sim);
@@ -885,7 +928,10 @@ window.__game = {
   snap() { if (!sim) return null; const S = sim; return { t: S.t, x: S.x, tx: S.tx, bx: S.basketX(), W: S.W, n: S.basket.length, lives: S.lives, score: S.score, harvest: S.harvest, freeze: S.freeze, shake: S.shake, dead: S.dead, state, resumeT, sc, ox, oy, sens: set.sens,
     items: S.items.filter(i => i.alive && !i.passed).map(i => ({ k: i.k, good: i.good, r: i.r, x0: i.x0, y0: i.y0, vx: i.vx, vy: i.vy, t0: i.t0, W: i.W, ta: i.ta })) }; },
   state() { const S = sim; return S && { t: S.t, lvl: S.lvl, n: S.items.filter(i => i.alive).length, score: S.score, lives: S.lives, rain: S.rainOn, interval: spawnInterval(S.t), speed: fallSpeed(S.t), bad: badRatio(S.t), fps, fairChecks: S.fairChecks, fairFix: S.fairFix, harvest: S.harvest, n_basket: S.basket.length }; },
-  start, pause, resume, get sim() { return sim; }
+  start, pause, resume, toTitle, get sim() { return sim; }, get mode() { return state; },
+  hold(v) { hold = !!v; }, advance(dt) { if (state === 'play' && resumeT <= 0) playStep(dt); }, skipCountdown() { resumeT = 0; },
+  view() { return { sc, ox, oy, W: curW(), cw, ch, ins, dump: $('bDump').getBoundingClientRect().toJSON() }; },
+  data() { return { best: { ...best }, daily: { ...daily }, stats: JSON.parse(JSON.stringify(stats)), set: { ...set }, achs: Object.keys(achs) }; }
 };
 
 refreshSettings(); applyTheme(); layout(); initDeco(); refreshTitle(); show('title');
