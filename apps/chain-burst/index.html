@@ -100,7 +100,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .setrow{display:flex;align-items:center;justify-content:space-between;min-height:48px;border-bottom:1px solid var(--line);font-size:15px;font-weight:600;gap:8px}
 .setrow:last-child{border:0}
 .seg{display:flex;background:var(--sec);border-radius:12px;padding:3px;gap:2px;border:1px solid var(--line)}
-.seg button{min-height:38px;min-width:48px;padding:0 8px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink2)}
+.seg button{min-height:44px;min-width:48px;padding:0 8px;border-radius:9px;font-size:13px;font-weight:700;color:var(--ink2)}
 .seg button[aria-pressed="true"]{background:var(--btn);color:var(--btnink)}
 .ach{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 .ach i{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:16px;background:var(--sec);color:var(--ink2)}
@@ -141,6 +141,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="sap" aria-hidden="true" style="position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)"></div>
 
 <div class="hud hidden" id="hud">
   <button class="ibtn" id="bMenu" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
@@ -414,16 +415,23 @@ var $ = function(id){ return document.getElementById(id); };
 var cv = $('cv'), ctx = cv.getContext('2d');
 var W = 0, H = 0, DPR = 1, land = false, FS = 1, FOX = 0, FOY = 0, FWS = 0, FHS = 0;
 var NL = 100;
-var prog = sget('progress', {}); if (typeof prog !== 'object') prog = {};
-var stars = sget('stars', {}); if (typeof stars !== 'object') stars = {};
-var unlockAll = !!sget('unlockAll', false);
-var set = sget('settings', {}); if (typeof set !== 'object') set = {};
-if (set.snd === undefined) set.snd = true; if (set.vib === undefined) set.vib = true; if (set.aim === undefined) set.aim = true; if (!set.theme) set.theme = 'auto';
-var stats = sget('stats', {}); if (typeof stats !== 'object') stats = {};
-['pops','taps','best','wipes','clears'].forEach(function(k){ if (typeof stats[k] !== 'number') stats[k] = 0; });
-var ach = sget('ach', {}); if (typeof ach !== 'object') ach = {};
-var introSeen = sget('intro', {}); if (typeof introSeen !== 'object') introSeen = {};
-var daily = sget('daily', {}); if (typeof daily !== 'object') daily = {};
+/* every stored value is validated: a damaged or hand-edited save falls back to defaults instead of breaking the page */
+function isObj(o){ return !!o && typeof o === 'object' && !Array.isArray(o); }
+function fin(v){ return typeof v === 'number' && isFinite(v); }
+function levelMap(o, lo, hi){ var r = {}; if (isObj(o)) for (var k in o){ var n = +k, v = o[k]; if (n >= 1 && n <= NL && n === Math.floor(n) && fin(v) && v >= lo) r[n] = Math.min(hi, Math.floor(v)); } return r; }
+var prog = levelMap(sget('progress', {}), 1, 999);
+var stars = levelMap(sget('stars', {}), 1, 3);
+var unlockAll = sget('unlockAll', false) === true;
+var set0 = sget('settings', {}), set = {};
+if (!isObj(set0)) set0 = {};
+set.snd = typeof set0.snd === 'boolean' ? set0.snd : true; set.vib = typeof set0.vib === 'boolean' ? set0.vib : true; set.aim = typeof set0.aim === 'boolean' ? set0.aim : true;
+set.theme = ['auto', 'dark', 'light'].indexOf(set0.theme) >= 0 ? set0.theme : 'auto';
+var stats = sget('stats', {}); if (!isObj(stats)) stats = {};
+['pops','taps','best','wipes','clears'].forEach(function(k){ stats[k] = fin(stats[k]) && stats[k] > 0 ? Math.floor(stats[k]) : 0; });
+var wipes = levelMap(sget('wipes', {}), 1, 1); stats.wipes = Object.keys(wipes).length;
+var ach = sget('ach', {}); if (!isObj(ach)) ach = {}; for (var ak in ach) if (!fin(ach[ak])) delete ach[ak];
+var introSeen = sget('intro', {}); if (!isObj(introSeen)) introSeen = {};
+var daily = sget('daily', {}); if (!isObj(daily)) daily = {}; for (var dk0 in daily) if (!/^\d{8}$/.test(dk0) || !fin(daily[dk0]) || daily[dk0] < 0) delete daily[dk0]; else daily[dk0] = Math.min(99, Math.floor(daily[dk0]));
 
 /* ---------- theme ---------- */
 var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
@@ -531,18 +539,22 @@ function dailyParams(){
 }
 
 /* ---------- layout ---------- */
+function insets(){ var cs = getComputedStyle($('sap')); return { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 }; }
 function layout(){
   DPR = Math.min(2, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
-  land = W > H * 1.1;
-  var hud = $('hud'), top = 10;
+  var wasLand = land; land = W > H * 1.1;
+  // the field turns with the screen, so a finger still held down would now aim somewhere else: cancel that aim
+  if (wasLand !== land && activePtr !== null){ activePtr = null; aim.on = false; if (status === 'aim') toast('畫面旋轉了，請重新瞄準'); }
+  // keep the field inside the safe area (notch in landscape, home indicator at the bottom)
+  var sa = insets(), hud = $('hud'), top;
   if (!hud.classList.contains('hidden')) top = hud.getBoundingClientRect().bottom + 6;
-  else top = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0) + 58;
-  var availW = W - 12, availH = H - top - 8;
+  else top = sa.t + 58;
+  var availW = W - 12 - sa.l - sa.r, availH = H - top - 8 - sa.b;
   if (!land){ FS = Math.min(availW / FW, availH / FH); FWS = FW * FS; FHS = FH * FS; }
   else { FS = Math.min(availW / FH, availH / FW); FWS = FH * FS; FHS = FW * FS; }
-  FOX = (W - FWS) / 2; FOY = top + (availH - FHS) / 2;
+  FOX = sa.l + 6 + (availW - FWS) / 2; FOY = top + (availH - FHS) / 2;
   bgInit();
 }
 window.addEventListener('resize', layout);
@@ -661,7 +673,8 @@ function burst(x, y, hue, n, sp){
   for (var i = 0; i < n; i++){ var a = Math.random() * 6.283, s = (sp || 60) * (0.4 + Math.random()); P({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.7, max: 0.7, r: 1 + Math.random() * 2, col: col }); }
 }
 function updParts(dt){
-  for (var i = parts.length - 1; i >= 0; i--){ var q = parts[i]; q.life -= dt; if (q.life <= 0){ parts.splice(i, 1); continue; } q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.95; q.vy *= 0.95; q.vy -= 8 * dt; }
+  var damp = Math.pow(0.95, dt * 60); // same drag at 30, 60 or 120 Hz
+  for (var i = parts.length - 1; i >= 0; i--){ var q = parts[i]; q.life -= dt; if (q.life <= 0){ parts.splice(i, 1); continue; } q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= damp; q.vy *= damp; q.vy -= 8 * dt; }
   for (i = floats.length - 1; i >= 0; i--){ floats[i].life -= dt; if (floats[i].life <= 0) floats.splice(i, 1); }
 }
 function drawParts(){
@@ -683,7 +696,7 @@ function handleEvents(sim, live){
       }
       curtainX = e.x; curtainY = e.y;
     } else if (e.t === 'absorb'){
-      burst(e.x, e.y, -1, 18, 90); floats.push({ x: e.x, y: e.y, txt: '−1', life: 1, col: ABS });
+      burst(e.x, e.y, -1, 18, 90); floats.push({ x: e.x, y: e.y, txt: '−1', life: 1, col: LIGHT ? '#7a2fd0' : ABS });
       if (live){ SFX.absorb(); vib([10, 30, 10]); counterPop = 1; }
     } else if (e.t === 'crack'){ burst(e.x, e.y, 3, 5, 40); if (live) SFX.crack(); }
     else if (e.t === 'tap'){ if (live){ SFX.tap(); vib(12); } burst(e.x, e.y, 0, 14, 50); }
@@ -704,6 +717,7 @@ function startDaily(){
   mode = 'daily'; LV = genLevel(0, dailyParams()); beginSim(); status = 'aim'; showHint();
 }
 function beginSim(){
+  bank(); clearTimeout(resultT); activePtr = null;
   S = newSim(LV); acc = 0; parts.length = 0; floats.length = 0; aim.on = false; goalHit = false; curtain = 0; shownCount = 0; replaying = false; resultInfo = null;
   status = 'ready';
   showOnly(null); $('hud').classList.remove('hidden'); $('replayTag').classList.add('hidden');
@@ -750,17 +764,27 @@ function stepSim(dt){
   }
   if (n === 6) acc = 0;
 }
-function onChainEnd(){
-  if (replaying){ replaying = false; simSpeed = 1; $('replayTag').classList.add('hidden'); status = 'result'; showResult(true); return; }
-  status = 'result'; var P = S.P, c = S.count, won = c >= P.T, st = starsFor(c, P);
+// the outcome of a tap is fixed the moment it lands (the sim is deterministic), so it is saved exactly once:
+// when the chain ends, or earlier if the player leaves mid-chain (retry, menu, app switch, page closed)
+function finalCount(sim){
+  if (sim.done) return sim.count;
+  var C = JSON.parse(JSON.stringify(sim, function(k, v){ return k === 'lv' || k === 'P' ? undefined : v; }));
+  C.lv = sim.lv; C.P = sim.P; C.ev = [];
+  for (var i = 0; !C.done && i < 600000; i++){ simStep(C); C.ev.length = 0; }
+  return C.count;
+}
+function bank(){
+  if (!S || !S.tapped || S.banked != null || S.noBank) return;
+  var c = finalCount(S); S.banked = c; commit(c, S.P);
+}
+function commit(c, P){
   stats.pops += Math.max(0, c); if (c > stats.best) stats.best = c;
-  var wiped = c >= P.nExp;
+  var won = c >= P.T, st = starsFor(c, P), wiped = c >= P.nExp;
   if (mode === 'daily'){
     var prev = daily[P.key] || 0; if (c > prev) daily[P.key] = c; sset('daily', daily); unlockAch('daily');
   } else if (won){
-    var firstClear = !(stars[levelN] > 0);
-    if (firstClear) stats.clears++;
-    if (wiped){ var wk = sget('wipes', {}); if (typeof wk !== 'object') wk = {}; wk[levelN] = 1; sset('wipes', wk); stats.wipes = Object.keys(wk).length; }
+    if (!(stars[levelN] > 0)) stats.clears++;
+    if (wiped){ wipes[levelN] = 1; sset('wipes', wipes); stats.wipes = Object.keys(wipes).length; }
     if (!prog[levelN] || c > prog[levelN]) prog[levelN] = c;
     if (!(stars[levelN] >= st)) stars[levelN] = st;
     sset('progress', prog); sset('stars', stars);
@@ -771,9 +795,16 @@ function onChainEnd(){
   if (stats.wipes >= 10) unlockAch('wipe10');
   var s3 = 0; for (var k in stars) if (stars[k] >= 3) s3++; if (s3 >= 30) unlockAch('star30');
   if (mode === 'level' && won && levelN === 100) unlockAch('king');
-  resultInfo = { c: c, won: won, st: st, wiped: wiped, P: P };
-  if (won || mode === 'daily'){ curtain = 0.001; SFX.win(); vib([20, 40, 30]); setTimeout(function(){ if (status === 'result') showResult(false); }, 900); }
-  else { SFX.fail(); vib(40); setTimeout(function(){ if (status === 'result') showResult(false); }, 650); }
+}
+var resultT = 0;
+function onChainEnd(){
+  if (replaying){ endReplay(); return; }
+  status = 'result'; var P = S.P, c = S.count, won = c >= P.T, st = starsFor(c, P);
+  if (S.banked == null){ S.banked = c; commit(c, P); }
+  resultInfo = { c: c, won: won, st: st, wiped: c >= P.nExp, P: P };
+  clearTimeout(resultT);
+  if (won || mode === 'daily'){ curtain = 0.001; SFX.win(); vib([20, 40, 30]); resultT = setTimeout(function(){ if (status === 'result') showResult(false); }, 900); }
+  else { SFX.fail(); vib(40); resultT = setTimeout(function(){ if (status === 'result') showResult(false); }, 650); }
 }
 function showResult(again){
   var R = resultInfo; if (!R) return;
@@ -783,21 +814,22 @@ function showResult(again){
     var h = ''; for (var i = 0; i < 3; i++) h += i < R.st ? '<span class="on" style="animation-delay:' + (again ? 0 : 0.15 + i * 0.18) + 's">★</span>' : '★';
     $('wStars').innerHTML = mode === 'daily' ? '' : h;
     if (!again && mode !== 'daily') for (i = 0; i < R.st; i++) (function(i){ setTimeout(function(){ SFX.star(i); }, 150 + i * 180); })(i);
-    $('wC').textContent = R.c; $('wT').textContent = P.T;
+    $('wC').textContent = Math.max(0, R.c); $('wT').textContent = P.T;
     $('wB').textContent = mode === 'daily' ? (daily[P.key] || R.c) : (prog[levelN] || R.c);
     $('wMsg').textContent = mode === 'daily' ? '今天的海域每個人都一樣，明天換新的一片海。' : R.st < 3 ? '再多引爆 ' + Math.max(1, Math.ceil(P.T + (P.nExp - P.T) * 0.6) - R.c) + ' 隻就能拿到三星。' : '完美的一擊！';
     $('wNext').textContent = mode === 'daily' ? '回到標題' : levelN >= NL ? '回到關卡選擇' : '下一關';
     showOnly('win');
   } else {
-    var miss = P.T - R.c;
-    $('fC').textContent = R.c; $('fT').textContent = P.T;
+    var miss = P.T - Math.max(0, R.c);
+    $('fC').textContent = Math.max(0, R.c); $('fT').textContent = P.T;
     $('fMsg').textContent = '還差 ' + miss + ' 隻。' + (S.js.some(function(j){ return j.k === K_ABS && !j.alive; }) ? '小心紫邊的吸光水母！' : '試著瞄準水母最密集的地方。');
     showOnly('fail');
   }
 }
 function startReplay(){
   if (!lastRun) return;
-  S = newSim(LV); acc = 0; parts.length = 0; floats.length = 0; goalHit = true; curtain = 0;
+  clearTimeout(resultT); activePtr = null; aim.on = false;
+  S = newSim(LV); S.noBank = true; acc = 0; parts.length = 0; floats.length = 0; goalHit = true; curtain = 0;
   while (S.frame < Math.max(0, lastRun.frame - 20)){ simStep(S); S.ev.length = 0; }
   replaying = true; status = 'replay'; simSpeed = 1;
   showOnly(null); $('replayTag').classList.remove('hidden');
@@ -808,7 +840,7 @@ var activePtr = null;
 function evPos(e){ return toLogical(e.clientX, e.clientY); }
 cv.addEventListener('pointerdown', function(e){
   if (status === 'replay'){ endReplay(); return; }
-  if (status !== 'aim') return;
+  if (status !== 'aim' || activePtr !== null) return; // a second finger never steals or re-fires the aim
   audio();
   activePtr = e.pointerId; try{ cv.setPointerCapture(e.pointerId); }catch(er){}
   var p = evPos(e); aim.on = true; aim.x = p.x; aim.y = p.y; aim.hover = false;
@@ -824,9 +856,11 @@ cv.addEventListener('pointerup', function(e){
   var p = evPos(e); aim.on = false;
   doTap(p.x, p.y);
 });
-cv.addEventListener('pointercancel', function(e){ if (activePtr === e.pointerId){ activePtr = null; aim.on = false; } });
+function dropPtr(e){ if (activePtr === e.pointerId){ activePtr = null; aim.on = false; } }
+cv.addEventListener('pointercancel', dropPtr);
+cv.addEventListener('lostpointercapture', dropPtr);
 cv.addEventListener('pointerleave', function(e){ if (e.pointerType === 'mouse' && activePtr === null) aim.on = false; });
-function endReplay(){ replaying = false; simSpeed = 1; $('replayTag').classList.add('hidden'); status = 'result'; showResult(true); }
+function endReplay(){ if (status !== 'replay') return; replaying = false; simSpeed = 1; $('replayTag').classList.add('hidden'); status = 'result'; showResult(true); }
 $('replayTag').addEventListener('click', endReplay);
 document.addEventListener('keydown', function(e){
   if (e.key === 'r' || e.key === 'R'){ if (status === 'aim' || status === 'chain' || status === 'result' || status === 'ready') retry(); }
@@ -837,7 +871,10 @@ function retry(){ audio(); SFX.click(); if (mode === 'daily') startDaily(); else
 
 /* ---------- overlays ---------- */
 var OVS = ['title', 'select', 'pause', 'win', 'fail', 'help', 'intro', 'settings', 'stats'];
-function showOnly(id){ OVS.forEach(function(o){ $(o).classList.toggle('hidden', o !== id); }); }
+var shownAt = 0;
+function showOnly(id){ OVS.forEach(function(o){ $(o).classList.toggle('hidden', o !== id); }); shownAt = performance.now(); }
+// a tap meant for the sea that lands just as the result card pops in must not press 下一關 / 再玩一次
+['win', 'fail'].forEach(function(id){ $(id).addEventListener('click', function(e){ if (performance.now() - shownAt < 450){ e.stopPropagation(); e.preventDefault(); } }, true); });
 var prevStatus = null, overlayBack = null;
 function pause(){ if (status !== 'aim' && status !== 'chain' && status !== 'ready') return; prevStatus = status; status = 'paused'; aim.on = false; activePtr = null;
   $('pInfo').textContent = mode === 'daily' ? '每日挑戰・目標 ' + S.P.T : '第 ' + levelN + ' 關・目標 ' + S.P.T + ' / ' + S.P.nExp; showOnly('pause'); }
@@ -866,8 +903,10 @@ $('hOk').onclick = function(){ showOnly(overlayBack); };
 $('setOk').onclick = function(){ showOnly(overlayBack); };
 $('stOk').onclick = function(){ showOnly('title'); };
 $('iOk').onclick = function(){ audio(); SFX.click(); showOnly(null); status = 'aim'; lastT = performance.now(); showHint(); };
-function goTitle(){ status = 'title'; mode = 'level'; S = null; $('hud').classList.add('hidden'); $('hint').classList.add('hidden'); $('replayTag').classList.add('hidden'); replaying = false; simSpeed = 1; showOnly('title'); layout(); demo = null; }
+function playLabel(){ var n = firstOpen(), any = false; for (var k in stars){ any = true; break; } $('tPlay').textContent = !any ? '開始潛水' : stars[n] > 0 ? '繼續潛水' : '繼續第 ' + n + ' 關'; }
+function goTitle(){ bank(); clearTimeout(resultT); activePtr = null; aim.on = false; playLabel(); status = 'title'; mode = 'level'; S = null; $('hud').classList.add('hidden'); $('hint').classList.add('hidden'); $('replayTag').classList.add('hidden'); replaying = false; simSpeed = 1; showOnly('title'); layout(); demo = null; }
 function openSelect(){
+  bank(); clearTimeout(resultT); activePtr = null; aim.on = false;
   status = 'select'; S = null; $('hud').classList.add('hidden'); $('hint').classList.add('hidden'); replaying = false; simSpeed = 1;
   renderGrid(); showOnly('select');
   var cur = document.querySelector('.lt.cur'); if (cur) cur.scrollIntoView({ block: 'center' });
@@ -954,7 +993,10 @@ function share(){
 }
 var toastT = 0;
 function toast(m){ var t = $('toast'); t.textContent = m; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(function(){ t.style.opacity = 0; setTimeout(function(){ t.classList.add('hidden'); }, 400); }, 2000); }
-document.addEventListener('visibilitychange', function(){ if (document.hidden){ if (status === 'aim' || status === 'chain') pause(); if (AC && AC.state === 'running'){ try{ AC.suspend(); }catch(e){} } } else { lastT = performance.now(); if (AC){ try{ AC.resume(); }catch(e){} } } });
+document.addEventListener('visibilitychange', function(){ if (document.hidden){ if (status === 'aim' || status === 'chain') pause(); bank(); if (AC && AC.state === 'running'){ try{ AC.suspend(); }catch(e){} } } else { lastT = performance.now(); if (AC){ try{ AC.resume(); }catch(e){} } } });
+
+// iOS may kill a backgrounded tab without another event: the chain in flight is already banked by then
+window.addEventListener('pagehide', bank);
 
 /* ---------- title attract mode ---------- */
 function demoTick(dt){
@@ -1042,9 +1084,11 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 window.__game = {
-  state: function(){ return { status: status, mode: mode, level: levelN, frame: S ? S.frame : -1, tapped: S ? S.tapped : false, tapFrame: S ? S.tapFrame : -1, count: S ? S.count : 0, T: S ? S.P.T : 0, nExp: S ? S.P.nExp : 0, stars: resultInfo ? resultInfo.st : 0, won: resultInfo ? resultInfo.won : false }; },
+  state: function(){ return { status: status, mode: mode, level: levelN, frame: S ? S.frame : -1, tapped: S ? S.tapped : false, tapFrame: S ? S.tapFrame : -1, tapX: S ? S.tapX : null, tapY: S ? S.tapY : null, count: S ? S.count : 0, banked: S && S.banked != null ? S.banked : null, T: S ? S.P.T : 0, nExp: S ? S.P.nExp : 0, stars: resultInfo ? resultInfo.st : 0, won: resultInfo ? resultInfo.won : false, aiming: activePtr !== null, land: land, field: { x: FOX, y: FOY, w: FWS, h: FHS } }; },
+  jelly: function(i){ var j = S && S.js[i]; return j ? { x: j.x, y: j.y, alive: j.alive } : null; },
   toScreen: toScreen
 };
+playLabel();
 layout();
 requestAnimationFrame(frame);
 })();
