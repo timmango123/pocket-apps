@@ -86,8 +86,17 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   async function touch(cdp, type, x, y) { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }); }
   async function tap(cdp, page, sel) {
     await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel);
-    const b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
-    await touch(cdp, 'touchStart', b.x, b.y); await sleep(40); await touch(cdp, 'touchEnd'); await sleep(60);
+    // overlays pop in (scale animation): on a slow runner the button can still be moving, so tap once it has settled
+    let b, prev = '';
+    for (let t0 = Date.now(); ; await sleep(30)) {
+      b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }, sel);
+      const k = [b.x, b.y, b.w].map(v => v.toFixed(1)).join(); if (k === prev || Date.now() - t0 > 2000) break; prev = k;
+    }
+    // a loaded runner sends the click well after touchend: return only once it has arrived, so the next touch can't race it
+    await page.evaluate(s => { window.__tapClick = false; document.querySelector(s).addEventListener('click', () => { window.__tapClick = true; }, { once: true, capture: true }); }, sel);
+    await touch(cdp, 'touchStart', b.x, b.y); await sleep(40); await touch(cdp, 'touchEnd');
+    for (let t0 = Date.now(); !(await page.evaluate(() => window.__tapClick)) && Date.now() - t0 < 1500;) await sleep(20);
+    await sleep(30);
   }
   const settled = (page, sel) => waitFor(page, s => !document.querySelector(s).getAnimations({ subtree: true }).length, sel); // card pop-in done
   const geo = page => page.evaluate(() => window.__game.layout());
