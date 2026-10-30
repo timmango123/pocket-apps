@@ -4,7 +4,9 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'body-calc-'));
 const WRAP = path.join(DIR, 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP;
+// served over http, not file://: Chromium can drop a localStorage write across a reload of a file:// page
+const server = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(WRAP)); });
+let URL;
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
@@ -14,6 +16,8 @@ const fmt = n => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).fo
 const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
 (async () => {
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  URL = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch();
   async function open(init, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, ...opt });
@@ -146,7 +150,8 @@ const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.ge
     // R2：分號／Tab 分隔時逗號是小數點；逗號分隔又沒加引號的 65,5 不亂存
     fs.writeFileSync(imp, '日期;體重\n2020-03-02;65,5\n2020-03-03\t66,1\n2020-03-04,67,3\n');
     await p.setInputFiles('#log-file', imp);
-    await p.waitForFunction(() => document.querySelector('#toast-t').textContent.includes('已匯入 2 筆'));
+    // wait for text only this import shows: the previous import's toast also said 已匯入 2 筆
+    await p.waitForFunction(() => document.querySelector('#toast-t').textContent.includes('加引號'));
     const w2 = await p.evaluate(k => JSON.parse(localStorage.getItem(k)), KEY + 'weights');
     const t2 = await p.textContent('#toast-t');
     assert(w2.some(x => x.date === '2020-03-02' && x.kg === 65.5) && w2.some(x => x.date === '2020-03-03' && x.kg === 66.1) && !w2.some(x => x.date === '2020-03-04') && t2.includes('加引號'), 'CSV「;65,5」「\t66,1」正確；「,67,3」略過並提示（' + t2 + '）');
@@ -226,7 +231,7 @@ const day = k => { const d = new Date(); d.setDate(d.getDate() - k); return d.ge
     }
   }
 
-  await browser.close();
+  await browser.close(); server.close();
   fs.rmSync(DIR, { recursive: true, force: true });
   assert(errors.length === 0, '無 console / page error ' + JSON.stringify(errors));
   console.log(fails ? `${fails} 項失敗` : '全部通過');

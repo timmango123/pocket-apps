@@ -87,6 +87,23 @@ svg{display:block}
   .tools{padding:4px 0 0}
   .strip{padding:0 2px}
 }
+/* short portrait screens (e.g. inside the lobby), so squares stay >= 44px:
+   .slim folds the move strip into the tool row and slims the player bars; .compact also moves the title bar's menu into the tool row */
+.pzlv{display:none}
+#app.slim .strip,#app.compact .top{display:none}
+#app.slim .pbar{height:38px;padding:2px 12px;gap:8px}
+#app.slim .ava{width:30px;height:30px;border-radius:9px}
+#app.slim .pinfo{flex-direction:row;align-items:center;gap:8px}
+#app.slim .pname{font-size:14px}
+#app.slim .caps{min-width:0}
+#app.slim .clock{font-size:16px;padding:3px 8px;min-width:62px}
+#app.slim .pzinfo{height:40px;padding:2px 12px}
+#app.compact .turn{font-size:15px;gap:6px;white-space:nowrap}
+#app.compact .pzlv{display:inline}
+#app.slim .mpips{gap:3px}
+#app.slim .mpips i{width:14px}
+#app.slim .tools{padding-top:2px}
+#app.slim .tb{height:46px;gap:2px}
 /* sheet (move list) */
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:12;display:flex;justify-content:center;transform:translateY(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);pointer-events:none}
 #sheet.open{transform:none;pointer-events:auto}
@@ -137,7 +154,7 @@ svg{display:block}
 .tbtns .small{display:flex;gap:9px}.tbtns .small .btn{flex:1;font-size:15px}
 @media (orientation: landscape) and (max-height: 560px){
   #title{flex-direction:row;gap:28px;align-items:center}
-  .toast{top:calc(var(--sat) + 10px);bottom:auto}
+  #toast.toast{top:calc(var(--sat) + 10px);bottom:auto} /* id: must beat the base .toast rule declared below (it stretched the toast to 270px tall) */
   #title .brand{display:flex;flex-direction:column;align-items:center}
   #title .hero{width:110px;height:110px}
   #title h1{font-size:38px}
@@ -199,6 +216,15 @@ textarea.out{width:100%;height:130px;border-radius:12px;border:1px solid var(--l
 .stt th{color:var(--ink2);font-weight:600;font-size:12px}
 @media (hover:hover){ .tb:hover,.ibtn:hover{filter:brightness(1.06)} .lt:hover{filter:brightness(1.04)} }
 @media (max-height: 600px){ .ov{align-items:flex-start;overflow-y:auto} }
+@media (max-height: 640px) and (orientation: portrait){
+  #title{overflow-y:auto}
+  #title::before{position:fixed}
+  #title .hero{width:92px;height:92px;margin-bottom:0}
+  #title h1{font-size:38px}
+  #title .sub{margin:4px 0 8px}
+  .tbtns .btn{height:48px;margin-top:7px}
+}
+@media (max-height: 560px) and (orientation: portrait){ #title{justify-content:flex-start} #title .hero{width:56px;height:56px} #title h1{font-size:34px} }
 </style>
 <style id="mobile-shim">
 /* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
@@ -244,7 +270,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
         <div class="clock hidden" id="oppClock">10:00</div>
       </div>
       <div class="pzinfo hidden" id="pzInfo">
-        <div class="turn"><span class="dot" id="pzDot"></span><span id="pzTurn">白方走</span></div>
+        <div class="turn"><span class="dot" id="pzDot"></span><span class="pzlv" id="pzLv"></span><span id="pzTurn">白方走</span></div>
         <div style="display:flex;align-items:center;gap:10px"><span style="font-size:13px;color:var(--ink2);font-weight:700" id="pzLeft"></span><div class="mpips" id="pzPips"></div></div>
       </div>
       <div class="pbar" id="meBar">
@@ -272,6 +298,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   </div>
   <div class="tbtns">
     <button class="btn gold hidden" id="tResume">繼續對局</button>
+    <button class="btn gold hidden" id="tResumePz">繼續殘局</button>
     <button class="btn" id="tAI">對戰電腦</button>
     <button class="btn" id="tPuzzle">殘局挑戰・100 關</button>
     <div class="small"><button class="btn sec" id="tDaily">每日一題</button><button class="btn sec" id="t2P">雙人對弈</button></div>
@@ -630,12 +657,19 @@ function insufficient() {
   if (tot <= 1) return true;
   return !mixed; // only bishops, all on one colour
 }
-// can side `c` possibly mate (for flag-fall rule)
+// can side `c` possibly mate by any series of legal moves (flag-fall rule: on time the flagger loses unless the opponent cannot mate at all)
 function canMate(c) {
-  var n = 0, b = 0;
-  for (var sq = 0; sq < 120; sq++) { if (sq & 0x88) { sq += 7; continue; } var pc = bd[sq]; if (!pc || (pc >> 3) !== c) continue; var t = pc & 7;
-    if (t === PAWN || t === ROOK || t === QUEEN) return true; if (t === KNIGHT) n++; if (t === BISHOP) b++; }
-  return n + b >= 2;
+  var n = 0, bc = [0, 0], other = 0, oBc = [0, 0];
+  for (var sq = 0; sq < 120; sq++) { if (sq & 0x88) { sq += 7; continue; } var pc = bd[sq]; if (!pc) continue; var t = pc & 7, col = ((sq >> 4) + (sq & 7)) & 1;
+    if (t === KING) continue;
+    if ((pc >> 3) !== c) { if (t === BISHOP) oBc[col]++; else other++; continue; }
+    if (t === PAWN || t === ROOK || t === QUEEN) return true; if (t === KNIGHT) n++; else bc[col]++; }
+  var b = bc[0] + bc[1], oppAny = other + oBc[0] + oBc[1];
+  if (n + b === 0) return false;
+  if (n >= 2 || (n && b) || (bc[0] && bc[1])) return true;
+  if (n === 1) return oppAny > 0; // lone knight: needs an enemy man to hem the king in
+  // bishops all on one colour: the king's escape squares of the other colour must be blocked by an enemy man that can stand there
+  return other > 0 || oBc[bc[0] ? 1 : 0] > 0;
 }
 // status of current position: 'mate','stalemate','fifty','threefold','material' or ''
 function gameStatus() {
@@ -1015,11 +1049,30 @@ function sset(k, v) { try { localStorage.setItem(KP + k, JSON.stringify(v)); } c
 function sdel(k) { try { localStorage.removeItem(KP + k); } catch (e) {} }
 var $ = function (id) { return document.getElementById(id); };
 var DEF_SET = { sound: true, vib: true, premove: false, autoflip: false, coords: true, legal: true, skin: 'marble', blind: false, theme: 'auto' };
-var SET = Object.assign({}, DEF_SET, sget('settings', {}));
-var PROG = sget('progress', { done: {}, cur: 1 }); if (!PROG.done) PROG.done = {};
-var UNLOCK = !!sget('unlockAll', false);
-var STATS = sget('stats', { lv: {}, games: 0, plies: 0, open: {}, daily: {} });
-var ACH = sget('ach', {});
+// every stored value is shape-checked on load: a corrupt or hand-edited key falls back to its default instead of breaking the app
+function isObj(o) { return !!o && typeof o === 'object' && !Array.isArray(o); }
+function cnt(x) { return typeof x === 'number' && isFinite(x) && x >= 0 ? Math.floor(x) : 0; }
+var SET = (function (r) {
+  var o = Object.assign({}, DEF_SET); if (!isObj(r)) return o;
+  Object.keys(DEF_SET).forEach(function (k) { if (typeof DEF_SET[k] === 'boolean' && typeof r[k] === 'boolean') o[k] = r[k]; });
+  if (['marble', 'wood', 'green', 'neon'].indexOf(r.skin) >= 0) o.skin = r.skin; if (['auto', 'light', 'dark'].indexOf(r.theme) >= 0) o.theme = r.theme;
+  return o;
+})(sget('settings', null));
+var PROG = (function (r) {
+  var o = { done: {}, cur: 1 }; if (!isObj(r)) return o;
+  if (isObj(r.done)) Object.keys(r.done).forEach(function (k) { var n = +k, v = r.done[k]; if (n >= 1 && n <= 100 && n % 1 === 0 && (v === 1 || v === 2 || v === 3)) o.done[n] = v; });
+  if (r.cur >= 1 && r.cur <= 100 && r.cur % 1 === 0) o.cur = r.cur; return o;
+})(sget('progress', null));
+var UNLOCK = sget('unlockAll', false) === true;
+var STATS = (function (r) {
+  var o = { lv: {}, games: 0, plies: 0, open: {}, daily: {} }; if (!isObj(r)) return o;
+  if (isObj(r.lv)) for (var i = 1; i <= 5; i++) if (isObj(r.lv[i])) o.lv[i] = { w: cnt(r.lv[i].w), d: cnt(r.lv[i].d), l: cnt(r.lv[i].l) };
+  o.games = cnt(r.games); o.plies = cnt(r.plies);
+  if (isObj(r.open)) Object.keys(r.open).forEach(function (k) { if (k.length < 24 && cnt(r.open[k])) o.open[k] = cnt(r.open[k]); });
+  if (isObj(r.daily)) Object.keys(r.daily).forEach(function (k) { if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(k)) o.daily[k] = 1; });
+  return o;
+})(sget('stats', null));
+var ACH = (function (r) { var o = {}; if (isObj(r)) Object.keys(r).forEach(function (k) { if (typeof r[k] === 'number') o[k] = r[k]; }); return o; })(sget('ach', null));
 function saveSet() { sset('settings', SET); }
 /* ================= pieces (inline SVG paths, 100x100 box) ================= */
 var PP = {
@@ -1247,13 +1300,16 @@ var THEMES = {
 var G = null; // current game
 var flipped = false, sel = -1, targets = [], drag = null, premove = null, hintArrow = null, userArrows = [], userCircles = [];
 var busy = false, genId = 0; // genId invalidates async callbacks
+function sameGame(gid) { return !!G && G.gid === gid; } // delayed result screens must not land on a newer game
 function curMoves() { return G.moves.map(moveUci); }
 function snapNow(last) { return { b: new Int8Array(bd), last: last || null, check: inCheck() ? kingSq[side] : -1, side: side }; }
+var gameSeq = 0;
 function newGameState(mode, fen, opts) {
   opts = opts || {};
+  if (busy) wCancel(); // a search for the old game must not delay the new one
   setFen(fen);
   G = { mode: mode, startFen: getFen(), moves: [], sans: [], caps: [], snaps: [snapNow(null)], human: opts.human == null ? side : opts.human, level: opts.level || 0,
-    clock: null, over: null, view: -1, pz: opts.pz || null, undos: 0, hints: 0, aiScore: 0, created: Date.now() };
+    clock: null, over: null, view: -1, pz: opts.pz || null, undos: 0, hints: 0, aiScore: 0, created: Date.now(), gid: ++gameSeq, rec: false };
   if (opts.clock) { var base = opts.clock === 1 ? 600000 : 300000, inc = opts.clock === 1 ? 0 : 3000; G.clock = { kind: opts.clock, base: base, inc: inc, t: [base, base], started: false, mark: 0 }; }
   sel = -1; targets = []; drag = null; premove = null; hintArrow = null; userArrows = []; userCircles = []; busy = false; genId++;
 }
@@ -1270,10 +1326,11 @@ var cv = $('board'), cx = cv.getContext('2d'), DPR = 1, BS = 320, SQ = 40;
 var bgCanvas = document.createElement('canvas'), sprites = {}, anim = null, parts = [], shake = 0, lastFrame = 0, dirty = true, pulseT = 0;
 function isDark() { var t = document.documentElement.getAttribute('data-theme'); if (t) return t === 'dark'; return window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; }
 var SKINS = {
-  marble: function (dark) { return { L: dark ? '#9aa3ad' : '#e8e4da', D: '#5b6b7a', vein: true, frame: '#b08d57', cL: '#5b6b7a', cD: dark ? '#c9ced4' : '#e8e4da' }; },
-  wood: function () { return { L: '#e7c99c', D: '#a8774b', grain: true, frame: '#6b4426', cL: '#a8774b', cD: '#f0dcbc' }; },
-  green: function () { return { L: '#eeeed2', D: '#769656', frame: '#4b5e37', cL: '#769656', cD: '#eeeed2' }; },
-  neon: function () { return { L: '#26304a', D: '#151a2a', neon: true, frame: '#3be0ff', cL: '#7d8bb3', cD: '#7d8bb3' }; }
+  // cL = coordinate ink on light squares, cD = on dark squares (>= 3:1 against the square in every skin)
+  marble: function (dark) { return { L: dark ? '#9aa3ad' : '#e8e4da', D: '#5b6b7a', vein: true, frame: '#b08d57', cL: dark ? '#2b3540' : '#4d5c6b', cD: dark ? '#e3e6ea' : '#f1eee6' }; },
+  wood: function () { return { L: '#e7c99c', D: '#a8774b', grain: true, frame: '#6b4426', cL: '#6e4a2a', cD: '#fff4e2' }; },
+  green: function () { return { L: '#eeeed2', D: '#769656', frame: '#4b5e37', cL: '#4b6a33', cD: '#ffffff' }; },
+  neon: function () { return { L: '#26304a', D: '#151a2a', neon: true, frame: '#3be0ff', cL: '#aab6d8', cD: '#9aa7cc' }; }
 };
 var SKIN_NAME = { marble: '大理石', wood: '木紋', green: '比賽綠白', neon: '霓虹' };
 function seeded(s) { return function () { s = s + 0x6D2B79F5 | 0; var t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -1391,22 +1448,30 @@ function burst(sq, n, big) {
   for (var i = 0; i < n; i++) { var a = Math.random() * 6.283, v = (big ? 2 : 1) * (1 + Math.random() * 4); parts.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - (big ? 3 : 1.5), life: 0.8 + Math.random() * (big ? 1.4 : 0.6), s: 1 + Math.random() * 2.4, c: cols[i % 4], star: Math.random() < 0.3 }); }
 }
 function goldRain() { for (var i = 0; i < 90; i++) parts.push({ x: Math.random() * BS, y: -10 - Math.random() * BS * 0.5, vx: (Math.random() - 0.5) * 0.6, vy: 1 + Math.random() * 2, life: 2 + Math.random() * 1.5, s: 1 + Math.random() * 2.2, c: ['#ffd76a', '#e8b84a', '#fff2c4'][i % 3], star: Math.random() < 0.4 }); }
-var running = true;
+var running = true, frames = 0;
 function loop(now) {
+  frames++;
   if (running) { if (G && !$('app').classList.contains('hidden')) { draw(now); tickClock(); } }
   requestAnimationFrame(loop);
 }
 /* ================= layout ================= */
+function setTier(t) { // 0 normal, 1 slim, 2 compact
+  var app = $('app'), key = t === 2 ? 'compact' : t === 1 ? 'slim' : '';
+  if ((app.classList.contains('compact') ? 'compact' : app.classList.contains('slim') ? 'slim' : '') === key) return;
+  app.classList.toggle('slim', t >= 1); app.classList.toggle('compact', t === 2); toolMode = ''; if (G) updateTools();
+}
 function layout() {
   var vw = window.innerWidth, vh = window.innerHeight, land = vw > vh && vh <= 560;
-  var app = $('app'), col = app.querySelector('.col'), bw = $('boardWrap'), bs;
+  var app = $('app'), bw = $('boardWrap'), bs;
   var cs = getComputedStyle(app), padV = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-  if (land) bs = Math.min(vh - padV, vw - Math.min(340, vw * 0.4) - 44, 560);
+  if (land) { setTier(0); bs = Math.min(vh - padV, vw - Math.min(340, vw * 0.4) - 44, 560); }
   else {
-    var used = 0; ['.top', '#oppBar', '#pzInfo', '#meBar', '.strip', '.tools'].forEach(function (q) { var el = app.querySelector(q); if (el && !el.classList.contains('hidden')) used += el.offsetHeight; });
-    bs = Math.min(vw, 560, vh - padV - used - 8);
+    // short portrait screens: the roomiest tier whose squares reach 44px (or the board fills the width); 375x500 went from 29px to 45px
+    var fit = function (t) { setTier(t); var used = 0; ['.top', '#oppBar', '#pzInfo', '#meBar', '.strip', '.tools'].forEach(function (q) { var el = app.querySelector(q); if (el && !el.classList.contains('hidden')) used += el.offsetHeight; }); return Math.min(vw, 560, vh - padV - used - (t ? 2 : 8)); };
+    var want = Math.min(352, Math.floor(vw / 8) * 8);
+    for (var t = 0; t <= 2; t++) { bs = fit(t); if (bs >= want) break; }
   }
-  bs = Math.max(200, Math.floor(bs / 8) * 8);
+  bs = Math.max(160, Math.floor(bs / 8) * 8);
   BS = bs; SQ = bs / 8; DPR = Math.min(2, window.devicePixelRatio || 1);
   bw.style.width = bs + 'px'; bw.style.height = bs + 'px';
   cv.width = Math.round(bs * DPR); cv.height = Math.round(bs * DPR);
@@ -1437,7 +1502,7 @@ function updateHUD() {
     $('tName').textContent = G.mode === 'daily' ? '每日一題' : '第 ' + P.n + ' 關';
     $('tSub').innerHTML = '難度 ' + P.diff + ' <span class="dbar"><i style="width:' + Math.min(100, P.diff / 1.72) + '%;background:' + diffColor(P.diff) + '"></i></span>';
     $('pzDot').style.background = att ? '#23272e' : '#f3eee2';
-    $('pzTurn').textContent = (att ? '黑方' : '白方') + '走・' + MATE_NAME[P.N];
+    $('pzTurn').textContent = (att ? '黑方' : '白方') + '走・' + MATE_NAME[P.N]; $('pzLv').textContent = G.mode === 'daily' ? '每日・' : '第 ' + P.n + ' 關・';
     var used = Math.min(P.N, Math.ceil(snapIdx / 2)), pips = '';
     for (var i = 0; i < P.N; i++) pips += '<i class="' + (i < used ? 'on' : '') + '"></i>';
     $('pzPips').innerHTML = pips; $('pzLeft').innerHTML = busy && !G.over ? '<span class="think" style="display:inline-block;vertical-align:-2px"></span> 對手思考' : G.over ? (G.over.win ? '完成！' : '') : '剩 ' + (P.N - used) + ' 步';
@@ -1484,16 +1549,22 @@ var TOOLSETS = {
   puzzle: [['restart', '重來', 'M20 12a8 8 0 11-3-6.2M20 4v5h-5'], ['hint', '提示', 'M9 18h6M10 21h4M12 3a6 6 0 00-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0012 3z'], ['flip', '翻轉', 'M7 4v14M7 18l-3-3M7 18l3-3M17 20V6M17 6l-3 3M17 6l3 3'], ['levels', '關卡', 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z']]
 };
 var toolMode = '';
+var TB_MENU = ['menu', '選單', 'M4 7h16M4 12h16M4 17h16'], TB_LIST = ['list', '棋譜', 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01'];
+function humanMoves() { // moves the human has made in an AI game (undo is pointless before the first one)
+  var s0 = startPly(), n = 0; for (var i = 0; i < G.moves.length; i++) if (((i + s0) & 1) === G.human) n++; return n;
+}
 function updateTools() {
-  var m = (G.mode === 'puzzle' || G.mode === 'daily') ? 'puzzle' : 'game';
-  if (m !== toolMode) {
-    toolMode = m; var h = '';
-    TOOLSETS[m].forEach(function (t) { if (G.mode === 'daily' && t[0] === 'levels') t = ['home', '主畫面', 'M4 11l8-7 8 7M6 10v10h12V10']; h += '<button class="tb" data-t="' + t[0] + '" aria-label="' + t[1] + '"><svg viewBox="0 0 24 24"><path d="' + t[2] + '"/></svg>' + t[1] + '</button>'; });
+  var cl = $('app').classList, compact = cl.contains('compact'), slim = cl.contains('slim'), m = (G.mode === 'puzzle' || G.mode === 'daily') ? 'puzzle' : 'game', key = m + (G.mode === 'daily' ? 'd' : '') + (compact ? 'c' : slim ? 's' : '');
+  if (key !== toolMode) {
+    toolMode = key; var h = '', set = TOOLSETS[m].slice();
+    if (slim && m === 'game') set[set.length - 1] = TB_LIST; // the move strip is folded away: 棋譜 takes 提和's place (提和 stays in the menu)
+    if (compact) set.unshift(TB_MENU);
+    set.forEach(function (t) { if (G.mode === 'daily' && t[0] === 'levels') t = ['home', '主畫面', 'M4 11l8-7 8 7M6 10v10h12V10']; h += '<button class="tb" data-t="' + t[0] + '" aria-label="' + t[1] + '"><svg viewBox="0 0 24 24"><path d="' + t[2] + '"/></svg>' + t[1] + '</button>'; });
     $('tools').innerHTML = h;
   }
-  var q = function (t) { return $('tools').querySelector('[data-t="' + t + '"]'); };
+  var q = function (t) { return $('tools').querySelector('[data-t="' + t + '"]') || {}; };
   if (m === 'game') {
-    q('undo').disabled = !G.moves.length || (G.mode === 'ai' && G.moves.length < 1);
+    q('undo').disabled = !G.moves.length || (G.mode === 'ai' && !humanMoves());
     q('draw').disabled = !!G.over || !G.moves.length;
     q('hint').disabled = !!G.over || !humanTurn();
   } else { q('hint').disabled = !!G.over || !humanTurn(); }
@@ -1531,11 +1602,12 @@ function animateMove(m, b0) {
   // fading capture drawn under the mover: give it alpha via globalAlpha in draw
   return anim;
 }
+var DRAW_WHY = { stalemate: '逼和', fifty: '50 回合無吃子無兵移動', threefold: '三次重複局面', material: '雙方子力不足' };
 function commitMove(m, opts) {
   opts = opts || {};
   var b0 = new Int8Array(bd), mover = side, L = legalMoves(), sn = san(m, L), to = (m >> 7) & 127;
   var cap = (m & F_EP) ? b0[to + (mover ? 16 : -16)] : b0[to];
-  if (G.clock) { var C = G.clock, now = performance.now(); if (C.started) { C.t[mover] -= now - C.mark; C.t[mover] += C.inc; } else C.started = true; C.mark = now; }
+  if (G.clock) { var C = G.clock, now = performance.now(); if (C.started) { if (!paused) C.t[mover] -= now - C.mark; C.t[mover] += C.inc; } else C.started = true; C.mark = now; } // paused: the hidden interval was already charged on hide
   make(m); G.moves.push(m); G.sans.push(sn); G.caps.push(cap || 0);
   G.snaps.push(snapNow([m & 127, to])); G.view = -1;
   sel = -1; targets = []; hintArrow = null; userArrows = []; userCircles = [];
@@ -1552,7 +1624,7 @@ function commitMove(m, opts) {
   updateHUD();
   if (st) {
     if (st === 'mate') endGame(mover ? '0-1' : '1-0', '將死');
-    else endGame('1/2', { stalemate: '逼和', fifty: '50 回合無吃子無兵移動', threefold: '三次重複局面', material: '雙方子力不足' }[st]);
+    else endGame('1/2', DRAW_WHY[st]);
     return;
   }
   afterMove(mover);
@@ -1586,9 +1658,10 @@ function aiMove() {
     var wait = Math.max(0, 350 - (performance.now() - t0));
     setTimeout(function () {
       if (my !== genId || !G) return; busy = false;
-      if (!r.move) { updateHUD(); return; }
       G.aiScore = r.best || 0;
-      var m = findUci(r.move); if (m) commitMove(m); else updateHUD();
+      var m = r.move ? findUci(r.move) : 0;
+      if (!m) { var L = legalMoves(); m = L.length ? L[Math.floor(Math.random() * L.length)] : 0; } // never leave the human waiting on a failed search
+      if (m) commitMove(m); else updateHUD();
     }, wait);
   });
 }
@@ -1603,32 +1676,52 @@ function pzAfterPlayer() {
     setTimeout(function () {
       if (my !== genId || !G) return; busy = false;
       var m = r.reply ? findUci(r.reply) : 0;
-      if (r.ok) { if (m) commitMove(m); updateHUD(); }
+      if (r.ok) { if (m) commitMove(m); if (!G.over) savePz(); updateHUD(); }
       else {
-        P.fails++; G.over = { win: false, reason: 'escape' };
+        P.fails++; G.over = { win: false, reason: 'escape' }; savePz(true);
         if (m) commitMove(m);
         G.over = { win: false, reason: 'escape' };
         SND.fail(); vib([60, 40, 60]);
-        setTimeout(function () { if (my === genId || true) showPzFail(); }, 650);
+        var gid = G.gid; setTimeout(function () { if (sameGame(gid) && G.over && !G.over.win) showPzFail(); }, 650);
         updateHUD();
       }
     }, Math.max(0, 420 - (performance.now() - t0)));
   });
 }
-function startPuzzle(n, daily) {
+function startPuzzle(n, daily, saved) {
   var P = PUZZLES[n - 1]; if (!P) return;
   newGameState(daily ? 'daily' : 'puzzle', P[0], {});
   G.pz = { n: n, N: P[1], diff: P[2], theme: P[3] || '', key: P[4] || '', attacker: side, k: 0, fails: 0, hintsUsed: 0, tries: 1 };
   G.human = side; flipped = side === 1;
   if (!daily) { PROG.cur = n; sset('progress', PROG); }
-  showGame(); updateHUD();
+  if (saved) { // resume after a reload: replay whole attacker+defender pairs; anything odd starts the puzzle over
+    G.pz.tries = saved.tries; G.pz.hintsUsed = saved.hintsUsed;
+    var mv = saved.moves.length % 2 ? [] : saved.moves;
+    for (var i = 0; i < mv.length; i++) { var m = findUci(mv[i]); if (!m) break; var L = legalMoves(), sn = san(m, L), to = (m >> 7) & 127, cap = (m & F_EP) ? 1 | ((side ^ 1) << 3) : bd[to]; make(m); G.moves.push(m); G.sans.push(sn); G.caps.push(cap || 0); G.snaps.push(snapNow([m & 127, to])); }
+    if (G.moves.length !== mv.length || side !== G.pz.attacker || gameStatus() || mv.length / 2 >= G.pz.N) { var t = G.pz.tries, h = G.pz.hintsUsed; newGameState(G.mode, P[0], {}); G.pz = { n: n, N: P[1], diff: P[2], theme: P[3] || '', key: P[4] || '', attacker: side, k: 0, fails: 0, hintsUsed: h, tries: t }; G.human = side; }
+    else G.pz.k = mv.length / 2;
+    savePz(); showGame(); updateHUD(); toast('已恢復第 ' + n + ' 關'); return;
+  }
+  savePz(); showGame(); updateHUD();
   var th = THEMES[n]; var seen = sget('seenIntro', {});
   if (!daily && th && !seen[n]) { seen[n] = 1; sset('seenIntro', seen); showIntro(th); }
   else toast((side ? '黑方' : '白方') + '先走・' + MATE_NAME[P[1]] + '：在 ' + P[1] + ' 步內將死對方');
 }
 function restartPuzzle() {
-  if (!G || !G.pz) return; var keep = G.pz; newGameState(G.mode, G.startFen, {}); keep.k = 0; keep.tries++; G.pz = keep; G.human = keep.attacker; hideOv('result'); updateHUD(); dirty = true;
+  if (!G || !G.pz) return; var keep = G.pz; newGameState(G.mode, G.startFen, {}); keep.k = 0; keep.tries++; G.pz = keep; G.human = keep.attacker; hideOv('result'); savePz(); updateHUD(); dirty = true;
 }
+// puzzle in progress (saved only on the attacker's turn, so a reload never skips the escape check of a wrong move)
+function savePz(extraTry) {
+  if (!G || !G.pz) return;
+  sset('pz', { n: G.pz.n, daily: G.mode === 'daily', day: todayKey(), moves: extraTry ? [] : curMoves(), tries: G.pz.tries + (extraTry ? 1 : 0), hintsUsed: G.pz.hintsUsed });
+}
+function loadPz() {
+  var s = sget('pz', null);
+  if (!s || typeof s !== 'object' || !(s.n >= 1 && s.n <= 100 && s.n % 1 === 0) || !Array.isArray(s.moves) || s.moves.length > 20 || !s.moves.every(function (u) { return typeof u === 'string' && /^[a-h][1-8][a-h][1-8][nbrq]?$/.test(u); })) return null;
+  if (s.daily && s.day !== todayKey()) return null;
+  return { n: s.n, daily: !!s.daily, moves: s.moves, tries: Math.max(1, Math.min(99, s.tries | 0)), hintsUsed: Math.max(0, Math.min(99, s.hintsUsed | 0)) };
+}
+function resumePz() { var s = loadPz(); if (!s) { sdel('pz'); goHome(); return; } startPuzzle(s.n, s.daily, s); }
 function showPzFail() {
   var P = G.pz;
   showResult({ icon: 'fail', title: '對方逃脫了', msg: '這步之後，對方可以避開 ' + P.N + ' 步內的將死。看看對方剛剛的應著，再試一次吧！', main: ['再試一次', restartPuzzle], alt: ['看提示', function () { restartPuzzle(); setTimeout(doHint, 250); }], back: [G.mode === 'daily' ? '主畫面' : '關卡選擇', G.mode === 'daily' ? goHome : openSelect], res: '' });
@@ -1652,13 +1745,14 @@ function endGame(result, reason) {
   G.over = { result: result, reason: reason, win: false };
   busy = false; premove = null; saveGame();
   if (G.mode === 'puzzle' || G.mode === 'daily') {
-    if (reason === '將死' && G.pz && side !== G.pz.attacker) { G.over.win = true; setTimeout(pzWin, 1100); SND.win(); }
-    else { G.over.win = false; setTimeout(function () { SND.fail(); showResult({ icon: 'draw', title: '和棋了', msg: reason + '——殘局題必須將死對方。再試一次！', main: ['再試一次', restartPuzzle], alt: ['看提示', function () { restartPuzzle(); setTimeout(doHint, 250); }], back: ['關卡選擇', openSelect] }); }, 700); }
+    var pgid = G.gid; sdel('pz');
+    if (reason === '將死' && G.pz && side !== G.pz.attacker) { G.over.win = true; setTimeout(function () { if (sameGame(pgid)) pzWin(); }, 1100); SND.win(); }
+    else { G.over.win = false; setTimeout(function () { if (!sameGame(pgid) || !G.over) return; SND.fail(); showResult({ icon: 'draw', title: '和棋了', msg: reason + '——殘局題必須將死對方。再試一次！', main: ['再試一次', restartPuzzle], alt: ['看提示', function () { restartPuzzle(); setTimeout(doHint, 250); }], back: ['關卡選擇', openSelect] }); }, 700); }
     updateHUD(); return;
   }
   var me = G.mode === 'ai' ? G.human : -1, outcome = result === '1/2' ? 'd' : ((result === '1-0') === (me === 0) ? 'w' : 'l');
-  if (G.mode === 'ai') {
-    var rec = STATS.lv[G.level] || (STATS.lv[G.level] = { w: 0, d: 0, l: 0 }); rec[outcome]++;
+  if (G.mode === 'ai' && !G.rec) {
+    G.rec = true; var rec = STATS.lv[G.level] || (STATS.lv[G.level] = { w: 0, d: 0, l: 0 }); rec[outcome]++;
     STATS.games++; STATS.plies += G.moves.length;
     if (G.sans.length >= 2 && G.startFen === START_FEN) { var k = G.sans[0] + ' ' + G.sans[1]; STATS.open[k] = (STATS.open[k] || 0) + 1; }
     sset('stats', STATS);
@@ -1669,8 +1763,9 @@ function endGame(result, reason) {
   else { title = result === '1/2' ? '和局' : (result === '1-0' ? '白方勝' : '黑方勝'); icon = result === '1/2' ? 'draw' : 'win'; }
   if (icon === 'win') { setTimeout(SND.win, 500); } else if (icon === 'lose') setTimeout(SND.fail, 400); else setTimeout(SND.draw, 300);
   var resHTML = '<div>步數<b>' + Math.ceil(G.moves.length / 2) + '</b></div><div>結果<b>' + result.replace('1/2', '½') + '</b></div>' + (G.mode === 'ai' ? '<div>悔棋<b>' + G.undos + '</b></div>' : '');
+  var gid = G.gid;
   setTimeout(function () {
-    if (!G || !G.over) return;
+    if (!sameGame(gid) || !G.over) return;
     showResult({ icon: icon, title: title, msg: msg, res: resHTML, main: ['再來一局', function () { hideOv('result'); startGame(G.mode, lastOpts); }], alt: ['更改設定', function () { hideOv('result'); openNewGame(G.mode); }], back: ['主畫面', goHome] });
   }, reason === '將死' ? 1300 : 500);
   updateHUD();
@@ -1756,10 +1851,12 @@ $('tools').addEventListener('click', function (e) {
   var b = e.target.closest('.tb'); if (!b || !G) return; var t = b.dataset.t; SND.ui();
   if (t === 'undo') doUndo(); else if (t === 'hint') doHint(); else if (t === 'flip') doFlip(); else if (t === 'draw') offerDraw();
   else if (t === 'restart') restartPuzzle(); else if (t === 'levels') openSelect(); else if (t === 'home') goHome();
+  else if (t === 'menu') openMenu(); else if (t === 'list') openSheet(true);
 });
 function doFlip() { flipped = !flipped; renderBg(); updateHUD(); }
 function doUndo() {
   if (!G || G.mode === 'puzzle' || G.mode === 'daily' || !G.moves.length) return;
+  if (G.mode === 'ai' && !humanMoves()) return;
   genId++; if (busy) { wCancel(); busy = false; }
   var n = 1;
   if (G.mode === 'ai') { n = side === G.human ? 2 : 1; if (G.moves.length < n) n = G.moves.length; if (n === 0) return; G.undos++; }
@@ -1776,7 +1873,7 @@ function doHint() {
   wCall(msg, function (r) {
     if (my !== genId || !G) return; busy = false;
     if (r.move) { var m = findUci(r.move); if (m) { hintArrow = [m & 127, (m >> 7) & 127]; selectSq(m & 127); toast('提示：' + san(m)); } }
-    if (G.pz) G.pz.hintsUsed++; G.hints++; updateHUD();
+    if (G.pz) { G.pz.hintsUsed++; savePz(); } G.hints++; updateHUD();
   });
 }
 function offerDraw() {
@@ -1787,7 +1884,7 @@ function offerDraw() {
   if (ply >= 20 && (sc <= -80 || (Math.abs(sc) <= 30 && ply >= 40))) { toast('電腦接受和棋'); endGame('1/2', '雙方同意和棋'); }
   else toast('電腦婉拒了和棋，繼續下吧！');
 }
-function resign() {
+function resign() { // (also records the loss: endGame)
   if (!G || G.over) return;
   var loser = G.mode === 'ai' ? G.human : side;
   genId++; wCancel(); busy = false;
@@ -1798,7 +1895,11 @@ var OVS = ['title', 'newGame', 'select', 'menu', 'settings', 'help', 'stats', 'e
 function showOv(id) { $(id).classList.remove('hidden'); }
 function hideOv(id) { $(id).classList.add('hidden'); }
 function showGame() { OVS.forEach(hideOv); $('app').classList.remove('hidden'); toolMode = ''; updateHUD(); layout(); }
-function goHome() { OVS.forEach(hideOv); openSheet(false); $('app').classList.add('hidden'); showOv('title'); $('tResume').classList.toggle('hidden', !canResume()); }
+function goHome() { OVS.forEach(hideOv); openSheet(false); $('app').classList.add('hidden'); showOv('title'); titleResume(); }
+function titleResume() {
+  $('tResume').classList.toggle('hidden', !canResume());
+  var p = loadPz(); $('tResumePz').classList.toggle('hidden', !p); if (p) $('tResumePz').textContent = p.daily ? '繼續每日一題' : '繼續殘局・第 ' + p.n + ' 關';
+}
 var toastT = 0;
 function toast(s) { var t = $('toast'); t.textContent = s; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; toastT = setTimeout(function () { t.classList.add('hidden'); }, 400); }, 1800); }
 function confirmBox(title, msg, yes, fn) { $('cTitle').textContent = title; $('cMsg').textContent = msg; $('cYes').textContent = yes || '確定'; $('cYes').onclick = function () { hideOv('confirm'); fn(); }; showOv('confirm'); }
@@ -1835,11 +1936,12 @@ $('t2P').onclick = function () { SND.ui(); openNewGame('2p'); };
 $('tPuzzle').onclick = function () { SND.ui(); openSelect(); };
 $('tDaily').onclick = function () { SND.ui(); startPuzzle(dailyIndex(), true); };
 $('tResume').onclick = function () { SND.ui(); resumeGame(); };
+$('tResumePz').onclick = function () { SND.ui(); resumePz(); };
 $('tSet').onclick = function () { SND.ui(); openSettings(); };
 $('tHelp').onclick = function () { SND.ui(); openHelp(); };
 $('tStats').onclick = function () { SND.ui(); openStats(); };
 /* ----- new game ----- */
-var ngMode = 'ai', lastOpts = sget('lastOpts', { level: 2, color: 'w', clock: 0 });
+var ngMode = 'ai', lastOpts = sget('lastOpts', null); if (!okOpts(lastOpts)) lastOpts = { level: 2, color: 'w', clock: 0 };
 function segSet(id, v) { [].forEach.call($(id).querySelectorAll('button'), function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === String(v))); }); }
 function openNewGame(mode) {
   ngMode = mode; $('ngTitle').textContent = mode === 'ai' ? '對戰電腦' : '雙人對弈'; $('ngAI').classList.toggle('hidden', mode !== 'ai');
@@ -1851,7 +1953,7 @@ function ngPick(l) { lastOpts.level = l; [].forEach.call($('ngLv').querySelector
 $('ngLv').onclick = function (e) { var b = e.target.closest('button'); if (b) { SND.ui(); ngPick(+b.dataset.v); } };
 $('ngColor').onclick = function (e) { var b = e.target.closest('button'); if (b) { lastOpts.color = b.dataset.v; segSet('ngColor', b.dataset.v); } };
 $('ngClock').onclick = function (e) { var b = e.target.closest('button'); if (b) { lastOpts.clock = +b.dataset.v; segSet('ngClock', b.dataset.v); } };
-$('ngGo').onclick = function () { SND.ui(); sset('lastOpts', lastOpts); startGame(ngMode, lastOpts); };
+$('ngGo').onclick = function () { SND.ui(); sset('lastOpts', lastOpts); guardAbandon(function () { startGame(ngMode, lastOpts); }); };
 $('ngBack').onclick = function () { hideOv('newGame'); };
 function startGame(mode, o, fen) {
   var human = 0; if (mode === 'ai') human = o.color === 'b' ? 1 : o.color === 'r' ? (Math.random() < 0.5 ? 0 : 1) : 0;
@@ -1859,6 +1961,7 @@ function startGame(mode, o, fen) {
   if (mode === '2p') G.human = -1;
   flipped = mode === 'ai' ? human === 1 : (fen ? side === 1 : false);
   showGame(); saveGame();
+  var st0 = fen ? gameStatus() : ''; if (st0) { G.over = { result: st0 === 'mate' ? (side ? '1-0' : '0-1') : '1/2', reason: st0 === 'mate' ? '將死' : DRAW_WHY[st0] }; sdel('game'); updateHUD(); toast('這個局面已經結束（' + G.over.reason + '）'); return; }
   toast(mode === 'ai' ? '對戰「' + LV_NAME[o.level] + '」・你執' + (human ? '黑' : '白') : '雙人對弈・白方先走');
   if (mode === 'ai' && side !== G.human) setTimeout(aiMove, 500);
 }
@@ -1889,7 +1992,8 @@ $('grid').onclick = function (e) {
 $('unlockSw').onclick = function () { UNLOCK = !UNLOCK; sset('unlockAll', UNLOCK); SND.ui(); openSelect(); };
 $('sBack').onclick = function () { goHome(); };
 /* ----- menu ----- */
-$('bMenu').onclick = function () { SND.ui(); var pz = G && (G.mode === 'puzzle' || G.mode === 'daily'); $('mGame').classList.toggle('hidden', pz); $('mPz').classList.toggle('hidden', !pz); showOv('menu'); };
+$('bMenu').onclick = function () { SND.ui(); openMenu(); };
+function openMenu() { var pz = G && (G.mode === 'puzzle' || G.mode === 'daily'); $('mGame').classList.toggle('hidden', pz); $('mPz').classList.toggle('hidden', !pz); showOv('menu'); }
 $('mResume').onclick = function () { hideOv('menu'); };
 $('mDraw').onclick = function () { hideOv('menu'); offerDraw(); };
 $('mResign').onclick = function () { hideOv('menu'); if (G && !G.over) confirmBox('認輸', '確定要認輸嗎？', '認輸', resign); };
@@ -1922,7 +2026,7 @@ if (window.matchMedia) try { matchMedia('(prefers-color-scheme: dark)').addEvent
 function openHelp() {
   $('helpBody').innerHTML = '<h4>怎麼走棋</h4>點一下自己的棋子會顯示可走位置（小點＝空格，角標＝可吃子），再點目標格；也可以直接拖曳棋子，手指上方會顯示放大的棋子。放到不合法的格子會彈回原位。' +
     '<h4>特殊規則</h4><b>入堡</b>：點王再點 g1／c1，或直接點自己的車。<b>吃過路兵</b>：對方兵一次走兩格停在你的兵旁，下一手可斜吃。<b>升變</b>：兵到底線時選擇后、車、象或馬。' +
-    '<h4>勝負與和局</h4>將死獲勝；無子可走而未被將軍為逼和。三次重複、50 回合無吃子無兵移動、子力不足會自動判和，也可以提和。計時模式超時判負（對方無法將死時判和）。' +
+    '<h4>勝負與和局</h4>將死獲勝；無子可走而未被將軍為逼和。三次重複、50 回合無吃子無兵移動、子力不足會自動判和，也可以提和。計時模式超時判負（對方無法將死時判和）。對局會自動存檔；和電腦的對局沒下完就開新局，記為一敗。' +
     '<h4>殘局挑戰</h4>100 關「幾步將死」：1–20 一步殺、21–45 二步殺、46–70 三步殺、71–90 四步殺、91–100 五步殺。每題都經引擎證明在規定步數內強制將死、且第一步唯一。走出不在將死距離內的著法即失敗，可重試。' +
     '<h4>電腦等級</h4>學徒、棋友、俱樂部、專家、大師五級，越高越少失誤、想得越深。' +
     '<h4>快捷鍵（桌機）</h4>←／→ 瀏覽棋譜、U 悔棋、H 提示、F 翻轉棋盤；右鍵拖曳可畫箭頭、右鍵點格子可畫圈。';
@@ -1973,38 +2077,91 @@ $('exShare').onclick = function () {
 $('exImport').onclick = function () { hideOv('exportOv'); $('impIn').value = ''; showOv('importOv'); };
 $('exOk').onclick = function () { hideOv('exportOv'); };
 $('impBack').onclick = function () { hideOv('importOv'); };
-$('impGo').onclick = function () { var t = $('impIn').value.trim(); if (importText(t)) hideOv('importOv'); else toast('無法讀取這段 FEN／PGN'); };
-function validFen(f) { var p = f.split(/\s+/); if (p.length < 2 || p[0].split('/').length !== 8) return false; if ((p[0].match(/k/g) || []).length !== 1 || (p[0].match(/K/g) || []).length !== 1) return false; if (!setFen(f)) return false; side ^= 1; var bad = inCheck(); side ^= 1; return !bad; }
+$('impGo').onclick = function () { var t = $('impIn').value.trim(); if (!parseImport(t)) { toast('無法讀取這段 FEN／PGN'); return; } hideOv('importOv'); guardAbandon(function () { importText(t); }); };
+// a FEN the engine can play from: one king each, 8 ranks of 8 files, no pawns on the back ranks, at most 16 men a side, side not to move not in check
+function validFen(f) {
+  var p = String(f).trim().split(/\s+/); if (p.length < 2 || !/^[wb]$/.test(p[1])) return false;
+  var rows = p[0].split('/'); if (rows.length !== 8) return false;
+  for (var i = 0; i < 8; i++) { var n = 0; for (var j = 0; j < rows[i].length; j++) { var c = rows[i][j]; if (c >= '1' && c <= '8') n += +c; else if ('pnbrqkPNBRQK'.indexOf(c) >= 0) n++; else return false; } if (n !== 8) return false; }
+  if (/[pP]/.test(rows[0] + rows[7])) return false;
+  if ((p[0].match(/k/g) || []).length !== 1 || (p[0].match(/K/g) || []).length !== 1) return false;
+  if ((p[0].match(/[a-z]/g) || []).length > 16 || (p[0].match(/[A-Z]/g) || []).length > 16) return false;
+  if (p[3] && p[3] !== '-' && !/^[a-h][36]$/.test(p[3])) return false;
+  if (!setFen(p.slice(0, 4).join(' ') + ' ' + (/^\d+$/.test(p[4] || '') ? Math.min(+p[4], 150) : 0) + ' ' + (/^\d+$/.test(p[5] || '') && +p[5] > 0 ? Math.min(+p[5], 9999) : 1))) return false;
+  side ^= 1; var bad = inCheck(); side ^= 1; return !bad;
+}
+function cleanFen(f) { return validFen(f) ? getFen() : null; }
+// parse FEN or PGN without touching the current game: {fen, moves: [uci]} or null
+function parseImport(t) {
+  var out = null;
+  if (!t) return null;
+  if (/^[1-8pnbrqkPNBRQK\/]+\s+[wb]/.test(t)) { var f0 = cleanFen(t); if (f0) out = { fen: f0, moves: [] }; }
+  else {
+    var fm = t.match(/\[FEN "([^"]+)"\]/), fen = cleanFen(fm ? fm[1] : START_FEN);
+    if (fen) {
+      var body = t.replace(/\[[^\]]*\]/g, ' ').replace(/\{[^}]*\}/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\$\d+/g, ' ').replace(/\d+\.(\.\.)?/g, ' ').replace(/(1-0|0-1|1\/2-1\/2|\*)\s*$/, ' ');
+      var toks = body.split(/\s+/).filter(Boolean), moves = [], okP = true;
+      setFen(fen);
+      for (var i = 0; i < toks.length && okP; i++) { var m = parseMove(toks[i]); if (!m) okP = false; else { moves.push(moveUci(m)); make(m); } }
+      if (okP && moves.length <= 1500) out = { fen: fen, moves: moves };
+    }
+  }
+  if (G) rebuildCore();
+  return out;
+}
 function importText(t) {
-  if (!t) return false;
-  if (/^[1-8pnbrqkPNBRQK\/]+\s+[wb]/.test(t)) { if (!validFen(t)) { if (G) rebuildCore(); return false; } startGame('2p', {}, t); return true; }
-  var fm = t.match(/\[FEN "([^"]+)"\]/), fen = fm ? fm[1] : START_FEN;
-  if (!validFen(fen)) { if (G) rebuildCore(); return false; }
-  var body = t.replace(/\[[^\]]*\]/g, ' ').replace(/\{[^}]*\}/g, ' ').replace(/\([^)]*\)/g, ' ').replace(/\$\d+/g, ' ').replace(/\d+\.(\.\.)?/g, ' ').replace(/(1-0|0-1|1\/2-1\/2|\*)\s*$/, ' ');
-  var toks = body.split(/\s+/).filter(Boolean), moves = [];
-  setFen(fen);
-  for (var i = 0; i < toks.length; i++) { var m = parseMove(toks[i]); if (!m) { if (G) rebuildCore(); return false; } moves.push(m); make(m); }
+  var P = parseImport(t); if (!P) return false;
+  if (!P.moves.length) { startGame('2p', {}, P.fen); return true; }
+  var fen = P.fen, moves = P.moves.map(function (u, k) { if (k === 0) setFen(fen); var m = findUci(u); make(m); return m; });
   newGameState('2p', fen, {}); G.human = -1; flipped = false;
-  for (i = 0; i < moves.length; i++) { var L = legalMoves(), sn = san(moves[i], L), to = (moves[i] >> 7) & 127, cap = (moves[i] & F_EP) ? 1 | ((side ^ 1) << 3) : bd[to]; make(moves[i]); G.moves.push(moves[i]); G.sans.push(sn); G.caps.push(cap || 0); G.snaps.push(snapNow([moves[i] & 127, to])); }
-  showGame(); saveGame(); var st = gameStatus(); if (st === 'mate') G.over = { result: side ? '1-0' : '0-1', reason: '將死' };
-  toast('已匯入 ' + moves.length + ' 步'); updateHUD(); return true;
+  for (var i = 0; i < moves.length; i++) { var L = legalMoves(), sn = san(moves[i], L), to = (moves[i] >> 7) & 127, cap = (moves[i] & F_EP) ? 1 | ((side ^ 1) << 3) : bd[to]; make(moves[i]); G.moves.push(moves[i]); G.sans.push(sn); G.caps.push(cap || 0); G.snaps.push(snapNow([moves[i] & 127, to])); }
+  var st = gameStatus(); if (st) G.over = { result: st === 'mate' ? (side ? '1-0' : '0-1') : '1/2', reason: st === 'mate' ? '將死' : DRAW_WHY[st] };
+  showGame(); saveGame(); toast('已匯入 ' + moves.length + ' 步' + (st ? '・對局已結束（' + G.over.reason + '）' : '')); updateHUD(); return true;
 }
 /* ----- save / resume ----- */
 function saveGame() {
   if (!G || G.mode === 'puzzle' || G.mode === 'daily') return;
   if (G.over) { sdel('game'); return; }
-  sset('game', { mode: G.mode, startFen: G.startFen, moves: curMoves(), human: G.human, level: G.level, clock: G.clock ? { kind: G.clock.kind, t: [clockLeftSafe(0), clockLeftSafe(1)] } : null, undos: G.undos, flipped: flipped, opts: lastOpts });
+  sset('game', { mode: G.mode, startFen: G.startFen, moves: curMoves(), human: G.human, level: G.level, clock: G.clock ? { kind: G.clock.kind, t: [clockLeftSafe(0), clockLeftSafe(1)] } : null, undos: G.undos, flipped: flipped, rec: G.rec, opts: lastOpts });
 }
 function clockLeftSafe(c) { try { return clockLeft(c); } catch (e) { return G.clock.t[c]; } }
-function canResume() { var s = sget('game', null); return !!(s && s.moves && s.startFen); }
+function okOpts(o) { return !!o && typeof o === 'object' && o.level >= 1 && o.level <= 5 && o.level % 1 === 0 && ['w', 'b', 'r'].indexOf(o.color) >= 0 && [0, 1, 2].indexOf(o.clock) >= 0; }
+// read + validate the saved game; anything malformed is dropped instead of crashing (or softlocking the AI) on resume
+function loadGame() {
+  var s = sget('game', null);
+  if (!s || typeof s !== 'object' || (s.mode !== 'ai' && s.mode !== '2p') || typeof s.startFen !== 'string' || !Array.isArray(s.moves) || s.moves.length > 1500) return null;
+  if (!s.moves.every(function (u) { return typeof u === 'string' && /^[a-h][1-8][a-h][1-8][nbrq]?$/.test(u); })) return null;
+  if (s.mode === 'ai' && (!(s.level >= 1 && s.level <= 5 && s.level % 1 === 0) || (s.human !== 0 && s.human !== 1))) return null;
+  if (s.clock && (typeof s.clock !== 'object' || (s.clock.kind !== 1 && s.clock.kind !== 2) || !Array.isArray(s.clock.t) || s.clock.t.length !== 2 || !s.clock.t.every(function (x) { return typeof x === 'number' && isFinite(x) && x >= 0 && x <= 3600000; }))) return null;
+  var ok = validFen(s.startFen); if (ok) for (var i = 0; i < s.moves.length && ok; i++) { var m = findUci(s.moves[i]); if (m) make(m); else ok = false; }
+  if (ok && gameStatus()) ok = false; // the save of a finished game is deleted, so a "finished" save is corrupt
+  if (G) rebuildCore();
+  return ok ? s : null;
+}
+function canResume() { var s = loadGame(); if (!s) sdel('game'); return !!s; }
 function resumeGame() {
-  var s = sget('game', null); if (!s) return;
-  newGameState(s.mode, s.startFen, { human: s.human, level: s.level, clock: s.clock ? s.clock.kind : 0 });
+  var s = loadGame(); if (!s) { sdel('game'); toast('存檔已損毀，無法恢復'); titleResume(); return; }
+  newGameState(s.mode, s.startFen, { human: s.mode === 'ai' ? s.human : -1, level: s.mode === 'ai' ? s.level : 0, clock: s.clock ? s.clock.kind : 0 });
   for (var i = 0; i < s.moves.length; i++) { var m = findUci(s.moves[i]); if (!m) break; var L = legalMoves(), sn = san(m, L), to = (m >> 7) & 127, cap = (m & F_EP) ? 1 | ((side ^ 1) << 3) : bd[to]; make(m); G.moves.push(m); G.sans.push(sn); G.caps.push(cap || 0); G.snaps.push(snapNow([m & 127, to])); }
-  if (s.clock) { G.clock.t = s.clock.t; G.clock.started = G.moves.length > 0; G.clock.mark = performance.now(); }
-  G.undos = s.undos || 0; flipped = !!s.flipped; if (s.opts) lastOpts = s.opts;
+  if (s.clock) { G.clock.t = s.clock.t.slice(); G.clock.started = G.moves.length > 0; G.clock.mark = performance.now(); }
+  G.undos = Math.max(0, s.undos | 0); G.rec = !!s.rec; flipped = !!s.flipped; if (okOpts(s.opts)) lastOpts = s.opts;
   showGame(); toast('已恢復對局');
-  if (G.mode === 'ai' && side !== G.human) setTimeout(aiMove, 400);
+  if (G.mode === 'ai' && side !== G.human) { var gid = G.gid; setTimeout(function () { if (sameGame(gid) && !busy && !G.over && side !== G.human) aiMove(); }, 400); }
+}
+// leaving an unfinished computer game for a new one counts as a loss (otherwise a lost position could just be abandoned)
+function pendingAI() {
+  if (G && G.mode === 'ai' && !G.over && !G.rec) return humanMoves() ? { level: G.level } : null;
+  if (G && G.mode !== 'puzzle' && G.mode !== 'daily') return null; // the save is this game (2p) or gone
+  var s = loadGame(); if (!s || s.mode !== 'ai' || s.rec) return null;
+  var hm = 0, s0 = s.startFen.split(' ')[1] === 'b' ? 1 : 0; for (var i = 0; i < s.moves.length; i++) if (((i + s0) & 1) === s.human) hm++;
+  return hm ? { level: s.level } : null;
+}
+function guardAbandon(fn) {
+  var p = pendingAI(); if (!p) { fn(); return; }
+  confirmBox('放棄目前對局？', '和「' + LV_NAME[p.level] + '」的對局還沒下完，開新局會記為一敗。', '記敗並開新局', function () {
+    var rec = STATS.lv[p.level] || (STATS.lv[p.level] = { w: 0, d: 0, l: 0 }); rec.l++; STATS.games++; sset('stats', STATS);
+    if (G && G.mode === 'ai') G.rec = true; sdel('game'); fn();
+  });
 }
 /* ----- daily ----- */
 function todayKey() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
@@ -2036,23 +2193,30 @@ document.addEventListener('keydown', function (e) {
 });
 /* ----- lifecycle ----- */
 document.addEventListener('visibilitychange', function () {
-  if (document.hidden) { running = false; if (G && G.clock && G.clock.started && !G.over) { G.clock.t[side] -= performance.now() - G.clock.mark; paused = true; } saveGame(); }
+  if (document.hidden) { running = false; if (G && G.clock && G.clock.started && !G.over && !paused) { G.clock.t[side] -= performance.now() - G.clock.mark; G.clock.mark = performance.now(); paused = true; } saveGame(); savePzSafe(); }
   else { running = true; if (G && G.clock && paused) { G.clock.mark = performance.now(); } paused = false; }
 });
 window.addEventListener('resize', function () { if (!$('app').classList.contains('hidden')) layout(); });
-window.addEventListener('pagehide', saveGame);
+window.addEventListener('pagehide', function () { saveGame(); savePzSafe(); });
+function savePzSafe() { if (G && G.pz && !G.over && !busy && side === G.pz.attacker) savePz(); }
 /* ----- test hook (used by the verification bot) ----- */
 window.__game = {
-  state: function () { return G ? { mode: G.mode, fen: getFen(), over: G.over, busy: busy, anim: !!anim, n: G.pz ? G.pz.n : 0, N: G.pz ? G.pz.N : 0, k: G.pz ? G.pz.k : 0, side: side, attacker: G.pz ? G.pz.attacker : -1, moves: G.sans.slice(), result: $('result').classList.contains('hidden') ? '' : $('rTitle').textContent } : null; },
+  state: function () { return G ? { mode: G.mode, fen: getFen(), over: G.over, busy: busy, anim: !!anim, n: G.pz ? G.pz.n : 0, N: G.pz ? G.pz.N : 0, k: G.pz ? G.pz.k : 0, side: side, human: G.human, attacker: G.pz ? G.pz.attacker : -1, moves: G.sans.slice(), sel: sel, sq: SQ * cv.getBoundingClientRect().width / BS, tier: $('app').classList.contains('compact') ? 2 : $('app').classList.contains('slim') ? 1 : 0, frames: frames, tries: G.pz ? G.pz.tries : 0, result: $('result').classList.contains('hidden') ? '' : $('rTitle').textContent } : null; },
+  stats: function () { return JSON.parse(JSON.stringify(STATS)); },
+  contrast: function () { // coordinate ink vs its square, every skin, both themes
+    var lum = function (h) { var c = [1, 3, 5].map(function (i) { var v = parseInt(h.substr(i, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+    var cr = function (a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }, out = {};
+    Object.keys(SKINS).forEach(function (k) { [false, true].forEach(function (d) { var s = SKINS[k](d); out[k + (d ? '/dark' : '')] = Math.min(cr(s.cL, s.L), cr(s.cD, s.D)); }); }); return out;
+  },
   sqCenter: function (name) { var s = sqParse(name), p = sqXY(s), r = cv.getBoundingClientRect(); return { x: r.left + (p[0] + SQ / 2) * r.width / BS, y: r.top + (p[1] + SQ / 2) * r.height / BS }; }
 };
 /* ----- boot ----- */
 applyTheme(); setSoundIcon(); wInit();
 (function () {
   var m = location.hash.match(/fen=([^&]+)/);
-  if (m) { var f = decodeURIComponent(m[1]); if (validFen(f)) { setTimeout(function () { importText(f); }, 50); } }
+  if (m) { var f = ''; try { f = decodeURIComponent(m[1]); } catch (e) {} if (parseImport(f)) setTimeout(function () { guardAbandon(function () { importText(f); }); }, 50); }
 })();
-$('tResume').classList.toggle('hidden', !canResume());
+titleResume();
 requestAnimationFrame(loop);
 </script>
 </body>

@@ -123,9 +123,9 @@ const setData = async (page, t) => { await page.fill('#data-input', t); await pa
 
   // 無 downloads 能力
   { const r = await open(browser, mob, false);
-    ok(await r.page.isHidden('#btn-png') && await r.page.isVisible('#btn-show-png'), '無 downloads：隱藏下載、顯示「產生 PNG 圖片」');
-    await r.page.click('#btn-show-png'); await r.page.waitForTimeout(600);
-    ok(await r.page.isVisible('#png-img'), '產生可長按儲存的 PNG');
+    ok(await r.page.isVisible('#btn-png') && await r.page.isVisible('#btn-svg'), '無 downloads：仍顯示下載 PNG／SVG（用 <a download>）');
+    const [dlEv] = await Promise.all([r.page.waitForEvent('download'), r.page.click('#btn-png')]); await r.page.waitForTimeout(300);
+    ok(!!dlEv && await r.page.isVisible('#png-img'), '直接下載 PNG，並顯示可長按儲存的圖');
     await r.ctx.close(); }
 
   for (const [name, o] of [['360x780', { viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }], ['844x390', { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }], ['390x844-dark', { ...mob, colorScheme: 'dark' }], ['1280x860-desktop', { viewport: { width: 1280, height: 860 } }]]) {

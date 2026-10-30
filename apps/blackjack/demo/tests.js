@@ -199,7 +199,13 @@ const SEED = {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-  const APP = 'file://' + path.resolve(__dirname, '..', 'index.html');
+  // served over http, not file://: Chromium can drop a localStorage write across a reload of a file:// page
+  const server = require('http').createServer((q, r) => {
+    if (q.url.split('?')[0] === '/') { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(path.resolve(__dirname, '..', 'index.html'))); }
+    else { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end('<!doctype html><title>peer</title>'); }
+  });
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  const ORIGIN = 'http://127.0.0.1:' + server.address().port, APP = ORIGIN + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(w, h, o = {}) {
@@ -216,11 +222,11 @@ async function browserTests() {
   const click = (P, sel) => P.page.evaluate(s => { const e = document.querySelector(s); if (!e) throw new Error('missing ' + s); e.click(); }, sel);
   const ls = (P, k) => P.page.evaluate(k => JSON.parse(localStorage.getItem('blackjack:' + k) || 'null'), k);
   // Reload only after the page's localStorage has reached the browser's storage backend (seen from a second page of
-  // the same file:// origin). Without this, a reload right after a write can, under heavy load, lose the write in
+  // the same origin). Without this, a reload right after a write can, under heavy load, lose the write in
   // Chromium itself (DOM storage commits are batched): the app has already saved, the test just must not race it.
   const snap = () => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]])); };
   const reload = async P => {
-    if (!P.peer) { P.peer = await P.ctx.newPage(); await P.peer.goto('file://' + __filename); }
+    if (!P.peer) { P.peer = await P.ctx.newPage(); await P.peer.goto(ORIGIN + '/peer'); }
     // poll until the backend (peer page) shows the same storage as the page itself
     for (let i = 0, t0 = Date.now(); ; i++) { const [x, y] = [await P.page.evaluate(snap), await P.peer.evaluate(snap)]; if (x === y) break; if (Date.now() - t0 > 30000) throw new Error('localStorage never reached the peer page'); await sleep(20); }
     await P.page.reload(); await P.page.waitForFunction(() => window.__game && !document.querySelector('#ovTitle').hidden, null, { timeout: 30000 }); };
@@ -428,7 +434,7 @@ async function browserTests() {
     }
   }
   });
-  await browser.close();
+  await browser.close(); server.close();
   t('no page or console errors in the browser tests', !errors.length); if (errors.length) console.log(errors.join('\n'));
 }
 
