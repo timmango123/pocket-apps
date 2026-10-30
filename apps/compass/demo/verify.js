@@ -3,9 +3,10 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs');
 const SRC = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
-const WRAP = path.join(__dirname, 'preview.html');
-fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + SRC + '</body></html>');
-const URL = 'file://' + WRAP, OUT = __dirname, COVER = process.argv.includes('--cover');
+const PAGE = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + SRC + '</body></html>';
+// served over http: on file:// this Chromium answers requestPermission() with 'denied'
+const server = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(PAGE); });
+let URL; const OUT = __dirname, COVER = process.argv.includes('--cover');
 let n = 0;
 const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); n++; console.log('ok -', m); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -19,11 +20,13 @@ const FEEDER = () => {
 };
 
 (async () => {
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  URL = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   const mk = async (opts = {}, init) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, ...opts });
-    await ctx.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+    await ctx.grantPermissions(['clipboard-read', 'clipboard-write', 'accelerometer', 'gyroscope', 'magnetometer']).catch(() => {});
     const page = await ctx.newPage();
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(String(e)));
@@ -50,7 +53,7 @@ const FEEDER = () => {
       await page.screenshot({ path: OUT + '/390x844-gate.png' });
 
       await page.click('#goBtn'); await settle();
-      assert(await deg(page) === 127 && await txt(page, '#hName') === '東南', 'Android absolute alpha 233 -> 127° 東南');
+      assert(await deg(page) === 127 && await txt(page, '#hName') === '東南', 'Android absolute alpha 233 -> 127° 東南 ' + await txt(page, '#hDeg') + await txt(page, '#gateMsg'));
       assert(Math.abs(await rose(page) + 127) < 0.5, 'dial rotated by -heading');
       assert(await page.locator('#gate').isHidden() && await page.locator('#tgtBtn').isVisible(), 'gate hidden, target button shown');
       assert((await txt(page, '#accText')) === '精度良好', 'steady readings -> 精度良好');
@@ -58,7 +61,9 @@ const FEEDER = () => {
       await feed(page, 'abs', { alpha: 233, beta: 40, gamma: 0 }); await settle();
       assert(await deg(page) === 127, 'pitched 40° still 127°');
       await feed(page, 'abs', { alpha: 233, beta: 0, gamma: 50 }); await settle();
-      assert(await deg(page) === 127 && (await txt(page, '#accText')).includes('放平'), 'rolled 50° still 127°, with 請將手機放平');
+      assert(await deg(page) === 127 && (await txt(page, '#accText')) === '精度良好', 'rolled 50° still 127°, no warning');
+      await feed(page, 'abs', { alpha: 233, beta: 0, gamma: 75 }); await settle();
+      assert(await deg(page) === 127 && (await txt(page, '#accText')).includes('請拿正'), 'rolled 75° still 127°, with 請拿正手機');
       await feed(page, 'abs', { alpha: 233, beta: 2, gamma: -1 }); await settle();
 
       // wrap: 355 -> 5 takes the short way (rose angle moves continuously)
@@ -141,7 +146,7 @@ const FEEDER = () => {
       // only relative alpha (no absolute, no webkitCompassHeading)
       const { ctx, page } = await mk({ colorScheme: 'dark' });
       await page.click('#goBtn');
-      await feed(page, 'rel', { alpha: 40, beta: 1, gamma: 0, absolute: false }); await sleep(2400);
+      await feed(page, 'rel', { alpha: 40, beta: 1, gamma: 0, absolute: false }); await sleep(3400);
       assert((await txt(page, '#gateMsg')).includes('此裝置不提供絕對方位') && await txt(page, '#hDeg') === '—°', 'relative-only alpha -> 不提供絕對方位, no heading shown');
       await page.screenshot({ path: OUT + '/390x844-relative-dark.png' });
       await ctx.close();
@@ -156,8 +161,8 @@ const FEEDER = () => {
     }
     {
       const { ctx, page } = await mk({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1 });
-      await page.click('#goBtn'); await sleep(2400);
-      assert((await txt(page, '#gateMsg')).includes('這台裝置沒有感測器或瀏覽器不提供'), 'no events in 2 s -> no-sensor message');
+      await page.click('#goBtn'); await sleep(3400);
+      assert((await txt(page, '#gateMsg')).includes('這台裝置沒有感測器或瀏覽器不提供'), 'no events in 3 s -> no-sensor message');
       assert(await page.locator('#gateMsg a').getAttribute('href') === 'https://timmango123.github.io/pocket-apps/tools/#compass', 'off-site: link to the website version');
       await page.screenshot({ path: OUT + '/desktop-nosensor.png' });
       await ctx.close();
@@ -186,6 +191,5 @@ const FEEDER = () => {
     console.log(`${n} checks passed`);
   } finally {
     await browser.close();
-    fs.unlinkSync(WRAP);
   }
 })().catch(e => { console.error(e); process.exit(1); });
