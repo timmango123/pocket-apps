@@ -84,6 +84,9 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
   async function touch(cdp, type, x, y) { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }); }
+  // right after a reload a slow runner can drop the first synthetic touch; these checks are about saved state, not touch
+  // delivery (covered elsewhere), so press the title button directly once it is shown
+  const pressAfterReload = async (page, sel) => { await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel); await page.evaluate(s => document.querySelector(s).click(), sel); };
   async function tap(cdp, page, sel) {
     await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel);
     // overlays pop in (scale animation): on a slow runner the button can still be moving, so tap once it has settled
@@ -226,7 +229,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
     await tap(cdp, page, '#tNew'); await waitFor(page, () => window.__game.state().mode === 'play');
     await placeAi(page, cdp);
     ok((await st(page)).best > 0, 'best rose');
-    await page.reload(); await tap(cdp, page, '#tCont'); await waitFor(page, () => window.__game.state().mode === 'play');
+    await page.reload(); await pressAfterReload(page, '#tCont'); await waitFor(page, () => window.__game.state().mode === 'play');
     ok(!(await page.evaluate(() => document.getElementById('bUndo').disabled)), 'undo still available after refresh');
     await tap(cdp, page, '#bUndo');
     const s = await st(page); eq([s.score, s.best, s.placed], [0, 0, 0]);
@@ -254,7 +257,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   await t('daily streak, history on the result card and 18 tiered achievements', async () => {
     const { ctx, page, cdp } = await open(390, 844, 'light', { hinted: 1 });
     await page.evaluate(() => { const d = new Date(Date.now() - 864e5), y = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); const o = {}; o[y] = 120; localStorage.setItem('blockfill.dhist', JSON.stringify({ days: o, streak: 2, maxStreak: 2, last: y })); });
-    await page.reload(); await tap(cdp, page, '#tDaily'); await waitFor(page, () => window.__game.state().gmode === 'daily');
+    await page.reload(); await pressAfterReload(page, '#tDaily'); await waitFor(page, () => window.__game.state().gmode === 'daily');
     await tap(cdp, page, '#bMenu'); await tap(cdp, page, '#pHome');
     ok(/連續 3 天/.test(await page.textContent('#tDailyInfo')), 'streak on title: ' + await page.textContent('#tDailyInfo'));
     await tap(cdp, page, '#tStats');
