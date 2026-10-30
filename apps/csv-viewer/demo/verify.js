@@ -60,9 +60,9 @@ const BIG5 = [166, 87, 186, 217, 44, 171, 176, 165, 171, 13, 10, 165, 120, 165, 
   eq(await page.evaluate(() => [window.__cv.rows.length, window.__cv.columns.length, window.__cv.columns.map(c => c.type).join(',')]), [20, 10, 'text,date,text,text,text,number,number,number,text,text'], 'sample: 20 rows × 10 cols, types inferred');
   eq(await page.evaluate(() => window.__cv.rows[2][9]), '重複下單\n已退款', 'sample embedded newline cell');
   // sort amount desc
-  await page.evaluate(() => { window.__cv.cycleSort(7); window.__cv.cycleSort(7); });
+  await page.evaluate(async () => { await window.__cv.cycleSort(7); await window.__cv.cycleSort(7); });
   eq(await page.evaluate(() => [window.__cv.rows[window.__cv.view[0]][0], window.__cv.rows[window.__cv.view[1]][0]]), ['A-24007', 'A-24004'], 'sort 金額 descending (12,800 then 3,840)');
-  await page.evaluate(() => window.__cv.cycleSort(7));
+  await page.evaluate(async () => { await window.__cv.cycleSort(7); });
   eq(await page.evaluate(() => window.__cv.rows[window.__cv.view[0]][0]), 'A-24001', 'third click restores original order');
   // stats on 金額: 280+220+570+3840+140+640+12800+190+240+320+420+1360+1140+160+440+1280+700+380+480+960 = 26560
   await page.selectOption('#statCol', '7');
@@ -82,7 +82,7 @@ const BIG5 = [166, 87, 186, 217, 44, 171, 176, 165, 171, 13, 10, 165, 120, 165, 
   const csv = await page.evaluate(() => window.__cv.toCSV()); eq(csv, '名稱,價格\r\na|b,1\r\n"c\nd",2\r\n', 'CSV export re-quotes newline cell');
   // inconsistent rows
   await page.evaluate(() => window.__cv.loadText('a,b,c\n1,2\n1,2,3,4\n5,6,7', { name: 'bad.csv' })); await page.waitForTimeout(100);
-  assert((await page.textContent('#warnChip')).includes('2 列欄數不一致'), 'inconsistent column count warning');
+  assert((await page.textContent('#warnChip')).includes('2 列欄數與標題不同'), 'inconsistent column count warning');
   // Big5
   await page.evaluate(b => window.__cv.loadBytes(new Uint8Array(b).buffer, 'big5.csv'), BIG5); await page.waitForTimeout(150);
   eq(await page.evaluate(() => [window.__cv.columns.map(c => c.name), window.__cv.rows[0]]), [['名稱', '城市'], ['台北咖啡', '台北市']], 'Big5 CSV decoded automatically');
@@ -95,8 +95,8 @@ const BIG5 = [166, 87, 186, 217, 44, 171, 176, 165, 171, 13, 10, 165, 120, 165, 
     const cols = Array.from({ length: 20 }, (_, i) => 'col' + i), lines = [cols.join(',')];
     for (let r = 0; r < 100000; r++) { const a = []; for (let c = 0; c < 20; c++) a.push(c === 0 ? 'ID' + r : c % 3 === 0 ? String((r * 7919 + c) % 100000) : c % 3 === 1 ? '"品項 ' + (r % 977) + ', 規格"' : '2026-' + String(1 + r % 12).padStart(2, '0') + '-' + String(1 + r % 28).padStart(2, '0')); lines.push(a.join(',')); }
     const t = lines.join('\n'); const t0 = performance.now(); await window.__cv.loadText(t, { name: 'big.csv' }); const load = performance.now() - t0;
-    const t1 = performance.now(); window.__cv.cycleSort(3); const sortNum = performance.now() - t1;
-    const t2 = performance.now(); window.__cv.cycleSort(1); const sortText = performance.now() - t2;
+    const t1 = performance.now(); await window.__cv.cycleSort(3); const sortNum = performance.now() - t1;
+    const t2 = performance.now(); await window.__cv.cycleSort(1); const sortText = performance.now() - t2;
     const sc = document.getElementById('sc'); let maxFrame = 0;
     for (let i = 0; i < 30; i++) { const f0 = performance.now(); sc.scrollTop += 900; sc.scrollLeft = (i % 5) * 300; sc.dispatchEvent(new Event('scroll')); await new Promise(r => requestAnimationFrame(r)); maxFrame = Math.max(maxFrame, performance.now() - f0); }
     return { len: t.length, rows: window.__cv.rows.length, load: Math.round(load), sortNum: Math.round(sortNum), sortText: Math.round(sortText), dom: document.querySelectorAll('#rows .c').length, maxFrame: Math.round(maxFrame) };
