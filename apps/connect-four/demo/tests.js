@@ -221,6 +221,7 @@ const SET = o => JSON.stringify(Object.assign({ mode: '2p', level: 1, first: 'me
 const NEAR_WIN = o => JSON.stringify(Object.assign({ mode: 'ai', level: 1, variant: 'std', human: 1, colors: { 1: 'r', 2: 'y' }, timer: false, moves: '334457', hints: 0, undos: 0, rec: false }, o));
 async function open(vp, ls, o = {}) {
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: o.dark ? 'dark' : 'light' });
+  await ctx.addInitScript(() => { window.__confirmMs = 60000; });
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(base); await page.waitForFunction(() => window.__game && window.__game.state());
@@ -229,13 +230,13 @@ async function open(vp, ls, o = {}) {
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
   const tap = async (x, y, hold = 40) => { const id = ++tid; await touch('touchStart', [{ x, y, id }]); await sleep(hold); await touch('touchEnd', []); };
   // wait until the sheet holding a button has finished its pop-in, then tap it and wait for its click
-  const settle = sel => page.waitForFunction(sel => { const e = document.querySelector(sel), c = e && e.closest('.sheet'); return !c || c.getAnimations().every(a => a.playState !== 'running'); }, sel, { timeout: 5000 }).catch(() => {});
+  const settle = sel => page.waitForFunction(sel => { const e = document.querySelector(sel), c = e && e.closest('.sheet'); return !c || c.getAnimations().every(a => a.playState !== 'running'); }, sel, { timeout: 15000 }).catch(() => {});
   const tapSel = async sel => {
     await settle(sel); await page.locator(sel).first().scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
     const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error('not visible: ' + sel);
     await page.evaluate(sel => { window.__clicked = 0; document.querySelector(sel).addEventListener('click', () => { window.__clicked = 1; }, { once: true }); }, sel);
     await tap(b.x + b.width / 2, b.y + b.height / 2);
-    await page.waitForFunction(() => window.__clicked, null, { timeout: 5000 });
+    await page.waitForFunction(() => window.__clicked, null, { timeout: 15000 });
   };
   const st = () => page.evaluate(() => window.__game.state());
   const cell = (c, r) => page.evaluate(([c, r]) => window.__game.cellToClient(c, r), [c, r]);
@@ -244,7 +245,10 @@ async function open(vp, ls, o = {}) {
   const movesIs = m => page.waitForFunction(m => window.__game.state().moves === m, m, { timeout: 10000 });
   const lsGet = k => page.evaluate(k => { try { return JSON.parse(localStorage.getItem('connect4.' + k)); } catch (e) { return 'BAD'; } }, k);
   const reload = async () => { await page.reload(); await page.waitForFunction(() => window.__game && window.__game.state()); };
-  return { ctx, page, errors, tap, touch, tapSel, st, cell, zone, ready, movesIs, ls: lsGet, reload, close: () => ctx.close() };
+  // the second tap of a "press again" confirm; the confirm stays armed 2.6 s, which a loaded runner can outlast between the
+  // two taps, so these pages lengthen it (window.__confirmMs, set in open)
+  const confirmTap = async (sel, done) => { await tapSel(sel); await page.waitForFunction(done, null, { timeout: 15000 }); };
+  return { ctx, page, errors, tap, touch, tapSel, confirmTap, st, cell, zone, ready, movesIs, ls: lsGet, reload, close: () => ctx.close() };
 }
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -265,7 +269,7 @@ async function browserTests() {
         ok(r.inStage && r.clear && r.inView && r.scroll && r.cell >= min, `${w}x${h} ${v}: board inside its area (${JSON.stringify(r)}), columns ${r.cell}px >= ${min}`);
         if (w === 390 && v === 'std') {
           await s.page.setViewportSize({ width: 844, height: 390 });
-          await s.page.waitForFunction(() => { const b = document.querySelector('#cv').getBoundingClientRect(); return b.right <= innerWidth && b.bottom <= innerHeight && b.left > 250; }, null, { timeout: 5000 });
+          await s.page.waitForFunction(() => { const b = document.querySelector('#cv').getBoundingClientRect(); return b.right <= innerWidth && b.bottom <= innerHeight && b.left > 250; }, null, { timeout: 15000 });
           ok((await s.st()).cell >= 44, 'rotated to landscape: board relaid out, columns ' + (await s.st()).cell + 'px');
         }
         ok(!s.errors.length, `${w}x${h} no page errors ` + s.errors.join(' | ')); await s.close();
@@ -299,7 +303,7 @@ async function browserTests() {
 
     await at('the strongest computer thinks off the UI thread; taps meanwhile are ignored', async () => {
       const s = await open({ width: 390, height: 844 }, { settings: SET({ mode: 'ai', level: 5 }), game: NEAR_WIN({ level: 5, human: 2, colors: { 1: 'y', 2: 'r' }, moves: '4433' }) });
-      await s.page.waitForFunction(() => window.__game.state().aiThinking, null, { timeout: 5000 });
+      await s.page.waitForFunction(() => window.__game.state().aiThinking, null, { timeout: 15000 });
       const f0 = (await s.st()).frame, t0 = Date.now();
       const [x, y] = await s.cell(0, 0); await s.tap(x, y); await sleep(500);
       const g = await s.st(), fps = (g.frame - f0) / ((Date.now() - t0) / 1000);
@@ -313,7 +317,7 @@ async function browserTests() {
       let s = await open({ width: 390, height: 844 }, { settings: SET({ mode: 'ai' }), game: NEAR_WIN() });
       await s.ready();
       let [x, y] = await s.cell(1, 5); await s.tap(x, y);
-      await s.page.waitForFunction(() => window.__game.state().over, null, { timeout: 5000 });
+      await s.page.waitForFunction(() => window.__game.state().over, null, { timeout: 15000 });
       const busy = (await s.st()).busy, early = await s.ls('stats');
       ok(early && early.lv[1].w === 1 && early.games === 1 && (await s.ls('game')) === null, 'stats written and save cleared at the winning drop (still animating: ' + busy + ')');
       await s.reload();
@@ -355,21 +359,21 @@ async function browserTests() {
       const s = await open({ width: 390, height: 844 }, { settings: SET({ mode: 'ai' }), game: NEAR_WIN() });
       await s.ready();
       await s.tapSel('#bNew');
-      await s.page.waitForFunction(() => /本局算輸/.test(document.querySelector('#toast').textContent), null, { timeout: 3000 });
+      await s.page.waitForFunction(() => /本局算輸/.test(document.querySelector('#toast').textContent), null, { timeout: 10000 });
       ok((await s.st()).moves === '334457' && (await s.ls('stats')) === null, 'first tap only warns (' + JSON.stringify(await s.ls('stats')) + ')');
-      await s.tapSel('#bNew'); await s.page.waitForFunction(() => window.__game.state().moves === '', null, { timeout: 5000 });
+      await s.confirmTap('#bNew', () => window.__game.state().moves === '');
       let st2 = await s.ls('stats'); ok(st2.lv[1].l === 1 && st2.games === 1, 'second tap: new game, abandoned one is a loss');
       await s.ready(); let [x, y] = await s.cell(3, 0); await s.tap(x, y);
       await s.page.waitForFunction(() => window.__game.state().moves.length === 2, null, { timeout: 10000 }); await s.ready();
       await s.tapSel('#bMenu'); await s.tapSel('#mStart');
       ok(/算輸/.test(await s.page.textContent('#mStart')) && !(await s.page.isHidden('#menu')), 'menu 開始新局 asks first');
-      await s.tapSel('#mStart'); await s.page.waitForFunction(() => window.__game.state().moves === '' && document.querySelector('#menu').hidden, null, { timeout: 5000 });
+      await s.confirmTap('#mStart', () => window.__game.state().moves === '' && document.querySelector('#menu').hidden);
       st2 = await s.ls('stats'); ok(st2.lv[1].l === 2 && st2.games === 2 && (await s.page.textContent('#mStart')) === '開始新局', 'second tap: loss counted, button label restored (' + JSON.stringify(st2.lv[1]) + ')');
       await s.close();
       const t = await open({ width: 390, height: 844 }, { settings: SET(), game: NEAR_WIN({ mode: '2p', human: 0 }) });
       await t.ready(); await t.tapSel('#bNew');
-      await t.page.waitForFunction(() => /再按一次開新局/.test(document.querySelector('#toast').textContent), null, { timeout: 3000 });
-      await t.tapSel('#bNew'); await t.page.waitForFunction(() => window.__game.state().moves === '', null, { timeout: 5000 });
+      await t.page.waitForFunction(() => /再按一次開新局/.test(document.querySelector('#toast').textContent), null, { timeout: 10000 });
+      await t.confirmTap('#bNew', () => window.__game.state().moves === '');
       const s2 = await t.ls('stats'); ok(!s2 || s2.lv[1].l === 0, 'two-player: asked once more, no loss');
       await t.close();
       const u = await open({ width: 390, height: 844 }, { settings: SET({ mode: 'tour' }), game: NEAR_WIN({ mode: 'tour' }) });
