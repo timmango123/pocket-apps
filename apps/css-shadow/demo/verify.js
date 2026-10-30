@@ -45,15 +45,15 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
   await page.mouse.move(lb.x + 22, lb.y + 22); await page.mouse.down();
   await page.mouse.move(st.x + st.width / 2 - 100, st.y + st.height / 2 - 100, { steps: 5 }); await page.mouse.up();
   S = await page.evaluate(() => window.__cs.S);
-  assert(S.layers[0].x === 15 && S.layers[0].y === 15 && S.layers[0].blur === 42 && S.layers[1].x === 30 && S.layers[1].y === 30 && Math.abs(S.layers[1].color.a - .07) < 1e-6, 'lamp: layer1 (15,15) blur 42, layer2 doubled & alpha halved ' + JSON.stringify(S.layers.map(l => [l.x, l.y, l.blur, l.color.a])));
+  assert(S.layers[0].x === 15 && S.layers[0].y === 15 && S.layers[0].blur === 42 && S.layers[1].x === 8 && S.layers[1].y === 8 && S.layers[1].blur === 23 && Math.abs(S.layers[1].color.a - .12) < 1e-6, 'lamp: layer1 (15,15) blur 42, layer2 keeps half the distance, blur ratio and alpha ' + JSON.stringify(S.layers.map(l => [l.x, l.y, l.blur, l.color.a])));
   // slider +/- button
   await page.click('#layer0 ');
   const before = await page.evaluate(() => window.__cs.S.layers[0].blur);
-  await page.locator('#layerCtl .ctl').nth(2).locator('.pm').nth(1).dispatchEvent('pointerdown'); await page.locator('#layerCtl .ctl').nth(2).locator('.pm').nth(1).dispatchEvent('pointerup');
+  await page.locator('#layerCtl .ctl').nth(2).locator('.pm').nth(1).click();
   assert(await page.evaluate(() => window.__cs.S.layers[0].blur) === before + 1, 'plus button bumps blur');
   // add layers to 6 -> add hidden
-  for (let k = 0; k < 8 && await page.isVisible('#addLayer'); k++) { await page.click('#addLayer'); await page.waitForTimeout(40); }
-  assert(await page.evaluate(() => window.__cs.S.layers.length) === 6, 'max 6 layers, add button hidden');
+  for (let k = 0; k < 8 && await page.isEnabled('#addLayer'); k++) { await page.click('#addLayer'); await page.waitForTimeout(40); }
+  assert(await page.evaluate(() => window.__cs.S.layers.length) === 6, 'max 6 layers, add button disabled');
   // Neumorphism with dark bg warns
   await page.evaluate(() => { const s = window.__cs.S; s.bg = { type: 'solid', color: '#111111' }; window.__cs.S = s; });
   await page.click('#preset3'); await page.waitForTimeout(50);
