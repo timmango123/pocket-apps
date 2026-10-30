@@ -162,16 +162,16 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py, JSON.stringify(CASES),
   assert(!got[7].some(r => new Date(r.t).toISOString().startsWith('2027-03-14')), 'NY 02:30 skipped on DST start 2027-03-14');
   const t0 = Date.now();
   const never = await page.evaluate(f => window.__cron.next('0 0 30 2 *', '5', 'UTC', f, 10), FROM);
-  eq(never, [], '0 0 30 2 * → never within 5 years');
+  eq(never, [], '0 0 30 2 * → never (28-year look-ahead)');
   assert(Date.now() - t0 < 1500, '0 0 30 2 * computed quickly (' + (Date.now() - t0) + 'ms)');
   const leap = await page.evaluate(f => window.__cron.next('0 0 29 2 *', '5', 'UTC', f, 3).map(r => new Date(r.t).toISOString()), FROM);
-  eq(leap, ['2028-02-29T00:00:00.000Z'], 'Feb 29 within 5-year window');
+  eq(leap, ['2028-02-29T00:00:00.000Z', '2032-02-29T00:00:00.000Z', '2036-02-29T00:00:00.000Z'], 'Feb 29 every leap year');
 
   // descriptions
   const say = async (expr, mode = '5') => page.evaluate(([e, m]) => { const c = window.__cron.parse(e, m); const d = window.__cron.describe(c); return d.text + (d.sub ? ' | ' + d.sub : ''); }, [expr, mode]);
   const D = {
     '0 9 * * 1-5': '週一至週五的 09:00', '*/5 * * * *': '每 5 分鐘', '0 0 * * *': '每天 00:00', '0 9 * * 1': '每週一的 09:00',
-    '0 0 1 * *': '每月 1 號的 00:00', '0 * * * 1-5': '週一至週五，每小時整點', '*/15 9-17 * * 1-5': '週一至週五，9 點至 17 點之間每 15 分鐘',
+    '0 0 1 * *': '每月 1 號的 00:00', '0 * * * 1-5': '週一至週五，每小時整點', '*/15 9-17 * * 1-5': '週一至週五，09:00 至 17:45，每 15 分鐘',
     '0 9,18 * * 1-5': '週一至週五的 09:00 與 18:00', '@yearly': '1 月 1 號的 00:00', '0 0 30 2 *': '2 月 30 號的 00:00', '* * * * *': '每分鐘',
     '30 * * * *': '每小時的第 30 分', '0 */2 * * *': '每 2 小時（從 0 點起）的整點', '0 8 * 1-3 *': '1 至 3 月每天的 08:00',
   };
@@ -189,11 +189,11 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py, JSON.stringify(CASES),
   // errors
   const err = async (e, m = '5') => page.evaluate(([e, m]) => { try { window.__cron.parse(e, m); return 'OK'; } catch (x) { return x.message; } }, [e, m]);
   eq(await err('0 25 * * *'), '第 2 欄（時）：25 超過 0–23', 'hour range error');
-  eq(await err('0 9 * *'), '應為 5 欄，目前 4 欄', 'field count error');
-  eq(await err('0 0 1 * 1', 'q'), '應為 6 或 7 欄，目前 5 欄', 'quartz field count');
+  eq(await err('0 9 * *'), '應為 5 欄，目前 4 欄，缺少「週」欄', 'field count error');
+  eq(await err('0 0 1 * 1', 'q'), '應為 6 或 7 欄，目前 5 欄（這個格式的第 1 欄是秒）；5 欄的寫法請改用「標準 5 欄」。', 'quartz field count');
   eq(await err('0 0 0 1 * 1', 'q'), 'Quartz 格式中「日」與「週」必須有一個是 ?（另一個才會生效）', 'quartz ? rule');
   eq(await err('*/0 * * * *'), '第 1 欄（分）：間隔不能為 0', 'zero step');
-  eq(await err('0 0 * FOO *'), '第 4 欄（月）：無法辨識「FOO」', 'bad month name');
+  eq(await err('0 0 * FOO *'), '第 4 欄（月）：無法辨識「FOO」（月份可寫 1–12 或 JAN–DEC）', 'bad month name');
 
   // UI flow
   await page.fill('#expr', '0   9  * *   1-5 '); await page.waitForTimeout(50);
@@ -205,7 +205,7 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py, JSON.stringify(CASES),
   eq(await page.$eval('#err', e => e.textContent), '第 2 欄（時）：25 超過 0–23', 'UI error box');
   assert(await page.$eval('#fields .f:nth-child(2)', e => e.classList.contains('bad')), 'UI highlights bad field label');
   await page.fill('#expr', '0 0 30 2 *');
-  assert((await page.$eval('#runs', e => e.textContent)).includes('5 年內不會執行'), 'UI shows "5 年內不會執行"');
+  assert((await page.$eval('#runs', e => e.textContent)).includes('2 月最多只有 29 天'), 'UI says 2 月 30 日 never runs');
   // caret field highlight
   await page.fill('#expr', '0 9 * * 1-5'); await page.focus('#expr');
   await page.evaluate(() => { const e = document.getElementById('expr'); e.setSelectionRange(2, 2); e.dispatchEvent(new Event('select')); });
