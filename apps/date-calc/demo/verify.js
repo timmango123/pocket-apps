@@ -49,6 +49,7 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   await p.goto(URL); await p.waitForTimeout(150);
   const fill = async (sel, v) => { await p.fill(sel, v); await p.dispatchEvent(sel, 'input'); };
   await p.click('#tab-diff');
+  await fill('#diff-start', '2026-10-07'); await fill('#diff-end', '2026-12-25');
   assert((await p.textContent('#diff-days')) === '79', '範例 2026-10-07 → 2026-12-25 = 79 天');
   assert((await p.textContent('#diff-sentence')) === '2026-10-07（三）→ 2026-12-25（五）相差 79 天（不含首日）', '複製格式與規格範例一致');
   await fill('#diff-start', '2024-02-28'); await fill('#diff-end', '2024-03-01');
