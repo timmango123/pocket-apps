@@ -58,6 +58,7 @@ button, input { font: inherit; color: inherit; }
 .big .n { font-size: 30px; font-weight: 800; letter-spacing: .06em; color: var(--ink-2); }
 .readout.alt .v { font-size: 30px; color: var(--ink-2); font-weight: 700; }
 .readout.alt .n { font-size: 56px; line-height: 1.05; color: var(--ink); letter-spacing: .04em; }
+.readout.stale .big { opacity: .4; }
 .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; font-size: 13px; color: var(--muted); min-height: 26px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--line-2); font-weight: 700; color: var(--ink-2); background: var(--card); }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
@@ -66,7 +67,8 @@ button, input { font: inherit; color: inherit; }
 .chip.warn .dot { background: var(--warn); }
 
 /* dial */
-.dialbox { position: relative; width: min(300px, calc(100vw - 48px)); aspect-ratio: 1; margin: 2px auto 0; }
+.dialbox { --dial: max(200px, min(300px, calc(100vw - 48px), calc(100vh - 290px))); position: relative; width: var(--dial); aspect-ratio: 1; margin: 2px auto 0; }
+@supports (height: 100dvh) { .dialbox { --dial: max(200px, min(300px, calc(100vw - 48px), calc(100dvh - 290px))); } }
 .dialbox svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .bez { fill: var(--bezel); }
 .bez-2 { fill: none; stroke: var(--bezel-2); stroke-width: 2; }
@@ -108,7 +110,7 @@ button, input { font: inherit; color: inherit; }
 .seg button[aria-pressed="true"] { background: var(--on); color: var(--on-ink); }
 .decl { display: flex; align-items: center; gap: 6px; }
 .decl button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; cursor: pointer; font-size: 20px; font-weight: 700; }
-.decl input { width: 84px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--face); text-align: center; font: 700 17px var(--mono); }
+.decl input { width: 76px; height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--face); text-align: center; font: 700 17px var(--mono); }
 .note { font-size: 12px; color: var(--muted); margin: 0; }
 
 .gate { background: var(--card); border: 1px solid var(--line-2); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -119,6 +121,16 @@ button, input { font: inherit; color: inherit; }
 .msg { border-radius: 12px; padding: 10px 12px; background: var(--warn-bg); color: var(--ink); font-size: 14px; border: 1px solid var(--line); }
 .msg strong { display: block; color: var(--warn); margin-bottom: 2px; font-size: 15px; }
 .msg a { color: var(--focus); font-weight: 700; word-break: break-all; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+/* Short landscape screens: dial on the left (sized by height), readout and controls beside it. */
+@media (orientation: landscape) and (max-height: 560px) and (min-width: 560px) {
+  .wrap { max-width: 920px; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 24px; row-gap: 10px; align-items: start; align-content: start; }
+  .wrap > * { grid-column: 2; }
+  .wrap > .dialbox { --dial: min(300px, calc(100vh - 28px), 46vw); grid-column: 1; grid-row: 1 / span 7; position: sticky; top: max(12px, env(safe-area-inset-top)); margin: 4px 0 0; }
+  @supports (height: 100dvh) { .wrap > .dialbox { --dial: min(300px, calc(100dvh - 28px), 46vw); } }
+  .top { min-height: 44px; }
+  .big .v { font-size: 48px; } .readout.alt .n { font-size: 48px; }
+}
 #toast { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 50; background: var(--on); color: var(--on-ink); padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); width: max-content; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
 </style>
 
@@ -128,7 +140,7 @@ button, input { font: inherit; color: inherit; }
     <button class="tbtn" id="themeBtn" type="button" aria-label="切換主題"></button>
   </header>
 
-  <div class="readout" id="readout" role="button" tabindex="0" aria-label="目前方位，長按複製">
+  <div class="readout" id="readout" role="button" tabindex="0" aria-label="目前方位：尚未啟用">
     <div class="big"><span class="v" id="hDeg">—°</span><span class="n" id="hName">　</span></div>
     <div class="meta"><span class="chip" id="refChip">磁北</span><span class="chip" id="accChip"><span class="dot"></span><span id="accText">尚未啟用</span></span></div>
   </div>
@@ -152,7 +164,8 @@ button, input { font: inherit; color: inherit; }
     <button type="button" id="hubBtn" aria-label="切換顯示度數或 16 方位"></button>
   </div>
 
-  <div class="turn" id="turn" hidden aria-live="polite"></div>
+  <div class="turn" id="turn" hidden></div>
+  <div class="sr" id="live" aria-live="polite"></div>
 
   <section class="gate" id="gate">
     <p>指南針會讀取手機的<b>方位感測器</b>（磁力計）。點下面的按鈕開始，iPhone 會詢問是否允許。</p>
@@ -167,9 +180,9 @@ button, input { font: inherit; color: inherit; }
       <div class="seg" role="group" aria-labelledby="refLbl"><button type="button" id="magBtn" aria-pressed="true">磁北</button><button type="button" id="trueBtn" aria-pressed="false">真北</button></div>
     </div>
     <div class="row"><span><label for="declIn">磁偏角</label></span>
-      <div class="decl"><button type="button" id="declMinus" aria-label="磁偏角減 0.5">−</button><input id="declIn" type="number" inputmode="decimal" step="0.1" min="-30" max="30" value="-4.5"><button type="button" id="declPlus" aria-label="磁偏角加 0.5">+</button></div>
+      <div class="decl"><button type="button" id="declSign" aria-label="正負號：切換偏東／偏西">±</button><button type="button" id="declMinus" aria-label="磁偏角減 0.5">−</button><input id="declIn" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-describedby="declNote" value="-4.5"><button type="button" id="declPlus" aria-label="磁偏角加 0.5">+</button></div>
     </div>
-    <p class="note">真北 = 磁北方位 + 磁偏角（偏東為正、偏西為負）。台灣約 −4.5°。點盤面中心切換度數／16 方位，長按方位可複製。</p>
+    <p class="note" id="declNote">真北 = 磁北方位 + 磁偏角（偏東為正、偏西為負，± 切換正負）。台灣約 −4.5°。點盤面中心切換度數／16 方位，長按方位可複製。</p>
   </section>
 </div>
 <div id="toast" hidden role="status"></div>
@@ -183,6 +196,24 @@ function norm360(a) { a = ((a % 360) + 360) % 360; return a === 360 ? 0 : a; }
 function angleDiff(target, cur) { return ((((target - cur + 540) % 360) + 360) % 360) - 180; }
 // Smoothing that never takes the long way round 359° → 0°. Returns an unwrapped value (good for CSS rotation).
 function smoothAngle(cur, target, k) { if (cur == null || !isFinite(cur)) return target; return cur + (k == null ? 0.2 : k) * angleDiff(target, cur); }
+// Time-based, adaptive smoothing factor: the same feel at 20, 60 or 120 events a second; steady hands get a slow
+// filter (jitter stays out of the number), a real turn of 45° or more gets a fast one so the dial does not lag.
+function smoothK(diff, dt) {
+  if (!(dt > 0)) return 0.2;
+  var a = Math.min(1, Math.max(0, (Math.abs(diff) - 4) / 41)), tau = 0.16 - 0.11 * a;
+  return 1 - Math.exp(-Math.min(dt, 0.25) / tau);
+}
+// Hysteresis for the big number: a reading hovering at 127.5 does not flicker 127/128.
+function holdDeg(shown, h) {
+  h = norm360(h);
+  if (shown == null || Math.abs(angleDiff(h, shown)) >= 0.75) return Math.round(h) % 360;
+  return shown;
+}
+// Hysteresis for the 16-point name: keep the sector until the heading is 1° past its edge.
+function holdDir(idx, h) {
+  if (idx == null) return dirIndex(h);
+  return Math.abs(angleDiff(norm360(h), idx * 22.5)) > 11.25 + 1 ? dirIndex(h) : idx;
+}
 function screenAngle(soAngle, winOrientation) {
   var a = typeof soAngle === 'number' && isFinite(soAngle) ? soAngle : (typeof winOrientation === 'number' && isFinite(winOrientation) ? winOrientation : 0);
   return norm360(Math.round(a / 90) * 90);
@@ -211,13 +242,25 @@ var DIR16 = ['北', '東北偏北', '東北', '東北偏東', '東', '東南偏�
 function dirIndex(h) { return Math.round(norm360(h) / 22.5) % 16; }
 function dirName(h) { return DIR16[dirIndex(h)]; }
 // Turn guidance toward a locked bearing.
-function turnHint(target, heading) {
+function turnHint(target, heading, wasOk) {
   var d = angleDiff(target, heading), n = Math.round(Math.abs(d));
-  if (Math.abs(d) < 3) return { d: d, ok: true, text: '方向正確' };
+  if (Math.abs(d) < (wasOk ? 5 : 3)) return { d: d, ok: true, text: '方向正確' };
   return { d: d, ok: false, text: (d > 0 ? '向右轉 ' : '向左轉 ') + n + '°' };
 }
 // How far the screen is tilted from lying flat (0 = flat, 90 = upright).
 function tiltOf(beta, gamma) { return Math.acos(Math.max(-1, Math.min(1, Math.cos((beta || 0) / DEG) * Math.cos((gamma || 0) / DEG)))) * DEG; }
+// How far the screen's left-right axis is tipped out of the horizontal (0 = level, 90 = phone on its side). Lying flat
+// and held upright are both fine for the tilt-compensated heading; only this sideways roll makes it unreliable.
+function sideTilt(beta, gamma, scr) {
+  var b = (beta || 0) / DEG, g = (gamma || 0) / DEG, r = (scr || 0) / DEG;
+  var up = Math.cos(r) * (-Math.cos(b) * Math.sin(g)) - Math.sin(r) * Math.sin(b);
+  return Math.asin(Math.min(1, Math.abs(up))) * DEG;
+}
+// Declination typed by hand: accepts −/－ minus signs, a comma decimal and a trailing °.
+function parseDecl(t) {
+  t = String(t == null ? '' : t).trim().replace(/[−－–]/g, '-').replace(/＋/g, '+').replace(',', '.').replace(/°$/, '').trim();
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? parseFloat(t) : NaN;
+}
 // Circular standard deviation (degrees) of a list of headings.
 function circStd(arr) {
   if (arr.length < 2) return 0;
@@ -240,10 +283,10 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   var S = { trueNorth: false, declination: -4.5, target: null, mode: 'deg', theme: 'auto' };
   try {
     var sv = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (sv) {
-      S.trueNorth = !!sv.trueNorth;
-      if (isFinite(+sv.declination) && Math.abs(+sv.declination) <= 30 && sv.declination !== null) S.declination = +sv.declination;
-      if (sv.target != null && isFinite(+sv.target)) S.target = norm360(+sv.target);
+    if (sv && typeof sv === 'object') {
+      S.trueNorth = sv.trueNorth === true;
+      if (typeof sv.declination === 'number' && isFinite(sv.declination) && Math.abs(sv.declination) <= 30) S.declination = Math.round(sv.declination * 10) / 10;
+      if (typeof sv.target === 'number' && isFinite(sv.target)) S.target = norm360(sv.target);
       if (sv.mode === '16pt') S.mode = '16pt';
       if (['auto', 'light', 'dark'].indexOf(sv.theme) >= 0) S.theme = sv.theme;
     }
@@ -288,7 +331,8 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   var R = {
     running: false, got: false, any: false, relOnly: false, src: null, absSeen: false,
     raw: null, cur: null, acc: null, beta: 0, gamma: 0, hist: [], calibUntil: 0,
-    timer: 0, raf: 0, forceAngle: null, onTarget: false
+    timer: 0, raf: 0, forceAngle: null, onTarget: false,
+    lastT: 0, lastEvt: 0, iosUncal: false, shownDeg: null, shownDir: null, ariaT: 0, ariaTxt: '', live: { t: 0, key: '' }
   };
   function curScr() {
     if (R.forceAngle != null) return R.forceAngle;
@@ -296,9 +340,10 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     return screenAngle(so, window.orientation);
   }
   function feed(h, acc) {
-    R.raw = h; R.acc = acc;
-    R.cur = smoothAngle(R.cur, h, 0.2);
     var now = performance.now();
+    R.raw = h; R.acc = acc; R.lastEvt = now;
+    R.cur = smoothAngle(R.cur, h, R.lastT ? smoothK(angleDiff(h, R.cur || 0), (now - R.lastT) / 1000) : 1);
+    R.lastT = now;
     R.hist.push([now, angleDiff(h, norm360(R.cur))]);
     while (R.hist.length && now - R.hist[0][0] > 2000) R.hist.shift();
     if (!R.got) { R.got = true; clearTimeout(R.timer); $('#gate').hidden = true; $('#tgtBtn').hidden = false; }
@@ -314,7 +359,9 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     R.any = true;
     if (e.beta != null) { R.beta = e.beta; R.gamma = e.gamma || 0; }
     var w = e.webkitCompassHeading;
-    if (typeof w === 'number' && isFinite(w) && w >= 0) { R.src = 'ios'; feed(headingFromWebkit(w, curScr()), typeof e.webkitCompassAccuracy === 'number' ? e.webkitCompassAccuracy : null); return; }
+    // iOS reports -1 while the compass is uncalibrated (or unavailable): keep the dial, flag calibration
+    if (typeof w === 'number' && w < 0) { R.src = 'ios'; R.iosUncal = true; R.acc = -1; R.lastEvt = performance.now(); return; }
+    if (typeof w === 'number' && isFinite(w) && w >= 0) { R.src = 'ios'; R.iosUncal = false; feed(headingFromWebkit(w, curScr()), typeof e.webkitCompassAccuracy === 'number' ? e.webkitCompassAccuracy : null); return; }
     if (R.absSeen) return;
     if (e.absolute === true && e.alpha != null) { R.src = 'abs'; feed(headingFromEuler(e.alpha, e.beta, e.gamma, curScr()), null); return; }
     if (e.alpha != null) R.relOnly = true;
@@ -347,8 +394,9 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     if (R.got) return;
     var rel = R.relOnly;
     stop();
-    if (rel) showMsg('此裝置不提供絕對方位', '瀏覽器只給相對角度，無法判斷哪裡是北方。請改用 Chrome（Android）或 Safari（iPhone）。', true, true);
-    else showMsg('這台裝置沒有感測器或瀏覽器不提供', '2 秒內沒有收到方位資料。請用有磁力計的手機開啟。' + (window.isSecureContext === false ? '感測器只在 HTTPS 網頁提供。' : ''), true);
+    if (R.iosUncal) showMsg('指南針需要校正', 'iPhone 回報方位尚未校正。請離開金屬物品或磁鐵，以 8 字形揮動手機幾次後再試；也請確認「設定 > 隱私權與安全性 > 定位服務 > 系統服務」中的「指南針校正」已開啟。', true, true);
+    else if (rel) showMsg('此裝置不提供絕對方位', '瀏覽器只給相對角度，無法判斷哪裡是北方。請改用 Chrome（Android）或 Safari（iPhone）。', true, true);
+    else showMsg('這台裝置沒有感測器或瀏覽器不提供', '3 秒內沒有收到方位資料。請用有磁力計的手機開啟。', true);
   }
 
   // ---------- start / stop ----------
@@ -356,17 +404,23 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   function lockWake() { try { if (navigator.wakeLock && document.visibilityState === 'visible') navigator.wakeLock.request('screen').then(function (w) { wake = w; }, function () {}); } catch (e) {} }
   function start() {
     $('#gateMsg').hidden = true;
+    if (window.isSecureContext === false) { showMsg('需要 HTTPS 安全連線', '瀏覽器只在 HTTPS 網頁提供方位感測器，這個網址不是安全連線。', false); return; }
     if (typeof DeviceOrientationEvent === 'undefined') { timeout(); return; }
     var p = null;
     try { if (typeof DeviceOrientationEvent.requestPermission === 'function') p = DeviceOrientationEvent.requestPermission(); } catch (e) { p = Promise.reject(e); }
     $('#goBtn').disabled = true;
     Promise.resolve(p).then(function (r) { return r; }, function (e) { return 'error:' + (e && e.name || 'Error'); }).then(function (r) {
-      if (r === 'denied') { showMsg('方向取用被拒絕', 'iPhone／iPad：關閉這個分頁重新開啟再點一次並選「允許」；若仍無效，到「設定 > Safari」開啟「動作與方向取用」。', true, true); return; }
+      if (r === 'denied') {
+        var apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+        showMsg('方向取用被拒絕', apple ? 'iPhone／iPad：關閉這個分頁重新開啟再點一次並選「允許」；若仍無效，到「設定 > Safari」開啟「動作與方向取用」。'
+          : '請在瀏覽器的網站設定（網址列左側的圖示）允許「動作感應器」，再點一次。', true, true);
+        return;
+      }
       if (typeof r === 'string' && r.indexOf('error:') === 0) { showMsg('無法取得感測器權限', '瀏覽器拒絕了請求（' + r.slice(6) + '）。這通常是內嵌頁面被限制。', true); return; }
-      R.running = true; R.got = false; R.relOnly = false; R.any = false;
+      R.running = true; R.got = false; R.relOnly = false; R.any = false; R.iosUncal = false; R.lastT = 0;
       listen(true); lockWake(); loop();
       setAcc('', '等待方位資料…');
-      clearTimeout(R.timer); R.timer = setTimeout(timeout, 2000);
+      clearTimeout(R.timer); R.timer = setTimeout(timeout, 3000);
     });
   }
   function stop() { R.running = false; listen(false); cancelAnimationFrame(R.raf); clearTimeout(R.timer); try { if (wake) wake.release(); } catch (e) {} wake = null; }
@@ -374,7 +428,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   document.addEventListener('visibilitychange', function () {
     if (!R.running) return;
     if (document.visibilityState === 'hidden') { listen(false); cancelAnimationFrame(R.raf); }
-    else { listen(true); lockWake(); loop(); }
+    else { R.lastEvt = R.lastT = 0; R.stallFrom = performance.now(); listen(true); lockWake(); loop(); }
   });
 
   // ---------- settings ----------
@@ -388,7 +442,9 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   $('#magBtn').addEventListener('click', function () { S.trueNorth = false; save(); renderRef(); draw(); });
   $('#trueBtn').addEventListener('click', function () { S.trueNorth = true; save(); renderRef(); draw(); });
   function setDecl(v) { v = Math.round(v * 10) / 10; if (!isFinite(v)) return; S.declination = Math.max(-30, Math.min(30, v)); save(); renderRef(); draw(); }
-  $('#declIn').addEventListener('change', function () { setDecl(parseFloat(this.value)); this.value = S.declination; });
+  $('#declIn').addEventListener('change', function () { var v = parseDecl(this.value); if (isFinite(v)) setDecl(v); else toast('請輸入 −30 到 30 之間的數字'); this.value = S.declination; });
+  $('#declIn').addEventListener('keydown', function (e) { if (e.key === 'Enter') this.blur(); });
+  $('#declSign').addEventListener('click', function () { var t = $('#declIn'); if (document.activeElement === t && isFinite(parseDecl(t.value))) { setDecl(-parseDecl(t.value)); t.value = S.declination; } else setDecl(-S.declination); toast('磁偏角 ' + S.declination + '°（' + (S.declination < 0 ? '偏西' : S.declination > 0 ? '偏東' : '無偏角') + '）'); });
   $('#declMinus').addEventListener('click', function () { setDecl(S.declination - 0.5); });
   $('#declPlus').addEventListener('click', function () { setDecl(S.declination + 0.5); });
   $('#hubBtn').addEventListener('click', function () { S.mode = S.mode === 'deg' ? '16pt' : 'deg'; save(); draw(); toast(S.mode === 'deg' ? '以度數為主' : '以 16 方位為主'); });
@@ -403,14 +459,14 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     $('#turn').hidden = !on || !R.got;
   }
   $('#tgtBtn').addEventListener('click', function () {
-    if (S.target != null) { S.target = null; R.onTarget = false; }
-    else if (R.cur != null) { S.target = norm360(R.cur); R.onTarget = true; buzz(20); toast('已鎖定 ' + fmtHeading(toTrue(S.target, decl()))); }
+    if (S.target != null) { S.target = null; R.onTarget = false; R.live.key = ''; say('已清除目標'); }
+    else if (R.cur != null) { S.target = norm360(R.cur); R.onTarget = true; R.live.key = 'ok'; buzz(20); toast('已鎖定 ' + fmtHeading(toTrue(S.target, decl()))); }
     save(); draw();
   });
 
   // ---------- copy (long press) ----------
   var lp = 0;
-  function text() { if (R.cur == null) return ''; var h = toTrue(R.cur, decl()); return fmtHeading(h) + ' ' + dirName(h) + '（' + (S.trueNorth ? '真北' : '磁北') + '）'; }
+  function text() { if (R.cur == null || R.shownDeg == null) return ''; return R.shownDeg + '° ' + DIR16[R.shownDir] + '（' + (S.trueNorth ? '真北' : '磁北') + '）'; }
   function copy() {
     var t = text(); if (!t) return;
     var done = function () { toast('已複製：' + t); buzz(15); };
@@ -421,6 +477,8 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { ro.addEventListener(ev, function () { clearTimeout(lp); }); });
   ro.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   ro.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copy(); } });
+  // screen readers activate with a synthetic click (detail 0); a finger tap (detail 1) does nothing, long press copies
+  ro.addEventListener('click', function (e) { if (e.detail === 0) copy(); });
 
   // ---------- drawing ----------
   function setAcc(kind, t) { var c = $('#accChip'); c.className = 'chip' + (kind ? ' ' + kind : ''); if ($('#accText').textContent !== t) $('#accText').textContent = t; }
@@ -429,31 +487,49 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     l: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6M11 6l-6 6 6 6"/></svg>',
     ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
   };
+  // Screen readers: one polite region, spoken only when something meaningful changes (never per degree).
+  var liveT = 0;
+  function say(t) { var el = $('#live'); clearTimeout(liveT); el.textContent = ''; liveT = setTimeout(function () { el.textContent = t; }, 60); }
   function draw() {
     renderRef(); renderTarget();
-    $('#readout').classList.toggle('alt', S.mode === '16pt');
+    var ro = $('#readout');
+    ro.classList.toggle('alt', S.mode === '16pt');
     if (R.cur == null) return;
+    var now = performance.now();
     var dispUnwrapped = R.cur + decl(), h = norm360(dispUnwrapped);
     $('#rose').setAttribute('transform', 'rotate(' + (-dispUnwrapped).toFixed(2) + ' 150 150)');
-    $('#hDeg').textContent = fmtHeading(h);
-    $('#hName').textContent = dirName(h);
-    // tilt bubble in the hub: the dot drifts toward the high side
-    var bx = Math.max(-22, Math.min(22, -R.gamma / 30 * 22)), by = Math.max(-22, Math.min(22, -R.beta / 30 * 22));
+    if (R.shownDecl !== decl()) { R.shownDecl = decl(); R.shownDeg = R.shownDir = null; } // a settings jump is exact, not held
+    R.shownDeg = holdDeg(R.shownDeg, h); R.shownDir = holdDir(R.shownDir, h);
+    var degT = R.shownDeg + '°', dirT = DIR16[R.shownDir];
+    if ($('#hDeg').textContent !== degT) $('#hDeg').textContent = degT;
+    if ($('#hName').textContent !== dirT) $('#hName').textContent = dirT;
+    // the readout's accessible name carries the heading, refreshed at most once a second
+    var aria = '目前方位 ' + degT + ' ' + dirT + '（' + (S.trueNorth ? '真北' : '磁北') + '），按兩下複製';
+    if (aria !== R.ariaTxt && now - R.ariaT > 1000) { R.ariaTxt = aria; R.ariaT = now; ro.setAttribute('aria-label', aria); }
+    // tilt bubble in the hub: the dot drifts toward the high side (device axes turned to the screen's)
+    var sa = curScr() / DEG, gx = -R.gamma, gy = -R.beta;
+    var bx = (gx * Math.cos(sa) + gy * Math.sin(sa)) / 30 * 22, by = (-gx * Math.sin(sa) + gy * Math.cos(sa)) / 30 * 22;
     var bd = Math.hypot(bx, by); if (bd > 22) { bx *= 22 / bd; by *= 22 / bd; }
     $('#tiltDot').setAttribute('transform', 'translate(' + bx.toFixed(1) + ' ' + by.toFixed(1) + ')');
+    // sensor stalled (no event for 3 s while visible): dim the number instead of showing a frozen reading as live
+    var since = now - (R.lastEvt || R.stallFrom || now), stale = R.running && since > 3000;
+    ro.classList.toggle('stale', stale);
     // accuracy / tilt
     var jitter = circStd(R.hist.map(function (x) { return x[1]; }));
-    var tilt = tiltOf(R.beta, R.gamma);
-    if (performance.now() < R.calibUntil || needsCalibration(R.acc, jitter)) setAcc('warn', '需要校正：以 8 字形揮動手機');
-    else if (tilt > 45) setAcc('warn', '請將手機放平');
+    if (stale) setAcc('warn', '感測器沒有回應');
+    else if (now < R.calibUntil || needsCalibration(R.acc, jitter)) setAcc('warn', '需要校正：以 8 字形揮動手機');
+    else if (sideTilt(R.beta, R.gamma, curScr()) > 60 || tiltOf(R.beta, R.gamma) > 120) setAcc('warn', '請拿正手機，螢幕朝上');
     else setAcc('ok', '精度良好');
     if (S.target != null) {
-      var t = turnHint(S.target, norm360(R.cur)), tu = $('#turn');
+      var t = turnHint(S.target, norm360(R.cur), R.onTarget), tu = $('#turn');
       tu.className = 'turn' + (t.ok ? ' ok' : '');
       var html = t.ok ? ARROW.ok + t.text : t.d > 0 ? t.text + ARROW.r : ARROW.l + t.text;
       if (tu.dataset.h !== html) { tu.innerHTML = html; tu.dataset.h = html; }
       if (t.ok && !R.onTarget) buzz(40);
       R.onTarget = t.ok;
+      // announce reaching the target at once; otherwise the side and a 10° bucket, at most every 3 s
+      var key = t.ok ? 'ok' : (t.d > 0 ? 'r' : 'l') + Math.round(Math.abs(t.d) / 10);
+      if (key !== R.live.key && (t.ok || now - R.live.t > 3000)) { R.live.key = key; R.live.t = now; say(t.text); }
     }
   }
   function loop() {
@@ -461,6 +537,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     var f = function () { if (!R.running || document.visibilityState === 'hidden') return; draw(); R.raf = requestAnimationFrame(f); };
     R.raf = requestAnimationFrame(f);
   }
+  window.addEventListener('orientationchange', function () { R.lastT = 0; });
   draw();
   window.__compass = { R: R, S: S, setForceAngle: function (a) { R.forceAngle = a; }, draw: draw };
 })();

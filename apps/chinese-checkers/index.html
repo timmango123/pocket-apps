@@ -45,7 +45,7 @@ body.land #bar{left:auto;top:0;flex-direction:column;justify-content:center;widt
 body.land .tb{flex:none;width:70px;height:56px}
 body.land #status{left:calc(var(--sal) + 10px);right:auto;width:190px;bottom:calc(var(--sab) + 8px);white-space:normal;height:auto;line-height:1.35;text-align:left}
 /* overlays */
-.ov{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);background:#2a1a0c55;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .25s ease;touch-action:pan-y}
+.ov{position:fixed;inset:0;z-index:35;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:calc(var(--sat) + 16px) calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);background:#2a1a0c55;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);animation:fade .25s ease;touch-action:pan-y}
 @media (max-height:600px){.ov{align-items:flex-start}}
 @keyframes fade{from{opacity:0}}
 @keyframes pop{0%{transform:scale(.88);opacity:0}70%{transform:scale(1.02)}100%{transform:none;opacity:1}}
@@ -82,7 +82,7 @@ body.land #status{left:calc(var(--sal) + 10px);right:auto;width:190px;bottom:cal
 .trk::after{content:"";position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;box-shadow:0 2px 4px #0003;transition:transform .2s}
 .swr[aria-checked="true"] .trk{background:#2a9d8f}
 .swr[aria-checked="true"] .trk::after{transform:translateX(19px)}
-.toast{position:fixed;left:50%;top:calc(var(--sat) + 120px);transform:translateX(-50%);z-index:40;background:#2b1d10ee;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:700;max-width:88vw;text-align:center;pointer-events:none;transition:opacity .4s;box-shadow:0 8px 24px #0004}
+.toast{position:fixed;left:50%;top:calc(var(--sat) + 120px);transform:translateX(-50%);z-index:50;background:#2b1d10ee;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:700;max-width:88vw;text-align:center;pointer-events:none;transition:opacity .4s;box-shadow:0 8px 24px #0004}
 .rank{list-style:none;margin:10px 0 4px;padding:0;text-align:left}
 .rank li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:12px;font-size:15px;font-weight:700;animation:pop .4s both}
 .rank li:nth-child(odd){background:var(--card2)}
@@ -192,7 +192,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <h3>目標</h3><p>把你的 10 顆彈珠（快速模式 6 顆）全部移進正對面的三角，最先完成的人獲勝。</p>
   <h3>步行</h3><p>每回合動一顆：移到相鄰 6 個方向之一的空洞。</p>
   <h3>跳躍・搭橋</h3><p>沿直線跳過<b>緊鄰的一顆</b>棋子（任何顏色），落到正後方空洞；落點還能繼續跳，方向可以改變，想停就停。被跳的棋子不會被吃掉。步行與跳躍不能在同一手混用。</p>
-  <h3>操作</h3><p>點你的彈珠，亮點就是能到的位置，數字是連跳數。點亮點就自動沿最短跳法跳過去；長按亮點可預覽路徑（放開不會移動）。電腦走棋時點棋盤可快轉。</p>
+  <h3>操作</h3><p>點你的彈珠，亮點就是能到的位置，數字是連跳數。點亮點就自動沿最短跳法跳過去；點在洞與洞之間也會選到最近的彈珠或亮點。長按亮點可預覽路徑（放開不會移動，再點一下才走）。電腦走棋時點棋盤可快轉。</p>
   <h3>家規與防堵</h3><p>預設不能停在別人的三角（可以經過）。若對手棋子賴在你的目標三角不走，而你其餘棋子已填滿其他洞，也算完成；第 30 回合起仍留在出發三角的棋子會以虛線圈標示「佔位」。300 回合未分勝負，或連續 40 回合沒有人更接近目標（例如棋子被永久困住），就依到目標的剩餘距離排名。</p>
   <h3>鍵盤</h3><p>U 悔棋、H 提示、空白鍵快轉電腦動作、Esc 取消選取。</p>
  </div>
@@ -203,6 +203,12 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
  <h2>戰績・成就</h2>
  <div class="scroll" id="statsBody"></div>
  <button class="btn" data-close>關閉</button>
+</div></div>
+
+<div id="confirm" class="ov hidden"><div class="card">
+ <h2>放棄這局？</h2>
+ <p id="cMsg">目前的對局進度會被新局取代。</p>
+ <div class="row2"><button class="btn sec" id="cNo">取消</button><button class="btn" id="cYes">開新局</button></div>
 </div></div>
 
 <div id="toast" class="toast hidden"></div>
@@ -229,8 +235,8 @@ var CC = (function () {
   for (k = 0; k < 6; k++) { SMALL[k] = []; DIST[k] = new Int8Array(N); for (c = 0; c < N; c++) { DIST[k][c] = hd(c, APEX[k]); if (CORNER[c] === k && DIST[k][c] <= 2) SMALL[k].push(c); } }
   var SEATS = { 2: [0, 3], 3: [0, 2, 4], 4: [0, 2, 3, 5], 6: [0, 1, 2, 3, 4, 5] };
   var LEVELS = [
-    { name: '小孩', time: 50, err: 0.35, depth: 1 },
-    { name: '家人', time: 100, err: 0.20, depth: 1 },
+    { name: '小孩', time: 50, err: 0.45, depth: 1 },
+    { name: '家人', time: 100, err: 0.15, depth: 1 },
     { name: '朋友', time: 300, err: 0.08, depth: 2 },
     { name: '好手', time: 700, err: 0.02, depth: 3 },
     { name: '冠軍', time: 1200, err: 0, depth: 8 }
@@ -437,7 +443,7 @@ var CC = (function () {
   function think(src, p, level, o) {
     o = o || {};
     var st = load(src), I = info(st), b = st.board, rng = rngOf(o.seed || 7), Lv = LEVELS[level - 1] || LEVELS[2];
-    var tl = o.timeMs != null ? o.timeMs : Lv.time, t0 = now(), wq = level >= 4 ? 0.06 : 0, dd = I[p].d;
+    var tl = o.timeMs != null ? o.timeMs : Lv.time, t0 = now(), wq = [0, 0, 0.03, 0.045, 0.06, 0.06][level] || 0, dd = I[p].d;
     var L = gen(b, p, I[p].allow, []);
     if (!L.length) return null;
     for (var i = L.length - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), tmp = L[i]; L[i] = L[j]; L[j] = tmp; }
@@ -516,7 +522,8 @@ var CC = (function () {
 (function () {
 'use strict';
 const $ = id => document.getElementById(id);
-const COLORS = ['#e63946', '#ffb703', '#9b5de5', '#4361ee', '#2a9d8f', '#fb8500']; // by corner
+// by corner; purple and green are lighter than the classic set so 3- and 4-player games stay apart for red-green and blue-yellow colour blindness
+const COLORS = ['#e63946', '#ffb703', '#d6a2ff', '#4361ee', '#3cbfa5', '#fb8500'];
 const CNAMES = ['紅', '黃', '紫', '藍', '綠', '橙'];
 const SYMS = ['circle', 'tri', 'star', 'diamond', 'square', 'cross'];
 const LVN = CC.LEVELS.map(l => l.name);
@@ -528,12 +535,6 @@ const LS = {
   del(k) { try { localStorage.removeItem('ccheckers.' + k); } catch (e) {} }
 };
 const DEF = { np: 2, seats: [{ h: 1, l: 3 }, { h: 0, l: 3 }, { h: 0, l: 3 }, { h: 0, l: 3 }, { h: 0, l: 3 }, { h: 0, l: 3 }], quick: false, rule: true, firstEnds: false, cb: false, sound: true, speed: 1 };
-let S = LS.get('settings', null);
-S = Object.assign({}, DEF, S || {});
-if (!Array.isArray(S.seats) || S.seats.length < 6) S.seats = DEF.seats.map(x => Object.assign({}, x));
-const saveS = () => LS.set('settings', S);
-let STATS = Object.assign({ games: 0, wins: 0, byNp: {}, bestJump: 0, ach: {} }, LS.get('stats', {}) || {});
-const saveStats = () => LS.set('stats', STATS);
 const ACH = [
   ['first', '首勝', '第一次拿下第 1 名', '★'],
   ['jump8', '搭橋大師', '單手 8 連跳以上', '⤴'],
@@ -541,6 +542,62 @@ const ACH = [
   ['nowalk', '凌空完成', '整局零步行、只靠跳躍完成', '✈'],
   ['champ', '屠龍', '2 人局擊敗冠軍級電腦', '⚔']
 ];
+// everything read back from storage is checked field by field: a bad value falls back instead of breaking the page
+const UNDO_MAX = 60;
+const isObj = o => !!o && typeof o === 'object' && !Array.isArray(o);
+const cnt = v => Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0;
+const lvOk = v => Number.isInteger(v) && v >= 1 && v <= 5;
+function cleanSettings(o) {
+  o = isObj(o) ? o : {};
+  const r = { np: CC.SEATS[o.np] ? o.np : DEF.np };
+  r.seats = DEF.seats.map((d, i) => { const x = Array.isArray(o.seats) && isObj(o.seats[i]) ? o.seats[i] : d; return { h: x.h ? 1 : 0, l: lvOk(x.l) ? x.l : 3 }; });
+  ['quick', 'rule', 'firstEnds', 'cb', 'sound'].forEach(k => { r[k] = typeof o[k] === 'boolean' ? o[k] : DEF[k]; });
+  r.speed = [1, 2, 4].indexOf(o.speed) >= 0 ? o.speed : 1;
+  return r;
+}
+function cleanStats(o) {
+  o = isObj(o) ? o : {};
+  const r = { games: cnt(o.games), wins: cnt(o.wins), bestJump: Math.min(99, cnt(o.bestJump)), byNp: {}, ach: {} };
+  r.wins = Math.min(r.wins, r.games);
+  [2, 3, 4, 6].forEach(np => { const a = isObj(o.byNp) && o.byNp[np]; if (Array.isArray(a)) r.byNp[np] = Array.from({ length: np }, (_, i) => cnt(a[i])); });
+  if (isObj(o.ach)) ACH.forEach(a => { if (o.ach[a[0]]) r.ach[a[0]] = cnt(o.ach[a[0]]) || 1; });
+  return r;
+}
+// a stored board state: exact seat layout, piece counts and ranges, or null
+function cleanState(s) {
+  try {
+    if (!isObj(s)) return null;
+    const np = s.np, SE = CC.SEATS[np];
+    if (!SE || !Array.isArray(s.corners) || s.corners.join() !== SE.join()) return null;
+    if (!Array.isArray(s.board) || s.board.length !== N || !Array.isArray(s.fresh) || s.fresh.length !== N) return null;
+    const per = s.quick ? 6 : 10, n = new Array(np).fill(0);
+    for (let c = 0; c < N; c++) { const v = s.board[c], f = s.fresh[c]; if (!Number.isInteger(v) || v < -1 || v >= np || (f !== 0 && f !== 1) || (f && v < 0)) return null; if (v >= 0) n[v]++; }
+    if (n.some(x => x !== per)) return null;
+    if (!Array.isArray(s.fin) || s.fin.length !== np || s.fin.some(f => f !== 0 && f !== 1)) return null;
+    if (!Number.isInteger(s.turn) || s.turn < 0 || s.turn >= np || s.fin[s.turn]) return null;
+    if (!Number.isInteger(s.round) || s.round < 1 || s.round > 301) return null;
+    if (!Array.isArray(s.order) || s.order.length !== s.fin.filter(Boolean).length || s.order.some(q => !Number.isInteger(q) || q < 0 || q >= np || !s.fin[q])) return null;
+    if (s.over || (s.humans != null && !Array.isArray(s.humans)) || !(s.bestRem == null || Number.isFinite(s.bestRem)) || !(s.stall == null || cnt(s.stall) === s.stall)) return null;
+    const st = CC.load(s);
+    st.humans = st.humans.filter(h => Number.isInteger(h) && h >= 0 && h < np);
+    return st;
+  } catch (e) { return null; }
+}
+const cleanPst = (a, np) => Array.from({ length: np }, (_, i) => { const p = Array.isArray(a) && isObj(a[i]) ? a[i] : {}; return { steps: cnt(p.steps), jumps: cnt(p.jumps), maxJump: cnt(p.maxJump), moves: cnt(p.moves) }; });
+// the saved game (with its undo history) or null
+function cleanGame(sv) {
+  if (!isObj(sv)) return null;
+  const st = cleanState(sv.st); if (!st || !Array.isArray(sv.seats) || sv.seats.length !== st.np) return null;
+  const seats = sv.seats.map((x, i) => { x = isObj(x) ? x : {}; const k = st.corners[i]; return { human: !!x.human, level: lvOk(x.level) ? x.level : 3, corner: k, name: typeof x.name === 'string' && x.name ? x.name.slice(0, 12) : CNAMES[k] }; });
+  st.humans = seats.map((x, i) => x.human ? i : -1).filter(i => i >= 0);
+  const undo = [];
+  if (Array.isArray(sv.undo)) sv.undo.slice(-UNDO_MAX).forEach(u => { try { const o = typeof u === 'string' ? JSON.parse(u) : null; if (o && cleanState(o.st) && cleanState(o.st).np === st.np) undo.push(u); } catch (e) {} });
+  return { st, seats, pst: cleanPst(sv.pst, st.np), hints: cnt(sv.hints), undo, rec: !!sv.rec && st.humans.length === 1 };
+}
+let S = cleanSettings(LS.get('settings', null));
+const saveS = () => LS.set('settings', S);
+let STATS = cleanStats(LS.get('stats', null));
+const saveStats = () => LS.set('stats', STATS);
 // ---------- audio / haptics ----------
 let AC = null, master = null;
 function au() {
@@ -566,6 +623,10 @@ function buzz(ms) { if (!S.sound) return; try { navigator.vibrate && navigator.v
 // ---------- color helpers ----------
 function rgb(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
 function mix(h, h2, t) { const a = rgb(h), b = rgb(h2); return 'rgb(' + a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',') + ')'; }
+function lum(c) { return c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0); }
+function contrast(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+// a player colour used as text on a card: darkened (light theme) or lightened (dark theme) until it reads at 4.5:1
+function ink(h) { const bg = rgb(dark ? '#2a2119' : '#fffaf1'), to = dark ? 255 : 0; let c = rgb(h); for (let i = 0; i < 30 && contrast(c, bg) < 4.5; i++) c = c.map(v => Math.round(v + (to - v) * 0.1)); return 'rgb(' + c.join(',') + ')'; }
 function rgba(h, a) { const c = rgb(h); return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
 // ---------- canvas / layout ----------
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -588,7 +649,7 @@ function layout() {
   s = Math.max(12, Math.min((aw - 8) / 14.1, (ah - 6) / 16.2));
   cx = ax + aw / 2; cy = ay + ah / 2;
   sprites = {}; boardKey = '';
-  updPos();
+  updPos(); kick();
 }
 function updPos() { const c = Math.cos(rot), sn = Math.sin(rot); for (let i = 0; i < N; i++) { const x = CC.PX[i], y = CC.PY[i]; SX[i] = cx + s * (x * c - y * sn); SY[i] = cy + s * (x * sn + y * c); } }
 function apexPt(k, ext) { const c = CC.APEX[k], x = CC.PX[c], y = CC.PY[c], L = Math.hypot(x, y); return [x * (L + ext) / L, y * (L + ext) / L]; }
@@ -716,7 +777,7 @@ function drawMarble(g, corner, x, y, R, sc, lift, alpha) {
 let G = null;            // { st, seats, pst, hints, undo }
 let phase = 'idle';      // idle | human | think | anim | wait | over
 let sel = -1, dests = null, selT0 = 0, preview = -1, hint = null, anim = null, flow = 0, ff = false;
-let trail = null, lastFrom = -1, particles = [], bounces = {}, squatShown = false;
+let trail = null, lastFrom = -1, particles = [], bounces = {}, squatShown = false, hintBusy = false;
 function seatName(st, i, humansN) {
   const k = st.corners[i], sd = S.seats[i];
   if (sd.h) return humansN === 1 ? '你' : CNAMES[k] + '方';
@@ -731,18 +792,15 @@ function newGame() {
   G = { st, seats, pst: seats.map(() => ({ steps: 0, jumps: 0, maxJump: 0, moves: 0 })), hints: 0, undo: [], rec: humans.length === 1 };
   startGame(true);
 }
+function savedGame() { const g = cleanGame(LS.get('game', null)); if (!g) LS.del('game'); return g; }
 function resumeGame() {
-  const sv = LS.get('game', null);
-  if (!sv) return newGame();
-  try {
-    const st = CC.load(sv.st);
-    G = { st, seats: sv.seats, pst: sv.pst, hints: sv.hints || 0, undo: [], rec: !!sv.rec };
-    startGame(false);
-  } catch (e) { LS.del('game'); newGame(); }
+  const g = savedGame();
+  if (!g) return newGame();
+  G = g; startGame(false);
 }
 function startGame(fresh) {
   flow++; anim = null; sel = -1; dests = null; hint = null; preview = -1; trail = null; lastFrom = -1; particles = []; bounces = {}; ff = false; squatShown = false;
-  ['setup', 'menu', 'result', 'rules', 'stats'].forEach(id => $(id).classList.add('hidden'));
+  ['setup', 'menu', 'result', 'rules', 'stats', 'confirm'].forEach(id => $(id).classList.add('hidden'));
   ['top', 'status', 'bar'].forEach(id => $(id).classList.remove('hidden'));
   $('bResult').classList.add('hidden');
   buildChips();
@@ -767,6 +825,7 @@ function buildChips() {
   updHud();
 }
 function updHud() {
+  kick();
   if (!G) return;
   const st = G.st;
   G.seats.forEach((x, i) => {
@@ -777,7 +836,8 @@ function updHud() {
     const pl = st.order.indexOf(i);
     const pe = d.querySelector('.pl'); pe.textContent = pl >= 0 ? '第' + (pl + 1) + '名' : CC.remaining(st, i); pe.classList.toggle('r', pl < 0);
   });
-  $('bUndo').disabled = !G.undo.length;
+  $('bUndo').disabled = !G.undo.length || !!st.over;
+  $('bHint').disabled = phase !== 'human' || hintBusy;
   $('spd').textContent = S.speed + '×';
   let t = '';
   const cur = G.seats[st.turn];
@@ -790,7 +850,7 @@ function snapshot() { return JSON.stringify({ st: CC.save(G.st), pst: G.pst, hin
 function persist() {
   if (!G) return;
   if (G.st.over) { LS.del('game'); return; }
-  LS.set('game', { st: CC.save(G.st), seats: G.seats, pst: G.pst, hints: G.hints, rec: G.rec });
+  LS.set('game', { st: CC.save(G.st), seats: G.seats, pst: G.pst, hints: G.hints, rec: G.rec, undo: G.undo });
 }
 function humanCount() { return G.seats.filter(x => x.human).length; }
 function rotateTo(k) {
@@ -803,7 +863,7 @@ function nextTurn() {
   if (!G) return;
   const st = G.st, my = flow;
   updHud(); persist();
-  if (st.over) { phase = 'over'; updHud(); setTimeout(() => { if (my === flow) showResult(); }, 650); return; }
+  if (st.over) { phase = 'over'; updHud(); recordEnd(); setTimeout(() => { if (my === flow) showResult(); }, 650); return; }
   const p = st.turn, seat = G.seats[p];
   if (!CC.moves(st, p).length) { toast(seat.name + ' 無棋可走，跳過'); CC.pass(st); setTimeout(() => { if (my === flow) nextTurn(); }, 700); return; }
   if (st.round >= 30 && !squatShown && G.st.corners.some((k, i) => CC.TRI[k].some(c => CC.squatter(st, c) && st.board[c] === i) && st.corners.indexOf((k + 3) % 6) >= 0)) { squatShown = true; toast('第 30 回合：留在出發三角的彈珠標示為「佔位」'); }
@@ -868,6 +928,7 @@ function stepAnim(T) {
 function finishMove() {
   const a = anim; anim = null;
   const st = G.st, pst = G.pst[a.p], my = flow;
+  if (a.human) humanDoneT = performance.now();
   const corner = G.seats[a.p].corner;
   clink(); buzz(10);
   pst.moves++;
@@ -914,7 +975,12 @@ function frame(T) {
   if (G) draw(T);
   drawParticles();
   lastT = T;
-  raf = requestAnimationFrame(frame);
+  // keep drawing only while something moves or pulses; every state change calls kick() (via updHud) to wake it up
+  if (busy(T)) raf = requestAnimationFrame(frame);
+}
+function busy(T) {
+  return !!(anim || press || rotT0 >= 0 || particles.length || sel >= 0 || hint || preview >= 0 || phase === 'think' || phase === 'wait' ||
+    (trail && T - trail.t0 < 2700) || Object.keys(bounces).length);
 }
 function draw(T) {
   buildBoard();
@@ -958,7 +1024,8 @@ function draw(T) {
       } else {
         const rr = s * 0.17 * 1.2 * u * (hot ? 1.3 : 1);
         ctx.fillStyle = rgba(col, 0.25); ctx.beginPath(); ctx.arc(x, y, rr * 1.8, 0, 6.283); ctx.fill();
-        ctx.fillStyle = dark ? 'rgba(255,255,255,.85)' : rgba(col, 0.85); ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.283); ctx.fill();
+        ctx.fillStyle = dark ? 'rgba(255,255,255,.85)' : rgba(col, 0.9); ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.283); ctx.fill();
+        if (!dark && u >= 1) { ctx.strokeStyle = 'rgba(58,42,27,.6)'; ctx.lineWidth = 1.2; ctx.stroke(); } // keeps yellow and lavender dots readable on light wood
       }
     }
   }
@@ -1002,69 +1069,90 @@ function drawParticles() {
   ctx.restore();
 }
 // ---------- input ----------
-function pick(x, y, preferDest) {
-  let best = -1, bd = 1e9;
-  for (let c = 0; c < N; c++) { const d = (SX[c] - x) ** 2 + (SY[c] - y) ** 2; if (d < bd) { bd = d; best = c; } }
-  const lim = Math.max(16, s * (preferDest ? 0.62 : 0.55));
+// Holes sit only ~25-30px apart on a phone (far under 44px), so a tap goes to the nearest hole that means something right now —
+// one of your marbles or a lit destination — up to about one hole spacing away; empty or foreign holes in between never swallow it.
+// A tap squarely inside some other hole (within its drawn radius) still means that hole, so nothing moves by accident.
+function pick(x, y, want) {
+  let best = -1, bd = 1e9, near = -1, nd = 1e9;
+  for (let c = 0; c < N; c++) {
+    const d = (SX[c] - x) ** 2 + (SY[c] - y) ** 2;
+    if (d < nd) { nd = d; near = c; }
+    if (want(c) && d < bd) { bd = d; best = c; }
+  }
+  if (near !== best && nd <= (s * 0.28) ** 2) return -1;
+  const lim = Math.max(22, s * 0.95);
   return bd <= lim * lim ? best : -1;
 }
 function select(c) {
   const st = G.st, p = st.turn;
-  if (c === sel) { sel = -1; dests = null; updHud(); return; }
+  if (c === sel) { sel = -1; dests = null; hint = null; updHud(); return; }
   sel = c; dests = CC.paths(st, p, c); selT0 = performance.now(); preview = -1; tick(); buzz(5);
   if (!Object.keys(dests).length) toast('這顆暫時沒有地方可走');
   updHud();
 }
-let press = null, lpTimer = 0;
+let press = null, lpTimer = 0, commitT = -1e9, humanDoneT = -1e9;
 cv.addEventListener('pointerdown', e => {
-  au();
+  au(); kick();
   if (!G) return;
-  if (phase === 'think' || phase === 'wait' || (phase === 'anim' && anim && !anim.human)) { ff = true; return; }
-  if (phase !== 'human' || rotT0 >= 0 && false) return;
-  const st = G.st, x = e.clientX, y = e.clientY;
-  let c = -1;
-  if (sel >= 0 && dests) { const d = pick(x, y, true); if (d >= 0 && dests[d]) c = d; }
-  if (c >= 0) {
-    press = { c, x, y, long: false };
-    clearTimeout(lpTimer);
-    lpTimer = setTimeout(() => { if (press && press.c === c) { press.long = true; preview = c; buzz(6); tick(); } }, 380);
+  if (phase === 'think' || phase === 'wait' || (phase === 'anim' && anim && !anim.human)) {
+    // fast-forward the computer — but not from the second tap of a quick double tap on your own move
+    const t = performance.now(), seat = G.seats[G.st.turn];
+    if (seat && !seat.human && t - commitT > 700 && t - humanDoneT > 400) ff = true;
     return;
   }
-  c = pick(x, y, false);
-  if (c >= 0 && st.board[c] === st.turn) { select(c); return; }
-  if (sel >= 0) { sel = -1; dests = null; preview = -1; updHud(); }
+  if (phase !== 'human') return;
+  if (press && press.id !== e.pointerId) return; // a second finger while one is down is ignored
+  const st = G.st, x = e.clientX, y = e.clientY;
+  if (e.pointerType !== 'mouse') preview = -1;
+  const c = pick(x, y, q => st.board[q] === st.turn || (sel >= 0 && !!dests && !!dests[q]));
+  if (c >= 0 && st.board[c] !== st.turn) {
+    press = { c, x, y, id: e.pointerId, long: false };
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => { if (press && press.c === c) { press.long = true; preview = c; buzz(6); tick(); kick(); } }, 420);
+    return;
+  }
+  if (c >= 0) { select(c); return; }
+  if (sel >= 0) { sel = -1; dests = null; preview = -1; hint = null; updHud(); }
 });
-cv.addEventListener('pointerup', () => {
+addEventListener('pointerup', e => {
+  if (!press || press.id !== e.pointerId) return;
   clearTimeout(lpTimer);
-  if (!press) return;
   const pr = press; press = null;
-  if (pr.long) { preview = -1; return; }
+  if (pr.long) return; // the previewed path stays on screen; tap the spot again to go
   if (phase === 'human' && sel >= 0 && dests && dests[pr.c]) commitMove(sel, pr.c);
 });
-cv.addEventListener('pointercancel', () => { clearTimeout(lpTimer); press = null; preview = -1; });
+addEventListener('pointercancel', e => { if (!press || press.id !== e.pointerId) return; clearTimeout(lpTimer); press = null; preview = -1; });
 cv.addEventListener('pointermove', e => {
+  if (press && press.id === e.pointerId) {
+    // sliding well away from the destination cancels the move instead of committing it on release
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > Math.max(24, s * 0.9)) { clearTimeout(lpTimer); press = null; preview = -1; }
+    return;
+  }
   if (e.pointerType !== 'mouse' || phase !== 'human' || !dests || press) return;
-  const d = pick(e.clientX, e.clientY, true); const nv = d >= 0 && dests[d] ? d : -1;
-  if (nv !== preview) preview = nv;
+  const d = pick(e.clientX, e.clientY, q => !!dests[q]); const nv = d >= 0 ? d : -1;
+  if (nv !== preview) { preview = nv; kick(); }
 });
 function commitMove(from, to) {
-  G.undo.push(snapshot()); if (G.undo.length > 60) G.undo.shift();
+  commitT = performance.now();
+  G.undo.push(snapshot()); if (G.undo.length > UNDO_MAX) G.undo.shift();
   startMove(G.st.turn, from, to, true);
 }
 function undo() {
   if (!G || !G.undo.length || (anim && anim.human) || G.st.over) return;
   flow++; anim = null; ff = false;
-  const sn = JSON.parse(G.undo.pop());
-  G.st = CC.load(sn.st); G.pst = sn.pst; G.hints = sn.hints;
+  let sn = null, st = null;
+  try { sn = JSON.parse(G.undo.pop()); st = cleanState(sn.st); } catch (e) {}
+  if (!st || st.np !== G.st.np) { updHud(); nextTurn(); return; }
+  st.humans = G.st.humans; G.st = st; G.pst = cleanPst(sn.pst, st.np); G.hints = cnt(sn.hints);
   sel = -1; dests = null; hint = null; preview = -1; trail = null; lastFrom = -1;
   tick(); toast('已悔棋'); nextTurn();
 }
 function doHint() {
-  if (!G || phase !== 'human') return;
+  if (!G || phase !== 'human' || hintBusy) return;
   const p = G.st.turn, my = flow;
-  $('bHint').disabled = true; toast('思考建議中…', 900);
+  hintBusy = true; updHud(); toast('思考建議中…', 900);
   ask(p, 4, 700, r => {
-    $('bHint').disabled = false;
+    hintBusy = false; updHud();
     if (my !== flow || phase !== 'human' || !r) return;
     G.hints++;
     const ps = CC.paths(G.st, p, r.from), inf = ps[r.to]; if (!inf) return;
@@ -1092,7 +1180,6 @@ function showResult() {
   const winner = G.seats[rk[0]];
   $('rMedal').textContent = st.over.reason === 'limit' ? '300 回合結束' : (place === 1 ? 'VICTORY' : '對局結束');
   $('rTitle').textContent = me >= 0 ? (place === 1 ? '你贏了！' : '第 ' + place + ' 名') : winner.name + ' 獲勝！';
-  $('rTitle').style.color = COLORS[winner.corner];
   const sub = { stall: '40 回合無人前進，依剩餘距離排名', done: '全部名次已分出', first: '首位完成即結束，其餘依剩餘距離排名', humans: '玩家都已完成，其餘依剩餘距離排名', limit: '依到目標的剩餘距離總和排名' }[st.over.reason];
   $('rSub').textContent = sub || '';
   const ol = $('rList'); ol.innerHTML = '';
@@ -1105,13 +1192,19 @@ function showResult() {
     ol.appendChild(li);
   });
   const ps = me >= 0 ? G.pst[me] : G.pst[rk[0]];
+  $('rTitle').style.color = ink(COLORS[winner.corner]);
   $('rStats').innerHTML = '<div><b>' + st.round + '</b>回合</div><div><b>' + ps.moves + '</b>手數</div><div><b>' + ps.maxJump + '</b>最長連跳</div>';
-  if (me >= 0) {
-    if (place === 1) { confetti(120); chord(true); } else sadTune();
-    if (G.rec && !G.recorded) recordStats(me, place);
-  } else { confetti(60); chord(false); }
+  if (me >= 0) { if (place === 1) { confetti(120); chord(true); } else sadTune(); }
+  else { confetti(60); chord(false); }
   $('result').classList.remove('hidden');
   $('bResult').classList.add('hidden');
+  kick();
+}
+// stats are written the moment the game ends (not when the result card shows), once per game
+function recordEnd() {
+  if (!G || !G.st.over || !G.rec || G.recorded) return;
+  const me = G.seats.findIndex(x => x.human); if (me < 0) return;
+  recordStats(me, G.st.over.ranking.indexOf(me) + 1);
 }
 function recordStats(me, place) {
   G.recorded = true;
@@ -1131,25 +1224,36 @@ function unlock(id) {
 }
 $('rAgain').onclick = () => { newGame(); };
 $('rSetup').onclick = () => openSetup();
-$('rView').onclick = () => { $('result').classList.add('hidden'); $('bResult').classList.remove('hidden'); };
+$('rView').onclick = () => { $('result').classList.add('hidden'); $('bResult').classList.remove('hidden'); kick(); };
 $('bResult').onclick = () => { $('bResult').classList.add('hidden'); $('result').classList.remove('hidden'); };
 // ---------- menus ----------
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('.ov').classList.add('hidden'));
 ['menu', 'rules', 'stats'].forEach(id => $(id).addEventListener('pointerdown', e => { if (e.target.id === id) $(id).classList.add('hidden'); }));
 $('mBack').onclick = () => $('menu').classList.add('hidden');
-$('mRestart').onclick = () => { newGame(); };
+// a game with moves in it is only thrown away after a confirmation
+function inProgress() { return !!(G && !G.st.over && G.pst.some(p => p.moves > 0)); }
+let confirmGo = null;
+function askAbandon(msg, go) {
+  if (!msg) { go(); return; }
+  $('cMsg').textContent = msg; confirmGo = go; $('confirm').classList.remove('hidden');
+}
+$('cNo').onclick = () => { confirmGo = null; $('confirm').classList.add('hidden'); };
+$('cYes').onclick = () => { const go = confirmGo; confirmGo = null; $('confirm').classList.add('hidden'); if (go) go(); };
+$('confirm').addEventListener('pointerdown', e => { if (e.target.id === 'confirm') $('cNo').onclick(); });
+$('mRestart').onclick = () => askAbandon(inProgress() ? '第 ' + G.st.round + ' 回合的進度會被新局取代，無法復原。' : '', () => { LS.del('game'); newGame(); });
 $('mSetup').onclick = () => openSetup();
 $('mRules').onclick = () => $('rules').classList.remove('hidden');
 $('mStats').onclick = showStats;
 function swSet(el, v) { el.setAttribute('aria-checked', v ? 'true' : 'false'); }
 function syncSw() { swSet($('oQuick'), S.quick); swSet($('oRule'), S.rule); swSet($('oFirst'), S.firstEnds); swSet($('oCb'), S.cb); swSet($('oSnd'), S.sound); swSet($('mCb'), S.cb); swSet($('mSnd'), S.sound); }
-function bindSw(id, key, after) { $(id).onclick = () => { S[key] = !S[key]; saveS(); syncSw(); tick(); after && after(); }; }
+function bindSw(id, key, after) { $(id).onclick = () => { S[key] = !S[key]; saveS(); syncSw(); tick(); kick(); after && after(); }; }
 bindSw('oQuick', 'quick', drawLogo); bindSw('oRule', 'rule'); bindSw('oFirst', 'firstEnds'); bindSw('oCb', 'cb', drawLogo); bindSw('oSnd', 'sound'); bindSw('mCb', 'cb'); bindSw('mSnd', 'sound');
 function openSetup() {
-  flow++; anim = null; phase = 'idle';
-  ['menu', 'result', 'rules', 'stats'].forEach(id => $(id).classList.add('hidden'));
+  if (G && anim) finishMove();
+  flow++; anim = null; phase = 'idle'; press = null; sel = -1; dests = null; hint = null; preview = -1;
+  ['menu', 'result', 'rules', 'stats', 'confirm'].forEach(id => $(id).classList.add('hidden'));
   ['top', 'status', 'bar', 'bResult'].forEach(id => $(id).classList.add('hidden'));
-  if (G && G.st.over) LS.del('game');
+  if (G && G.st.over) LS.del('game'); else if (G) persist();
   G = null; layout();
   renderSetup(); $('setup').classList.remove('hidden'); $('setup').scrollTop = 0;
 }
@@ -1169,11 +1273,14 @@ function renderSetup() {
     lv.querySelectorAll('button').forEach(b => b.onclick = () => { sd.l = Math.max(1, Math.min(5, sd.l + +b.dataset.d)); saveS(); tick(); renderSetup(); });
     box.appendChild(row);
   }
-  $('bResume').classList.toggle('hidden', !LS.get('game', null));
+  $('bResume').classList.toggle('hidden', !savedGame());
   drawLogo();
 }
 document.querySelectorAll('#sNp button').forEach(b => b.onclick = () => { S.np = +b.dataset.n; saveS(); tick(); renderSetup(); });
-$('bStart').onclick = () => { au(); LS.del('game'); newGame(); };
+$('bStart').onclick = () => {
+  au(); const sv = savedGame();
+  askAbandon(sv && sv.pst.some(p => p.moves > 0) ? '上一局（第 ' + sv.st.round + ' 回合）的進度會被新局取代，無法復原。' : '', () => { LS.del('game'); newGame(); });
+};
 $('bResume').onclick = () => { au(); resumeGame(); };
 $('bRules').onclick = () => $('rules').classList.remove('hidden');
 $('bStats').onclick = showStats;
@@ -1209,15 +1316,23 @@ let toastT = 0;
 function toast(msg, ms) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => { t.style.opacity = 0; toastT = setTimeout(() => t.classList.add('hidden'), 400); }, ms || 1500); }
 // ---------- lifecycle ----------
 addEventListener('resize', () => { layout(); if (!G) drawLogo(); });
+// leaving the page (app switch, tab close, reload) lands a move that is still animating and saves at once
+function flush() {
+  if (!G) return;
+  if (anim) finishMove();
+  persist();
+}
+addEventListener('pagehide', flush);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; if (AC && AC.state === 'running') AC.suspend().catch(() => {}); }
+  if (document.hidden) { flush(); if (raf) cancelAnimationFrame(raf); raf = 0; if (AC && AC.state === 'running') AC.suspend().catch(() => {}); }
   else { if (AC && S.sound) AC.resume().catch(() => {}); kick(); }
 });
 if (window.matchMedia) { const mq = matchMedia('(prefers-color-scheme: dark)'); const f = () => { layout(); if (!G) drawLogo(); }; mq.addEventListener ? mq.addEventListener('change', f) : mq.addListener(f); }
 // hooks for automated verification
 window.__game = {
-  state: () => G ? { phase, turn: G.st.turn, human: !!(G.seats[G.st.turn] && G.seats[G.st.turn].human), anim: !!anim, over: G.st.over, st: CC.save(G.st), resultVisible: !$('result').classList.contains('hidden'), pst: G.pst, sel, hintTo: hint ? hint.to : -1 } : { phase: 'setup' },
-  cellXY: c => [SX[c], SY[c]]
+  state: () => G ? { phase, turn: G.st.turn, human: !!(G.seats[G.st.turn] && G.seats[G.st.turn].human), anim: !!anim, over: G.st.over, st: CC.save(G.st), resultVisible: !$('result').classList.contains('hidden'), pst: G.pst, sel, hintTo: hint ? hint.to : -1, ff, preview, undo: G.undo.length, dests: dests ? Object.keys(dests).map(Number) : [], s, raf: !!raf, rec: G.rec, recorded: !!G.recorded } : { phase: 'setup', raf: !!raf },
+  cellXY: c => [SX[c], SY[c]],
+  inkContrast: () => COLORS.map(c => { const m = ink(c).match(/\d+/g).map(Number); return contrast(m, rgb(dark ? '#2a2119' : '#fffaf1')); })
 };
 layout(); renderSetup(); kick();
 })();

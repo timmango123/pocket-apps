@@ -1,9 +1,10 @@
 // Checks the game's own generator (extracted via CORE markers):
-// ΔE correctness, quantization (8-bit) still differs, ΔE within [0.8,1.25]×target, odd position uniform, difficulty monotone.
+// CIEDE2000 correctness, quantization (8-bit) still differs, ΔE00 within [0.85,1.18]×target, red-green CVD keeps ≥ half,
+// gradient boards keep the odd cell the clear outlier, odd position uniform, difficulty monotone.
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const src = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
-const C = new Function(src + '\nreturn {genQuestion, rgb8ToLab, deltaE, targetDE, kFor, mulberry32, rgbToLab, labToRgb, diffLevel, gradOff, hueRot};')();
+const C = new Function(src + '\nreturn {genQuestion, rgb8ToLab, deltaE, de2000, cvdDE, localDev, targetDE, kFor, mulberry32, rgbToLab, labToRgb, diffLevel, gradOff, hueRot};')();
 let fail = 0;
 // 1) Lab conversion sanity: white, black, known reference (sRGB red -> L 53.24 a 80.09 b 67.20)
 const near = (a, b, e) => Math.abs(a - b) < e;
@@ -13,30 +14,37 @@ if (!(near(white[0], 100, 0.01) && near(white[1], 0, 0.01) && near(white[2], 0, 
 let rt = 0; for (let i = 0; i < 2000; i++) { const c = [Math.random(), Math.random(), Math.random()]; const b = C.labToRgb(C.rgbToLab(c)); rt = Math.max(rt, ...b.map((v, j) => Math.abs(v - c[j]))); }
 console.log('Lab round-trip max error', rt.toExponential(2));
 if (rt > 1e-5) fail++;
+// CIEDE2000 against Sharma, Wu & Dalal (2005) reference pairs
+for (const [a, b, e] of [[[50, 2.6772, -79.7751], [50, 0, -82.7485], 2.0425], [[50, 0, 0], [50, -1, 2], 2.3669], [[50, 2.5, 0], [73, 25, -18], 27.1492],
+  [[60.2574, -34.0099, 36.2677], [60.4626, -34.1751, 39.4387], 1.2644], [[22.7233, 20.0904, -46.6940], [23.0331, 14.9730, -42.5619], 2.0373], [[2.0776, 0.0795, -1.1350], [0.9033, -0.0636, -0.5514], 0.9082]])
+  if (!near(C.de2000(a, b), e, 1e-4)) { fail++; console.log('de2000 wrong', a, b, C.de2000(a, b), e); }
 // 2) every question q=0..80 per mode, many seeds
 const modes = ['classic', 'hue', 'gray'];
 const stats = {};
 for (const mode of modes) {
-  let n = 0, minRatio = 9, maxRatio = 0, sameQuant = 0, deErr = 0, grayBad = 0;
+  let n = 0, minRatio = 9, maxRatio = 0, sameQuant = 0, deErr = 0, grayBad = 0, cvdMin = 9, outlierBad = 0, lBad = 0;
   for (let seed = 1; seed <= 60; seed++) {
     const rng = C.mulberry32(seed * 7919);
     for (let q = 0; q <= 80; q++) {
       const Q = C.genQuestion(q, rng, { mode, kmax: 9 });
       n++;
       const ref = Q.grad ? Q.base : Q.cells[(Q.odd + 1) % Q.n];
-      const de = C.deltaE(C.rgb8ToLab(Q.diff), C.rgb8ToLab(Q.base));
+      const de = C.de2000(C.rgb8ToLab(Q.diff), C.rgb8ToLab(Q.base));
       if (Math.abs(de - Q.dE) > 1e-9) deErr++;
       if (!Q.grad && ref.join() !== Q.base.join()) deErr++;
       if (Q.diff.every((v, i) => v === Q.base[i])) sameQuant++;
       const r = de / Q.target; minRatio = Math.min(minRatio, r); maxRatio = Math.max(maxRatio, r);
       if (mode === 'gray' && (Q.diff[0] !== Q.diff[1] || Q.diff[1] !== Q.diff[2] || Q.base[0] !== Q.base[2])) grayBad++;
       if (mode === 'hue' && Math.abs(C.rgb8ToLab(Q.diff)[0] - C.rgb8ToLab(Q.base)[0]) > 0.5 * de + 0.6) grayBad++;
+      if (mode !== 'gray') cvdMin = Math.min(cvdMin, C.cvdDE(Q.base, Q.diff) / Q.target);
+      if (Q.grad) { const dev = C.localDev(Q.cells, Q.k, Q.odd); if (dev.some((d, i) => i !== Q.odd && d * 2 > dev[Q.odd])) outlierBad++; }
+      const bl = C.rgb8ToLab(Q.cells[(Q.odd + 1) % Q.n])[0]; if (bl < 39 || bl > 83) lBad++;
       // odd cell must be the unique outlier vs its local reference: all other cells differ from odd by more than... (non-grad: all identical)
       if (!Q.grad) { for (let i = 0; i < Q.n; i++) if (i !== Q.odd && Q.cells[i].join() !== Q.base.join()) deErr++; }
     }
   }
-  stats[mode] = { questions: n, dE_err: deErr, quantSame: sameQuant, ratioMin: minRatio.toFixed(3), ratioMax: maxRatio.toFixed(3), modeViolations: grayBad };
-  if (deErr || sameQuant || minRatio < 0.8 || maxRatio > 1.25 || grayBad) fail++;
+  stats[mode] = { questions: n, dE_err: deErr, quantSame: sameQuant, ratioMin: minRatio.toFixed(3), ratioMax: maxRatio.toFixed(3), modeViolations: grayBad, cvdMin: mode === 'gray' ? '-' : cvdMin.toFixed(2), outlierBad, lightnessOut: lBad };
+  if (deErr || sameQuant || minRatio < 0.85 || maxRatio > 1.18 || grayBad || (mode !== 'gray' && cvdMin < 0.5) || outlierBad || lBad) fail++;
 }
 console.table(stats);
 // 3) odd position uniformity (chi-square) on k=6 boards (q=12..14)

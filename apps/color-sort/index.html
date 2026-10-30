@@ -13,14 +13,14 @@
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
 }
 :root[data-theme="light"]{
-  --bg:#f3f1ec; --ink:#3a2c22; --ink2:#7a6655; --card:#fffdf9f4; --card2:#f1ebe2; --chip:#fffdf9e8; --line:#ddd2c4;
-  --btn1:#f4a261; --btn2:#e07b35; --btnsh:#b8601f; --btnink:#fff; --sec:#efe8de; --secsh:#d6cabb; --gold:#f2b51d; --dim:#cbbfb0;
+  --bg:#f3f1ec; --ink:#3a2c22; --ink2:#6b5848; --card:#fffdf9f4; --card2:#f1ebe2; --chip:#fffdf9e8; --line:#ddd2c4;
+  --btn1:#f4a261; --btn2:#e07b35; --btnsh:#b8601f; --btnink:#3a1a06; --sec:#efe8de; --secsh:#d6cabb; --gold:#f2b51d; --dim:#cbbfb0;
   --ov:#e9e4dcb8; --good:#2f9e55;
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
-    --bg:#f3f1ec; --ink:#3a2c22; --ink2:#7a6655; --card:#fffdf9f4; --card2:#f1ebe2; --chip:#fffdf9e8; --line:#ddd2c4;
-    --btn1:#f4a261; --btn2:#e07b35; --btnsh:#b8601f; --btnink:#fff; --sec:#efe8de; --secsh:#d6cabb; --gold:#f2b51d; --dim:#cbbfb0;
+    --bg:#f3f1ec; --ink:#3a2c22; --ink2:#6b5848; --card:#fffdf9f4; --card2:#f1ebe2; --chip:#fffdf9e8; --line:#ddd2c4;
+    --btn1:#f4a261; --btn2:#e07b35; --btnsh:#b8601f; --btnink:#3a1a06; --sec:#efe8de; --secsh:#d6cabb; --gold:#f2b51d; --dim:#cbbfb0;
     --ov:#e9e4dcb8; --good:#2f9e55;
   }
 }
@@ -158,6 +158,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </head>
 <body>
 <canvas id="cv"></canvas>
+<div id="safe" aria-hidden="true" style="position:fixed;visibility:hidden;pointer-events:none;padding:0 var(--sar) 0 var(--sal)"></div>
 
 <div class="hud hidden" id="hud">
   <button class="ibtn" id="bMenu" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
@@ -226,10 +227,11 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </div></div>
 
 <div class="ov hidden" id="stuck"><div class="card">
-  <h2>無路可走</h2>
-  <p>已經沒有任何合法的倒法了。<br>悔棋幾步換條路，或整關重來。</p>
+  <h2 id="kTitle">無路可走</h2>
+  <p id="kMsg">已經沒有任何合法的倒法了。<br>悔棋幾步換條路，或整關重來。</p>
   <div class="row2"><button class="btn" id="kUndo">悔棋一步</button><button class="btn sec" id="kRestart">重來</button></div>
   <button class="btn sec" id="kTube">加一支小試管（最多 ★）</button>
+  <button class="btn sec" id="kLook">先看看局面</button>
 </div></div>
 
 <div class="ov hidden" id="help"><div class="card">
@@ -324,7 +326,9 @@ function csSolve(S0, opt) {
         if (b === a || sl[b] || fz[b] > sc) continue;
         var B = ts[b], free = cap[b] - B.length; if (free <= 0) continue;
         if (B.length && B[B.length - 1] !== c) continue;
-        if (!B.length && uni && cap[b] <= cap[a]) continue; // moving a pure tube to an empty one is pointless
+        // moving a pure tube into an empty one of the same size, or splitting it into a smaller one, is pointless
+        // (moving it whole into a smaller empty tube is not: it frees the bigger tube)
+        if (!B.length && uni && (cap[b] === cap[a] || (cap[b] < cap[a] && run > cap[b]))) continue;
         var n = Math.min(run, free);
         var nt = ts.slice(); nt[a] = A.slice(0, A.length - n); nt[b] = B + c.repeat(n);
         var k = key(nt), g = nd.g + 1, ex = seen.get(k);
@@ -466,14 +470,41 @@ function obj(v){ return v && typeof v === 'object' && !Array.isArray(v) ? v : {}
 var $ = function(id){ return document.getElementById(id); };
 var cv = $('cv'), ctx = cv.getContext('2d');
 var W = 0, H = 0, DPR = 1, NL = LEVELS.length;
-var progress = obj(sget('progress', {})), starsSaved = obj(sget('stars', {})), seen = obj(sget('seen', {}));
-var unlockAll = !!sget('unlockAll', false);
-var settings = Object.assign({ sound: true, pattern: false, infUndo: false, vib: true, theme: 'auto' }, obj(sget('settings', {})));
-var stats = Object.assign({ pours: 0, clears: 0, movesSum: 0, parSum: 0, undos: 0, hints: 0, zeroUndo: 0 }, obj(sget('stats', {})));
+function okInt(v, lo, hi){ return typeof v === 'number' && v === Math.floor(v) && v >= lo && v <= hi; }
+// stored data is validated: wrong types, out-of-range levels and junk are dropped, never shown as NaN
+var progress = {}, starsSaved = {}, seen = {};
+(function(){
+  var pr = obj(sget('progress', {})), st = obj(sget('stars', {})), se = obj(sget('seen', {}));
+  for (var n = 1; n <= NL; n++){
+    if (okInt(pr[n], 1, 9999)) { progress[n] = pr[n]; starsSaved[n] = okInt(st[n], 1, 3) ? st[n] : 1; }
+  }
+  ['basic', 'cap5', 'hidden', 'mixed', 'one', 'frozen'].forEach(function(k){ if (se[k]) seen[k] = 1; });
+})();
+var unlockAll = sget('unlockAll', false) === true;
+var settings = { sound: true, pattern: false, infUndo: false, vib: true, theme: 'auto' };
+(function(){
+  var s0 = obj(sget('settings', {}));
+  ['sound', 'pattern', 'infUndo', 'vib'].forEach(function(k){ if (typeof s0[k] === 'boolean') settings[k] = s0[k]; });
+  if (s0.theme === 'dark' || s0.theme === 'light' || s0.theme === 'auto') settings.theme = s0.theme;
+})();
+var stats = { pours: 0, clears: 0, movesSum: 0, parSum: 0, undos: 0, hints: 0, zeroUndo: 0 };
+(function(){ var s0 = obj(sget('stats', {})); for (var k in stats) if (okInt(s0[k], 0, 1e9)) stats[k] = s0[k]; })();
+// a level in progress: { n: {m:[[from,to]..], u: undos left, hi: hints left, b: extra tube, uu: undo used, iu: infinite undo used, t: time} }
+var saves = {};
+(function(){
+  var s0 = obj(sget('saves', {}));
+  for (var n = 1; n <= NL; n++){
+    var v = s0[n]; if (!v || typeof v !== 'object' || !Array.isArray(v.m) || v.m.length > 2000) continue;
+    if (!v.m.every(function(x){ return Array.isArray(x) && x.length === 2 && okInt(x[0], 0, 15) && okInt(x[1], 0, 15); })) continue;
+    saves[n] = { m: v.m, u: okInt(v.u, 0, 5) ? v.u : 0, hi: okInt(v.hi, 0, 2) ? v.hi : 0, b: v.b === true, uu: v.uu === true, iu: v.iu === true, t: okInt(v.t, 0, 1e15) ? v.t : 0 };
+  }
+})();
 function saveSettings(){ sset('settings', settings); }
 function saveStats(){ sset('stats', stats); }
 
-var COLORS = ['#e63946','#f4a261','#e9c46a','#2a9d8f','#457b9d','#8338ec','#ff70a6','#70e000','#00bbf9','#9b5de5','#ffffff','#5a3825'];
+// 12 potions, picked so every pair stays apart (CIEDE2000 >= 17 for normal vision, >= 9 for protan/deutan simulation);
+// pattern mode adds a symbol per colour for anything closer than that.
+var COLORS = ['#e63946','#f4a261','#ffd60a','#2a9d8f','#457b9d','#8338ec','#ff70a6','#80ed99','#00bbf9','#3a0ca3','#ffffff','#5a3825'];
 var SYMW = [1,0,0,1,1,1,0,0,0,1,0,1]; // symbol drawn white on these
 function hex2(h){ return [parseInt(h.substr(1,2),16), parseInt(h.substr(3,2),16), parseInt(h.substr(5,2),16)]; }
 function mix(h, t, k){ var a = hex2(h), b = hex2(t); return 'rgb(' + Math.round(a[0]+(b[0]-a[0])*k) + ',' + Math.round(a[1]+(b[1]-a[1])*k) + ',' + Math.round(a[2]+(b[2]-a[2])*k) + ')'; }
@@ -565,6 +596,10 @@ function mechOf(n){
 /* ---------------- game state ---------------- */
 var status = 'title';
 var levelN = 1, D = null, S = null, hist = [], moves = 0, undosLeft = 5, hintsLeft = 2, bonusUsed = false, undoUsed = false, sel = -1;
+var mvList = [];        // the pours that led to S (saved, replayed on load)
+var infUsed = false;    // an undo was taken in infinite-undo mode this attempt (caps the stars even if the switch goes off again)
+var posVer = 0, deadVer = -1, deadAck = -1, deadKind = '';  // dead-end detection, once per position
+var restartArm = 0;     // HUD restart needs a second tap when there are moves to lose
 var Q = [];             // pour animation queue
 var freezeT = -1;       // test hook: hold the pour animation at this phase (screenshots)
 var hintMv = null, autoHint = false;
@@ -576,20 +611,59 @@ var LAY = { w: 40, lh: 36, gt: 3, neck: 16, pos: [], rows: 1, shelves: [] };
 function curPar(){ return D ? D.par : 0; }
 function dispS(){ return Q.length ? Q[0].pre : S; }
 
-function startLevel(n, keepHints){
+function addTubeTo(st){ st.t.push([]); st.cap.push(2); st.fz.push(0); st.h.push([]); }
+// replay a saved attempt with the game's own rules; null if any pour is not legal
+function replaySave(n, sv){
+  var D0 = levelData(n), st = csInit(D0), hs = [];
+  if (sv.b) addTubeTo(st);
+  for (var i = 0; i < sv.m.length; i++){
+    var a = sv.m[i][0], b = sv.m[i][1];
+    if (a >= st.t.length || b >= st.t.length) return null;
+    var r = csPour(st, a, b); if (!r) return null;
+    hs.push({ S: st, moves: i }); st = r.S;
+    if (csWon(st) && i < sv.m.length - 1) return null;
+  }
+  if (csWon(st)) return null;
+  return { S: st, hist: hs };
+}
+function saveGame(){
+  if (!D || !S || (status !== 'play' && status !== 'stuck' && status !== 'paused')) return;
+  if (!mvList.length && hintsLeft === 2 && !bonusUsed && !infUsed) delete saves[levelN];
+  else saves[levelN] = { m: mvList.slice(), u: undosLeft, hi: hintsLeft, b: bonusUsed, uu: undoUsed, iu: infUsed, t: Date.now() };
+  // keep only the 12 most recent levels in progress
+  var ks = Object.keys(saves);
+  if (ks.length > 12){ ks.sort(function(a, b){ return saves[b].t - saves[a].t; }); ks.slice(12).forEach(function(k){ delete saves[k]; }); }
+  sset('saves', saves);
+}
+function startLevel(n, fresh){
   n = Math.max(1, Math.min(NL, n));
-  var same = n === levelN && D;
+  var same = n === levelN && D, keepHints = fresh && same ? hintsLeft : -1;
   levelN = n; D = levelData(n);
-  S = csInit(D); hist = []; moves = 0; sel = -1; Q = []; hintMv = null; parts = [];
-  undosLeft = 5; bonusUsed = false; undoUsed = false;
-  if (!(same && keepHints)) hintsLeft = 2;
+  S = csInit(D); hist = []; mvList = []; moves = 0; sel = -1; Q = []; hintMv = null; parts = [];
+  undosLeft = 5; bonusUsed = false; undoUsed = false; infUsed = false; restartArm = 0;
+  hintsLeft = 2;
+  var sv = saves[n], rp = sv && replaySave(n, sv);
+  if (sv && !rp && sv.m.length) { delete saves[n]; sset('saves', saves); sv = null; }
+  if (sv){
+    // a saved hint budget is kept even after a restart (restart can't refill hints)
+    hintsLeft = sv.hi;
+    if (!fresh && rp){
+      S = rp.S; hist = rp.hist; mvList = sv.m.slice(); moves = mvList.length;
+      undosLeft = sv.u; bonusUsed = sv.b; undoUsed = sv.uu; infUsed = sv.iu;
+    }
+  }
+  if (keepHints >= 0) hintsLeft = Math.min(hintsLeft, keepHints);
+  posVer++; deadAck = -1;
   FX = { lift: [], shake: [], cork: [], thaw: [], pop: [], glow: [] };
+  for (var ci = 0; ci < S.t.length; ci++) if (csSealed(S, ci)) FX.cork[ci] = 1;
   winT = -1; winShown = false; stuckT = -1;
   autoHint = n === 1;
   try{ localStorage.setItem(PFX + 'last', String(n)); }catch(e){}
   status = 'play';
   showOnly(null); $('hud').classList.remove('hidden'); $('bottom').classList.remove('hidden');
   updateHud(); layout();
+  saveGame();
+  if (moves && !fresh) toast('接續第 ' + n + ' 關：已走 ' + moves + ' 步');
   if (autoHint) computeHint(true);
   var key = introKey(n);
   if (key && !seen[key]) { seen[key] = 1; sset('seen', seen); showIntro(key); }
@@ -616,6 +690,8 @@ function updateHud(){
   $('bHint').disabled = hintsLeft <= 0 && !autoHint;
   $('nTube').textContent = bonusUsed ? 0 : 1;
   $('bTube').disabled = bonusUsed || S.t.length >= 16;
+  $('bUndo').setAttribute('aria-label', '悔棋，剩 ' + (settings.infUndo ? '無限' : undosLeft) + ' 次');
+  $('bHint').setAttribute('aria-label', '提示，剩 ' + hintsLeft + ' 次');
 }
 
 /* ---------------- actions ---------------- */
@@ -640,8 +716,8 @@ function tapTube(i){
   }
   hist.push({ S: csClone(S), moves: moves });
   var pre = Q.length ? Q[Q.length-1].post : S;
-  S = r.S; moves++; sel = -1; hintMv = null;
-  stats.pours++; saveStats();
+  S = r.S; moves++; sel = -1; hintMv = null; mvList.push([a, i]); posVer++; restartArm = 0;
+  stats.pours++; saveStats(); saveGame();
   Q.push({ a: a, b: i, n: r.n, c: r.c, pre: pre, post: S, t: 0 });
   updateHud();
   if (autoHint && !csWon(S)) computeHint(true);
@@ -654,9 +730,9 @@ function doUndo(){
   if (!hist.length) return;
   if (!settings.infUndo && undosLeft <= 0){ toast('本關悔棋次數已用完'); SFX.bad(); return; }
   finishAnims();
-  var h = hist.pop(); S = h.S; moves = h.moves; sel = -1; hintMv = null;
-  if (!settings.infUndo) undosLeft--;
-  undoUsed = true; stats.undos++; saveStats();
+  var h = hist.pop(); S = h.S; moves = h.moves; sel = -1; hintMv = null; mvList.length = moves; posVer++; restartArm = 0;
+  if (!settings.infUndo) undosLeft--; else infUsed = true;
+  undoUsed = true; stats.undos++; saveStats(); saveGame();
   for (var i = 0; i < S.t.length; i++) if (!csSealed(S, i)) FX.cork[i] = undefined;
   SFX.undo(); vib(10);
   if (status === 'stuck'){ status = 'play'; showOnly(null); }
@@ -664,17 +740,21 @@ function doUndo(){
   updateHud();
   if (autoHint) computeHint(true);
 }
-function doRestart(){
+function doRestart(confirmFirst){
   if (!D) return;
+  // the HUD button sits next to the menu: a stray tap must not wipe a long attempt
+  if (confirmFirst && moves > 0 && !(restartArm && performance.now() - restartArm < 2500)){
+    restartArm = performance.now(); SFX.click(); toast('再按一次「重來」會清掉這關的 ' + moves + ' 步'); return;
+  }
+  restartArm = 0;
   SFX.undo();
   startLevel(levelN, true);
 }
 function addTube(){
   if ((status !== 'play' && status !== 'stuck') || bonusUsed) return;
   finishAnims();
-  function add(st){ st.t.push([]); st.cap.push(2); st.fz.push(0); st.h.push([]); }
-  add(S); hist.forEach(function(h){ add(h.S); });
-  bonusUsed = true; FX.pop[S.t.length-1] = 0;
+  addTubeTo(S); hist.forEach(function(h){ addTubeTo(h.S); });
+  bonusUsed = true; FX.pop[S.t.length-1] = 0; posVer++; saveGame();
   SFX.tube(); vib(15); toast('加了一支 2 層小試管（本關最多 ★）');
   if (status === 'stuck'){ status = 'play'; showOnly(null); }
   stuckT = -1;
@@ -692,9 +772,11 @@ function useHint(){
   if (status !== 'play') return;
   audio();
   if (autoHint){ computeHint(true); SFX.hint(); return; }
-  if (hintsLeft <= 0){ toast('本關提示已用完'); return; }
   finishAnims();
-  if (computeHint(false)){ hintsLeft--; stats.hints++; saveStats(); SFX.hint(); sel = -1; updateHud(); }
+  // the arrow for this position is still up: show it again, don't charge another hint
+  if (hintMv){ hintMv.t = 0; SFX.hint(); toast('綠色箭頭就是提示（不另外扣次數）'); return; }
+  if (hintsLeft <= 0){ toast('本關提示已用完'); return; }
+  if (computeHint(false)){ hintsLeft--; stats.hints++; saveStats(); saveGame(); SFX.hint(); sel = -1; updateHud(); }
 }
 
 /* ---------------- animation ---------------- */
@@ -762,7 +844,9 @@ function layout(){
   var top = hud.classList.contains('hidden') ? 60 : hud.getBoundingClientRect().bottom;
   var bt = bot.classList.contains('hidden') ? H - 70 : bot.getBoundingClientRect().top;
   top += 8; bt -= 4;
-  var aw = W - 20, ah = bt - top, N = S.t.length, maxCap = Math.max.apply(null, S.cap);
+  var sl = 0, sr = 0;
+  try{ var cs = getComputedStyle($('safe')); sl = parseFloat(cs.paddingLeft) || 0; sr = parseFloat(cs.paddingRight) || 0; }catch(e){}
+  var aw = W - 20 - sl - sr, ah = bt - top, N = S.t.length, maxCap = Math.max.apply(null, S.cap), xc = sl + (W - sl - sr) / 2;
   var best = null;
   for (var rows = 1; rows <= 3; rows++){
     var per = Math.ceil(N / rows); if (rows > 1 && Math.ceil(N/(rows-1)) <= 4) break;
@@ -771,7 +855,9 @@ function layout(){
     var lh = (rowH - 22 - .42*w - 18) / maxCap;
     lh = Math.min(lh, w * 1.02);
     var wEff = Math.min(w, lh * 1.25);
-    var score = wEff * 1.0 + lh * .6 - (rows - 1) * 2;
+    // spacing between tube centres is the tap target (taps snap to the nearest tube): keep it >= 44px when any row count can
+    var pitch = per > 1 ? wEff + Math.max(wEff * .3, Math.min(wEff * .95, (aw - per * wEff) / (per - 1))) : aw;
+    var score = wEff * 1.0 + lh * .6 - (rows - 1) * 2 - (pitch < 44 ? 100 + (44 - pitch) : 0) - (lh < 16 ? 50 : 0);
     if (!best || score > best.score) best = { score: score, rows: rows, w: wEff, lh: lh, per: per };
   }
   var w = Math.max(18, best.w), lh = Math.max(10, best.lh);
@@ -782,21 +868,22 @@ function layout(){
   var gapY = Math.min(26, Math.max(6, (ah - rowH*best.rows) / (best.rows + 1)));
   var totalH = rowH*best.rows + gapY*(best.rows-1);
   var y0 = top + Math.max(0, (ah - totalH) / 2);
-  LAY.pos = []; LAY.shelves = [];
+  LAY.pos = []; LAY.shelves = []; LAY.rowIdx = [];
   var idx = 0;
   for (r = 0; r < rowsArr.length; r++){
     var cnt = rowsArr[r];
     var gap = cnt > 1 ? Math.min(w * .95, (aw - cnt*w) / (cnt - 1)) : 0; gap = Math.max(gap, w*.3);
-    var tw = cnt*w + (cnt-1)*gap, x0 = (W - tw)/2 + w/2;
+    var tw = cnt*w + (cnt-1)*gap, x0 = xc - tw/2 + w/2;
     var by = y0 + r*(rowH + gapY) + rowH - 18;
-    LAY.shelves.push({ x: (W - tw)/2 - w*.45, w: tw + w*.9, y: by + 2 });
+    LAY.shelves.push({ x: xc - tw/2 - w*.45, w: tw + w*.9, y: by + 2 });
+    LAY.rowIdx.push({ from: idx, to: idx + cnt, top: by - tubeH(maxCap) - 16, bot: by + Math.max(9, w * .26), pitch: w + gap });
     for (var k = 0; k < cnt; k++, idx++){
       var cx = x0 + k*(w + gap);
       LAY.pos[idx] = { cx: cx, by: by, my: by - tubeH(S.cap[idx]) };
     }
   }
 }
-window.addEventListener('resize', function(){ layout(); });
+window.addEventListener('resize', function(){ Q.forEach(function(A){ A.geo = null; }); layout(); });
 
 /* ---------------- background ---------------- */
 var bgC = document.createElement('canvas'), bgDirty = true;
@@ -968,7 +1055,7 @@ function drawTubeAt(g, geo, cap, layers, o, time){
   if (o.frozen > .05 && o.fzN > 0){
     g.globalAlpha = Math.min(1, o.frozen);
     var bw = Math.max(42, w*1.05), bh = 18;
-    g.fillStyle = '#2b7fb8'; rr(g, -bw/2, -bh - 9, bw, bh, 9); g.fill();
+    g.fillStyle = '#21689a'; rr(g, -bw/2, -bh - 9, bw, bh, 9); g.fill();
     g.strokeStyle = '#fff'; g.lineWidth = 1.3; g.beginPath();
     var cxs = -bw/2 + 10, cys = -9 - bh/2;
     for (var a = 0; a < 3; a++){ var an = a*Math.PI/3; g.moveTo(cxs - Math.cos(an)*5, cys - Math.sin(an)*5); g.lineTo(cxs + Math.cos(an)*5, cys + Math.sin(an)*5); }
@@ -1139,7 +1226,7 @@ function frame(now){
     if (!Q.length && status === 'play') checkEnd();
   }
   if (winT >= 0){ winT += dt; if (winT > 1.15 && !winShown){ winShown = true; showWin(); } }
-  if (stuckT >= 0){ stuckT += dt; if (stuckT > .45){ stuckT = -1; if (status === 'stuck'){ $('kTube').classList.toggle('hidden', bonusUsed); $('kUndo').disabled = !hist.length || (!settings.infUndo && undosLeft <= 0); showOnly('stuck'); } } }
+  if (stuckT >= 0){ stuckT += dt; if (stuckT > .45){ stuckT = -1; if (status === 'stuck') showStuck(); } }
   drawParts(dt);
   if (running) rafId = requestAnimationFrame(frame);
 }
@@ -1147,46 +1234,74 @@ function startLoop(){ if (!rafId){ lastT = performance.now(); rafId = requestAni
 document.addEventListener('visibilitychange', function(){
   running = !document.hidden;
   if (running) startLoop();
-  else if (status === 'play'){ finishAnims(); openMenu(); }
+  else { saveGame(); if (status === 'play'){ finishAnims(); openMenu(); } }
 });
+// leaving the page (app switch, tab close, reload) flushes the attempt; a pour still animating is already in S
+window.addEventListener('pagehide', function(){ finishAnims(); saveGame(); saveStats(); });
 function checkEnd(){
   if (csWon(S)){
     status = 'won'; winT = 0; sel = -1; hintMv = null;
+    bankWin();
     SFX.win(); vib([30, 40, 70]); flyStars(); confetti();
     return;
   }
-  if (!csMoves(S).length){ status = 'stuck'; stuckT = 0; SFX.bad(); vib([20, 40, 20]); }
+  if (deadVer === posVer) return;
+  deadVer = posVer;
+  var kind = '';
+  if (!csMoves(S).length) kind = 'none';
+  // moves left but none of them can lead to a win: a bounded search that runs out of positions proves it (a few ms)
+  else if (csSolve(S, { limit: 3000, w: 3 }) === null) kind = 'dead';
+  if (kind && deadAck !== posVer){ deadKind = kind; status = 'stuck'; stuckT = 0; SFX.bad(); vib([20, 40, 20]); }
+}
+function showStuck(){
+  var none = deadKind === 'none';
+  $('kTitle').textContent = none ? '無路可走' : '這局解不開了';
+  $('kMsg').innerHTML = none ? '已經沒有任何合法的倒法了。<br>悔棋幾步換條路，或整關重來。' : '還能倒，但不管怎麼倒都無法全部封瓶了。<br>悔棋幾步換條路，或整關重來。';
+  $('kTube').classList.toggle('hidden', bonusUsed);
+  $('kUndo').disabled = !hist.length || (!settings.infUndo && undosLeft <= 0);
+  $('kUndo').textContent = $('kUndo').disabled && hist.length ? '悔棋已用完' : '悔棋一步';
+  $('kLook').classList.toggle('hidden', none);
+  showOnly('stuck');
 }
 
 /* ---------------- input ---------------- */
+// A tap belongs to the shelf row whose band it is in, and to the nearest tube on that row as long as it is within
+// half the spacing to the neighbour: no dead gaps between tubes, so a slightly-off tap never drops the selection.
 function hitTube(x, y){
-  if (!S) return -1;
-  var best = -1, bd = 1e9;
-  for (var i = 0; i < S.t.length; i++){
-    var p = tubePos(i), w = LAY.w, lift = (FX.lift[i] || 0) * 16;
-    if (x < p.cx - w/2 - 12 || x > p.cx + w/2 + 12) continue;
-    if (y < p.my - lift - 12 - (S.fz[i] ? 28 : 0) || y > p.by + 12) continue;
-    var d = Math.abs(x - p.cx); if (d < bd){ bd = d; best = i; }
+  if (!S || !LAY.rowIdx) return -1;
+  var R = LAY.rowIdx, best = -1;
+  for (var r = 0; r < R.length; r++){
+    var row = R[r], top = r === 0 ? row.top - 30 : (R[r-1].bot + row.top) / 2, bot = r === R.length - 1 ? row.bot + 30 : (row.bot + R[r+1].top) / 2;
+    if (y < top || y > bot) continue;
+    var bd = 1e9;
+    for (var i = row.from; i < row.to; i++){
+      var p = tubePos(i), d = Math.abs(x - p.cx);
+      if (d < bd){ bd = d; best = i; }
+    }
+    if (best >= 0 && bd > Math.max(LAY.w / 2 + 12, row.pitch / 2)) best = -1;
+    break;
   }
   return best;
 }
 cv.addEventListener('pointerdown', function(e){
   audio();
-  if (status !== 'play') return;
+  if (status !== 'play' || (e.pointerType === 'mouse' && e.button !== 0)) return;
   var i = hitTube(e.clientX, e.clientY);
   if (i >= 0) tapTube(i);
   else if (sel >= 0){ sel = -1; SFX.deselect(); }
   e.preventDefault();
 });
+function k0(k){ return /^[0-9zZhH]$/.test(k); }   // held keys don't repeat taps/undos/hints
 document.addEventListener('keydown', function(e){
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.repeat && k0(e.key)) return;
   audio();
   var k = e.key;
   if (status === 'play'){
     if (k >= '1' && k <= '9'){ var i = +k - 1; if (i < S.t.length) tapTube(i); e.preventDefault(); return; }
     if (k === '0'){ if (S.t.length > 9) tapTube(9); e.preventDefault(); return; }
     if (k === 'z' || k === 'Z'){ doUndo(); return; }
-    if (k === 'r' || k === 'R'){ doRestart(); return; }
+    if (k === 'r' || k === 'R'){ if (!e.repeat) doRestart(true); return; }
     if (k === 'h' || k === 'H'){ useHint(); return; }
     if (k === 'Escape'){ openMenu(); return; }
   } else if (status === 'stuck'){
@@ -1213,10 +1328,12 @@ function lastPlayed(){ var v = 0; try{ v = parseInt(localStorage.getItem(PFX + '
 function goTitle(){
   status = 'title'; S = null; Q = [];
   $('hud').classList.add('hidden'); $('bottom').classList.add('hidden');
-  var c = Object.keys(progress).length;
-  $('tPlay').textContent = c ? '繼續第 ' + Math.min(NL, Math.max(firstOpen(), 1)) + ' 關' : '開始調配';
+  var n = playTarget();
+  $('tPlay').textContent = Object.keys(progress).length || saves[n] && saves[n].m.length ? '繼續第 ' + n + ' 關' : '開始調配';
   showOnly('title');
 }
+// the level the title's main button opens: the last one played if it is unfinished, else the first unfinished one
+function playTarget(){ var n = firstOpen(), lp = lastPlayed(); if (lp >= 1 && lp <= NL && unlocked(lp) && (!isDone(lp) || (saves[lp] && saves[lp].m.length))) n = lp; return n; }
 var SECTS = { 1: '1–20　入門・四層試管', 21: '21–40　五層試管', 41: '41–60　隱藏層', 61: '61–80　不同容量・單一空管', 81: '81–100　冰凍管・全要素' };
 function buildGrid(){
   var g = $('grid'), html = '', done = 0, three = 0;
@@ -1251,7 +1368,7 @@ $('grid').addEventListener('click', function(e){
 });
 bindTap('unlockSw', function(){ unlockAll = !unlockAll; sset('unlockAll', unlockAll); SFX.click(); buildGrid(); });
 bindTap('sBack', function(){ SFX.click(); goTitle(); });
-bindTap('tPlay', function(){ SFX.click(); var n = firstOpen(); var lp = lastPlayed(); if (lp && unlocked(lp) && !isDone(lp)) n = lp; startLevel(n); });
+bindTap('tPlay', function(){ SFX.click(); startLevel(playTarget()); });
 bindTap('tSelect', function(){ SFX.click(); openSelect(); });
 bindTap('tHelp', function(){ SFX.click(); openHelp(); });
 bindTap('tMenu', function(){ SFX.click(); openMenu(); });
@@ -1274,7 +1391,7 @@ function openMenu(){
   showOnly('menu');
 }
 bindTap('bMenu', function(){ SFX.click(); finishAnims(); openMenu(); });
-bindTap('mResume', function(){ SFX.click(); if (menuFrom === 'play'){ showOnly(null); status = 'play'; } else goTitle(); });
+bindTap('mResume', function(){ SFX.click(); if (menuFrom === 'play'){ showOnly(null); status = 'play'; deadVer = -1; } else goTitle(); });
 bindTap('mSelect', function(){ SFX.click(); openSelect(); });
 bindTap('mHelp', function(){ SFX.click(); openHelp(); });
 bindTap('swSound', function(){ settings.sound = !settings.sound; saveSettings(); setSw('swSound', settings.sound); SFX.click(); });
@@ -1284,26 +1401,33 @@ bindTap('swVib', function(){ settings.vib = !settings.vib; saveSettings(); setSw
 $('segTheme').addEventListener('click', function(e){ var b = e.target.closest('button'); if (!b) return; audio(); settings.theme = b.getAttribute('data-v'); saveSettings(); applyTheme(); SFX.click();
   [].forEach.call($('segTheme').children, function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); }); });
 
-bindTap('bRestart', function(){ if (status === 'play') doRestart(); });
+bindTap('bRestart', function(){ if (status === 'play') doRestart(true); });
 bindTap('bUndo', function(){ doUndo(); });
 bindTap('bHint', function(){ useHint(); });
 bindTap('bTube', function(){ addTube(); });
 bindTap('kUndo', function(){ doUndo(); });
 bindTap('kRestart', function(){ doRestart(); });
 bindTap('kTube', function(){ addTube(); });
+bindTap('kLook', function(){ SFX.click(); if (status === 'stuck'){ deadAck = posVer; status = 'play'; showOnly(null); } });
 
 /* win */
 var lastWin = null;
-function showWin(){
+// the clear is recorded the moment the last tube seals (not when the card appears 1 s later), exactly once
+function bankWin(){
   var par = curPar(), st = moves <= par + 2 ? 3 : moves <= Math.floor(par * 1.5) ? 2 : 1;
   var capMsg = '';
-  if (settings.infUndo && st > 2){ st = 2; capMsg = '（無限悔棋模式最多 ★★）'; }
+  if ((settings.infUndo || infUsed) && st > 2){ st = 2; capMsg = '（用了無限悔棋，最多 ★★）'; }
   if (bonusUsed && st > 1){ st = 1; capMsg = '（使用了小試管，最多 ★）'; }
   var prevBest = progress[levelN];
   progress[levelN] = prevBest === undefined ? moves : Math.min(prevBest, moves); sset('progress', progress);
   starsSaved[levelN] = Math.max(starsSaved[levelN] || 0, st); sset('stars', starsSaved);
   stats.clears++; stats.movesSum += moves; stats.parSum += par; if (!undoUsed) stats.zeroUndo = (stats.zeroUndo || 0) + 1; saveStats();
-  lastWin = { n: levelN, moves: moves, stars: st };
+  delete saves[levelN]; sset('saves', saves);
+  lastWin = { n: levelN, moves: moves, stars: st, capMsg: capMsg, par: par };
+}
+function showWin(){
+  if (!lastWin) return;
+  var par = lastWin.par, st = lastWin.stars, capMsg = lastWin.capMsg;
   $('wTitle').textContent = levelN === NL ? '大功告成！' : ['調配完成！', '漂亮的配方！', '完美封瓶！'][st - 1];
   $('wStars').innerHTML = [1,2,3].map(function(k){ return '<span class="' + (k <= st ? 'on' : '') + '" style="animation-delay:' + (k*.18) + 's">★</span>'; }).join('');
   for (var k = 0; k < st; k++) SFX.star && setTimeout(SFX.star.bind(null, k), 200 + k*180);
@@ -1371,7 +1495,7 @@ function openHelp(){
   b.appendChild(p);
   ['basic', 'cap5', 'hidden', 'mixed', 'one', 'frozen'].forEach(function(k){ b.appendChild(mechRow(k)); });
   var p2 = document.createElement('p'); p2.className = 'note';
-  p2.innerHTML = '悔棋每關 5 次（設定可改無限，最多 ★★）・提示每關 2 次・加小試管每關 1 次（最多 ★）。<br>鍵盤：1–9／0 選試管、Z 悔棋、R 重來、H 提示。';
+  p2.innerHTML = '悔棋每關 5 次（設定可改無限，最多 ★★）・提示每關 2 次・加小試管每關 1 次（最多 ★）。走到死路時會提醒你。<br>分不清顏色？設定裡打開「色盲圖案模式」，每種藥水都有自己的圖案。<br>進度會自動保存，下次從同一步接著玩。<br>鍵盤：1–9／0 選試管、Z 悔棋、R 重來（按兩次）、H 提示。';
   b.appendChild(p2);
   helpReturn = prev; if (status === 'play') status = 'paused';
   showOnly('help');
@@ -1399,7 +1523,11 @@ window.__game = {
   levelData: function(n){ return levelData(n); },
   freeze: function(t){ freezeT = t; },
   legal: function(){ return S ? csMoves(S) : []; },
-  diff: function(n){ return { n: diffN(n), flasks: flasks(n) }; }
+  diff: function(n){ return { n: diffN(n), flasks: flasks(n) }; },
+  more: function(){ return { undos: undosLeft, hints: hintsLeft, bonus: bonusUsed, hint: hintMv ? [hintMv.a, hintMv.b] : null, mv: mvList.slice(), dead: deadKind, infUsed: infUsed, stars: lastWin && lastWin.n === levelN ? lastWin.stars : 0 }; },
+  layout: function(){ return { w: LAY.w, lh: LAY.lh, rows: LAY.rowIdx.map(function(r){ return { from: r.from, to: r.to, top: r.top, bot: r.bot, pitch: r.pitch }; }), pos: LAY.pos.map(function(p, i){ return { cx: p.cx, top: p.my, by: p.by, h: tubeH(S.cap[i]) }; }) }; },
+  solve: function(){ var r = csSolve(S, { limit: 400000 }); return r && r.sol; },
+  setMoves: function(list){ for (var i = 0; i < list.length; i++){ var r = csPour(S, list[i][0], list[i][1]); if (!r) return false; hist.push({ S: S, moves: moves }); S = r.S; moves++; mvList.push(list[i]); } posVer++; deadVer = -1; updateHud(); saveGame(); return true; }
 };
 
 applyTheme();

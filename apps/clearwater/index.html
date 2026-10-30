@@ -108,6 +108,10 @@ body {
 .fail .panel { max-width: 340px; text-align: center; }
 .fail h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: .1em; }
 .fail p { margin: 0; color: var(--ink-soft); line-height: 1.6; }
+.fail button {
+  margin-top: 18px; min-height: 48px; padding: 0 22px; font: inherit; font-size: 16px; letter-spacing: .08em;
+  color: var(--chip-on-ink); background: var(--chip-on); border: 0; border-radius: 16px; cursor: pointer;
+}
 @media (max-width: 360px) { .bar button { padding: 0 12px; font-size: 15px; } }
 @media (prefers-reduced-motion: reduce) { .hint, .bar button { transition: none; } }
 </style>
@@ -128,7 +132,7 @@ body {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 10c3 0 3-2 6-2s3 2 6 2 3-2 6-2"/><path d="M3 16h18"/></svg>平靜
   </button>
 </nav>
-<div class="fail" id="fail" hidden><div class="panel"><h2>水面無法顯示</h2><p>此裝置或瀏覽器不支援所需的 WebGL 功能。</p></div></div>
+<div class="fail" id="fail" hidden><div class="panel"><h2>水面無法顯示</h2><p>此裝置或瀏覽器不支援所需的 WebGL 功能。</p><button id="bReload" type="button" hidden>重新載入</button></div></div>
 
 <script>
 (function () {
@@ -139,6 +143,7 @@ const hintEl = document.getElementById('hint');
 const bRain = document.getElementById('bRain');
 const bOrbit = document.getElementById('bOrbit');
 const bCalm = document.getElementById('bCalm');
+const reloadBtn = document.getElementById('bReload');
 
 function fail(msg) {
   failEl.querySelector('p').textContent = msg;
@@ -227,6 +232,7 @@ const FS_UPDATE = HEAD + `
 varying vec2 vUv;
 uniform sampler2D uState;
 uniform vec2 uTexel;
+uniform float uEdge;
 void main(){
   vec4 s = texture2D(uState, vUv);
   float avg = 0.25 * (
@@ -236,7 +242,7 @@ void main(){
     texture2D(uState, vUv + vec2(0.0, uTexel.y)).r);
   s.g += (avg - s.r) * 2.0;
   vec2 e = min(vUv, 1.0 - vUv);
-  float edge = smoothstep(0.0, 0.14, min(e.x, e.y));
+  float edge = smoothstep(0.0, uEdge, min(e.x, e.y));
   s.g *= mix(0.86, 0.996, edge);
   s.r += s.g;
   s.r *= mix(0.94, 0.9993, edge);
@@ -331,7 +337,7 @@ void main(){
 const FS_RENDER = HEAD + `
 uniform vec2 uRes;
 uniform vec3 uEye, uRight, uUp, uFwd, uSun;
-uniform float uTanV, uTime, uRain;
+uniform float uTanV, uTime, uRain, uWS;
 uniform vec2 uRsOff;
 uniform sampler2D uDer, uSand;
 uniform vec4 uLeaf[3];
@@ -383,9 +389,9 @@ void main(){
   } else {
     float tt = -uEye.y / rd.y;
     vec3 p = uEye + rd * tt;
-    vec2 uv = p.xz * 0.5 + 0.5;
+    vec2 uv = p.xz * (0.5 / uWS) + 0.5;
     vec2 e = min(uv, 1.0 - uv);
-    float inside = smoothstep(0.0, 0.04, min(e.x, e.y));
+    float inside = smoothstep(0.0, 0.04 / uWS, min(e.x, e.y));
     vec4 der = texture2D(uDer, clamp(uv, 0.0, 1.0));
     vec2 g = der.xy * inside;
     float t = uTime;
@@ -409,9 +415,9 @@ void main(){
     float big = texture2D(uSand, fp.xz * 0.071 + vec2(0.31, 0.77)).g;
     fc *= 0.78 + 0.38 * big;
     vec2 sp = fp.xz - uRsOff * depth;
-    vec2 cuv = sp * 0.5 + 0.5;
+    vec2 cuv = sp * (0.5 / uWS) + 0.5;
     vec2 ce = min(cuv, 1.0 - cuv);
-    float cin = smoothstep(0.0, 0.05, min(ce.x, ce.y));
+    float cin = smoothstep(0.0, 0.05 / uWS, min(ce.x, ce.y));
     float caus = mix(1.0, texture2D(uDer, clamp(cuv, 0.0, 1.0)).b, cin);
     float amb = causPattern(fp.xz * 2.4, t * 0.7) * (1.0 - 0.6 * uRain);
     float light = 0.5 + 0.85 * caus * (0.72 + 0.7 * amb);
@@ -522,8 +528,12 @@ function makeTarget(w, h, internal, format, type, filter, wrap) {
   return { t, fb, w, h };
 }
 
-const N = mobile ? 128 : 256;
-const CELL = 2 / N;
+/* The rippling pool spans world [-WS, WS]^2: wide enough that taps reach it from almost all of the visible water
+   (it used to be [-1, 1], which left the upper three quarters of a portrait screen dead to touch). The cell size is
+   within 15% of what it always was, so ripples look the same. */
+const WS = 4;
+const N = mobile ? 448 : 512;
+const CELL = 2 * WS / N;
 const simA = makeTarget(N, N, fmt.internal, fmt.format, fmt.type, gl.NEAREST, gl.CLAMP_TO_EDGE);
 const simB = makeTarget(N, N, fmt.internal, fmt.format, fmt.type, gl.NEAREST, gl.CLAMP_TO_EDGE);
 const der = makeTarget(N, N, fmt.internal, fmt.format, fmt.type, fmt.linear ? gl.LINEAR : gl.NEAREST, gl.CLAMP_TO_EDGE);
@@ -580,7 +590,9 @@ function flushDrops() {
 function stepSim() {
   gl.useProgram(P.update.p);
   gl.uniform2f(U(P.update, 'uTexel'), 1 / N, 1 / N);
+  gl.uniform1f(U(P.update, 'uEdge'), 0.14 / WS);
   pass(P.update, nxt); swap();
+  simSteps++;
 }
 function derive() {
   gl.useProgram(P.derive.p);
@@ -599,12 +611,14 @@ function clearSim() {
   pendingCount = 0;
 }
 
-/* world (x,z) in [-1,1] -> drop; strength in world height units */
+/* world (x,z) in [-WS,WS] -> drop; strength in world height units. Returns false off the pool. */
+let simSteps = 0, dropsAdded = 0;
 function addDrop(x, z, radiusW, strength) {
-  if (x < -1 || x > 1 || z < -1 || z > 1) return;
+  if (!(x >= -WS && x <= WS && z >= -WS && z <= WS)) return false;
+  dropsAdded++;
   if (pendingCount < PENDING_MAX) {
     const d = pending[pendingCount++];
-    d[0] = x * 0.5 + 0.5; d[1] = z * 0.5 + 0.5; d[2] = radiusW * 0.5; d[3] = strength;
+    d[0] = x * 0.5 / WS + 0.5; d[1] = z * 0.5 / WS + 0.5; d[2] = radiusW * 0.5 / WS; d[3] = strength;
   }
   for (let i = 0; i < leaves.length; i++) {
     const l = leaves[i];
@@ -617,6 +631,7 @@ function addDrop(x, z, radiusW, strength) {
       l.va += (Math.random() - 0.5) * f * 10;
     }
   }
+  return true;
 }
 
 /* ---------- leaves ---------- */
@@ -655,7 +670,7 @@ function updateLeaves(dt, t) {
 }
 
 /* ---------- camera ---------- */
-const cam = { yaw: 0.65, pitch: 0.92, dist: 2.7, tYaw: 0.65, tPitch: 0.92, tDist: 2.7 };
+const cam = { yaw: 0.65, pitch: 1.0, dist: 2.7, tYaw: 0.65, tPitch: 1.0, tDist: 2.7 };
 const eye = [0, 0, 0], fwd = [0, 0, 0], right = [0, 0, 0], up = [0, 0, 0];
 let tanV = 0.45;
 function updateCamera() {
@@ -698,21 +713,53 @@ const rsOff = (function () {
 
 /* ---------- sizing / adaptive resolution ---------- */
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
-let renderScale = mobile ? Math.min(dpr, 1.35) : Math.min(dpr, 1.6);
+const baseScale = mobile ? Math.min(dpr, 1.35) : Math.min(dpr, 1.6);
+let renderScale = baseScale;
 const minScale = 0.6;
-let cssW = 1, cssH = 1;
+const DIST_MIN = 1.4, DIST_MAX = 4.0, PITCH_MIN = 0.32, PITCH_MAX = 1.45, PORTRAIT_DIST = 3.0;
+let cssW = 1, cssH = 1, wasPortrait = null;
 function resize() {
   cssW = Math.max(1, canvas.clientWidth || window.innerWidth);
   cssH = Math.max(1, canvas.clientHeight || window.innerHeight);
-  canvas.width = Math.max(1, Math.round(cssW * renderScale));
-  canvas.height = Math.max(1, Math.round(cssH * renderScale));
+  const w = Math.max(1, Math.round(cssW * renderScale)), h = Math.max(1, Math.round(cssH * renderScale));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
   const asp = cssW / cssH;
   tanV = Math.max(0.42, 0.44 / asp);
-  if (asp < 1) { cam.tDist = Math.max(cam.tDist, 3.0); }
+  // step back for the tall portrait frame, but only when the orientation changes: a toolbar or keyboard resize
+  // must not undo the player's own zoom
+  const portrait = asp < 1;
+  if (portrait !== wasPortrait) {
+    if (portrait && wasPortrait !== null) cam.tDist = Math.max(cam.tDist, PORTRAIT_DIST);
+    wasPortrait = portrait;
+  }
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+cam.tDist = cam.dist = innerWidth < innerHeight ? PORTRAIT_DIST : cam.tDist;
 resize();
+
+/* Adaptive render scale. A display (or iOS Low Power Mode) that caps the page at a steady 30 Hz is not a GPU
+   struggling, so it only steps down when frames are slow AND uneven, or when the page has already shown it can run
+   faster; it steps back up once there is headroom again, and stays put if that just makes it slow again. */
+const perf = { acc: 0, frames: 0, sq: 0, cool: 3, seenFast: false, upAt: -1e9, noUp: false };
+function perfTick(rawDt) {
+  if (rawDt > 0.25) return;   // a stall (tab switch, GC, alert) says nothing about the GPU
+  perf.acc += rawDt; perf.frames++; perf.sq += rawDt * rawDt;
+  if (perf.acc < 1.5) return;
+  const avg = perf.acc / perf.frames, jitter = Math.sqrt(Math.max(0, perf.sq / perf.frames - avg * avg));
+  perf.cool -= perf.acc;
+  if (avg < 1 / 50) perf.seenFast = true;
+  if (perf.cool <= 0) {
+    if (avg > 1 / 45 && renderScale > minScale && (perf.seenFast || avg > 1 / 28 || jitter > 0.005)) {
+      if (time - perf.upAt < 6) perf.noUp = true;
+      renderScale = Math.max(minScale, renderScale * 0.85); resize(); perf.cool = 2;
+    } else if (avg < 1 / 55 && renderScale < baseScale && !perf.noUp) {
+      renderScale = Math.min(baseScale, renderScale / 0.85); resize(); perf.cool = 3; perf.upAt = time;
+    }
+  }
+  perf.acc = 0; perf.frames = 0; perf.sq = 0;
+}
 
 /* ---------- input ---------- */
 let orbitMode = false;
@@ -729,13 +776,12 @@ function dismissHint() {
 function rippleAt(clientX, clientY, strong) {
   const w = screenToWater(clientX, clientY);
   if (!w) return null;
-  addDrop(w[0], w[1], strong ? 0.08 : 0.05, strong ? 0.028 : 0.009);
-  return w;
+  return addDrop(w[0], w[1], strong ? 0.08 : 0.05, strong ? 0.028 : 0.009) ? w : null;
 }
 function dragRipples(clientX, clientY) {
   const w = screenToWater(clientX, clientY);
   if (!w) return;
-  if (!lastDropPt) { addDrop(w[0], w[1], 0.05, 0.009); lastDropPt = w; return; }
+  if (!lastDropPt) { if (addDrop(w[0], w[1], 0.05, 0.009)) lastDropPt = w; return; }
   const dx = w[0] - lastDropPt[0], dz = w[1] - lastDropPt[1];
   const d = Math.hypot(dx, dz);
   const step = 0.035;
@@ -748,25 +794,30 @@ function dragRipples(clientX, clientY) {
 }
 function orbitBy(dx, dy) {
   cam.tYaw -= dx * 0.008;
-  cam.tPitch = Math.max(0.32, Math.min(1.45, cam.tPitch + dy * 0.006));
+  cam.tPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, cam.tPitch + dy * 0.006));
 }
-function zoomBy(f) { cam.tDist = Math.max(1.4, Math.min(4.6, cam.tDist * f)); }
+function zoomBy(f) { cam.tDist = Math.max(DIST_MIN, Math.min(DIST_MAX, cam.tDist * f)); }
+function startPinch() {
+  const pts = [...pointers.values()];
+  pinchDist0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  pinchStart = cam.tDist;
+  lastCenter = [(pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2];
+  lastDropPt = null;
+}
+// forget every finger: their pointerup/cancel may never come (app switch, alert, notification shade)
+function dropPointers() { pointers.clear(); lastCenter = null; lastDropPt = null; }
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
-  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  // a primary touch means no other finger is down, so anything still tracked is a stale finger whose end was lost;
+  // without this a later tap counted as the second finger of a pinch and made no ripple
+  if (e.isPrimary && e.pointerType !== 'mouse') pointers.clear();
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* already released */ }
   const orbitBtn = e.pointerType === 'mouse' && (e.button === 2 || e.shiftKey);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, orbit: orbitBtn || orbitMode });
   dismissHint();
-  if (pointers.size === 2) {
-    const pts = [...pointers.values()];
-    pinchDist0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    pinchStart = cam.tDist;
-    lastCenter = [(pts[0].x + pts[1].x) / 2, (pts[0].y + pts[1].y) / 2];
-    lastDropPt = null;
-  } else if (pointers.size === 1 && !(orbitBtn || orbitMode)) {
-    lastDropPt = rippleAt(e.clientX, e.clientY, true);
-  }
+  if (pointers.size === 2) startPinch();
+  else if (pointers.size === 1 && !(orbitBtn || orbitMode)) lastDropPt = rippleAt(e.clientX, e.clientY, true);
   e.preventDefault();
 });
 canvas.addEventListener('pointermove', e => {
@@ -780,7 +831,7 @@ canvas.addEventListener('pointermove', e => {
     if (lastCenter) orbitBy(c[0] - lastCenter[0], c[1] - lastCenter[1]);
     lastCenter = c;
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-    if (pinchDist0 > 20 && d > 20) cam.tDist = Math.max(1.4, Math.min(4.6, pinchStart * pinchDist0 / d));
+    if (pinchDist0 > 20 && d > 20) cam.tDist = Math.max(DIST_MIN, Math.min(DIST_MAX, pinchStart * pinchDist0 / d));
   } else if (p.orbit) {
     orbitBy(dx, dy);
   } else {
@@ -788,27 +839,35 @@ canvas.addEventListener('pointermove', e => {
   }
 });
 function endPointer(e) {
-  pointers.delete(e.pointerId);
-  if (pointers.size < 2) lastCenter = null;
-  if (pointers.size === 0) lastDropPt = null;
+  if (!pointers.delete(e.pointerId)) return;
+  if (pointers.size === 0) { lastDropPt = null; lastCenter = null; saveView(); }
   else if (pointers.size === 1) {
+    lastCenter = null;
     // after a pinch, avoid splashing where the remaining finger rests
     const p = [...pointers.values()][0]; p.orbit = true;
-  }
+  } else if (pointers.size === 2) startPinch();   // third finger lifted: re-base the pinch so the zoom doesn't jump
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', e => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0012)); dismissHint(); }, { passive: false });
+canvas.addEventListener('lostpointercapture', endPointer);
+window.addEventListener('blur', dropPointers);
+let wheelSave = 0;
+canvas.addEventListener('wheel', e => {
+  e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0012)); dismissHint();
+  clearTimeout(wheelSave); wheelSave = setTimeout(saveView, 400);
+}, { passive: false });
 
 function setRain(on) { rain = on; bRain.setAttribute('aria-pressed', String(on)); saveSettings(); }
-function setOrbit(on) { orbitMode = on; bOrbit.setAttribute('aria-pressed', String(on)); canvas.style.cursor = on ? 'grab' : 'crosshair'; }
+function setOrbit(on) { orbitMode = on; bOrbit.setAttribute('aria-pressed', String(on)); canvas.style.cursor = on ? 'grab' : 'crosshair'; saveView(); }
 function calm() { clearSim(); for (const l of leaves) { l.vx *= 0.2; l.vz *= 0.2; l.va *= 0.2; } }
 bRain.addEventListener('click', () => setRain(!rain));
 bOrbit.addEventListener('click', () => setOrbit(!orbitMode));
 bCalm.addEventListener('click', calm);
 window.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;   // Ctrl+R / Cmd+C belong to the browser
   if (e.target && e.target.tagName === 'BUTTON' && (e.key === ' ' || e.key === 'Enter')) return;
-  const k = e.key;
+  const k = e.key, toggle = 'rRvVcC'.includes(k) && k.length === 1;
+  if (toggle && e.repeat) return;                    // holding R must not flicker the rain on and off
   if (k === 'ArrowLeft') { orbitBy(-18, 0); e.preventDefault(); }
   else if (k === 'ArrowRight') { orbitBy(18, 0); e.preventDefault(); }
   else if (k === 'ArrowUp') { orbitBy(0, 14); e.preventDefault(); }
@@ -822,72 +881,82 @@ window.addEventListener('keydown', e => {
   else return;
   dismissHint();
 });
+window.addEventListener('keyup', e => { if (e.key.startsWith('Arrow') || '+=-_'.includes(e.key)) saveView(); });
 
+/* ---------- settings + view, validated on the way in ---------- */
+const VIEW_KEY = 'clearwater:view';
 function saveSettings() { try { localStorage.setItem('clearwater:rain', rain ? '1' : '0'); } catch (e) { /* ignore */ } }
-try { if (localStorage.getItem('clearwater:rain') === '1') { rain = true; bRain.setAttribute('aria-pressed', 'true'); } } catch (e) { /* ignore */ }
+function saveView() {
+  try {
+    const TAU = Math.PI * 2, yaw = ((cam.tYaw % TAU) + TAU) % TAU;
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ yaw: +yaw.toFixed(4), pitch: +cam.tPitch.toFixed(4), dist: +cam.tDist.toFixed(4), orbit: orbitMode }));
+  } catch (e) { /* ignore */ }
+}
+function loadView() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(VIEW_KEY)); } catch (e) { v = null; }
+  if (!v || typeof v !== 'object') return;
+  const num = (x, lo, hi) => typeof x === 'number' && isFinite(x) ? Math.max(lo, Math.min(hi, x)) : null;
+  const yaw = num(v.yaw, -1e3, 1e3), pitch = num(v.pitch, PITCH_MIN, PITCH_MAX), dist = num(v.dist, DIST_MIN, DIST_MAX);
+  if (yaw !== null) cam.yaw = cam.tYaw = yaw;
+  if (pitch !== null) cam.pitch = cam.tPitch = pitch;
+  if (dist !== null) cam.dist = cam.tDist = dist;
+  if (v.orbit === true) setOrbit(true);
+}
+try { if (localStorage.getItem('clearwater:rain') === '1') { rain = true; rainAmt = 1; bRain.setAttribute('aria-pressed', 'true'); } } catch (e) { /* ignore */ }
+loadView();
 
 /* ---------- main loop ---------- */
 let running = true, last = performance.now(), simAcc = 0, time = 0, rafId = 0;
 let ambientT = 0.4, rainAcc = 0;
-let perfAcc = 0, perfFrames = 0, perfCooldown = 3;
-const stepsPerSec = N * 0.9;
-canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; fail('繪圖資源被系統回收了，請重新整理頁面。'); });
+const stepsPerSec = 0.9 * N / WS;                       // the same world wave speed at any N / WS
+const MAX_STEPS = Math.ceil(0.05 * stepsPerSec) + 1;   // covers the longest frame we simulate, so 20-144 Hz all agree
+const AMBIENT_AREA = WS * WS;                           // ambient + rain keep the old density over the larger pool
+function lose() {
+  running = false; cancelAnimationFrame(rafId); dropPointers(); saveView();
+  fail('繪圖資源被系統回收了，正在等待恢復；也可以直接重新載入。');
+  reloadBtn.hidden = false;
+}
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); lose(); });
+// iOS drops the GL context of a page left in the background; once it is handed back, start over with the saved view
+canvas.addEventListener('webglcontextrestored', () => location.reload());
+reloadBtn.addEventListener('click', () => location.reload());
 
-function frame(now) {
-  if (!running) return;
-  let dt = (now - last) / 1000;
-  last = now;
-  if (!(dt > 0)) dt = 1 / 60;
-  const rawDt = dt;
-  dt = Math.min(dt, 0.05);
+/* everything that moves with time; dt is already clamped */
+function update(dt) {
   time += dt;
-
-  // adaptive render scale
-  perfAcc += rawDt; perfFrames++;
-  if (perfAcc > 1.5) {
-    const avg = perfAcc / perfFrames;
-    perfCooldown -= perfAcc;
-    if (perfCooldown <= 0 && avg > 1 / 45 && renderScale > minScale) {
-      renderScale = Math.max(minScale, renderScale * 0.85); resize(); perfCooldown = 2;
-    }
-    perfAcc = 0; perfFrames = 0;
-  }
-
-  // camera easing
   const ce = 1 - Math.exp(-dt * 10);
   cam.yaw += (cam.tYaw - cam.yaw) * ce;
   cam.pitch += (cam.tPitch - cam.pitch) * ce;
   cam.dist += (cam.tDist - cam.dist) * ce;
   updateCamera();
 
-  // ambient life
   if (!reduceMotion) {
     ambientT -= dt;
-    if (ambientT <= 0) {
-      ambientT = 0.7 + Math.random() * 1.6;
-      addDrop((Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 1.6, 0.035, (Math.random() < 0.5 ? -1 : 1) * 0.004);
+    while (ambientT <= 0) {
+      ambientT += (0.7 + Math.random() * 1.6) / AMBIENT_AREA;
+      addDrop((Math.random() - 0.5) * 1.6 * WS, (Math.random() - 0.5) * 1.6 * WS, 0.035, (Math.random() < 0.5 ? -1 : 1) * 0.004);
     }
   }
   rainAmt += ((rain ? 1 : 0) - rainAmt) * (1 - Math.exp(-dt * 1.5));
   if (rain) {
-    rainAcc += dt * (mobile ? 45 : 70);
+    rainAcc += dt * (mobile ? 45 : 70) * AMBIENT_AREA;
     while (rainAcc >= 1) {
       rainAcc -= 1;
-      addDrop((Math.random() - 0.5) * 1.9, (Math.random() - 0.5) * 1.9, 0.018 + Math.random() * 0.014, -(0.0025 + Math.random() * 0.003));
+      addDrop((Math.random() - 0.5) * 1.9 * WS, (Math.random() - 0.5) * 1.9 * WS, 0.018 + Math.random() * 0.014, -(0.0025 + Math.random() * 0.003));
     }
   }
   updateLeaves(dt, time);
 
-  // simulation
   if (pendingCount) flushDrops();
   simAcc += dt * stepsPerSec;
-  let steps = Math.floor(simAcc);
+  const steps = Math.min(Math.floor(simAcc), MAX_STEPS);
   simAcc -= steps;
-  steps = Math.min(steps, mobile ? 4 : 8);
   for (let i = 0; i < steps; i++) stepSim();
-  derive();
+}
 
-  // render
+function render() {
+  derive();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   const R = P.render;
@@ -902,6 +971,7 @@ function frame(now) {
   gl.uniform1f(U(R, 'uTanV'), tanV);
   gl.uniform1f(U(R, 'uTime'), time);
   gl.uniform1f(U(R, 'uRain'), rainAmt);
+  gl.uniform1f(U(R, 'uWS'), WS);
   gl.uniform4fv(U(R, 'uLeaf'), leafBuf);
   gl.uniform3fv(U(R, 'uLeafCol'), leafCol);
   gl.activeTexture(gl.TEXTURE0);
@@ -912,17 +982,39 @@ function frame(now) {
   gl.uniform1i(U(R, 'uSand'), 1);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.activeTexture(gl.TEXTURE0);
+}
 
+function frame(now) {
+  if (!running) return;
+  const rawDt = (now - last) / 1000;
+  last = now;
+  perfTick(rawDt);
+  update(rawDt > 0 ? Math.min(rawDt, 0.05) : 1 / 60);
+  render();
   rafId = requestAnimationFrame(frame);
 }
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { running = false; cancelAnimationFrame(rafId); }
-  else if (!running && failEl.hidden) { running = true; last = performance.now(); cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame); }
-});
+function pause() { if (!running) return; running = false; cancelAnimationFrame(rafId); dropPointers(); saveView(); }
+function resume() {
+  if (running || !failEl.hidden || gl.isContextLost()) return;
+  running = true; last = performance.now(); cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else resume(); });
+window.addEventListener('pagehide', () => { saveView(); pause(); });
+window.addEventListener('pageshow', e => { if (e.persisted && !document.hidden) resume(); });
 // a welcoming splash so the first frame already shows rings + caustics
 addDrop(0.15, -0.1, 0.09, 0.024);
 addDrop(-0.45, 0.35, 0.06, 0.014);
-window.__clearwater = { get drops() { return pendingCount; }, get cam() { return cam; }, get rain() { return rain; }, get orbit() { return orbitMode; }, get scale() { return renderScale; }, leaves };
+window.__clearwater = {
+  get drops() { return pendingCount; }, get cam() { return cam; }, get rain() { return rain; }, get orbit() { return orbitMode; },
+  get scale() { return renderScale; }, get running() { return running; }, get pointers() { return pointers.size; },
+  get steps() { return simSteps; }, get added() { return dropsAdded; }, get maxDist() { return DIST_MAX; },
+  leaves, WS, N, perf,
+  // world point under a screen point, and whether a ripple there lands on the pool
+  toWater: (x, y) => screenToWater(x, y),
+  // run n frames of dt seconds without rendering (frame-rate tests); returns {steps, drops}
+  simulate(dt, n) { const s0 = simSteps, d0 = dropsAdded; for (let i = 0; i < n; i++) update(Math.min(dt, 0.05)); return { steps: simSteps - s0, drops: dropsAdded - d0 }; },
+  perfTick, setScale(s) { renderScale = s; resize(); }
+};
 rafId = requestAnimationFrame(frame);
 })();
 </script>
