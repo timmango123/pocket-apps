@@ -166,6 +166,51 @@ const fake = file => ({ args: ['--use-fake-ui-for-media-stream', '--use-fake-dev
       await ctx.close(); await browser.close();
     }
 
+    // 2b. review fixes: 最小 after start/resume, reset undo, autosave + restore after reload, short-screen controls
+    {
+      const exp = expectDb(0.05);
+      const browser = await chromium.launch(fake(wav(path.join(TMP, 'k2.wav'), 1000, 0.05)));
+      const { ctx, page, errors } = await open(browser, URL, { ...mobile, viewport: { width: 360, height: 640 } });
+      const settled = () => page.waitForFunction(() => __db.running && __db.session.stats.n >= 8, null, { timeout: 8000 });
+      await page.locator('.go').click(); await settled();
+      const mins = [await num(page, '#sMin')];
+      for (let i = 0; i < 6; i++) {
+        await page.locator('#playBtn').click(); await page.waitForFunction(() => !__db.running);
+        const n0 = await page.evaluate(() => __db.session.stats.n);
+        await page.locator('#playBtn').click();
+        await page.waitForFunction(n0 => __db.running && __db.session.stats.n >= n0 + 8, n0, { timeout: 8000 });
+        mins.push(await num(page, '#sMin'));
+      }
+      assert(mins.every(m => Math.abs(m - exp) < 0.6), `最小 after start + 6 resumes stays at the steady ${exp.toFixed(1)}: ${mins.join(', ')}`);
+      assert(Math.abs(await num(page, '#sLeq') - exp) < 0.4, 'Leq not dragged down by start-up frames: ' + await page.locator('#sLeq').textContent());
+      const box = await page.locator('#playBtn').boundingBox();
+      assert(box.y + box.height <= 640, `360x640: pause button on the first screen (bottom ${Math.round(box.y + box.height)})`);
+      // reset -> undo
+      await page.waitForFunction(() => __db.session.hist.size >= 3);
+      const before = await page.evaluate(() => [__db.session.hist.size, __db.session.stats.n]);
+      await page.locator('#resetBtn').click();
+      assert(await page.evaluate(() => __db.session.hist.size) === 0 && await page.locator('#toast .tact').textContent() === '復原', 'reset clears and offers 復原');
+      await page.locator('#toast .tact').click();
+      const after = await page.evaluate(() => [__db.session.hist.size, __db.session.stats.n]);
+      assert(after[0] >= before[0] && after[1] >= before[1], `復原 brings the curve and stats back (${before} -> ${after})`);
+      // reload while measuring -> pagehide saves -> 還原上次測量
+      const keep = await page.evaluate(() => [__db.session.hist.size, document.getElementById('sMin').textContent]);
+      await page.reload(); await page.waitForSelector('#card [data-act="restore"]');
+      assert(/上次的測量還在/.test(await page.locator('#card').textContent()), 'after reload the start card offers the last measurement');
+      const rb = await page.locator('#card [data-act="restore"]').boundingBox(), gb = await page.locator('#card .go').boundingBox();
+      assert(rb.y + rb.height <= 640 && rb.y < gb.y, `360x640: 還原上次測量 on the first screen, above the start button (${Math.round(rb.y + rb.height)} / start at ${Math.round(gb.y)})`);
+      assert(await page.evaluate(() => getComputedStyle(document.getElementById('num')).fontSize) === '62px', 'short screen: compact readout rules take effect (62px)');
+      const tb = await page.locator('#toast .tact').boundingBox();
+      assert(await page.locator('#toast .tact').textContent() === '還原' && tb && tb.y + tb.height <= 640, 'on load a toast also offers 還原 on the first screen');
+      await page.locator('#card [data-act="restore"]').click();
+      const back = await page.evaluate(() => [__db.session.hist.size, document.getElementById('sMin').textContent, __db.running]);
+      assert(back[0] >= keep[0] && back[1] === keep[1] && !back[2] && await page.locator('#playBtn').getAttribute('aria-label') === '繼續測量', `restored ${back[0]} points, 最小 ${back[1]}, paused`);
+      const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('#csvBtn').click()]);
+      assert(fs.readFileSync(await dl.path(), 'utf8').trim().split('\r\n').length - 1 === back[0], 'CSV after restore has every second');
+      assert(errors.length === 0, 'no console errors: ' + errors.join(' | '));
+      await ctx.close(); await browser.close();
+    }
+
     // 3. quiet vs loud (>= 20 dB apart) and A-weighting at 100 Hz
     {
       const read = async (file, aW) => {
