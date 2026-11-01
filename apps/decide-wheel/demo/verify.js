@@ -6,7 +6,7 @@ const SRC = path.resolve(__dirname, '../index.html');
 const WRAP = path.join(os.tmpdir(), 'decide-wheel-wrapped.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(SRC, 'utf8') + '</body></html>');
 const URL = 'file://' + WRAP;
-const OUT = __dirname;
+const OUT = process.env.DW_OUT || path.join(os.tmpdir(), 'decide-wheel-shots'); fs.mkdirSync(OUT, { recursive: true });
 let fails = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 const txt = (page, sel) => page.textContent(sel).then(s => s.trim());
