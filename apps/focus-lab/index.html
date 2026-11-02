@@ -6,13 +6,22 @@ button, a, label, summary, select, input, [role="button"] { touch-action: manipu
 @media (pointer: coarse) { input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea { font-size: max(16px, 1rem) !important; } }
 </style>
 <title>對焦實驗室</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
 <style>
-/* Camera-instrument look: graphite body, engraved scales, lens-barrel yellow & red marks. Committed dark. */
+/* Camera-instrument look: graphite body, engraved scales, lens-barrel yellow & red marks.
+   Light theme lightens the page chrome; the viewfinder and the two diagram screens stay dark like a camera's displays. */
 :root {
   color-scheme: dark;
+  --hi: #fff;
+  --hud: #d9d6cc;
+  --note: #cfccc4;
+  --code-bg: #101113;
+  --dof-ink: #f2c230;
+  --red-ink: #ffb3a6;
+  --yel-ink: #ffe39a;
+  --trk1: #2a2e32;
+  --trk2: #191b1e;
+  --scr: transparent;
+  --shadow: rgba(0,0,0,.45);
   --bg: #0d0e0f;
   --body: #151719;
   --panel: #1a1c1f;
@@ -27,9 +36,19 @@ button, a, label, summary, select, input, [role="button"] { touch-action: manipu
   --mark: #ef4b35;
   --coc: #6fd0e8;
   --ok: #8fd694;
-  --cond: "Barlow Condensed", "Noto Sans TC", "Arial Narrow", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-  --sans: "Noto Sans TC", system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --cond: "Arial Narrow", "Roboto Condensed", "Noto Sans TC", "PingFang TC", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Roboto Mono", monospace;
+  --sans: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  color-scheme: light; --bg: #e8e6e0; --body: #f1efea; --panel: #fbfaf7; --panel2: #f0eee8; --line: #d5d2c9; --line2: #bdb9ae;
+  --ink: #1c1d1e; --muted: #5d5f5b; --dim: #7a7c79; --hi: #111214; --note: #34352f; --code-bg: #f0ebdc; --dof-ink: #7d5a00;
+  --red-ink: #b2321f; --yel-ink: #7d5a00; --trk1: #c9c5bb; --trk2: #e6e3dc; --scr: #17191c; --shadow: rgba(60,50,30,.18);
+} }
+:root[data-theme="light"] {
+  color-scheme: light; --bg: #e8e6e0; --body: #f1efea; --panel: #fbfaf7; --panel2: #f0eee8; --line: #d5d2c9; --line2: #bdb9ae;
+  --ink: #1c1d1e; --muted: #5d5f5b; --dim: #7a7c79; --hi: #111214; --note: #34352f; --code-bg: #f0ebdc; --dof-ink: #7d5a00;
+  --red-ink: #b2321f; --yel-ink: #7d5a00; --trk1: #c9c5bb; --trk2: #e6e3dc; --scr: #17191c; --shadow: rgba(60,50,30,.18);
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -46,7 +65,8 @@ header { max-width: 1240px; margin: 0 auto; display: flex; align-items: center; 
 .logo { width: 34px; height: 34px; flex: none; }
 .ttl { flex: 1; min-width: 0; }
 .ttl h1 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: .08em; }
-.ttl .sub { font-family: var(--cond); font-size: 12.5px; letter-spacing: .22em; color: var(--muted); text-transform: uppercase; }
+.ttl .sub { font-family: var(--cond); font-size: 12.5px; letter-spacing: .22em; color: var(--muted); text-transform: uppercase; white-space: nowrap; overflow: hidden; }
+@media (max-width: 440px) { .ttl .sub .subx { display: none; } }
 .hbtn { min-height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel); font-size: 13px; color: var(--ink); }
 
 main { max-width: 1240px; margin: 0 auto; padding: 0 16px 24px; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
@@ -56,48 +76,53 @@ main > * { min-width: 0; }
 
 /* viewfinder */
 .viewer { padding: 8px; background: #08090a; border: 1px solid var(--line); border-radius: 14px; }
-.vf { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background: #000; }
-#scene { display: block; width: 100%; height: auto; touch-action: manipulation; cursor: crosshair; }
+/* fixed-height box (tallest sensor aspect) so switching sensor never moves the controls below */
+.vf { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+#scene { display: block; flex: none; touch-action: manipulation; cursor: crosshair; }
 .vf .frame { position: absolute; inset: 0; pointer-events: none; }
+#vhProbe { position: fixed; left: 0; top: 0; width: 0; height: 100vh; height: 100svh; visibility: hidden; pointer-events: none; }
 .vf .corner { position: absolute; width: 18px; height: 18px; border-color: rgba(255,255,255,.55); border-style: solid; }
 .vf .tl { left: 8px; top: 8px; border-width: 1.5px 0 0 1.5px; }
 .vf .tr { right: 8px; top: 8px; border-width: 1.5px 1.5px 0 0; }
 .vf .bl { left: 8px; bottom: 8px; border-width: 0 0 1.5px 1.5px; }
 .vf .br { right: 8px; bottom: 8px; border-width: 0 1.5px 1.5px 0; }
 .hudline { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; align-items: center; padding: 8px 4px 2px; font-family: var(--mono); font-size: 13px; color: #d9d6cc; }
+.hudline #hud { min-width: 0; }
 .hudline .sel { color: var(--dof); font-family: var(--sans); font-size: 13px; }
-.hint { font-size: 12.5px; color: var(--muted); padding: 2px 4px 0; }
+.hint { font-size: 12.5px; color: var(--muted); padding: 0 6px; margin: -4px 0 0; }
 
 /* controls */
 .controls { padding: 12px 12px 6px; }
 .sensors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding-bottom: 6px; }
 .sensors::-webkit-scrollbar { display: none; }
-.chip { min-width: 0; min-height: 40px; padding: 4px 11px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel2); font-size: 13px; line-height: 1.15; text-align: center; }
+.chip { min-width: 0; min-height: 44px; padding: 4px 11px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel2); font-size: 13px; line-height: 1.15; text-align: center; }
 .chip small { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.chip[aria-pressed="true"] { border-color: var(--dof); background: rgba(242,194,48,.12); color: #fff; }
+.chip[aria-pressed="true"] { border-color: var(--dof); background: rgba(242,194,48,.12); color: var(--hi); }
 .ring { margin-top: 10px; }
 .ring .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.ring .val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: #fff; white-space: nowrap; }
+.ring .val { font-family: var(--mono); font-size: 20px; font-weight: 500; color: var(--hi); white-space: nowrap; }
 .ring .val small { font-size: 12px; color: var(--muted); margin-left: 4px; }
-.rangeWrap { position: relative; padding-top: 16px; }
+.rangeWrap { position: relative; padding-top: 16px; touch-action: pan-y; cursor: pointer; }
+/* touches go to the wrapper: a vertical swipe scrolls the page, only a sideways drag or a tap changes the value */
+.rangeWrap input[type=range] { pointer-events: none; }
 .ticks { position: absolute; left: 0; right: 0; top: 0; height: 14px; font-family: var(--cond); font-size: 11.5px; color: var(--muted); pointer-events: none; }
 .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .ticks span.r { color: var(--mark); }
-input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 40px; background: transparent; margin: 0; touch-action: pan-y; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; touch-action: pan-y; }
 input[type=range]::-webkit-slider-runnable-track { height: 30px; border-radius: 6px; border: 1px solid var(--line2);
-  background: repeating-linear-gradient(90deg, #2a2e32 0 2px, #191b1e 2px 6px); box-shadow: inset 0 6px 8px rgba(0,0,0,.45), inset 0 -2px 3px rgba(255,255,255,.04); }
+  background: repeating-linear-gradient(90deg, var(--trk1) 0 2px, var(--trk2) 2px 6px); box-shadow: inset 0 6px 8px var(--shadow), inset 0 -2px 3px rgba(255,255,255,.04); }
 input[type=range]::-moz-range-track { height: 30px; border-radius: 6px; border: 1px solid var(--line2);
-  background: repeating-linear-gradient(90deg, #2a2e32 0 2px, #191b1e 2px 6px); }
+  background: repeating-linear-gradient(90deg, var(--trk1) 0 2px, var(--trk2) 2px 6px); }
 input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 10px; height: 38px; margin-top: -5px; border-radius: 3px; background: var(--dof); border: 2px solid #0d0e0f; box-shadow: 0 0 0 1px var(--dof), 0 2px 6px rgba(0,0,0,.6); }
 input[type=range]::-moz-range-thumb { width: 8px; height: 36px; border-radius: 3px; background: var(--dof); border: 2px solid #0d0e0f; }
 input[type=range]:focus-visible { outline: none; }
-input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px #fff; }
+input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--hi); }
 .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .qbtn { min-height: 44px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line2); background: var(--panel2); font-size: 12.5px; }
-.qbtn.red { border-color: rgba(239,75,53,.6); color: #ffb3a6; }
-.qbtn.yel { border-color: rgba(242,194,48,.6); color: #ffe39a; }
+.qbtn.red { border-color: rgba(239,75,53,.6); color: var(--red-ink); }
+.qbtn.yel { border-color: rgba(242,194,48,.6); color: var(--yel-ink); }
 .toggles { display: flex; gap: 14px; align-items: center; margin-top: 10px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
-.toggles label { display: flex; align-items: center; gap: 6px; min-height: 36px; cursor: pointer; }
+.toggles label { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; }
 .toggles input { width: 18px; height: 18px; accent-color: #f2c230; }
 
 /* readouts */
@@ -105,7 +130,9 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px #f
 .ro { background: var(--panel); padding: 8px 10px; min-width: 0; }
 .ro .k { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .ro .k i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
-.ro .v { font-family: var(--mono); font-size: 17px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ro .v { font-family: var(--mono); font-size: 17px; color: var(--hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ro .v.wrap { white-space: normal; overflow: visible; }
+.ro .v.wrap small { white-space: nowrap; }
 .ro .v small { color: var(--muted); font-size: 12px; }
 .ro.wide { grid-column: 1 / -1; }
 .ro.wide .v { font-family: var(--sans); font-size: 14px; white-space: normal; }
@@ -114,13 +141,13 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px #f
 .diag { padding: 10px 10px 8px; }
 .diag h2 { margin: 0 0 2px; font-size: 14.5px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .diag h2 .eng { font-weight: 400; }
-.diag canvas { display: block; width: 100%; touch-action: pan-y; }
+.diag canvas { display: block; width: 100%; touch-action: pan-y; background: var(--scr); border-radius: 6px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin-top: 4px; }
-.legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; background: var(--c); }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; background: var(--c); box-shadow: 0 0 0 1px var(--line2); }
 details.notes { padding: 10px 14px; }
 details.notes summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
-details.notes p, details.notes li { color: #cfccc4; font-size: 13.5px; }
-details.notes code { font-family: var(--mono); font-size: 12.5px; color: var(--dof); background: #101113; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+details.notes p, details.notes li { color: var(--note); font-size: 13.5px; }
+details.notes code { font-family: var(--mono); font-size: 12.5px; color: var(--dof-ink); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 details.notes ul { padding-left: 18px; }
 
 @media (min-width: 960px) {
@@ -128,12 +155,29 @@ details.notes ul { padding-left: 18px; }
   .colL, .colR { display: grid; gap: 12px; min-width: 0; }
   .readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 959px) { .colL, .colR { display: contents; } .viewer { order: 0; } .controls { order: 1; } .readouts { order: 2; } #depthPanel { order: 3; } #rayPanel { order: 4; } .notes { order: 5; } }
+@media (max-width: 959px) {
+  .colL, .colR { display: contents; } .viewer { order: 0; } .hint { order: 1; } .controls { order: 2; } .readouts { order: 3; } #depthPanel { order: 4; } #rayPanel { order: 5; } .notes { order: 6; }
+  /* portrait phones: the viewfinder stays on screen (its height is capped in JS) so dragging a slider shows the blur change */
+  .viewer { position: sticky; top: 0; z-index: 3; box-shadow: 0 8px 14px -6px rgba(0,0,0,.55); }
+}
+/* landscape phones: viewfinder on the left (sticky, fits the height), everything else scrolls on the right */
+@media (orientation: landscape) and (max-height: 520px) {
+  header { padding-top: 6px; padding-bottom: 4px; }
+  main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .colL, .colR { display: contents; }
+  .viewer { grid-column: 1; grid-row: 1 / span 7; position: sticky; top: 8px; align-self: start; box-shadow: none; }
+  .hint, .controls, .readouts, #depthPanel, #rayPanel, .notes { grid-column: 2; margin: 0; }
+  .hint { order: 1; } .controls { order: 2; } .readouts { order: 3; } #depthPanel { order: 4; } #rayPanel { order: 5; } .notes { order: 6; }
+  .hint { padding-top: 2px; }
+}
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 12px;
+  padding: 6px 6px 6px 16px; border-radius: 10px; background: #26292d; color: #eceae4; border: 1px solid #3b4045; box-shadow: 0 6px 20px rgba(0,0,0,.4); font-size: 14px; max-width: calc(100vw - 32px); }
+.toast button { min-height: 44px; min-width: 64px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(242,194,48,.7); background: rgba(242,194,48,.14); color: #ffe39a; font-weight: 700; }
 </style>
 
 <header>
   <svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="none" stroke="#3b4045" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="none" stroke="#f2c230" stroke-width="2"/><path d="M20 8l4 7h-8zM31.4 25l-8 .2 4-7zM8.6 25l3.9-6.8 4 6.8z" fill="#f2c230" opacity=".85"/><circle cx="20" cy="20" r="3" fill="#ef4b35"/></svg>
-  <div class="ttl"><h1>對焦實驗室</h1><div class="sub">Focus Lab · depth of field</div></div>
+  <div class="ttl"><h1>對焦實驗室</h1><div class="sub">Focus Lab<span class="subx"> · depth of field</span></div></div>
   <button class="hbtn" id="resetBtn">重設</button>
 </header>
 
@@ -145,8 +189,8 @@ details.notes ul { padding-left: 18px; }
         <div class="frame"><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div></div>
       </div>
       <div class="hudline"><span id="hud">50 mm · f/2.8 · 3.20 m</span><span class="sel" id="hudSel"></span></div>
-      <div class="hint">點畫面中的物體（或地面）就會對焦到那個距離。模糊程度依真實薄透鏡公式即時計算。</div>
     </section>
+    <p class="hint">點畫面中的物體（或地面）就會對焦到那個距離。模糊程度依真實薄透鏡公式即時計算。</p>
     <section class="panel diag" id="depthPanel">
       <h2>景深地圖 <span class="eng">top view · log distance</span></h2>
       <canvas id="depth" aria-label="景深示意圖：相機在左，橫軸為距離（對數刻度）"></canvas>
@@ -190,13 +234,13 @@ details.notes ul { padding-left: 18px; }
       <div class="ro"><div class="k"><i style="background:var(--dof)"></i>景深遠界</div><div class="v" id="rFar">—</div></div>
       <div class="ro"><div class="k">總景深</div><div class="v" id="rTot">—</div></div>
       <div class="ro"><div class="k"><i style="background:var(--mark)"></i>超焦距</div><div class="v" id="rH">—</div></div>
-      <div class="ro"><div class="k">對角視角</div><div class="v" id="rFov">—</div></div>
+      <div class="ro"><div class="k">對角視角</div><div class="v wrap" id="rFov">—</div></div>
       <div class="ro"><div class="k">放大倍率</div><div class="v" id="rMag">—</div></div>
-      <div class="ro"><div class="k">等效焦距 / 光圈</div><div class="v" id="rEq">—</div></div>
+      <div class="ro"><div class="k">等效焦距 / 光圈</div><div class="v wrap" id="rEq">—</div></div>
       <div class="ro"><div class="k">光圈口徑 D</div><div class="v" id="rD">—</div></div>
       <div class="ro"><div class="k"><i style="background:var(--coc)"></i>允許模糊圈 c</div><div class="v" id="rC">—</div></div>
       <div class="ro"><div class="k">鏡後成像距離</div><div class="v" id="rV">—</div></div>
-      <div class="ro wide"><div class="k">選取物體</div><div class="v" id="rSel">—</div></div>
+      <div class="ro wide"><div class="k">選取對象</div><div class="v" id="rSel">—</div></div>
     </section>
     <details class="panel notes">
       <summary>公式與說明</summary>
@@ -207,11 +251,14 @@ details.notes ul { padding-left: 18px; }
         <li>超焦距 <code>H = f²/(N·c) + f</code>；景深近界 <code>Dₙ = s(H−f)/(H+s−2f)</code>，遠界 <code>D_f = s(H−f)/(H−s)</code>（s ≥ H 時為 ∞）。</li>
         <li>對焦在超焦距時，從 H/2 到無限遠都清晰——風景攝影常用的技巧。</li>
         <li>換小片幅但維持相同視角，需要更短的焦距，景深因而變深；「等效光圈」= N × 裁切係數，可以用來比較背景虛化。</li>
+        <li>淺色主題只換頁面底色；觀景窗和兩張示意圖刻意維持深色，就像相機的螢幕。</li>
         <li>畫面模糊以每個物體的模糊圈直徑換算成像素繪製；點光源（路燈、燈串）直接畫成散景圓盤，收光圈時會出現光圈葉片的多邊形。</li>
       </ul>
     </details>
   </div>
 </main>
+<div id="vhProbe" aria-hidden="true"></div>
+<div class="toast" id="toast" role="status" hidden><span id="toastMsg">已重設</span><button id="undoBtn" type="button">復原</button></div>
 
 <script>
 (() => {
@@ -231,12 +278,33 @@ const CAM_H = 1.2; // m camera height
 const HZ = 0.45; // horizon position in frame (slight lens shift)
 const FF_DIAG = Math.hypot(36, 24);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FC = '"Arial Narrow", "Roboto Condensed", "Noto Sans TC", "PingFang TC", sans-serif';
+const FM = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
+const FS = 'system-ui, -apple-system, "PingFang TC", "Noto Sans TC", sans-serif';
+const SCENE_MAX_PX = 500000; // device-pixel budget for the scene canvas
+const LANDSCAPE = matchMedia('(orientation: landscape) and (max-height: 520px)');
 
 /* ---------- state ---------- */
-const DEF = { f: 50, n: 6, s: 3200, sensor: 'ff', sel: 6, tags: true, peak: false };
-let st = Object.assign({}, DEF);
-try { const sv = JSON.parse(localStorage.getItem('focuslab.v1') || 'null'); if (sv) Object.assign(st, sv); } catch (e) {}
-if (st.s === null) st.s = Infinity;
+const KEY = 'focuslab.v1';
+// gu: focus point picked on the ground (mm), null when an object (st.sel) is the selection
+const DEF = { f: 50, n: 6, s: 3200, sensor: 'ff', sel: 6, tags: true, peak: false, gu: null };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const num = v => typeof v === 'number' && Number.isFinite(v);
+function cleanState(sv) { // saved data is untrusted: keep valid fields, fall back to defaults for the rest
+  const o = Object.assign({}, DEF);
+  if (!sv || typeof sv !== 'object') return o;
+  if (num(sv.f)) o.f = clamp(sv.f, F_MIN, F_MAX);
+  if (num(sv.n)) o.n = clamp(Math.round(sv.n), 0, STOPS.length - 1);
+  if (sv.s === null) o.s = Infinity; else if (num(sv.s) && sv.s > 0) o.s = sv.s > 1e9 ? Infinity : Math.max(S_MIN, sv.s);
+  if (SENSORS.some(x => x.key === sv.sensor)) o.sensor = sv.sensor;
+  if (num(sv.sel)) o.sel = clamp(Math.round(sv.sel), 0, 8);
+  if (typeof sv.tags === 'boolean') o.tags = sv.tags;
+  if (typeof sv.peak === 'boolean') o.peak = sv.peak;
+  if (num(sv.gu) && sv.gu > 0) o.gu = Math.max(S_MIN, sv.gu);
+  return o;
+}
+let st;
+try { st = cleanState(JSON.parse(localStorage.getItem(KEY) || 'null')); } catch (e) { st = cleanState(null); }
 let sAnim = null; // {from, to} in diopters
 let curD = 1 / st.s; // current focus in 1/mm
 
@@ -269,6 +337,11 @@ function fmtDist(mm) {
   return Math.round(m) + ' m';
 }
 const minFocus = () => Math.max(S_MIN, st.f * 5);
+function selTarget() { // what the readouts, HUD and ray diagram describe
+  if (st.gu != null) return { name: '地面', u: Math.max(minFocus(), st.gu), i: -1 };
+  const ob = OBJ[st.sel] || OBJ[6];
+  return { name: ob.name, u: ob.u * 1000, i: OBJ.indexOf(ob) };
+}
 
 /* ---------- slider mappings ---------- */
 const fFromSl = v => F_MIN * Math.pow(F_MAX / F_MIN, v / 1000);
@@ -283,7 +356,8 @@ const scene = $('scene'), sctx = scene.getContext('2d');
 const depthC = $('depth'), dctx = depthC.getContext('2d');
 const rayC = $('rays'), rctx = rayC.getContext('2d');
 const fSl = $('fSl'), nSl = $('nSl'), sSl = $('sSl');
-let dpr = 1, VW = 0, VH = 0; // css px of viewfinder
+let dpr = 1, VW = 0, VH = 0; // css px of the scene image
+let sd = 1, lowRes = false, lowResT = 0, lowFrames = 0; // scene device px per css px; cheaper scene while a slider is being dragged
 const lay = document.createElement('canvas'), lctx = lay.getContext('2d');
 const small = document.createElement('canvas'), smctx = small.getContext('2d');
 const HAS_FILTER = (() => { try { const c = document.createElement('canvas').getContext('2d'); if (typeof c.filter !== 'string') return false; c.filter = 'blur(2px)'; return c.filter === 'blur(2px)'; } catch (e) { return false; } })();
@@ -470,14 +544,34 @@ const TAP_OBJS = OBJ.map((o, i) => i).filter(i => OBJ[i].tap !== false).sort((a,
 /* ---------- rendering: scene ---------- */
 let hit = []; // {i, x0,x1,y0,y1} css px
 let focusMark = null; // {x,y,t}
+const MAX_ASPECT = Math.max(...SENSORS.map(x => x.h / x.w));
+function boxCap() { // max viewfinder image height (css px)
+  const vh = $('vhProbe').clientHeight || window.innerHeight || 800;
+  if (LANDSCAPE.matches) return Math.max(150, vh - 120);
+  if (window.innerWidth < 960) return Math.max(150, Math.round(vh * 0.33));
+  return Infinity;
+}
+function sizeScene() {
+  const want = lowRes ? Math.min(sd, Math.max(0.75, sd * 0.5)) : sd;
+  const w = Math.round(VW * want), h = Math.round(VH * want);
+  if (scene.width !== w || scene.height !== h) { scene.width = w; scene.height = h; lay.width = w; lay.height = h; }
+}
 function sizeCanvases() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
-  const sn = sensor();
-  const w = $('vf').clientWidth || 360;
-  VW = w; VH = Math.round(w * sn.h / sn.w);
-  scene.style.height = VH + 'px';
-  scene.width = Math.round(VW * dpr); scene.height = Math.round(VH * dpr);
-  lay.width = scene.width; lay.height = scene.height;
+  const sn = sensor(), vf = $('vf');
+  const bw = vf.clientWidth || 360;
+  // the box keeps the tallest sensor's height, so changing sensor never shifts the layout
+  const bh = Math.round(Math.min(bw * MAX_ASPECT, boxCap()));
+  vf.style.height = bh + 'px';
+  const a = sn.h / sn.w;
+  VW = Math.min(bw, Math.floor(bh / a)); VH = Math.round(VW * a);
+  if (VH > bh) { VH = bh; VW = Math.round(bh / a); }
+  scene.style.width = VW + 'px'; scene.style.height = VH + 'px';
+  const fr = vf.querySelector('.frame');
+  fr.style.left = ((bw - VW) / 2) + 'px'; fr.style.top = ((bh - VH) / 2) + 'px'; fr.style.width = VW + 'px'; fr.style.height = VH + 'px'; fr.style.right = 'auto'; fr.style.bottom = 'auto';
+  sd = Math.min(dpr, Math.sqrt(SCENE_MAX_PX / (VW * VH)));
+  sizeScene();
+  masks = null;
   const dw = depthC.clientWidth || 360;
   depthC.style.height = Math.round(Math.min(260, Math.max(200, dw * 0.42))) + 'px';
   depthC.width = Math.round(dw * dpr); depthC.height = Math.round(depthC.clientHeight * dpr);
@@ -515,11 +609,87 @@ function bokeh(g, x, y, diam, col, minDot, blades, intensity) {
   g.fill();
   g.globalAlpha = 1;
 }
+// Each object drawn at css scale onto a small canvas: alpha masks for tap picking and label placement.
+function objGeom(o, ob, W, Hh, pxPerMM) {
+  const k = (o.vs / (ob.u * 1000)) * 1000 * pxPerMM; // px per meter at this depth
+  const cx = W / 2, cy = Hh * HZ;
+  return { k, P: (X, Y) => [cx + X * k, cy - (Y - CAM_H) * k] };
+}
+function drawShape(g, o, ob, geo, pxPerMM, lightR) { // the object's pixels (plus its point lights) as one silhouette
+  ob.draw(g, geo.P, geo.k);
+  if (ob.lights) {
+    const r = lightR(blurMM(o, ob.u * 1000) * pxPerMM, geo.k);
+    g.fillStyle = '#fff';
+    for (const [X, Y] of ob.lights()) { const [x, y] = geo.P(X, Y); g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); }
+  }
+}
+const MS = 1 / 3; // mask scale (mask px per css px)
+const mcan = document.createElement('canvas'), mctx = mcan.getContext('2d', { willReadFrequently: true });
+let masks = null, masksKey = '';
+function getMasks(o) {
+  const key = `${VW}|${VH}|${o.sn.key}|${o.f.toFixed(3)}|${Math.round(Math.log(o.vs) * 400)}`;
+  if (masks && key === masksKey) return masks;
+  const mw = Math.max(1, Math.ceil(VW * MS)), mh = Math.max(1, Math.ceil(VH * MS));
+  mcan.width = mw; mcan.height = mh;
+  const pxPerMM = VW / o.sn.w;
+  masks = {};
+  for (const i of TAP_OBJS) {
+    const ob = OBJ[i], geo = objGeom(o, ob, VW, VH, pxPerMM);
+    mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.clearRect(0, 0, mw, mh);
+    mctx.setTransform(MS, 0, 0, MS, 0, 0);
+    drawShape(mctx, o, ob, geo, pxPerMM, (b, k) => Math.max(2, 0.15 * k));
+    const d = mctx.getImageData(0, 0, mw, mh).data;
+    const sat = new Int32Array((mw + 1) * (mh + 1));
+    let x0 = mw, x1 = -1, y0 = mh, y1 = -1, n = 0;
+    for (let y = 0; y < mh; y++) {
+      let row = 0;
+      for (let x = 0; x < mw; x++) {
+        const on = d[(y * mw + x) * 4 + 3] > 77 ? 1 : 0;
+        if (on) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        row += on; sat[(y + 1) * (mw + 1) + x + 1] = sat[y * (mw + 1) + x + 1] + row;
+      }
+    }
+    if (n) masks[i] = { n, sat, mw, mh, bb: { x0: x0 / MS, x1: (x1 + 1) / MS, y0: y0 / MS, y1: (y1 + 1) / MS } };
+  }
+  masksKey = key;
+  return masks;
+}
+function coverage(m, x, y, w, h) { // fraction of the css rect covered by the mask
+  if (!m) return 0;
+  const a = clamp(Math.floor(x * MS), 0, m.mw), b = clamp(Math.ceil((x + w) * MS), 0, m.mw);
+  const c = clamp(Math.floor(y * MS), 0, m.mh), d = clamp(Math.ceil((y + h) * MS), 0, m.mh);
+  if (b <= a || d <= c) return 0;
+  const W1 = m.mw + 1, S = m.sat;
+  return (S[d * W1 + b] - S[c * W1 + b] - S[d * W1 + a] + S[c * W1 + a]) / ((b - a) * (d - c));
+}
+// Tap picking by pixels: the nearest object actually drawn under the finger; else the closest one within a few px.
+const PR = 7, pcan = document.createElement('canvas'), pctx = pcan.getContext('2d', { willReadFrequently: true });
+pcan.width = pcan.height = PR * 2 + 1;
+function pickAt(x, y) {
+  const o = optics(), pxPerMM = VW / o.sn.w, N = PR * 2 + 1;
+  let near = null;
+  for (const i of TAP_OBJS) { // nearest first
+    const ob = OBJ[i], geo = objGeom(o, ob, VW, VH, pxPerMM);
+    pctx.setTransform(1, 0, 0, 1, 0, 0); pctx.clearRect(0, 0, N, N);
+    pctx.setTransform(1, 0, 0, 1, PR - x, PR - y);
+    drawShape(pctx, o, ob, geo, pxPerMM, b => Math.max(4, Math.min(14, b / 2)));
+    const d = pctx.getImageData(0, 0, N, N).data;
+    if (d[(PR * N + PR) * 4 + 3] > 77) return i;
+    for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
+      if (d[(yy * N + xx) * 4 + 3] <= 77) continue;
+      const dist = Math.hypot(xx - PR, yy - PR);
+      if (dist <= PR && (!near || dist < near.dist - 0.01)) near = { i, dist };
+    }
+  }
+  return near ? near.i : -1;
+}
 function renderScene() {
   const o = optics();
-  const W = scene.width, Hh = scene.height;
+  sizeScene();
+  const W = scene.width, Hh = scene.height, q = W / VW; // device px per css px right now
+  if (lowRes) lowFrames++;
   const pxPerMM = W / o.sn.w; // device px per sensor mm
-  const cx = W / 2, cy = Hh * HZ;
+  const cy = Hh * HZ;
   const g = sctx;
   g.setTransform(1, 0, 0, 1, 0, 0);
   // sky + ground base (sky at infinity; ground as smooth gradient)
@@ -535,12 +705,11 @@ function renderScene() {
   g.fillStyle = sg; g.fillRect(0, 0, W, cy);
   hit = [];
   const blades = o.N >= 2.8 ? 7 : 0;
-  const minDot = Math.max(2, 2.2 * dpr);
+  const minDot = Math.max(2, 2.2 * q);
   for (let i = 0; i < OBJ.length; i++) {
     const ob = OBJ[i];
     const u = ob.u * 1000;
-    const k = (o.vs / u) * 1000 * pxPerMM; // device px per meter at this depth
-    const P = (X, Y) => [cx + X * k, cy - (Y - CAM_H) * k];
+    const { k, P } = objGeom(o, ob, W, Hh, pxPerMM);
     const [bx0, by1] = P(ob.box[0], ob.box[2]), [bx1, by0] = P(ob.box[1], ob.box[3]);
     const vis = !(bx1 < -50 || bx0 > W + 50 || by0 > Hh + 50 || by1 < -50);
     const bpx = blurMM(o, u) * pxPerMM;
@@ -559,40 +728,21 @@ function renderScene() {
       }
       g.globalCompositeOperation = 'source-over';
     }
-    if (ob.tap !== false && vis) hit.push({ i, x0: Math.max(0, bx0) / dpr, x1: Math.min(W, bx1) / dpr, y0: Math.max(0, by0) / dpr, y1: Math.min(Hh, by1) / dpr, top: by0 / dpr, blur: blurMM(o, u) });
+    if (ob.tap !== false && vis) hit.push({ i, x0: Math.max(0, bx0) / q, x1: Math.min(W, bx1) / q, y0: Math.max(0, by0) / q, y1: Math.min(Hh, by1) / q, top: by0 / q, blur: blurMM(o, u) });
   }
   // overlays (sharp): tags, peaking, focus mark
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.setTransform(q, 0, 0, q, 0, 0);
+  const M = (st.peak || st.tags) ? getMasks(o) : null;
   if (st.peak) {
     for (const h of hit) {
-      if (h.blur > o.c) continue;
+      if (h.blur > o.c || !M[h.i]) continue;
+      const bb = M[h.i].bb;
       g.strokeStyle = 'rgba(242,194,48,.9)'; g.lineWidth = 1.5; g.setLineDash([5, 4]);
-      g.strokeRect(h.x0 + 1, h.y0 + 1, Math.max(4, h.x1 - h.x0 - 2), Math.max(4, h.y1 - h.y0 - 2)); g.setLineDash([]);
+      g.strokeRect(bb.x0 + 1, bb.y0 + 1, Math.max(4, bb.x1 - bb.x0 - 2), Math.max(4, bb.y1 - bb.y0 - 2)); g.setLineDash([]);
     }
   }
-  if (st.tags) {
-    g.font = '600 12px "Barlow Condensed", "Noto Sans TC", sans-serif';
-    g.textBaseline = 'middle';
-    const placed = [];
-    for (let j = hit.length - 1; j >= 0; j--) {
-      const h = hit[j], ob = OBJ[h.i];
-      if (h.x1 - h.x0 < 6) continue;
-      const inDof = h.blur <= o.c;
-      const txt = `${ob.name} ${fmtDist(ob.u * 1000)}`;
-      const tw = g.measureText(txt).width + 14;
-      let x = Math.min(VW - tw - 4, Math.max(4, (h.x0 + h.x1) / 2 - tw / 2));
-      let y = Math.max(6, Math.min(VH - 24, h.top < 0 ? (h.y0 + h.y1) / 2 - 9 : h.y0 + 4));
-      if (ob.id === 'hedge') { x = VW - tw - 6; y = Math.max(6, Math.min(VH - 24, h.y0 - 22)); }
-      for (let t = 0; t < 6; t++) { const hitp = placed.find(p => Math.abs(p.y - y) < 19 && x < p.x + p.w && x + tw > p.x); if (!hitp) break; y = hitp.y + 20; }
-      if (y > VH - 22) continue;
-      placed.push({ x, y, w: tw });
-      g.fillStyle = 'rgba(10,11,12,.72)'; roundRect(g, x, y, tw, 18, 4); g.fill();
-      g.fillStyle = inDof ? '#f2c230' : '#e9e6de';
-      g.beginPath(); g.arc(x + 7, y + 9, 3, 0, 6.283); if (inDof) g.fill(); else { g.strokeStyle = '#9a9b97'; g.lineWidth = 1; g.stroke(); }
-      g.fillStyle = inDof ? '#ffe39a' : '#e9e6de';
-      g.fillText(txt, x + 13, y + 9.5);
-    }
-  }
+  labels = [];
+  if (st.tags) drawLabels(g, o, M);
   if (focusMark) {
     const age = (performance.now() - focusMark.t) / 1000;
     const a = Math.max(0, 1 - age / 1.6);
@@ -604,6 +754,55 @@ function renderScene() {
       for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { g.moveTo(x + sx * s, y + sy * s * 0.5); g.lineTo(x + sx * s, y + sy * s); g.lineTo(x + sx * s * 0.5, y + sy * s); }
       g.stroke();
     } else focusMark = null;
+  }
+}
+// Distance tags: the selected subject is labelled first and nothing else may sit on it; each tag sits next to its
+// object's real outline (above it when there is room) and gets a leader line when it had to move away.
+let labels = [];
+function drawLabels(g, o, M) {
+  g.font = '600 12px ' + FC;
+  g.textBaseline = 'middle';
+  const TH = 18, selI = st.gu == null ? st.sel : -1;
+  const order = TAP_OBJS.filter(i => M[i] && M[i].n >= 2 && hit.some(h => h.i === i));
+  if (order.includes(selI)) { order.splice(order.indexOf(selI), 1); order.unshift(selI); }
+  const placed = [];
+  const free = (x, y, w) => !placed.some(p => x < p.x + p.w + 3 && x + w + 3 > p.x && y < p.y + TH + 2 && y + TH + 2 > p.y);
+  for (const i of order) {
+    const ob = OBJ[i], bb = M[i].bb, h = hit.find(hh => hh.i === i);
+    const inDof = h.blur <= o.c;
+    const txt = `${ob.name} ${fmtDist(ob.u * 1000)}`;
+    const tw = Math.ceil(g.measureText(txt).width + 14);
+    if (tw > VW - 8) continue;
+    const ax = clamp((bb.x0 + bb.x1) / 2, 4, VW - 4);
+    const xs = ob.id === 'hedge' ? [VW - tw - 6, 6] : [ax - tw / 2, bb.x0, bb.x1 - tw, bb.x1 + 4, bb.x0 - tw - 4];
+    const ys = [bb.y0 - TH - 4, bb.y0 + 4, bb.y1 + 4, (bb.y0 + bb.y1) / 2 - TH / 2];
+    for (let y = 4; y < VH - TH; y += 9) ys.push(y);
+    let best = null;
+    for (const y0 of ys) for (const x0 of xs) {
+      const x = clamp(x0, 4, VW - tw - 4), y = clamp(y0, 4, VH - TH - 4);
+      if (!free(x, y, tw)) continue;
+      const gx = Math.max(bb.x0 - (x + tw), x - bb.x1, 0), gy = Math.max(bb.y0 - (y + TH), y - bb.y1, 0);
+      let sc = Math.hypot(gx, gy) * 1.5 + Math.abs(x + tw / 2 - ax) * 0.05 + Math.abs(y - (bb.y0 - TH - 4)) * 0.04;
+      if (y > bb.y0 && y + TH < bb.y1 && x > bb.x0 && x + tw < bb.x1) sc += 6; // prefer the outline's edge over its middle
+      for (const j of order) sc += coverage(M[j], x, y, tw, TH) * (j === i ? 12 : j === selI ? 500 : OBJ[j].u < ob.u ? 25 : 8);
+      if (!best || sc < best.sc) best = { x, y, sc, gx, gy };
+    }
+    if (!best) continue;
+    const { x, y } = best;
+    placed.push({ x, y, w: tw });
+    labels.push({ i, x, y, w: tw, h: TH, leader: best.gx + best.gy > 8 });
+    if (best.gx + best.gy > 8) { // leader line back to the object's outline
+      const lx = clamp(x + tw / 2, bb.x0 + 2, bb.x1 - 2), ly = clamp(y + TH / 2, bb.y0 + 2, bb.y1 - 2);
+      const sx = clamp(lx, x, x + tw), sy = clamp(ly, y, y + TH);
+      g.strokeStyle = 'rgba(10,11,12,.75)'; g.lineWidth = 3; g.beginPath(); g.moveTo(sx, sy); g.lineTo(lx, ly); g.stroke();
+      g.strokeStyle = inDof ? '#f2c230' : '#e9e6de'; g.lineWidth = 1; g.beginPath(); g.moveTo(sx, sy); g.lineTo(lx, ly); g.stroke();
+      g.fillStyle = g.strokeStyle; g.beginPath(); g.arc(lx, ly, 2, 0, 6.283); g.fill();
+    }
+    g.fillStyle = 'rgba(10,11,12,.72)'; roundRect(g, x, y, tw, TH, 4); g.fill();
+    g.fillStyle = inDof ? '#f2c230' : '#e9e6de';
+    g.beginPath(); g.arc(x + 7, y + 9, 3, 0, 6.283); if (inDof) g.fill(); else { g.strokeStyle = '#9a9b97'; g.lineWidth = 1; g.stroke(); }
+    g.fillStyle = inDof ? '#ffe39a' : '#e9e6de';
+    g.fillText(txt, x + 13, y + 9.5);
   }
 }
 
@@ -628,7 +827,7 @@ function renderDepth() {
   g.fillStyle = '#f2c230'; g.fillRect(37, axisY - 24, 2, 8);
   // axis
   g.strokeStyle = '#5a5f63'; g.lineWidth = 1; g.beginPath(); g.moveTo(L, axisY); g.lineTo(INF, axisY); g.stroke();
-  g.fillStyle = '#9a9b97'; g.font = '500 11px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillStyle = '#9a9b97'; g.font = '500 11px ' + FC; g.textAlign = 'center'; g.textBaseline = 'top';
   for (const m of [0.3, 0.5, 1, 2, 3, 5, 10, 20, 50, 100, 300, 1000]) {
     const x = X(m * 1000);
     g.beginPath(); g.moveTo(x, axisY); g.lineTo(x, axisY + 4); g.stroke();
@@ -639,27 +838,38 @@ function renderDepth() {
   g.textAlign = 'left'; g.fillStyle = '#6d706f'; g.fillText('m', 6, axisY + 5);
   // objects
   const rows = [top + 14, top + 34, top + 54];
+  const selI = st.gu == null ? st.sel : -1, names = [];
   OBJ.forEach((ob, i) => {
     const u = ob.u * 1000, x = X(u);
     const b = blurMM(o, u);
     const inDof = b <= o.c;
     const y = axisY - 10;
     g.fillStyle = inDof ? '#f2c230' : '#e9e6de';
-    g.beginPath(); g.arc(x, y, i === st.sel ? 5 : 3.5, 0, 6.283); g.fill();
-    if (i === st.sel) { g.strokeStyle = '#6fd0e8'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 8, 0, 6.283); g.stroke(); }
-    g.fillStyle = inDof ? '#ffe39a' : '#bdbab2';
-    g.font = '500 12px "Noto Sans TC", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.beginPath(); g.arc(x, y, i === selI ? 5 : 3.5, 0, 6.283); g.fill();
+    if (i === selI) { g.strokeStyle = '#6fd0e8'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 8, 0, 6.283); g.stroke(); }
     const ry = rows[i % 3];
-    g.fillText(ob.name, Math.min(W - 16, Math.max(L + 6, x)), ry);
     g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, ry + 8); g.lineTo(x, y - 5); g.stroke();
+    names.push([ob.name, Math.min(W - 16, Math.max(L + 6, x)), ry, inDof ? '#ffe39a' : '#bdbab2']);
   });
+  if (st.gu != null) { // focus point picked on the ground
+    const x = X(selTarget().u), y = axisY - 10;
+    g.strokeStyle = '#6fd0e8'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, 6.283); g.stroke();
+    g.beginPath(); g.moveTo(x - 4, y); g.lineTo(x + 4, y); g.moveTo(x, y - 4); g.lineTo(x, y + 4); g.stroke();
+  }
   // focus plane
   const xs = X(o.s);
   g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.moveTo(xs, top); g.lineTo(xs, curveBot); g.stroke();
+  // object names last, on a dark chip, so the focus plane and leader lines never run through the text
+  g.font = '500 12px ' + FS; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [t, x, y, col] of names) {
+    const w = g.measureText(t).width + 6;
+    g.fillStyle = 'rgba(21,23,25,.92)'; g.fillRect(x - w / 2, y - 8, w, 16);
+    g.fillStyle = col; g.fillText(t, x, y);
+  }
   // hyperfocal
   const xh = X(o.H);
   g.fillStyle = '#ef4b35'; g.beginPath(); g.moveTo(xh, axisY - 1); g.lineTo(xh - 5, axisY - 9); g.lineTo(xh + 5, axisY - 9); g.closePath(); g.fill();
-  g.font = '600 11px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  g.font = '600 11px ' + FC; g.textAlign = 'center'; g.textBaseline = 'bottom';
   g.fillText('H', xh, axisY - 10);
   // CoC curve
   const Ymin = 0.05, Ymax = 200;
@@ -668,7 +878,7 @@ function renderDepth() {
   g.fillStyle = 'rgba(242,194,48,.08)'; g.fillRect(L, y1, INF - L, curveBot - y1);
   g.strokeStyle = 'rgba(242,194,48,.6)'; g.setLineDash([4, 4]); g.lineWidth = 1;
   g.beginPath(); g.moveTo(L, y1); g.lineTo(INF, y1); g.stroke(); g.setLineDash([]);
-  g.fillStyle = '#9a9b97'; g.textAlign = 'right'; g.textBaseline = 'middle'; g.font = '500 10.5px "Barlow Condensed", sans-serif';
+  g.fillStyle = '#9a9b97'; g.textAlign = 'right'; g.textBaseline = 'middle'; g.font = '500 10.5px ' + FC;
   g.fillText('1×c', L - 4, y1); g.fillText('10×', L - 4, Yc(10)); g.fillText('0.1×', L - 4, Yc(0.1)); g.fillText('100×', L - 4, Yc(100));
   g.strokeStyle = '#6fd0e8'; g.lineWidth = 2; g.beginPath();
   const steps = 220;
@@ -686,8 +896,8 @@ function renderDepth() {
 /* ---------- rendering: ray diagram ---------- */
 function renderRays() {
   const o = optics();
-  const ob = OBJ[st.sel] || OBJ[6];
-  const u = ob.u * 1000;
+  const ob = selTarget();
+  const u = ob.u;
   const vu = 1 / (1 / o.f - 1 / u);
   const b = blurMM(o, u);
   const g = rctx, W = rayC.width / dpr, H = rayC.height / dpr;
@@ -714,7 +924,7 @@ function renderRays() {
   g.strokeStyle = '#6fd0e8'; g.lineWidth = 1.4;
   g.beginPath(); g.moveTo(lx, cy - Dh / 2); g.lineTo(xv, cy); g.moveTo(lx, cy + Dh / 2); g.lineTo(xv, cy); g.stroke();
   g.strokeStyle = '#f2c230'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(xsens, cy - 22); g.lineTo(xsens, cy + 22); g.stroke();
-  g.fillStyle = '#9a9b97'; g.font = '500 11px "Barlow Condensed", "Noto Sans TC", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'top';
+  g.fillStyle = '#9a9b97'; g.font = '500 11px ' + FC; g.textAlign = 'center'; g.textBaseline = 'top';
   g.fillText(`D ${o.D.toFixed(1)} mm`, lx, cy + H * 0.4 + 2 > H - 12 ? H - 13 : cy + H * 0.4 + 2);
   g.textBaseline = 'bottom';
   g.fillText(`vₛ ${o.vs.toFixed(2)} mm`, xsens, cy - 24);
@@ -753,7 +963,7 @@ function renderRays() {
   // image point
   g.fillStyle = '#6fd0e8'; g.beginPath(); g.arc(ZX(vu), zcy, 3, 0, 6.283); g.fill();
   g.restore();
-  g.font = '500 11px "IBM Plex Mono", monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = '500 11px ' + FM; g.textAlign = 'left'; g.textBaseline = 'middle';
   const label = (txt, x, y, col, align) => { const w = g.measureText(txt).width + 8; const lx2 = align === 'right' ? x - w : x; g.fillStyle = 'rgba(16,18,20,.85)'; g.fillRect(lx2, y - 8, w, 16); g.fillStyle = col; g.fillText(txt, lx2 + 4, y + 0.5); };
   label(`模糊圈 b = ${b < 1e-6 ? "0" : b < 0.001 ? b.toExponential(1) : b.toFixed(3)} mm`, zx0 + 2, zy0 + 10, '#ffb3a6');
   const dvTxt = Math.abs(dv) < 0.001 ? '≈ 0' : (dv > 0 ? '+' : '') + dv.toFixed(3);
@@ -778,13 +988,13 @@ function updateReadouts() {
   $('rD').textContent = o.D.toFixed(1) + ' mm';
   $('rC').textContent = o.c.toFixed(4) + ' mm';
   $('rV').textContent = o.vs.toFixed(2) + ' mm';
-  const ob = OBJ[st.sel] || OBJ[6];
-  const b = blurMM(o, ob.u * 1000);
+  const ob = selTarget();
+  const b = blurMM(o, ob.u);
   const ratio = b / o.c;
   const pct = b / o.sn.w * 100;
-  $('rSel').innerHTML = `<b style="color:${ratio <= 1 ? '#f2c230' : '#fff'}">${ob.name}</b>（${fmtDist(ob.u * 1000)}）模糊圈 <span style="font-family:var(--mono)">${b.toFixed(3)} mm</span> ＝ 允許值 ×${ratio < 10 ? ratio.toFixed(2) : Math.round(ratio)}，約畫面寬 ${pct < 0.1 ? pct.toFixed(3) : pct.toFixed(2)}%　${ratio <= 1 ? '→ 清晰' : ratio < 3 ? '→ 微糊' : '→ 明顯模糊'}`;
+  $('rSel').innerHTML = `<b style="color:${ratio <= 1 ? 'var(--dof-ink)' : 'var(--hi)'}">${ob.name}</b>（${fmtDist(ob.u)}）模糊圈 <span style="font-family:var(--mono)">${b.toFixed(3)} mm</span> ＝ 允許值 ×${ratio < 10 ? ratio.toFixed(2) : Math.round(ratio)}，約畫面寬 ${pct < 0.1 ? pct.toFixed(3) : pct.toFixed(2)}%　${ratio <= 1 ? '→ 清晰' : ratio < 3 ? '→ 微糊' : '→ 明顯模糊'}`;
   $('hud').textContent = `${Math.round(o.f)} mm · f/${o.N} · ${fmtDist(o.s)} · ${o.sn.name}`;
-  $('hudSel').textContent = `選取：${ob.name}`;
+  $('hudSel').textContent = `選取：${ob.name} ${fmtDist(ob.u)}`;
 }
 function syncUI() {
   fSl.value = Math.round(slFromF(st.f));
@@ -803,13 +1013,22 @@ function syncUI() {
   sSl.setAttribute('aria-valuetext', sTxt);
 }
 let saveT = 0;
-function persist() {
-  clearTimeout(saveT);
-  saveT = setTimeout(() => { try { localStorage.setItem('focuslab.v1', JSON.stringify({ f: st.f, n: st.n, s: curD <= 0 ? null : 1 / curD, sensor: st.sensor, sel: st.sel, tags: st.tags, peak: st.peak })); } catch (e) {} }, 300);
+function saveNow() {
+  clearTimeout(saveT); saveT = 0;
+  // an animated refocus is saved at its destination, not wherever the animation happens to be
+  const d = sAnim ? Math.min(sAnim.to, 1 / minFocus()) : curD;
+  try { localStorage.setItem(KEY, JSON.stringify({ f: st.f, n: st.n, s: d <= 0 ? null : 1 / d, sensor: st.sensor, sel: st.sel, tags: st.tags, peak: st.peak, gu: st.gu })); } catch (e) {}
 }
+function persist() { clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
+addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
 
 /* ---------- render scheduling ---------- */
 let pending = false, lastSensor = null;
+function interacting() { // a slider drag renders the scene at reduced resolution, full resolution 150 ms after it stops
+  lowRes = true; clearTimeout(lowResT);
+  lowResT = setTimeout(() => { lowRes = false; requestRender(); }, 150);
+}
 function requestRender() { if (!pending) { pending = true; requestAnimationFrame(tick); } }
 let lastT = performance.now();
 function tick(now) {
@@ -842,37 +1061,81 @@ function tick(now) {
 fSl.addEventListener('input', () => {
   let f = fFromSl(+fSl.value);
   for (const c of COMMON_F) if (Math.abs(f - c) / c < 0.025) f = c;
-  st.f = f; requestRender();
+  st.f = f; interacting(); requestRender();
 });
-nSl.addEventListener('input', () => { st.n = +nSl.value; requestRender(); });
-sSl.addEventListener('input', () => { sAnim = null; const s = sFromSl(+sSl.value); curD = s === Infinity ? 0 : 1 / s; requestRender(); });
-function focusTo(mm) { sAnim = { to: mm === Infinity ? 0 : 1 / mm }; requestRender(); }
+nSl.addEventListener('input', () => { st.n = +nSl.value; interacting(); requestRender(); });
+sSl.addEventListener('input', () => { sAnim = null; const s = sFromSl(+sSl.value); curD = s === Infinity ? 0 : 1 / s; interacting(); requestRender(); });
+// Sliders: the native range is pointer-events:none; its wrapper takes the pointer. Mouse/pen drag at once; a touch
+// only changes the value after a sideways move (> 6 px, more sideways than up/down) or as a tap. A vertical swipe
+// that starts on a slider just scrolls the page (touch-action: pan-y), leaving the value alone.
+function bindSlider(inp) {
+  const wrap = inp.parentElement;
+  let g = null;
+  const setX = cx => {
+    const r = inp.getBoundingClientRect(), thumb = 10;
+    const t = clamp((cx - r.left - thumb / 2) / Math.max(1, r.width - thumb), 0, 1);
+    const min = +inp.min, max = +inp.max, step = +inp.step || 1;
+    const v = Math.round((min + t * (max - min)) / step) * step;
+    if (+inp.value !== v) { inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+  };
+  wrap.addEventListener('pointerdown', e => {
+    if (e.button > 0) return;
+    g = { id: e.pointerId, x: e.clientX, y: e.clientY, live: e.pointerType !== 'touch', moved: false };
+    if (g.live) { e.preventDefault(); inp.focus({ preventScroll: true }); try { wrap.setPointerCapture(e.pointerId); } catch (er) {} setX(e.clientX); }
+  });
+  wrap.addEventListener('pointermove', e => {
+    if (!g || e.pointerId !== g.id) return;
+    if (!g.live) {
+      const dx = Math.abs(e.clientX - g.x), dy = Math.abs(e.clientY - g.y);
+      if (dx > 6 || dy > 6) g.moved = true;
+      if (dy > 6 && dy >= dx) { g = null; return; } // a scroll: never touch the value
+      if (!(dx > 6 && dx > dy)) return;
+      g.live = true; try { wrap.setPointerCapture(e.pointerId); } catch (er) {}
+    }
+    setX(e.clientX);
+  });
+  const end = e => {
+    if (!g || e.pointerId !== g.id) return;
+    if (e.type === 'pointerup' && !g.live && !g.moved) setX(g.x); // a tap on the scale jumps there, like the native control
+    if (e.type === 'pointerup' && (g.live || !g.moved)) inp.dispatchEvent(new Event('change', { bubbles: true }));
+    g = null;
+  };
+  wrap.addEventListener('pointerup', end);
+  wrap.addEventListener('pointercancel', end);
+}
+[fSl, nSl, sSl].forEach(bindSlider);
+function focusTo(mm) { sAnim = { to: mm === Infinity ? 0 : 1 / mm }; requestRender(); persist(); }
 $('hyperBtn').addEventListener('click', () => { const o = optics(); focusTo(o.H); });
 $('infBtn').addEventListener('click', () => focusTo(Infinity));
-$('portraitBtn').addEventListener('click', () => { st.sensor = 'ff'; st.f = 85; st.n = 0; st.sel = OBJ.findIndex(o => o.id === 'person'); focusTo(3200); });
+$('portraitBtn').addEventListener('click', () => { st.sensor = 'ff'; st.f = 85; st.n = 0; st.sel = OBJ.findIndex(o => o.id === 'person'); st.gu = null; focusTo(3200); });
 $('landBtn').addEventListener('click', () => { st.sensor = 'ff'; st.f = 24; st.n = STOPS.indexOf(11); const tmp = optics(); const c = tmp.c; focusTo(24 * 24 / (11 * c) + 24); });
 $('tagsChk').addEventListener('change', e => { st.tags = e.target.checked; requestRender(); });
 $('peakChk').addEventListener('change', e => { st.peak = e.target.checked; requestRender(); });
-$('resetBtn').addEventListener('click', () => { st = Object.assign({}, DEF); sAnim = null; curD = 1 / DEF.s; requestRender(); });
+let undoState = null, toastT = 0;
+function hideToast() { clearTimeout(toastT); $('toast').hidden = true; undoState = null; }
+$('resetBtn').addEventListener('click', () => {
+  undoState = { st: Object.assign({}, st), d: sAnim ? sAnim.to : curD };
+  st = Object.assign({}, DEF); sAnim = null; curD = 1 / DEF.s; requestRender(); saveNow();
+  $('toast').hidden = false; clearTimeout(toastT); toastT = setTimeout(hideToast, 4000);
+});
+$('undoBtn').addEventListener('click', () => {
+  if (!undoState) return hideToast();
+  st = undoState.st; sAnim = null; curD = undoState.d; hideToast(); requestRender(); saveNow();
+});
 function sceneTap(cx, cy) {
   const r = scene.getBoundingClientRect();
   const x = cx - r.left, y = cy - r.top;
   // nearest object first
-  let pickI = -1;
-  for (const i of TAP_OBJS) {
-    const h = hit.find(hh => hh.i === i);
-    if (!h) continue;
-    const pad = 6;
-    if (x >= h.x0 - pad && x <= h.x1 + pad && y >= h.y0 - pad && y <= h.y1 + pad) { pickI = i; break; }
-  }
+  const pickI = pickAt(x, y);
   const o = optics();
   let target;
-  if (pickI >= 0) { st.sel = pickI; target = OBJ[pickI].u * 1000; }
+  if (pickI >= 0) { st.sel = pickI; st.gu = null; target = OBJ[pickI].u * 1000; }
   else if (y > VH * HZ + 2) {
     // ground: distance from vertical offset below the horizon
     const dyMM = (y - VH * HZ) / VW * o.sn.w;
-    target = o.vs * CAM_H * 1000 / dyMM;
-  } else { st.sel = 0; target = Infinity; }
+    target = Math.max(minFocus(), o.vs * CAM_H * 1000 / dyMM);
+    st.gu = target;
+  } else { st.sel = 0; st.gu = null; target = Infinity; }
   focusMark = { x, y, t: performance.now() };
   focusTo(target);
 }
@@ -880,12 +1143,13 @@ scene.addEventListener('click', e => sceneTap(e.clientX, e.clientY));
 scene.addEventListener('keydown', e => {
   const n = parseInt(e.key, 10);
   const order = OBJ.map((o, i) => i).sort((a, b) => OBJ[a].u - OBJ[b].u);
-  if (n >= 1 && n <= order.length) { const i = order[n - 1]; st.sel = i; focusTo(OBJ[i].u * 1000); e.preventDefault(); }
+  if (n >= 1 && n <= order.length) { const i = order[n - 1]; st.sel = i; st.gu = null; focusTo(OBJ[i].u * 1000); e.preventDefault(); }
 });
 new ResizeObserver(() => { lastSensor = null; requestRender(); }).observe(document.querySelector('main'));
+addEventListener('resize', () => { lastSensor = null; requestRender(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { lastT = performance.now(); requestRender(); } });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(requestRender);
 requestRender();
-window.__focuslab = { optics, blurMM, get st() { return st; }, get hit() { return hit; }, sceneTap, HAS_FILTER };
+window.__focuslab = { optics, blurMM, get st() { return st; }, get hit() { return hit; }, get labels() { return labels; }, get masks() { return masks; }, get sceneScale() { return scene.width / VW; }, get lowRes() { return lowRes; }, get lowFrames() { return lowFrames; }, get anim() { return !!sAnim; }, sceneTap, pickAt, HAS_FILTER };
 })();
 </script>
