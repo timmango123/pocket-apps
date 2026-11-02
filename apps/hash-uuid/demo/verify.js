@@ -126,7 +126,7 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py, BIGFILE]).toString());
   await page.fill('#expect', Buffer.from(REF.plain.abc.MD5, 'hex').toString('base64')); await page.waitForTimeout(100);
   cs = await cards(); assert(cs.find(c => c[0] === 'MD5')[2].includes('match'), 'Base64 expected value marks MD5 as match');
   await page.fill('#expect', REF.plain.abc['SHA-256'].toUpperCase().replace(/(.{8})/g, '$1 ')); await page.waitForTimeout(100);
-  cs = await cards(); assert(cs.find(c => c[0] === 'SHA-256')[2].includes('match') && cs.find(c => c[0] === 'MD5')[2].includes('miss'), 'uppercase spaced hex matches SHA-256, MD5 marked mismatch');
+  cs = await cards(); assert(cs.find(c => c[0] === 'SHA-256')[2].includes('match') && !cs.find(c => c[0] === 'MD5')[2].includes('miss'), 'uppercase spaced hex matches SHA-256; MD5 not flagged red once one algorithm matched');
   // HMAC UI
   await page.fill('#expect', '');
   await page.click('#results .card:nth-child(2) .fmt button[data-f="hex"]');
@@ -174,7 +174,8 @@ const REF = JSON.parse(execFileSync('python3', ['-c', py, BIGFILE]).toString());
   await page.fill('#parse', 'not-a-uuid');
   eq(await page.$eval('#parseOut', e => e.textContent), '不是有效的 UUID', 'invalid UUID message');
   const ls = await page.evaluate(() => JSON.stringify(Object.assign({}, localStorage)));
-  assert(!ls.includes('abc') && !ls.includes('key"'), 'localStorage holds no inputs: ' + ls);
+  // inputs are saved on purpose (release review); the HMAC key never is
+  assert(!/hmacKey|"key"/.test(ls), 'localStorage never holds the HMAC key: ' + ls);
   await page.click('#copyAll');
   await ctx.close();
   await browser.close();
