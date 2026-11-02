@@ -78,6 +78,7 @@ const st = (...a) => a.map(([h, p, al]) => ({ c: { r: parseInt(h.slice(1, 3), 16
   assert(hard[0] === 255 && hard[1] === 0 && hard[2] === 0 && hard[3] === 255, 'same-position stops give hard edge ' + hard);
   // dial: click right side -> 90
   await page.click('#tLinear'); await page.uncheck('#snap').catch(() => {});
+  await page.evaluate(() => document.querySelector('#dial').scrollIntoView({ block: 'center' }));
   const db = await page.locator('#dial').boundingBox(); await page.mouse.click(db.x + db.width - 6, db.y + db.height / 2);
   assert(await page.evaluate(() => window.__gm.G.layers[0].angle) === 90, 'dial right = 90deg');
   await page.mouse.click(db.x + db.width / 2, db.y + db.height - 5);
