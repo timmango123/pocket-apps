@@ -31,6 +31,8 @@ function solveAll() {
     if (pr.needTrial && !r.used.trial) probs.push('no trial step');
     if (pr.dense && !n78) probs.push('no 7/8 island');
     if (pr.mask && !masked) probs.push('no coast mask');
+    const mid = P.isl.filter(i => i.n >= 4 && i.n <= 6).length, loops = r.S.lo.filter(v => v).length - P.isl.length + 1;
+    if (n >= 56 && (mid < 0.15 * P.isl.length || loops < 1)) probs.push('late level is a plain 1-3 tree (4-6: ' + mid + ', loops ' + loops + ')');
     if (probs.length) { ok = false; console.log('LEVEL', n, 'PROBLEM', probs.join('; ')); }
     rows.push({ n, size: P.w + 'x' + P.h, islands: P.isl.length, score: r.score, target: Math.round(pr.target), used: r.used, n78, masked });
     prev = r.score; prevI = P.isl.length;
