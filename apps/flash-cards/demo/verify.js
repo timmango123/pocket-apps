@@ -194,9 +194,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(n === 98, `after batch import deck has ${n} cards (1 + 97)`);
     // export JSON (no downloads capability -> copy sheet)
     await page.click('#btn-menu').catch(async () => { await page.click('#deck-back'); await page.click('#btn-menu'); });
-    await page.click('#mn-json'); await page.waitForTimeout(150);
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 10000 }), page.click('#mn-json')]);
+    ok(/^flash-cards-\d{4}-\d\d-\d\d\.json$/.test(download.suggestedFilename()), `export without downloads capability downloads a file: ${download.suggestedFilename()}`);
+    await page.click('#mn-json-text'); await page.waitForSelector('#ex-text');
     const json = await page.inputValue('#ex-text');
-    ok(/"app": "flash-cards"/.test(json), 'export without downloads capability shows copyable JSON');
+    ok(/"app": "flash-cards"/.test(json), '"顯示備份文字" shows copyable JSON');
     // downloads capability path
     const saved = await page.evaluate(async () => { let got = null; window.claude = { use: async () => ({ save: async o => { got = o; } }) }; document.querySelector('[data-close]').click(); document.querySelector('#btn-menu').click(); document.querySelector('#mn-json').click(); await new Promise(r => setTimeout(r, 100)); delete window.claude; return got && got.filename + '|' + got.data.length; });
     ok(/^flash-cards-\d{4}-\d\d-\d\d\.json\|\d+/.test(saved || ''), `with downloads capability dl.save called: ${saved}`);
@@ -223,9 +225,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const F = window.__fc, d = F.newDeck('一萬張'); F.saveDeck(d); const now = Date.now(), cs = [];
       for (let i = 0; i < 10000; i++) { const c = F.newCard(d.id, 'w' + i, 'm' + i); if (i % 3) { c.state = 'review'; c.interval = 5; c.due = now + (i % 40 - 20) * 86400000; } cs.push(c); }
       F.saveCards(cs);
-      const t0 = performance.now(); const cnt = F.todayCounts(d.id); const q = F.buildQueue([d.id]); const t1 = performance.now();
-      location.hash = '#/deck/' + encodeURIComponent(d.id); F.rerender(); const t2 = performance.now();
-      return { q: t1 - t0, r: t2 - t1, due: cnt.due, qlen: q.main.length, rows: document.querySelectorAll('#card-list li').length };
+      // median of 5 runs, so one stall on a busy machine does not decide the result
+      const med = a => a.sort((x, y) => x - y)[2], qs = [], rs = []; let cnt, q;
+      location.hash = '#/deck/' + encodeURIComponent(d.id);
+      for (let k = 0; k < 5; k++) {
+        const t0 = performance.now(); cnt = F.todayCounts(d.id); q = F.buildQueue([d.id]); const t1 = performance.now();
+        F.rerender(); const t2 = performance.now(); qs.push(t1 - t0); rs.push(t2 - t1);
+      }
+      return { q: med(qs), r: med(rs), due: cnt.due, qlen: q.main.length, rows: document.querySelectorAll('#card-list li').length };
     });
     ok(perf.q < 100 && perf.r < 100 && perf.rows === 50, `10k cards: due query ${perf.q.toFixed(1)}ms, deck render ${perf.r.toFixed(1)}ms (50 rows), queue ${perf.qlen}`);
     // deck swipe-to-delete on home list
