@@ -103,10 +103,13 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
   .tbtns{grid-area:btns;align-self:start}
 }
 @media (orientation:landscape) and (max-height:560px){
-  #scrGame{grid-template-rows:1fr auto;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-areas:"top board tools" "top board tools"}
+  #scrGame{grid-template-rows:1fr auto;grid-template-columns:minmax(196px,1fr) minmax(0,min(calc(100vh + 4px),calc(100vw - 320px - var(--sal) - var(--sar)))) minmax(0,1fr);grid-template-columns:minmax(196px,1fr) minmax(0,min(calc(100dvh + 4px),calc(100vw - 320px - var(--sal) - var(--sar)))) minmax(0,1fr);grid-template-areas:"top board tools" "top board tools"}
+  .status #stTxt{white-space:normal;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+  .status{flex-wrap:wrap;row-gap:6px}.status #stTxt{flex:1 1 100%}
+  .pzmid{flex-wrap:wrap;row-gap:2px;padding:4px 10px}.pzmid>div:first-child{flex:1 1 96px}.pzmid .left{margin-left:auto}
   .top{padding:calc(var(--sat) + 8px) 6px 8px calc(var(--sal) + 10px);justify-content:center}
   .pbar{flex-direction:column}
-  .tools{flex-direction:column;justify-content:center;padding:8px calc(var(--sar) + 10px) 8px 6px;align-items:stretch;min-width:140px}
+  .tools{flex-direction:column;justify-content:center;padding:8px calc(var(--sar) + 10px) 8px 6px;align-items:stretch;min-width:120px}
   .tool{max-width:none;flex:none;min-height:48px;flex-direction:row;gap:8px}
   .tool.place{max-width:none;flex:none}
   #rtools{flex-direction:column}
@@ -152,6 +155,7 @@ textarea.code{width:100%;height:84px;border-radius:12px;border:1px solid var(--l
 .statgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
 .statgrid div{background:var(--card2);border-radius:12px;padding:8px 4px;font-size:12px;color:var(--ink2)}
 .statgrid b{display:block;font-size:20px;color:var(--ink)}
+.statgrid small{display:block;font-size:11px;color:var(--ink2)}
 /* ---------- puzzle select ---------- */
 #scrSelect{display:flex;flex-direction:column;max-width:680px;margin:0 auto}
 .selhead{padding:calc(var(--sat) + 10px) calc(var(--sar) + 12px) 6px calc(var(--sal) + 12px);display:flex;align-items:center;gap:10px}
@@ -168,6 +172,7 @@ textarea.code{width:100%;height:84px;border-radius:12px;border:1px solid var(--l
 .lt .db{width:70%;height:4px;border-radius:2px;background:color-mix(in srgb,var(--ink2) 22%,transparent);overflow:hidden}
 .lt .db i{display:block;height:100%}
 .lt.done::after{content:"";position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--card)}
+.lt.star::after{content:"★";background:none;box-shadow:none;width:auto;height:auto;top:2px;right:5px;font-size:13px;line-height:1;color:var(--gold)}
 .lt.cur{outline:3px solid var(--gold)}
 .lt.lock{opacity:.5}
 .lt.lock .n{font-size:15px}
@@ -944,6 +949,17 @@ function fourMoves(c) { // moves of c that create a five point (fours), legal
   }
   return out;
 }
+// did c's stone at p (already on the board) make a four or a W point (open-four / double-four point) on a line through p?
+// (compares every empty point on those lines with and without the stone, so threats that were already there do not count)
+function moveThreat(p, c) {
+  if (B[p] !== c) return false;
+  var cand = [], d, k, r, i;
+  for (d = 0; d < 4; d++) { var base = (p * 4 + d) * 11 + 5; for (k = -4; k <= 4; k++) { if (!k) continue; r = LN[base + k]; if (r >= 0 && !B[r] && cand.indexOf(r) < 0) cand.push(r); } }
+  var lvl = function (r) { return isFive(r, c) ? 2 : (wPrefilter(r, c) && isW(r, c)) ? 1 : 0; };
+  unplay(p); var before = cand.map(lvl); play(p, c);
+  for (i = 0; i < cand.length; i++) if (lvl(cand[i]) > before[i]) return true;
+  return false;
+}
 // threat moves: fours, and moves after which c owns a W point on the lines through the move
 function threatMoves(c, foursOnly) {
   var fours = [], threes = [];
@@ -1122,8 +1138,8 @@ function anyMove(c) { var b = -1, bs = -1; for (var q = 0; q < NN; q++) { if (B[
 // ===== alpha-beta AI =====
 var AI_LV = [null,
   { depth: 1, time: 100, err: 0.35, top: 6, blind: 0.5, miss4: 0.1, K: 10, vcf: 0, vct: 0 },
-  { depth: 2, time: 300, err: 0.20, top: 4, blind: 0.15, K: 12, vcf: 0, vct: 0 },
-  { depth: 4, time: 800, err: 0.08, top: 3, K: 14, vcf: 4, vct: 0 },
+  { depth: 2, time: 300, err: 0.15, top: 4, blind: 0.10, K: 12, vcf: 0, vct: 0 },
+  { depth: 4, time: 800, err: 0.12, top: 3, K: 14, vcf: 4, vct: 0 },
   { depth: 6, time: 1500, err: 0.02, top: 2, K: 16, vcf: 8, vct: 4, defVcf: true },
   { depth: 40, time: 3000, err: 0, K: 18, vcf: 12, vct: 6, defVcf: true }];
 var WIN = 100000000;
@@ -1420,10 +1436,10 @@ var PROG = sget('progress', null); if (!PROG || typeof PROG !== 'object' || !PRO
 var UNLOCK = !!sget('unlockAll', false);
 var MISS = sget('mistakes', []); if (!Array.isArray(MISS)) MISS = [];
 var STATS = sget('stats', null); if (!STATS || typeof STATS !== 'object') STATS = {};
-['games', 'wins', 'losses', 'draws', 'plies', 'bG', 'bW', 'wG', 'wW', 'streak', 'best'].forEach(function (k) { if (typeof STATS[k] !== 'number') STATS[k] = 0; });
+['games', 'wins', 'losses', 'draws', 'plies', 'bG', 'bW', 'wG', 'wW', 'streak', 'best', 'aWins'].forEach(function (k) { if (typeof STATS[k] !== 'number') STATS[k] = 0; });
 if (!STATS.lv || typeof STATS.lv !== 'object') STATS.lv = {};
 var ACH = sget('ach', {}); if (!ACH || typeof ACH !== 'object') ACH = {};
-var LAST = Object.assign({ lv: 2, col: 1, rule: 2, size: 15, tengen: true, swap: false, pvRule: 0, pvSize: 15 }, sget('lastOpts', {}));
+var LAST = Object.assign({ lv: 2, col: 1, rule: 0, size: 15, tengen: true, swap: false, pvRule: 0, pvSize: 15 }, sget('lastOpts', {}));
 var LVN = ['', '初學', '入門', '中級', '高級', '專家'];
 var LVD = ['', '常隨手亂下，不一定擋活三', '偶有失誤，只看兩步', '會算連續衝四（VCF），少失誤', '會 VCF＋活三攻擊，深算六步', '時限內全力搜尋，不漏擋 VCF'];
 var RULEN = ['自由規則', '標準規則', '連珠規則'];
@@ -1696,7 +1712,7 @@ function render() {
   if (pv >= 0 && B[pv] === 0 && isHumanTurn()) {
     var pxy = cxy(pv), isFb = fbCells.indexOf(pv) >= 0;
     if (preview >= 0) {
-      ctx.strokeStyle = isFb ? 'rgba(214,52,40,0.7)' : (dark ? 'rgba(255,230,160,0.55)' : 'rgba(150,40,20,0.45)'); ctx.lineWidth = 1.2 / z;
+      ctx.strokeStyle = isFb ? 'rgba(214,52,40,0.7)' : (dark ? 'rgba(255,230,160,0.55)' : 'rgba(125,28,8,0.8)'); ctx.lineWidth = 1.2 / z;
       ctx.setLineDash([4 / z, 3 / z]); ctx.beginPath(); ctx.moveTo(mar, pxy[1]); ctx.lineTo(mar + (SZ - 1) * cell, pxy[1]); ctx.moveTo(pxy[0], mar); ctx.lineTo(pxy[0], mar + (SZ - 1) * cell); ctx.stroke(); ctx.setLineDash([]);
     }
     drawStoneAt(ctx, pxy[0], pxy[1], r, G.toMove, preview >= 0 ? 0.62 : 0.45, 1, z);
@@ -1935,6 +1951,7 @@ function afterMove(c, human) {
     }
   }
   if (G.mode === 'pz' && human) { pzAfterHuman(); return; }
+  if (G.mode === 'pz') savePz();
   nextTurn();
 }
 function nextTurn() {
@@ -1973,9 +1990,10 @@ function showResult() {
   var r = G.result, w = r.winner, big, title, msg;
   if (G.mode === 'ai') {
     if (w === 0) { big = '和'; title = '和局'; }
-    else if (w === G.human) { big = '勝'; title = '你贏了！'; }
+    else if (w === G.human) { big = '勝'; title = G.assist ? '輔助勝' : '你贏了！'; }
     else { big = '敗'; title = '電腦獲勝'; }
     msg = (w ? colName(w) + '方' : '') + r.reason + '・對手：' + LVN[G.lv] + '（' + RULEN[G.rule] + '）';
+    if (w === G.human && G.assist) msg += '・用了提示或悔棋，不計勝場、連勝與成就';
   } else if (G.mode === 'net' && NET.mySide() >= 0) {
     var mine0 = NET.mySide() + 1;
     big = w ? (w === mine0 ? '勝' : '敗') : '和'; title = w ? (w === mine0 ? '你贏了！' : ((G.netNames || [])[2 - mine0] || '對手') + ' 獲勝') : '和局';
@@ -1991,13 +2009,15 @@ function showResult() {
 function recordStats(winner, reason) {
   if (G.mode !== 'ai' || G.recorded) return;
   G.recorded = true;
-  var h = G.human, won = winner === h;
+  var h = G.human, aWon = winner === h && !!G.assist, won = winner === h && !aWon;
+  // a win after a hint or an undo is an 輔助勝: counted as a game, but not as a win, streak or achievement
   STATS.games++; STATS.plies += G.moves.length;
   if (winner === 0) { STATS.draws++; STATS.streak = 0; }
+  else if (aWon) STATS.aWins++;
   else if (won) { STATS.wins++; STATS.streak++; if (STATS.streak > STATS.best) STATS.best = STATS.streak; }
   else { STATS.losses++; STATS.streak = 0; }
   if (h === 1) { STATS.bG++; if (won) STATS.bW++; } else { STATS.wG++; if (won) STATS.wW++; }
-  var L = STATS.lv[G.lv] || { g: 0, w: 0 }; L.g++; if (won) L.w++; STATS.lv[G.lv] = L;
+  var L = STATS.lv[G.lv] || { g: 0, w: 0 }; L.g++; if (won) L.w++; if (aWon) L.a = (L.a || 0) + 1; STATS.lv[G.lv] = L;
   sset('stats', STATS);
   if (won && STATS.streak >= 10) achieve('streak10');
   if (won && G.lv === 5) achieve('expert');
@@ -2020,6 +2040,7 @@ function undo() {
   var minLen = (G.mode === 'ai' && G.tengen && G.human === 2) ? 1 : 0;
   if (G.moves.length <= minLen) return;
   G.token++; if (G.thinking) wCancel(); G.thinking = false;
+  if (G.mode === 'ai') G.assist = true;
   var wasOver = G.over;
   G.over = false; G.result = null; G.wl = null; parts = [];
   if (G.mode === 'ai') {
@@ -2030,6 +2051,7 @@ function undo() {
   else if (G.mode === 'pz') {
     popMove(); while (G.moves.length && G.toMove !== G.pz.att) popMove();
     G.pz.left = G.pz.N - G.moves.filter(function (m) { return m[1] === G.pz.att; }).length;
+    savePz();
   }
   SND.ui(); preview = -1; hintCell = -1; computeFb(); computeThreats();
   if (G.mode !== 'pz') saveGame();
@@ -2042,6 +2064,8 @@ function hint() {
   if (!isHumanTurn() || G.mode === 'net') return;
   var tok = G.token, msg;
   G.hints++; if (G.pz) G.pz.hints++;
+  if (G.mode === 'ai' && !G.assist) { G.assist = true; saveGame(); }
+  if (G.mode === 'pz') savePz();
   setStatus('<b>計算提示中…</b>');
   if (G.mode === 'pz') msg = { cmd: 'pzHint', size: 15, rule: G.rule, seq: seq(), color: G.pz.att, left: G.pz.left };
   else msg = { cmd: 'hint', size: G.size, rule: G.rule, seq: seq(), color: G.toMove, time: 1200 };
@@ -2055,8 +2079,10 @@ function hint() {
 
 /* ================= puzzles ================= */
 var curDaily = false;
-function startPuzzle(n, daily) {
+function startPuzzle(n, daily, resume) {
   var P = PUZ[n - 1]; if (!P) return;
+  var sv = resume ? savedPz() : null; if (sv && sv.n !== n) sv = null;
+  if (sv) daily = !!sv.daily; else sdel('pzGame');
   G.token++; wCancel();
   curDaily = !!daily;
   G.mode = 'pz'; G.size = 15; G.rule = P.rule; G.base = []; G.moves = []; G.over = false; G.result = null; G.wl = null; G.thinking = false; G.swapPending = false;
@@ -2064,10 +2090,17 @@ function startPuzzle(n, daily) {
   G.toMove = P.att; G.hints = 0;
   G.pz = { n: n, N: P.N, left: P.N, att: P.att, diff: P.diff, daily: !!daily, hints: 0 };
   syncCore(); resetView(); parts = []; preview = -1; hintCell = -1; fbWarned = -1;
+  if (sv) { // continue a 殘局 left mid-way (reload / back to the level list)
+    for (var i = 0; i < sv.moves.length; i++) { var m = sv.moves[i]; if (!m || B[m[0]] !== 0 || (m[1] !== 1 && m[1] !== 2)) break; play(m[0], m[1]); G.moves.push([m[0], m[1]]); G.toMove = 3 - m[1]; }
+    while (G.moves.length && G.toMove !== P.att) popMove();
+    G.pz.hints = G.hints = sv.hints | 0;
+    G.pz.left = P.N - G.moves.filter(function (m) { return m[1] === P.att; }).length;
+    if (G.pz.left <= 0) { while (G.moves.length) popMove(); G.pz.left = P.N; }
+  }
   PROG.cur = n; sset('progress', PROG);
   showScreen('scrGame'); computeFb(); computeThreats(); updateUI(); kick();
   var intro = INTROS[n];
-  if (intro && !daily) { var seen = sget('seenIntro', {}); if (!seen[n]) { seen[n] = 1; sset('seenIntro', seen); $('iTitle').textContent = intro[0]; $('iBody').innerHTML = intro[1]; show('ovIntro'); } }
+  if (intro && !daily && !sv) { var seen = sget('seenIntro', {}); if (!seen[n]) { seen[n] = 1; sset('seenIntro', seen); $('iTitle').textContent = intro[0]; $('iBody').innerHTML = intro[1]; show('ovIntro'); } }
 }
 var INTROS = {
   1: ['限步連五', '每關給一個局面：你要在 <b>N 手內</b>連成五子，對手會用最強防守應對。<h4>規則</h4>每一手都要是<b>衝四</b>（再一子就成五）或<b>活三</b>（再一子成活四），對手被迫應對；若下了緩手，對手就會化解攻勢。<h4>本區</h4>先從兩手成五開始：做出<b>活四</b>（兩端都能成五）或<b>四四</b>，對手擋不完。'],
@@ -2078,10 +2111,16 @@ var INTROS = {
   76: ['禁手', '從這裡開始是<b>連珠規則</b>，你執黑：<b>三三、四四、長連</b>都是禁手，下了直接判負（五連優先）。第 60 關後不再標示禁手點，要自己避開。'],
   91: ['利用禁手', '你執白，對手黑方受禁手限制：把黑方逼到<b>只能在禁手點防守</b>，他就擋不住了。']
 };
+function savePz() {
+  if (G.mode !== 'pz' || !G.pz) return;
+  if (G.over || (!G.moves.length && !G.pz.hints)) { sdel('pzGame'); return; }
+  sset('pzGame', { n: G.pz.n, daily: !!G.pz.daily, hints: G.pz.hints, moves: G.moves.slice(0) });
+}
+function savedPz() { var s = sget('pzGame', null); return (s && Array.isArray(s.moves) && PUZ[s.n - 1]) ? s : null; }
 function pzAfterHuman() {
   var pz = G.pz, a = pz.att;
   pz.left--;
-  var threat = fivePts(a).length > 0 || wPts(a, true).length > 0;
+  var lastP = G.moves.length ? G.moves[G.moves.length - 1][0] : -1, threat = lastP >= 0 && moveThreat(lastP, a);
   if (pz.left <= 0) { finish(3 - a, '限步用完'); return; }
   G.thinking = true; updateUI();
   var tok = ++G.token, t0 = now();
@@ -2103,7 +2142,7 @@ function pzAfterHuman() {
 }
 function doMoveQuiet(p, c) { play(p, c); G.moves.push([p, c]); G.toMove = 3 - c; anims.push({ p: p, t: now() }); SND.stone(true); }
 function pzFinish(won, reason) {
-  var pz = G.pz;
+  var pz = G.pz; sdel('pzGame');
   if (won) {
     pz.left = Math.max(0, pz.left - 1);
     SND.win(); vib([20, 30, 60]);
@@ -2115,7 +2154,7 @@ function pzFinish(won, reason) {
     var done = Object.keys(PROG.done).length; if (done >= 50) achieve('pz50'); if (done >= NPZ) achieve('pz100');
     var used = G.moves.filter(function (m) { return m[1] === pz.att; }).length;
     $('pwTitle').textContent = pz.daily ? '每日殘局完成！' : '第 ' + pz.n + ' 關過關！';
-    $('pwMsg').innerHTML = '用 <b>' + used + '</b> 手連五（限 ' + pz.N + ' 手）' + (pz.hints ? '・使用提示 ' + pz.hints + ' 次' : '・未用提示');
+    $('pwMsg').innerHTML = '用 <b>' + used + '</b> 手連五（限 ' + pz.N + ' 手）' + (pz.hints ? '・使用提示 ' + pz.hints + ' 次' : '・未用提示，獲得 ★');
     $('pwNext').classList.toggle('hidden', pz.daily || pz.n >= NPZ);
     setTimeout(function () { if (G.mode === 'pz' && G.over) show('ovPzWin'); }, 1600);
   } else {
@@ -2128,7 +2167,17 @@ function pzFinish(won, reason) {
   updateUI();
 }
 function dayKey() { var d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
-function dailyLevel() { var s = dayKey(), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % NPZ) + 1; }
+function pzStars() { var n = 0; for (var k in PROG.done) if (PROG.done[k] === 2) n++; return n; }
+function pzMaxDone() { var m = 0; for (var k in PROG.done) if (+k > m && +k <= NPZ) m = +k; return m; }
+// 每日殘局: picked once per day from the player's own range (up to 10 levels past the furthest solved, at least 1-15)
+function dailyLevel() {
+  var s = dayKey(), dp = sget('dailyPick', null);
+  if (dp && dp.d === s && dp.n >= 1 && dp.n <= NPZ) return dp.n;
+  var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  var span = Math.min(NPZ, Math.max(15, pzMaxDone() + 10)), n = ((h >>> 0) % span) + 1;
+  sset('dailyPick', { d: s, n: n });
+  return n;
+}
 function unlocked(n) { return UNLOCK || n === 1 || !!PROG.done[n - 1] || !!PROG.done[n]; }
 
 /* ================= start / save games ================= */
@@ -2138,7 +2187,7 @@ function startGame(o) {
   G.mode = o.mode; G.size = o.size; G.rule = o.rule; G.lv = o.lv || 2; G.human = o.human || 1;
   G.base = []; G.moves = []; G.toMove = 1; G.over = false; G.result = null; G.wl = null; G.thinking = false;
   G.swap = !!o.swap && o.rule === 2 && o.mode === 'ai'; G.swapDone = !!o.swapDone; G.swapped = !!o.swapped; G.swapPending = false; G.tengen = !!o.tengen;
-  G.clock = [0, o.clock ? o.clock[1] : 0, o.clock ? o.clock[2] : 0]; G.turnT0 = now(); G.hints = 0; G.pz = null; G.recorded = !!o.recorded;
+  G.clock = [0, o.clock ? o.clock[1] : 0, o.clock ? o.clock[2] : 0]; G.turnT0 = now(); G.hints = 0; G.pz = null; G.recorded = !!o.recorded; G.assist = !!o.assist;
   syncCore(); resetView(); parts = []; preview = -1; hover = -1; hintCell = -1; fbWarned = -1;
   if (o.moves && o.moves.length) { for (var i = 0; i < o.moves.length; i++) { play(o.moves[i][0], o.moves[i][1]); G.moves.push(o.moves[i]); } G.toMove = 3 - o.moves[o.moves.length - 1][1]; }
   else if (G.tengen) { var c0 = ((SZ / 2) | 0) * SZ + ((SZ / 2) | 0); play(c0, 1); G.moves.push([c0, 1]); G.toMove = 2; anims.push({ p: c0, t: now() }); }
@@ -2149,10 +2198,10 @@ function startGame(o) {
 function saveGame() {
   if (G.mode !== 'ai' && G.mode !== 'pvp') return;
   if (G.over) { sdel('game'); return; }
-  sset('game', { mode: G.mode, size: G.size, rule: G.rule, lv: G.lv, human: G.human, moves: G.moves, swap: G.swap, swapDone: G.swapDone, swapped: G.swapped, tengen: G.tengen, clock: G.clock, recorded: G.recorded });
+  sset('game', { mode: G.mode, size: G.size, rule: G.rule, lv: G.lv, human: G.human, moves: G.moves, swap: G.swap, swapDone: G.swapDone, swapped: G.swapped, tengen: G.tengen, clock: G.clock, recorded: G.recorded, assist: !!G.assist });
 }
 function savedGame() { var s = sget('game', null); return (s && Array.isArray(s.moves) && (s.mode === 'ai' || s.mode === 'pvp') && [9, 15, 19].indexOf(s.size) >= 0) ? s : null; }
-function resumeGame() { var s = savedGame(); if (!s) return; startGame({ mode: s.mode, size: s.size, rule: s.rule, lv: s.lv, human: s.human, moves: s.moves, swap: s.swap, swapDone: s.swapDone, swapped: s.swapped, tengen: s.tengen, clock: s.clock, recorded: s.recorded }); }
+function resumeGame() { var s = savedGame(); if (!s) return; startGame({ mode: s.mode, size: s.size, rule: s.rule, lv: s.lv, human: s.human, moves: s.moves, swap: s.swap, swapDone: s.swapDone, swapped: s.swapped, tengen: s.tengen, clock: s.clock, recorded: s.recorded, assist: s.assist }); }
 
 /* ================= replay & share ================= */
 var RP = null, rpTimer = 0;
@@ -2273,8 +2322,10 @@ function showScreen(id) { ['scrTitle', 'scrGame', 'scrSelect'].forEach(function 
 /* ================= title ================= */
 function refreshTitle() {
   var s = savedGame();
-  $('tResume').classList.toggle('hidden', !s);
+  var sp = s ? null : savedPz();
+  $('tResume').classList.toggle('hidden', !s && !sp);
   if (s) $('tResumeInfo').textContent = (s.mode === 'ai' ? LVN[s.lv] : '雙人') + '・第 ' + (s.moves.length + 1) + ' 手';
+  else if (sp) $('tResumeInfo').textContent = (sp.daily ? '每日殘局・' : '殘局・') + '第 ' + sp.n + ' 關';
   $('tPzInfo').textContent = Object.keys(PROG.done).length + '/' + NPZ;
   var dd = sget('daily', {}); $('tDaily').innerHTML = '每日殘局 <small>' + (dd[dayKey()] ? '已完成' : '第 ' + dailyLevel() + ' 關') + '</small>';
   drawTitleBoard();
@@ -2337,14 +2388,14 @@ function renderGrid() {
   $('unlockSw').setAttribute('aria-checked', String(UNLOCK));
   $('sMiss').setAttribute('aria-checked', String(missOnly)); $('missN').textContent = MISS.length;
   var done = Object.keys(PROG.done).length;
-  $('selSum').textContent = '已完成 ' + done + ' / ' + NPZ + ' 關';
+  $('selSum').textContent = '已完成 ' + done + '/' + NPZ + ' 關・★ ' + pzStars(); $('selSum').title = '★ = 未用提示過關';
   var h = '';
   CAT.forEach(function (c) {
     var items = '';
     for (var n = c[0]; n <= c[1]; n++) {
       if (missOnly && MISS.indexOf(n) < 0) continue;
-      var P = PUZ[n - 1], lk = !unlocked(n), cls = 'lt' + (PROG.done[n] ? ' done' : '') + (n === PROG.cur ? ' cur' : '') + (lk ? ' lock' : '') + (MISS.indexOf(n) >= 0 ? ' miss' : '');
-      items += '<button class="' + cls + '" data-n="' + n + '" aria-label="第 ' + n + ' 關' + (lk ? '（未解鎖）' : '') + '"><span class="n">' + (lk ? '🔒︎'.slice(0, 0) + n : n) + '</span><span class="db"><i style="width:' + Math.round(P.diff / DMAX * 100) + '%;background:' + c[3] + '"></i></span><span class="dn">難度 ' + Math.round(P.diff) + '</span></button>';
+      var P = PUZ[n - 1], lk = !unlocked(n), cls = 'lt' + (PROG.done[n] ? ' done' : '') + (PROG.done[n] === 2 ? ' star' : '') + (n === PROG.cur ? ' cur' : '') + (lk ? ' lock' : '') + (MISS.indexOf(n) >= 0 ? ' miss' : '');
+      items += '<button class="' + cls + '" data-n="' + n + '" aria-label="第 ' + n + ' 關' + (lk ? '（未解鎖）' : '') + (PROG.done[n] === 2 ? '（★ 未用提示過關）' : PROG.done[n] ? '（已過關）' : '') + '"><span class="n">' + (lk ? '🔒︎'.slice(0, 0) + n : n) + '</span><span class="db"><i style="width:' + Math.round(P.diff / DMAX * 100) + '%;background:' + c[3] + '"></i></span><span class="dn">難度 ' + Math.round(P.diff) + '</span></button>';
     }
     if (items) h += '<div class="gh"><i style="background:' + c[3] + '"></i>' + c[0] + '–' + c[1] + '・' + c[2] + '</div>' + items;
   });
@@ -2355,11 +2406,11 @@ function renderGrid() {
 $('grid').addEventListener('click', function (e) {
   var b = e.target.closest('.lt'); if (!b) return; var n = +b.dataset.n;
   if (!unlocked(n)) { SND.bad(); toast('先完成第 ' + (n - 1) + ' 關，或打開「解鎖全部關卡」'); return; }
-  SND.ui(); startPuzzle(n, false);
+  SND.ui(); startPuzzle(n, false, true);
 });
 $('unlockSw').addEventListener('click', function () { UNLOCK = !UNLOCK; sset('unlockAll', UNLOCK); SND.ui(); renderGrid(); });
 $('sMiss').addEventListener('click', function () { missOnly = !missOnly; SND.ui(); renderGrid(); });
-$('sDaily').addEventListener('click', function () { startPuzzle(dailyLevel(), true); });
+$('sDaily').addEventListener('click', function () { startPuzzle(dailyLevel(), true, true); });
 $('sBack').addEventListener('click', function () { showScreen('scrTitle'); });
 
 /* ================= settings / stats / help ================= */
@@ -2376,9 +2427,10 @@ $('setOk').addEventListener('click', function () { hide('ovSet'); kick(); });
 function pct(a, b) { return b ? Math.round(a / b * 100) + '%' : '—'; }
 function openStats() {
   var h = '<div class="statgrid"><div>對局<b>' + STATS.games + '</b></div><div>勝率<b>' + pct(STATS.wins, STATS.games) + '</b></div><div>平均手數<b>' + (STATS.games ? Math.round(STATS.plies / STATS.games) : '—') + '</b></div>' +
-    '<div>執黑勝率<b>' + pct(STATS.bW, STATS.bG) + '</b></div><div>執白勝率<b>' + pct(STATS.wW, STATS.wG) + '</b></div><div>最長連勝<b>' + STATS.best + '</b></div></div>';
-  h += '<div class="lbl">各等級戰績</div><div class="statgrid">';
-  for (var i = 1; i <= 5; i++) { var L = STATS.lv[i] || { g: 0, w: 0 }; h += '<div>' + LVN[i] + '<b>' + L.w + '/' + L.g + '</b></div>'; }
+    '<div>執黑勝率<b>' + pct(STATS.bW, STATS.bG) + '</b></div><div>執白勝率<b>' + pct(STATS.wW, STATS.wG) + '</b></div><div>最長連勝<b>' + STATS.best + '</b></div>' +
+    '<div>輔助勝<b>' + STATS.aWins + '</b></div><div>目前連勝<b>' + STATS.streak + '</b></div><div>殘局 ★<b>' + pzStars() + '</b></div></div>';
+  h += '<div class="lbl">各等級戰績（勝／局，提示或悔棋的勝局另計）</div><div class="statgrid">';
+  for (var i = 1; i <= 5; i++) { var L = STATS.lv[i] || { g: 0, w: 0 }; h += '<div>' + LVN[i] + '<b>' + L.w + '/' + L.g + '</b>' + (L.a ? '<small>輔助勝 ' + L.a + '</small>' : '') + '</div>'; }
   h += '<div>殘局<b>' + Object.keys(PROG.done).length + '/' + NPZ + '</b></div></div><div class="lbl">成就</div>';
   ACH_LIST.forEach(function (a) { h += '<div class="achv' + (ACH[a[0]] ? ' got' : '') + '"><span class="ic">' + (ACH[a[0]] ? '✓' : '?') + '</span><div>' + a[1] + '<small>' + a[2] + '</small></div></div>'; });
   $('statBody').innerHTML = h; show('ovStats');
@@ -2398,9 +2450,9 @@ $('hOk').addEventListener('click', function () { hide('ovHelp'); });
 $('tAI').addEventListener('click', function () { audio(); SND.ui(); openNew('ai'); });
 $('tPvp').addEventListener('click', function () { audio(); SND.ui(); openNew('pvp'); });
 $('tNet').addEventListener('click', function () { audio(); SND.ui(); NET.open(); });
-$('tResume').addEventListener('click', function () { audio(); SND.ui(); resumeGame(); });
+$('tResume').addEventListener('click', function () { audio(); SND.ui(); if (savedGame()) resumeGame(); else { var sp = savedPz(); if (sp) startPuzzle(sp.n, sp.daily, true); } });
 $('tPz').addEventListener('click', function () { audio(); SND.ui(); openSelect(); });
-$('tDaily').addEventListener('click', function () { audio(); SND.ui(); startPuzzle(dailyLevel(), true); });
+$('tDaily').addEventListener('click', function () { audio(); SND.ui(); startPuzzle(dailyLevel(), true, true); });
 $('tStats').addEventListener('click', function () { SND.ui(); openStats(); });
 $('tSet').addEventListener('click', function () { SND.ui(); openSettings(); });
 $('tHelp').addEventListener('click', function () { SND.ui(); openHelp(); });
