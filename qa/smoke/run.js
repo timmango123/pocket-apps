@@ -92,7 +92,7 @@ function serve() {
     testRows.push(`| ${a} | ${ok ? '通過' : '**失敗**'} | ${last.slice(0, 160).replace(/\|/g, '\\|')} |`);
     if (!ok) fails.push(a + '（單元測試）');
     // on failure also show which checks failed, so a CI-only failure can be diagnosed from the log
-    const why = ok ? [] : out.filter(l => l !== last && /FAIL|✗|失敗|not ok|Error|timeout/i.test(l)).slice(0, 8);
+    const why = ok ? [] : out.filter(l => l !== last && /FAIL|✗|失敗|not ok|Error|timeout/i.test(l)).sort((a, b) => /^\s*(FAIL|not ok|✗)/.test(b) - /^\s*(FAIL|not ok|✗)/.test(a)).slice(0, 8);
     process.stdout.write(ok ? '.' : `\n  ✗ ${a}: ${last}\n${why.map(l => '      ' + l.trim().slice(0, 200) + '\n').join('')}`);
   }
 
