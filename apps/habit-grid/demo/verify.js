@@ -101,12 +101,14 @@ const FIXED = new Date('2026-10-12T21:00:00+08:00'); // a Monday evening in Taip
   ok(cells === 22 * 7, `mobile heatmap 22 weeks x 7 = ${cells}`);
   ok(await page.locator('#hgrid .c.fut').count() === 6, 'future cells after Monday = 6');
   ok(await page.locator('#hgrid .c[data-k="2026-10-13"]').isDisabled(), 'future cell disabled');
-  await page.click('#hgrid .c[data-k="2026-09-29"]');
+  await page.click('#hgrid .c[data-k="2026-09-29"]'); // opens the back-fill calendar on that month
+  await page.click('#cal [data-k="2026-09-29"]');
   ok((await page.locator('#hint').innerText()).includes('9/29（週二）已補打卡'), 'back-fill hint');
   const s = await water.locator('small').innerText();
   ok(/連續 \d+ 天/.test(s) && !s.includes('連續 12 天'), `streak extended after back-fill (${s})`);
-  await page.click('#toast-undo');
+  await page.click('#cal [data-k="2026-09-29"]');
   ok((await water.locator('small').innerText()).includes('連續 12 天'), 'undo back-fill');
+  await page.click('#cal-close');
 
   // add habit
   await page.click('#add-btn');
@@ -120,7 +122,7 @@ const FIXED = new Date('2026-10-12T21:00:00+08:00'); // a Monday evening in Taip
   const newCard = page.locator('.card', { hasText: '早睡' });
   ok(await newCard.count() === 1, 'new habit card added');
   ok((await newCard.locator('small').innerText()).includes('本週 0/5'), 'new weekly habit 本週 0/5');
-  ok((await page.locator('#stats').innerText()).replace(/\s+/g, ' ').includes('本月完成 0/1'), 'new habit month stats 0/1 (created today)');
+  ok((await page.locator('#stats').innerText()).replace(/\s+/g, ' ').includes('本月達標 0/1 週'), 'new weekly habit month stats 0/1 weeks (created today)');
   ok(await page.locator('#hgrid .c.pre').count() > 100, 'cells before creation shown as pre');
   await newCard.locator('[data-check]').click();
   await page.reload();
