@@ -90,6 +90,7 @@ svg.i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-widt
 .sec { margin: 10px 0; }
 .sec > .lab { font-size: 12px; color: var(--mut); margin: 0 0 6px 2px; letter-spacing: 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lvnote { margin: 6px 2px 0; text-align: left; min-height: 3em; font-size: 12.5px; }
 .chip { min-height: 44px; padding: 6px 12px; border-radius: 13px; border: 1.5px solid var(--cardb); background: var(--chip); font-size: 14px; flex: 1 1 auto; line-height: 1.15; }
 .chip small { display: block; font-size: 11px; color: var(--mut); }
 .chip.on { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
@@ -203,7 +204,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div class="sec"><div class="lab">模式</div><div class="chips" id="cMode">
     <button class="chip" data-v="ai">對電腦</button><button class="chip" data-v="2p">雙人同機</button><button class="chip" data-v="daily">每日盤面<small id="dailyTag">今日</small></button>
   </div></div>
-  <div class="sec" id="secLevel"><div class="lab">電腦等級（難度）</div><div class="chips" id="cLevel"></div></div>
+  <div class="sec" id="secLevel"><div class="lab">電腦等級（難度）</div><div class="chips" id="cLevel"></div><p class="note lvnote" id="lvNote"></p></div>
   <div class="sec" id="secSize"><div class="lab">盤面（格數）</div><div class="chips" id="cSize">
     <button class="chip" data-v="3x3">3×3</button><button class="chip" data-v="4x4">4×4</button><button class="chip" data-v="5x5">5×5</button><button class="chip" data-v="6x6">6×6</button><button class="chip" data-v="5x7">5×7</button>
   </div></div>
@@ -230,6 +231,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div id="rSub"></div>
   <canvas id="rThumb" width="10" height="10"></canvas>
   <div id="rAch"></div>
+  <div class="btns" id="rLvRow" hidden><button class="btn sec2" id="rLevel"></button></div>
   <div class="btns"><button class="btn" id="rAgain">再來一局</button><button class="btn sec2" id="rShare">分享</button></div>
   <div class="btns" style="margin-top:8px"><button class="btn sec2 sm" id="rBoard">看盤面</button><button class="btn sec2 sm" id="rMenu">選單</button></div>
 </div></div>
@@ -254,6 +256,12 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <li><b>讓兩格</b>：吃對手送的長鏈時，故意留最後 2 格（迴圈留 4 格）不吃、改畫另一條，對手吃完這 2 格就得打開下一條鏈，你就保住了控制權。</li>
     <li><b>長鏈規則</b>：5×5 點的盤面（4×4 格），先手希望長鏈數為奇數，後手希望為偶數（點數＋長鏈數為偶數對先手有利）。</li>
   </ul>
+  <p><b>難度</b></p>
+  <ul>
+    <li>第一次玩建議從等級 2 開始；贏了結果畫面會建議升一級，連輸 3 局會建議降一級。</li>
+    <li>等級 5「教授」是<b>挑戰級</b>：殘局完全搜尋，高手也很難贏。</li>
+    <li>每日盤面固定對等級 3，分享的比分可以互相比較。</li>
+  </ul>
   <p class="note">快捷鍵：U 悔棋、H 提示、N 新局</p>
   <div class="btns"><button class="btn" id="hClose">知道了</button></div>
 </div></div>
@@ -277,8 +285,10 @@ var DOTS = (function () {
   var LEVELS = [
     { name: '小學生', ms: 30, err: 0.30, exact: 0 },
     { name: '國中生', ms: 100, err: 0.15, exact: 0 },
-    { name: '高中生', ms: 400, err: 0.06, exact: 0 },
-    { name: '大學生', ms: 1000, err: 0.02, exact: 14 },
+    // slip: chance of a careless move at any point; dd: how often it plays 讓兩格 to keep control (outside exact search);
+    // smart: how often it picks the cheapest gift by look-ahead (else the fewest boxes). They make L3/L4 gentler steps between L2 and L5.
+    { name: '高中生', ms: 400, err: 0.06, exact: 0, dd: 0.45, smart: 0.5, slip: 0.08 },
+    { name: '大學生', ms: 1000, err: 0.02, exact: 14, slip: 0.05, dd: 0.8 },
     { name: '教授', ms: 2500, err: 0, exact: 20 }
   ];
   var SIZES = { '3x3': [3, 3], '4x4': [4, 4], '5x5': [5, 5], '6x6': [6, 6], '5x7': [5, 7] };
@@ -631,6 +641,7 @@ var DOTS = (function () {
       if (safe.length) return { e: pick(safe, rand), why: '安全步：不畫第三邊。' };
       var mg = minGive(p, free, rand); return { e: mg.e, why: '沒有安全步了，送出最少的格子（' + mg.k + ' 格）。' };
     }
+    if (L.slip && !noErr && rand() < L.slip) return { e: pick(safe.length ? safe : free, rand), why: '（失誤）' };
     if (!caps.length && safe.length > 1 && rand() < err) return { e: pick(safe, rand), why: '（失誤）' };
     if (L.exact && free.length <= L.exact) {
       try {
@@ -652,6 +663,7 @@ var DOTS = (function () {
       var c = copy(p); greedy(c);
       if (!freeList(c).length || hasSafe(c)) return { e: capStep(p), why: '吃下這格：之後還有安全步，不必讓格。' };
       var cv = capValue(p, rand);
+      if (cv.dd && L.dd != null && !noErr && rand() >= L.dd) return { e: capStep(p), why: '全部吃下。', v: cv.v, skipDD: true };
       if (cv.dd) return { e: cv.e, why: '讓' + (cv.L === 4 ? '四' : '兩') + '格以保持控制權：對手吃下這 ' + cv.L + ' 格後，必須打開下一條長鏈。', v: cv.v };
       if (cv.ddLater) return { e: cv.e, why: '先吃，留下最後 2 格讓給對手以保持控制。', v: cv.v };
       return { e: cv.e, why: cv.take > 1 ? '全部吃下：剩下的鏈太短，保持控制不划算。' : '吃下這格。', v: cv.v };
@@ -663,6 +675,7 @@ var DOTS = (function () {
       else r = searchSafe(p, rand, deadline);
       return { e: r.e, v: r.v, why: r.v > 0 ? '安全步：照長鏈規則爭取殘局的控制權。' : '安全步：局勢不利，盡量拖延並改變鏈的奇偶。' };
     }
+    if (L.smart != null && !noErr && rand() >= L.smart) { var mg3 = minGive(p, free, rand); return { e: mg3.e, why: '沒有安全步了，送出最少的格子（' + mg3.k + ' 格）。' }; }
     var od = openDecision(p, rand, deadline);
     var hh = od.k === 2 && completes(p, od.e) === 0 && (function () { var w = copy(p); draw(w, od.e); return ddMoves(w).length === 0; })();
     return { e: od.e, v: od.v, why: od.k <= 2 ? '必須送格：送出最短的' + (hh ? '兩格（從中間畫，對手無法讓兩格）' : od.k + ' 格') + '。' : '必須送格：送出 ' + od.k + ' 格，代價最小。' };
@@ -1094,9 +1107,10 @@ const store = {
   set(k, v) { try { localStorage.setItem('dots.' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
   del(k) { try { localStorage.removeItem('dots.' + k); } catch (e) { /* ignore */ } }
 };
-const DEF = { mode: 'ai', level: 3, size: '4x4', first: 'me', jitter: true, warn: true, chains: false, sound: true, vib: true, theme: 'auto' };
+const DEF = { mode: 'ai', level: 2, size: '4x4', first: 'me', jitter: true, warn: true, chains: false, sound: true, vib: true, theme: 'auto' };
 const S = Object.assign({}, DEF, store.get('settings', {}));
-const stats = Object.assign({ lv: {}, p2: { b: 0, r: 0, d: 0 }, daily: {}, ach: {}, dd: 0, altNext: 1 }, store.get('stats', {}));
+const stats = Object.assign({ lv: {}, p2: { b: 0, r: 0, d: 0 }, daily: {}, ach: {}, dd: 0, altNext: 1, ws: 0, bestWs: 0, run: { lv: 0, l: 0 }, sizes: {}, ddTip: 0 }, store.get('stats', {}));
+const DAILY_LV = 3; // every daily board is played against the same level, so shared daily scores compare
 const saveS = () => store.set('settings', S), saveStats = () => store.set('stats', stats);
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
@@ -1163,15 +1177,17 @@ function newMatch() {
   if (daily) first = 1;
   else if (S.first === 'ai') first = 2;
   else if (S.first === 'alt') { first = stats.altNext || 1; stats.altNext = 3 - first; saveStats(); }
-  M = { mode, level: S.level, C, R, first, human: mode === '2p' ? 0 : 1, daily, seed: (Math.random() * 1e9) | 0, hints: 0, undos: 0, dd: 0, recorded: false };
+  M = { mode, level: daily ? DAILY_LV : S.level, C, R, first, human: mode === '2p' ? 0 : 1, daily, seed: (Math.random() * 1e9) | 0, hints: 0, undos: 0, dd: 0, aiDD: 0, recorded: false };
   M.g = DOTS.newGame(C, R, first);
   if (daily) DOTS.dailyLines(C, R, daily, 10).forEach(e => DOTS.play(M.g, e, true));
   afterLoad(); save();
 }
-function save() { if (M && M.mode === 'net') return; if (!M || M.g.over) { store.del('game'); return; } const o = Object.assign({}, M); delete o.g; o.moves = M.g.moves.map(m => [m.e, m.p]); store.set('game', o); }
+function save() { if (M && M.mode === 'net') return; if (!M) { store.del('game'); return; } const o = Object.assign({}, M); delete o.g; o.moves = M.g.moves.map(m => [m.e, m.p]); store.set('game', o); }
 function loadSaved() {
   const o = store.get('game', null); if (!o || !o.moves) return false;
-  try { const g = DOTS.replay(o.C, o.R, o.first, o.moves); if (g.over) return false; M = Object.assign({}, o); delete M.moves; M.g = g; return true; } catch (e) { return false; }
+  try { const g = DOTS.replay(o.C, o.R, o.first, o.moves); M = Object.assign({}, o); delete M.moves; M.g = g; } catch (e) { return false; }
+  if (M.g.over && !M.recorded) { recordResult(); save(); } // closed before the result was written: record it now
+  return true;
 }
 function afterLoad() {
   aiToken++; aiBusy = false; streak = 0; hintEdge = -1; lastAI = new Set(); anims.length = 0; fills.clear(); parts.length = 0; confetti.length = 0;
@@ -1193,7 +1209,7 @@ function applyTheme() {
     grid: t === 'paper' ? 'rgba(96,140,210,.26)' : t === 'chalk' ? 'rgba(255,255,255,.05)' : 'rgba(205,228,255,.16)',
     dot: t === 'paper' ? '#3b3833' : t === 'chalk' ? '#f2f4ea' : '#f0f7ff',
     neutral: t === 'paper' ? 'rgba(110,104,92,.75)' : 'rgba(235,240,230,.5)',
-    hl: t === 'paper' ? 'rgba(255,214,0,.42)' : 'rgba(255,236,140,.22)'
+    hl: t === 'paper' ? 'rgba(255,214,0,.42)' : t === 'chalk' ? 'rgba(255,236,140,.4)' : 'rgba(255,236,140,.3)'
   };
   hatch = {}; layout();
 }
@@ -1208,7 +1224,7 @@ function layout() {
   L.W = r.width; L.H = r.height; L.dpr = Math.min(2, window.devicePixelRatio || 1);
   cv.width = Math.round(L.W * L.dpr); cv.height = Math.round(L.H * L.dpr);
   if (!M) return;
-  const pad = Math.max(24, Math.min(L.W, L.H) * 0.06);
+  const pad = Math.min(L.W, L.H) < 420 ? 14 : Math.max(24, Math.min(L.W, L.H) * 0.06); // small stages (lobby): thinner margin, bigger cells
   L.cell = Math.min((L.W - 2 * pad) / M.C, (L.H - 2 * pad) / M.R, 120);
   L.ox = (L.W - L.cell * M.C) / 2; L.oy = (L.H - L.cell * M.R) / 2;
   L.lw = Math.max(3, Math.min(4.6, L.cell * 0.06));
@@ -1383,14 +1399,25 @@ function throwConfetti() {
 // ---------- input ----------
 let preview = -1, ptr = null;
 function local(ev) { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; }
+// Nearest undrawn line within 0.45 cell of the touch. Dead zones: the dots (which line is meant is unclear), the box
+// centres, and right on top of a line that is already drawn.
 function hitEdge(x, y) {
   if (!M) return -1;
-  const G = M.g.G, gx = (x - L.ox) / L.cell, gy = (y - L.oy) / L.cell, hw = Math.max(14, Math.min(L.cell * 0.2, 22)) / L.cell;
-  let best = -1, bn = 1.0001, r = Math.round(gy), c = Math.floor(gx);
-  if (r >= 0 && r <= M.R && c >= 0 && c < M.C) { const n = Math.abs(gx - c - 0.5) / 0.4 + Math.abs(gy - r) / hw; if (n <= bn) { bn = n; best = r * M.C + c; } }
-  c = Math.round(gx); r = Math.floor(gy);
-  if (c >= 0 && c <= M.C && r >= 0 && r < M.R) { const n = Math.abs(gy - r - 0.5) / 0.4 + Math.abs(gx - c) / hw; if (n < bn) { bn = n; best = G.HN + r * (M.C + 1) + c; } }
-  return best;
+  const G = M.g.G, E = M.g.pos.E, gx = (x - L.ox) / L.cell, gy = (y - L.oy) / L.cell;
+  const rx = Math.round(gx), ry = Math.round(gy), dotDead = Math.min(0.2, Math.max(0.12, 7 / L.cell));
+  if (rx >= 0 && ry >= 0 && rx <= M.C && ry <= M.R && Math.hypot(gx - rx, gy - ry) < dotDead) return -1;
+  const bx = Math.floor(gx), by = Math.floor(gy);
+  if (bx >= 0 && by >= 0 && bx < M.C && by < M.R && Math.hypot(gx - bx - 0.5, gy - by - 0.5) < 0.15) return -1;
+  let best = -1, bd = 0.45, dDrawn = 1e9;
+  for (let r = Math.max(0, by - 1); r <= Math.min(M.R, by + 2); r++) for (let c = Math.max(0, bx - 1); c <= Math.min(M.C - 1, bx + 1); c++) { // horizontal
+    const d = Math.hypot(gx - Math.max(c, Math.min(c + 1, gx)), gy - r), e = r * M.C + c;
+    if (E[e]) { if (d < dDrawn) dDrawn = d; } else if (d < bd) { bd = d; best = e; }
+  }
+  for (let r = Math.max(0, by - 1); r <= Math.min(M.R - 1, by + 1); r++) for (let c = Math.max(0, bx - 1); c <= Math.min(M.C, bx + 2); c++) { // vertical
+    const d = Math.hypot(gx - c, gy - Math.max(r, Math.min(r + 1, gy))), e = G.HN + r * (M.C + 1) + c;
+    if (E[e]) { if (d < dDrawn) dDrawn = d; } else if (d < bd) { bd = d; best = e; }
+  }
+  return dDrawn < 0.12 && dDrawn < bd ? -1 : best;
 }
 function nearDot(x, y) { const gx = (x - L.ox) / L.cell, gy = (y - L.oy) / L.cell, rx = Math.round(gx), ry = Math.round(gy); if (rx < 0 || ry < 0 || rx > M.C || ry > M.R) return null; return Math.hypot(gx - rx, gy - ry) < 0.34 ? [rx, ry] : null; }
 function inputOK() { return M && !M.g.over && !aiBusy && (M.mode === 'net' ? NET.canMove() : M.mode === '2p' || M.g.turn === M.human) && !anyOverlay(); }
@@ -1447,8 +1474,9 @@ function doMove(e) {
     setTimeout(() => SND.ding(streak), 110); vib(12);
     const el = $(who === 1 ? '#p1p' : '#p2p'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
   } else streak = 0;
+  if (g.over) recordResult();
   save(); updateHUD(); kick();
-  if (g.over) { setTimeout(finish, 650); return; }
+  if (g.over) { setTimeout(() => { if (M && M.g === g) showResult(); }, 650); return; }
   maybeAI();
 }
 
@@ -1466,9 +1494,17 @@ function maybeAI() {
       if (tok !== aiToken) return;
       if (document.hidden) { setTimeout(go, 250); return; }
       aiBusy = false; lastAI.add(r.e); doMove(r.e);
+      if (r.kind === 'dd' && M.level >= 3 && M.g && !M.g.over && M.g.turn === M.human) explainDD();
     };
     setTimeout(go, wait);
   }).catch(err => { if (tok !== aiToken) return; aiBusy = false; console.warn('AI error', err); });
+}
+function explainDD() { // the computer left boxes on purpose: say why (the first 3 times ever; counted per game for the result screen)
+  M.aiDD = (M.aiDD || 0) + 1; save();
+  if ((stats.ddTip || 0) >= 3) return;
+  stats.ddTip = (stats.ddTip || 0) + 1; saveStats();
+  const k = DOTS.greedy(DOTS.copy(M.g.pos));
+  toast('<b>讓' + (k === 4 ? '四' : '兩') + '格</b>　電腦故意留下 ' + k + ' 格不吃，你吃完就得打開下一條鏈。詳見玩法說明', 6000);
 }
 function hint() {
   if (!inputOK() || M.mode === 'net') return;
@@ -1541,17 +1577,19 @@ function chipGroup(id, key, after) {
   sync(); return sync;
 }
 $('#cLevel').innerHTML = DOTS.LEVELS.map((l, i) => '<button class="chip" data-v="' + (i + 1) + '">' + (i + 1) + ' ' + l.name + '<small>' + pips(i + 1) + '</small></button>').join('');
+const LVNOTE = ['有格就吃，常常亂畫，適合第一次玩', '會避開第三邊，偶爾失誤', '開始會「讓兩格」搶控制權，但不一定每次', '殘局會完全搜尋，偶爾失手', '挑戰級：殘局完全搜尋，高手也很難贏'];
 function menuSync() {
   const m = S.mode;
-  $('#secLevel').hidden = m === '2p';
+  $('#secLevel').hidden = m !== 'ai';
+  $('#lvNote').textContent = LVNOTE[S.level - 1] || '';
   $('#cSize').querySelectorAll('.chip').forEach(c => { c.disabled = m === 'daily'; });
   $('#fMe').textContent = m === '2p' ? '藍方先' : '我先'; $('#fAi').textContent = m === '2p' ? '紅方先' : '電腦先';
   $('#cFirst').querySelectorAll('.chip').forEach(c => { c.disabled = m === 'daily' && c.dataset.v !== 'me'; });
-  const d = stats.daily[today()]; $('#dailyTag').textContent = d ? '今日 ' + d.s1 + '：' + d.s2 : '今日 4×4';
+  const d = stats.daily[today()]; $('#dailyTag').textContent = d ? '今日 ' + d.s1 + '：' + d.s2 : '4×4・等級 ' + DAILY_LV;
   $('#mResume').hidden = !(M && !M.g.over && M.g.moves.some(x => x.p));
   $('#mClose').hidden = !M;
 }
-chipGroup('#cMode', 'mode', menuSync); chipGroup('#cLevel', 'level'); chipGroup('#cSize', 'size'); chipGroup('#cFirst', 'first');
+chipGroup('#cMode', 'mode', menuSync); chipGroup('#cLevel', 'level', menuSync); chipGroup('#cSize', 'size'); chipGroup('#cFirst', 'first');
 chipGroup('#cTheme', 'theme', () => { applyTheme(); kick(); });
 function sw(id, key, after) {
   const b = $(id), sync = () => b.setAttribute('aria-checked', String(!!S[key]));
@@ -1565,16 +1603,20 @@ sw('#swVib', 'vib', () => vib(15));
 function openMenu() { menuSync(); show('#menu'); }
 $('#bMenu').onclick = () => {
   SND.click();
-  if (M && M.mode === 'net') { if ((M.g.over || M.resigned != null) && M.recorded) show('#result'); else NET.open(); return; }
+  if (M && M.mode === 'net') { if ((M.g.over || M.resigned != null) && M.shown) show('#result'); else NET.open(); return; }
   openMenu();
 };
 $('#mNet').onclick = () => { ac(); SND.click(); NET.open(); };
 $('#mClose').onclick = () => { if (M) hide('#menu'); };
-$('#mStart').onclick = () => { ac(); hide('#menu'); hide('#result'); newMatch(); };
+$('#mStart').onclick = () => {
+  ac(); const go = () => { hide('#menu'); hide('#result'); newMatch(); };
+  if (M && M.mode !== 'net' && !M.g.over && M.g.moves.some(x => x.p)) confirmBox('開新局？', '目前的對局會放棄（不計入戰績）。', '開新局', go); // the menu stays open on 取消
+  else go();
+};
 $('#mResume').onclick = () => { ac(); hide('#menu'); kick(); maybeAI(); };
 $('#mHelp').onclick = () => show('#help'); $('#hClose').onclick = () => hide('#help');
 $('#mStats').onclick = () => { renderStats(); show('#stats'); }; $('#stClose').onclick = () => hide('#stats');
-$('#stReset').onclick = () => confirmBox('重設戰績？', '所有對戰紀錄與成就都會清除。', '重設', () => { stats.lv = {}; stats.p2 = { b: 0, r: 0, d: 0 }; stats.daily = {}; stats.ach = {}; stats.dd = 0; saveStats(); renderStats(); });
+$('#stReset').onclick = () => confirmBox('重設戰績？', '所有對戰紀錄與成就都會清除。', '重設', () => { stats.lv = {}; stats.p2 = { b: 0, r: 0, d: 0 }; stats.daily = {}; stats.ach = {}; stats.dd = 0; stats.ws = 0; stats.bestWs = 0; stats.run = { lv: 0, l: 0 }; stats.sizes = {}; saveStats(); renderStats(); });
 $('#bSnd').onclick = () => { S.sound = !S.sound; saveS(); sndIcon(); syncSndSw(); if (S.sound) SND.click(); };
 $('#tUndo').onclick = undo; $('#tHint').onclick = hint;
 $('#tChain').onclick = () => { S.chains = !S.chains; saveS(); syncChainSw(); updateHUD(); kick(); toast(S.chains ? '鏈提示：開（後期標出鏈與迴圈）' : '鏈提示：關'); };
@@ -1587,6 +1629,7 @@ $('#tNew').onclick = () => { SND.click(); newGameQuick(); };
 $('#rAgain').onclick = () => { hide('#result'); if (M && M.mode === 'net') { NET.rematch(); return; } newMatch(); };
 $('#rMenu').onclick = () => { hide('#result'); if (M && M.mode === 'net') { NET.leave(); return; } openMenu(); };
 $('#rBoard').onclick = () => { hide('#result'); toast(M && M.mode === 'net' ? '點左上「選單」回到結果' : '點「新局」再來一盤', 2600); };
+$('#rLevel').onclick = () => { const lv = +$('#rLevel').dataset.lv; if (lv >= 1 && lv <= 5) { S.level = lv; saveS(); } SND.click(); hide('#result'); newMatch(); };
 $('#rShare').onclick = share; $('#shClose').onclick = () => hide('#shareOv');
 
 // ---------- results, stats, achievements ----------
@@ -1596,12 +1639,16 @@ const ACH = [
   ['prof', '贏教授', '擊敗等級 5「教授」'],
   ['dd10', '讓兩格大師', '對電腦時故意不吃（讓格）累計 10 次'],
   ['big', '大盤高手', '在 6×6 或 5×7 盤面贏等級 3 以上'],
-  ['daily', '每日挑戰', '贏下一次每日盤面']
+  ['daily', '每日挑戰', '贏下一次每日盤面'],
+  ['ws3', '三連勝', '對等級 3 以上連贏 3 局'],
+  ['allsize', '全盤面制霸', '5 種盤面都贏過等級 3 以上']
 ];
-function finish() {
+// recordResult() runs in the same task as the last line (stats, achievements, daily, saved board), so closing the
+// page right after the game cannot lose it; showResult() only draws the result screen, sounds and confetti later.
+function recordResult() {
   if (!M || M.recorded || (!M.g.over && M.resigned == null)) return; M.recorded = true;
   const g = M.g, s1 = g.score[1], s2 = g.score[2], N = names();
-  let title, rc, sub = '', newAch = [];
+  let title, rc, sub = '', newAch = [], lvBtn = null;
   if (M.mode === 'net') { // online: not recorded in the stats; told from the local player's side
     const w = M.resigned != null ? 2 - M.resigned : g.winner, me = M.human;
     title = !w ? '和局' : w === me ? '你贏了！' : N[w].n + ' 獲勝'; rc = w === 1 ? 'var(--p1)' : w === 2 ? 'var(--p2)' : 'var(--ink)';
@@ -1612,30 +1659,46 @@ function finish() {
     title = g.winner ? N[g.winner].n + '獲勝！' : '和局'; rc = g.winner === 1 ? 'var(--p1)' : g.winner === 2 ? 'var(--p2)' : 'var(--ink)';
     sub = '同機雙人累計：藍 ' + stats.p2.b + ' 勝・紅 ' + stats.p2.r + ' 勝・和 ' + stats.p2.d;
   } else {
-    const k = 'L' + M.level, r = stats.lv[k] = stats.lv[k] || { w: 0, l: 0, d: 0, diff: 0 };
-    r[g.winner === 1 ? 'w' : g.winner === 2 ? 'l' : 'd']++; r.diff += s1 - s2;
-    if (M.daily) stats.daily[M.daily] = { s1, s2, res: g.winner };
+    const k = 'L' + M.level, r = stats.lv[k] = stats.lv[k] || { w: 0, l: 0, d: 0, diff: 0 }, won = g.winner === 1, lost = g.winner === 2;
+    r[won ? 'w' : lost ? 'l' : 'd']++; r.diff += s1 - s2;
+    if (M.daily) stats.daily[M.daily] = { s1, s2, res: g.winner, lv: M.level };
+    stats.ws = won ? (stats.ws || 0) + 1 : 0; stats.bestWs = Math.max(stats.bestWs || 0, stats.ws);
+    const run = stats.run && stats.run.lv === M.level ? stats.run : { lv: M.level, l: 0 }; run.l = lost ? run.l + 1 : 0; stats.run = run;
+    if (won && M.level >= 3) { stats.sizes = stats.sizes || {}; stats.sizes[M.C + 'x' + M.R] = 1; }
     const unlock = id => { if (!stats.ach[id]) { stats.ach[id] = today(); newAch.push(id); } };
-    if (g.winner === 1) { unlock('first'); if (!s2) unlock('allbox'); if (M.level === 5) unlock('prof'); if ((M.C * M.R >= 35) && M.level >= 3) unlock('big'); if (M.daily) unlock('daily'); }
+    if (won) { unlock('first'); if (!s2) unlock('allbox'); if (M.level === 5) unlock('prof'); if ((M.C * M.R >= 35) && M.level >= 3) unlock('big'); if (M.daily) unlock('daily'); if (stats.ws >= 3 && M.level >= 3) unlock('ws3'); if (Object.keys(DOTS.SIZES).every(z => stats.sizes && stats.sizes[DOTS.SIZES[z].join('x')])) unlock('allsize'); }
     if ((stats.dd || 0) >= 10) unlock('dd10');
-    title = g.winner === 1 ? '你贏了！' : g.winner === 2 ? '電腦獲勝' : '和局'; rc = g.winner === 1 ? 'var(--p1)' : g.winner === 2 ? 'var(--p2)' : 'var(--ink)';
+    title = won ? '你贏了！' : lost ? '電腦獲勝' : '和局'; rc = won ? 'var(--p1)' : lost ? 'var(--p2)' : 'var(--ink)';
     const n = r.w + r.l + r.d;
-    sub = (g.winner === 1 ? '多拿 ' + (s1 - s2) + ' 格。' : g.winner === 2 ? '差 ' + (s2 - s1) + ' 格，再試一次！' : '平分秋色。') + '<br>對「' + DOTS.LEVELS[M.level - 1].name + '」：' + r.w + ' 勝 ' + r.l + ' 負 ' + r.d + ' 和・勝率 ' + Math.round(100 * r.w / n) + '%';
+    sub = (won ? '多拿 ' + (s1 - s2) + ' 格。' : lost ? '差 ' + (s2 - s1) + ' 格，再試一次！' : '平分秋色。') + '<br>對「' + DOTS.LEVELS[M.level - 1].name + '」：' + r.w + ' 勝 ' + r.l + ' 負 ' + r.d + ' 和・勝率 ' + Math.round(100 * r.w / n) + '%';
+    if (stats.ws >= 2) sub += '<br>連勝 ' + stats.ws + ' 局（最長 ' + stats.bestWs + '）';
     if (M.hints || M.undos) sub += '<br>提示 ' + M.hints + ' 次・悔棋 ' + M.undos + ' 次';
+    if (!won && M.aiDD) sub += '<br>電腦這局「讓格」' + M.aiDD + ' 次來保住控制權（見玩法說明）';
+    if (M.mode === 'ai') { // suggest the next level after a win, an easier one after 3 losses in a row
+      if (won && M.level < 5) lvBtn = [M.level + 1, '升到等級 ' + (M.level + 1) + '「' + DOTS.LEVELS[M.level].name + '」再戰'];
+      else if (lost && run.l >= 3 && M.level > 1) lvBtn = [M.level - 1, '連輸 ' + run.l + ' 局，降到等級 ' + (M.level - 1) + '「' + DOTS.LEVELS[M.level - 2].name + '」試試'];
+    }
   }
-  if (M.mode !== 'net') { saveStats(); store.del('game'); }
-  $('#rTitle').textContent = title; $('#rTitle').style.setProperty('--rc', rc);
+  M.res = { title, rc, sub, newAch, lvBtn };
+  if (M.mode !== 'net') saveStats();
+}
+function showResult() {
+  if (!M || !M.res) return;
+  const g = M.g, s1 = g.score[1], s2 = g.score[2], N = names(), R = M.res;
+  $('#rTitle').textContent = R.title; $('#rTitle').style.setProperty('--rc', R.rc);
   $('#rScore').innerHTML = '<span class="a">' + esc(N[1].n) + ' ' + s1 + '</span> ： <span class="b">' + s2 + ' ' + esc(N[2].n) + '</span>';
   $('#rAgain').hidden = M.mode === 'net' && !M.human; $('#rAgain').textContent = M.mode === 'net' ? '再來一局（換邊）' : '再來一局';
   $('#rMenu').textContent = M.mode === 'net' ? '離開房間' : '選單';
-  $('#rSub').innerHTML = sub;
-  $('#rAch').innerHTML = newAch.map(id => { const a = ACH.find(x => x[0] === id); return '<div class="ach">🏅 解鎖成就 <b>' + a[1] + '</b>：' + a[2] + '</div>'; }).join('');
+  $('#rSub').innerHTML = R.sub;
+  $('#rLvRow').hidden = !R.lvBtn; if (R.lvBtn) { $('#rLevel').textContent = R.lvBtn[1]; $('#rLevel').dataset.lv = R.lvBtn[0]; }
+  $('#rAch').innerHTML = (R.newAch || []).map(id => { const a = ACH.find(x => x[0] === id); return a ? '<div class="ach">🏅 解鎖成就 <b>' + a[1] + '</b>：' + a[2] + '</div>' : ''; }).join('');
   drawThumb($('#rThumb'), 150);
-  const good = M.mode === 'net' ? M.human && title === '你贏了！' : M.mode === '2p' ? g.winner !== 0 : g.winner === 1;
+  const good = M.mode === 'net' ? M.human && R.title === '你贏了！' : M.mode === '2p' ? g.winner !== 0 : g.winner === 1;
   if (g.winner === 0 && M.resigned == null) SND.draw(); else if (good) { SND.win(); throwConfetti(); vib([30, 50, 30, 50, 80]); } else { SND.lose(); vib(120); }
   updateHUD();
-  setTimeout(() => { if (M && M.g === g) show('#result'); }, good ? 1100 : 700);
+  setTimeout(() => { if (M && M.g === g) { M.shown = true; show('#result'); } }, good ? 1100 : 700);
 }
+function finish() { recordResult(); showResult(); }
 function drawThumb(c, size) {
   const g = M.g, d = 2, cell = size / Math.max(M.C, M.R), w = cell * M.C + 16, h = cell * M.R + 16;
   c.width = w * d; c.height = h * d; c.style.width = w + 'px'; c.style.height = h + 'px';
@@ -1648,13 +1711,13 @@ function drawThumb(c, size) {
 function renderStats() {
   let h = '<table class="st"><tr><th>等級</th><th>場</th><th>勝</th><th>負</th><th>和</th><th>勝率</th><th>平均格差</th></tr>';
   DOTS.LEVELS.forEach((l, i) => { const r = stats.lv['L' + (i + 1)] || { w: 0, l: 0, d: 0, diff: 0 }, n = r.w + r.l + r.d; h += '<tr><td>' + (i + 1) + ' ' + l.name + '</td><td>' + n + '</td><td>' + r.w + '</td><td>' + r.l + '</td><td>' + r.d + '</td><td>' + (n ? Math.round(100 * r.w / n) + '%' : '–') + '</td><td>' + (n ? (r.diff / n > 0 ? '+' : '') + (r.diff / n).toFixed(1) : '–') + '</td></tr>'; });
-  h += '</table><p class="note">同機雙人：藍 ' + stats.p2.b + ' 勝・紅 ' + stats.p2.r + ' 勝・和 ' + stats.p2.d + '　｜　每日盤面完成 ' + Object.keys(stats.daily).length + ' 天　｜　讓格 ' + (stats.dd || 0) + ' 次</p>';
+  h += '</table><p class="note">同機雙人：藍 ' + stats.p2.b + ' 勝・紅 ' + stats.p2.r + ' 勝・和 ' + stats.p2.d + '　｜　每日盤面完成 ' + Object.keys(stats.daily).length + ' 天　｜　讓格 ' + (stats.dd || 0) + ' 次<br>目前連勝 ' + (stats.ws || 0) + ' 局・最長連勝 ' + (stats.bestWs || 0) + ' 局</p>';
   h += '<ul class="achl">' + ACH.map(a => '<li class="' + (stats.ach[a[0]] ? 'got' : '') + '"><span>' + (stats.ach[a[0]] ? '🏅 ' : '○ ') + a[1] + '<br><small style="color:var(--mut);font-weight:400">' + a[2] + '</small></span><span>' + (stats.ach[a[0]] || '') + '</span></li>').join('') + '</ul>';
   $('#stBody').innerHTML = h;
 }
 function share() {
   const g = M.g, N = names(), sq = ['⬜', '🟦', '🟥'];
-  let t = '點格棋 ' + M.C + '×' + M.R + (M.mode === 'daily' ? '・每日盤面 ' + M.daily : M.mode === '2p' ? '・同機雙人' : M.mode === 'net' ? '・連線對戰' : '・對電腦（' + DOTS.LEVELS[M.level - 1].name + '）') + '\n';
+  let t = '點格棋 ' + M.C + '×' + M.R + (M.mode === 'daily' ? '・每日盤面 ' + M.daily + '（等級 ' + M.level + '「' + DOTS.LEVELS[M.level - 1].name + '」）' : M.mode === '2p' ? '・同機雙人' : M.mode === 'net' ? '・連線對戰' : '・對電腦（' + DOTS.LEVELS[M.level - 1].name + '）') + '\n';
   t += N[1].n + ' ' + g.score[1] + '：' + g.score[2] + ' ' + N[2].n + '　' + $('#rTitle').textContent + '\n';
   for (let r = 0; r < M.R; r++) { let s = ''; for (let c = 0; c < M.C; c++) s += sq[g.own[r * M.C + c]] || sq[0]; t += s + '\n'; }
   if (navigator.share) { navigator.share({ title: '點格棋', text: t }).catch(() => {}); return; }
