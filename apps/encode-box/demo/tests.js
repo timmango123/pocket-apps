@@ -261,6 +261,8 @@ const b64u = s => Buffer.from(s).toString('base64url');
         ok(r.fadeRight >= r.navRight, `${w}x${h}: the fade covers the chip edge (fade to ${r.fadeRight}, row to ${r.navRight})`); }
       // an error message is on the first screen, above the (shrunk) output
       await p3.click('#codec-url'); await p3.click('#dirDec'); await p3.fill('#in', '%ZZ'); await p3.waitForFunction(() => !document.getElementById('err').hidden, null, { timeout: T });
+      // fonts differ between machines; the app scrolls a new error into view when it would land below the fold
+      await p3.waitForFunction(() => document.getElementById('err').getBoundingClientRect().bottom <= innerHeight, null, { timeout: 2000 }).catch(() => {});
       { const r = await p3.evaluate(() => { const e = document.getElementById('err').getBoundingClientRect(), o = document.getElementById('out').getBoundingClientRect(); return { eb: e.bottom, ot: o.top, ih: innerHeight }; });
         ok(r.eb <= r.ih && r.eb <= r.ot, `${w}x${h}: error box on the first screen above the output (bottom ${Math.round(r.eb)} ≤ ${r.ih})`); }
       await c3.close();
