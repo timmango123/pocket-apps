@@ -52,7 +52,7 @@ function simReport(runs, assist) {
   console.log(`  score avg ${avg.toFixed(1)} (spec needs > 60: ${avg > 60 ? 'PASS' : 'FAIL'}), median ${pct(0.5)}, p10 ${pct(0.1)}, p90 ${pct(0.9)}, min ${sc[0]}, max ${sc[runs - 1]}`);
   const m = k => (res.reduce((a, r) => a + r[k], 0) / runs).toFixed(1);
   console.log(`  avg passes ${m('passes')}, centres ${m('centers')}, grazes ${m('grazes')}, lanterns ${m('lanterns')}, survival ${m('t')} s`);
-  const medal = [10, 25, 50, 100].map(x => `${x}+: ${res.filter(r => r.score >= x).length}`).join(', ');
+  const medal = [10, 25, 50, 80, 100].map(x => `${x}+: ${res.filter(r => r.score >= x).length}`).join(', ');
   console.log(`  medal thresholds reached (runs): ${medal}`);
   console.log(`  runs that met swinging pillars ${res.filter(r => r.seen.osc).length}, double gaps ${res.filter(r => r.seen.dbl).length}, crosswinds ${res.filter(r => r.seen.wind).length}; deaths ${JSON.stringify(res.reduce((a, r) => (a[r.by] = (a[r.by] || 0) + 1, a), {}))}`);
   return avg;
