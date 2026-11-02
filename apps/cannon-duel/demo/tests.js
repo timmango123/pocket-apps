@@ -41,14 +41,15 @@ function mkBattle(n, extra) {
     const cdp = await ctx.newCDPSession(page);
     return { ctx, page, cdp };
   }
-  const waitFor = async (page, fn, arg, ms = 15000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + fn.toString().slice(0, 90)); await sleep(30); } };
+  const waitFor = async (page, fn, arg, ms = 15000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + (arg ? JSON.stringify(arg) + ' ' : '') + fn.toString().slice(0, 90)); await sleep(30); } };
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
   const pts = arr => arr.map((p, i) => ({ x: p.x, y: p.y, id: p.id != null ? p.id : i + 1 }));
   const touch = (cdp, type, list) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts(list) });
   async function tap(cdp, page, sel) {
     await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden') && !e.disabled; }, sel);
-    const b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
+    // cards pop in with a scale animation: wait until the button stops moving, or a busy machine measures it mid-animation and the touch misses
+    const b = await page.evaluate(s => new Promise(res => { let prev = '', same = 0; const t0 = performance.now(); (function f() { const r = document.querySelector(s).getBoundingClientRect(), k = [r.left, r.top, r.width, r.height].map(v => v.toFixed(1)).join(); same = k === prev ? same + 1 : 0; prev = k; if (same >= 2 || performance.now() - t0 > 3000) res({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); else requestAnimationFrame(f); })(); }), sel);
     await touch(cdp, 'touchStart', [b]); await sleep(40); await touch(cdp, 'touchEnd', []); await sleep(60);
   }
   async function playLevel(page, cdp, n) {
