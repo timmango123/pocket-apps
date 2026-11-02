@@ -266,11 +266,13 @@ const T = { timeout: 15000 };
 
   // 13. 360 寬轉盤標籤先縮字再截斷：4 字中文完整
   {
-    const init = () => { const f = CanvasRenderingContext2D.prototype.fillText; window.__labels = []; CanvasRenderingContext2D.prototype.fillText = function (t, ...a) { window.__labels.push(t); return f.call(this, t, ...a); }; };
+    // 字型因機器而異（CI 可能沒有中文字型）：字縮到下限仍放不下時才允許截斷
+    const init = () => { const f = CanvasRenderingContext2D.prototype.fillText; window.__labels = []; CanvasRenderingContext2D.prototype.fillText = function (t, ...a) { window.__labels.push({ t, px: parseFloat(/(\d+(?:\.\d+)?)px/.exec(this.font)[1]), dpr: devicePixelRatio }); return f.call(this, t, ...a); }; };
     const { ctx, p } = await open({ w: 360, h: 640, init });
     await p.waitForFunction(() => window.__labels.length >= 8, null, T);
     const labels = await p.evaluate(() => window.__labels.slice(-8));
-    assert(labels.includes('義大利麵') && labels.every(t => !t.endsWith('…')), `360 寬轉盤標籤完整：${labels.join('、')}`);
+    const okLabel = l => !l.t.endsWith('…') || l.px <= 12 * l.dpr + 0.01;
+    assert(labels.some(l => l.t.startsWith('義大')) && labels.every(okLabel), `360 寬轉盤標籤先縮字再截斷：${labels.map(l => l.t + '@' + l.px).join('、')}`);
     await ctx.close();
   }
 
