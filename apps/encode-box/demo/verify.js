@@ -3,7 +3,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs');
 const WRAP = path.resolve(__dirname, 'preview.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP, OUT = __dirname;
+const URL = 'file://' + WRAP, OUT = process.env.OUT || require('os').tmpdir(); // screenshots are not committed
 const errors = [];
 const assert = (c, m) => { if (!c) { errors.push('ASSERT: ' + m); console.log('FAIL', m); } else console.log('ok  ', m); };
 const eq = (a, b, m) => assert(JSON.stringify(a) === JSON.stringify(b), `${m}: ${JSON.stringify(a)}${JSON.stringify(a) === JSON.stringify(b) ? '' : ' != ' + JSON.stringify(b)}`);
@@ -69,7 +69,8 @@ const JWT = b64u({ alg: 'HS256', typ: 'JWT' }) + '.' + b64u({ sub: '1234567890',
   eq(await ev('html', 'dec', '&lt;img src=x onerror=alert(1)&gt;'), '<img src=x onerror=alert(1)>', 'HTML decode does not execute');
   eq(await ev('uni', 'enc', 'A😀', { style: 'u', nonascii: true }), 'A\\uD83D\\uDE00', 'Unicode \\u surrogate pair');
   eq(await ev('uni', 'dec', '\\u4F60 \\u{1F600} U+597D \\x41'), '你 😀 好A', 'Unicode decode mixed formats');
-  const uerr = await ev('uni', 'dec', 'ab\\u12'); assert(uerr.startsWith('ERR 第 3 個字元'), 'bad \\u error: ' + uerr);
+  const unote = await page.evaluate(() => window.__eb.convert('uni', 'dec', 'ab\\u12', { style: 'u', nonascii: true })); // incomplete \u is ordinary text (e.g. C:\users): kept, with a note
+  assert(unote.text === 'ab\\u12' && unote.note.startsWith('第 3 個字元'), 'incomplete \\u kept with a note: ' + JSON.stringify(unote));
   eq(await ev('hex', 'enc', 'Hi中', { upper: true, sep: true }), '48 69 E4 B8 AD', 'Hex encode');
   eq(await ev('hex', 'dec', '0x48 0x69'), 'Hi', 'Hex decode with 0x');
   assert((await ev('hex', 'dec', '486')).includes('奇數'), 'Hex odd length error');
