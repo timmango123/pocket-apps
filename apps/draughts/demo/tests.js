@@ -126,9 +126,9 @@ const shuffle = [['a1', 'b2'], ['a7', 'b8'], ['b2', 'a1'], ['b8', 'a7']];
 let rep = st, firstOver = -1;
 for (let k = 0; k < 8; k++) { const [f, t] = shuffle[k % 4]; const m = moves(rep).find(x => x.f === sq(f) && x.t === sq(t)); rep = C.stepState(rep, m); const s = C.statusOf(rep); if (s.over && firstOver < 0) { firstOver = k + 1; S = s; } }
 ok(firstOver === 8 && S.winner === -1 && S.reason.includes('重複'), 'threefold repetition draws at the 3rd occurrence (ply 8)', { firstOver, S });
-// 25 king-only moves without capture (flying rules) / 40 moves (English)
+// 25 king-only moves without capture (Brazilian) / 15 (Russian) / 40 moves (English)
 for (const r of RULESET) {
-  const lim = r === 'en' ? 80 : 50;
+  const lim = { br: 50, ru: 30, en: 80 }[r];
   st = pos(r, { W: ['a1', 'c1', 'e1'], B: ['b8', 'd8', 'f8'], w: ['h2'], b: ['a5'] });
   st.kq = lim - 2; let a = C.statusOf(st); ok(!a.over, r + ' no draw before the limit');
   let m = moves(st).find(x => Math.abs(st.b[x.f]) === 2); st = C.stepState(st, m); ok(!C.statusOf(st).over, r + ' still playing at ' + (lim - 1));
@@ -136,13 +136,14 @@ for (const r of RULESET) {
   ok(a.over && a.winner === -1 && s3.kq === lim, r + ' draw after ' + lim / 2 + ' moves each without capture / man move', a);
   m = moves(st).find(x => Math.abs(st.b[x.f]) === 1); ok(m && C.stepState(st, m).kq === 0, r + ' a man move resets the counter');
 }
-// 3 pieces vs lone king: 16 moves; 2 pieces vs lone king: 5 moves (flying rules)
+// 3 pieces vs lone king: 16 moves (Brazilian) / 15 moves (Russian); 2 pieces vs lone king: 5 moves (flying rules)
 for (const r of ['br', 'ru']) {
-  let s;
+  let s; const L3 = r === 'br' ? 32 : 30;
   // exact counter check
   st = pos(r, { W: ['a1', 'c1', 'e1'], B: ['h4'] }); s = C.stepState(st, moves(st).find(m => m.f === sq('a1') && m.t === sq('b2')));
-  ok(s.egLim === 32 && s.eg === 0, r + ' 3v1 counter starts (limit 32 plies)', s);
-  s.eg = 31; s.hist = [s.hist[s.hist.length - 1]]; const s4 = C.stepState(s, moves(s)[0]); ok(C.statusOf(s4).over && C.statusOf(s4).reason.includes('16'), r + ' 3v1 draw after 16 moves each');
+  ok(s.egLim === L3 && s.eg === 0, r + ' 3v1 counter starts (limit ' + L3 + ' plies)', s);
+  s.eg = L3 - 2; s.hist = [s.hist[s.hist.length - 1]]; const s3b = C.stepState(s, moves(s)[0]); ok(!C.statusOf(s3b).over, r + ' 3v1 not yet drawn one ply before the limit');
+  s.eg = L3 - 1; const s4 = C.stepState(s, moves(s)[0]); ok(C.statusOf(s4).over && C.statusOf(s4).reason.includes(String(L3 / 2)), r + ' 3v1 draw after ' + L3 / 2 + ' moves each', C.statusOf(s4));
   st = pos(r, { W: ['a1', 'c1'], B: ['h4'] }); s = C.stepState(st, moves(st)[0]); ok(s.egLim === 10, r + ' 2v1 limit 5 moves each');
   st = pos(r, { W: ['a1', 'c1'], w: ['g3'], b: ['a7'], B: ['h8'] }); s = C.stepState(st, moves(st)[0]); ok(!s.egSig, r + ' counter not active with 2 black pieces');
 }
@@ -220,5 +221,229 @@ for (let lv = 1; lv <= 5; lv++) {
 const d1 = C.dailyOpening('br', 20261014), d2 = C.dailyOpening('br', 20261014);
 ok(JSON.stringify(d1) === JSON.stringify(d2) && d1.length === 3, 'daily opening is deterministic, 3 plies');
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// 12. Release-review fixes (2026-11-01), core level: Russian draw limits are 15 moves, L1 入門 is beatable by a casual player
+ok(C.RULES.ru.kqLim === 30 && C.RULES.ru.eg3 === 30 && C.RULES.br.kqLim === 50 && C.RULES.br.eg3 === 32, 'Russian draw limits 15 moves, Brazilian 25 / 16');
+ok(C.LEVELS[1].depth === 1 && C.LEVELS[1].noQ && C.LEVELS[1].err >= 0.5, 'L1 入門: one ply, no capture quiescence, frequent mistakes');
+{ // the review's casual bot (one-ply greedy, 21% random) must win at least 30% against L1 (deterministic: L1 is one ply, seeded)
+  const greedy = (st, rng, rand) => { const R = C.RULES[st.rule], ms = C.genMoves(st.b, st.turn, R); if (ms.length === 1 || rng() < rand) return ms[Math.floor(rng() * ms.length)]; let best, bv = -1e9; for (const m of ms) { const v = -C.evaluate(C.applyMove(st.b, m, st.turn), st.turn ^ 1, R) + rng() * 2; if (v > bv) { bv = v; best = m; } } return best; };
+  for (const rule of RULESET) { let w = 0; const N = 12;
+    for (let g = 0; g < N; g++) { const rng = C.seededRng(9000 + g * 31 + 1), human = g % 2; let s = C.initState(rule), ply = 0, stt;
+      while (!(stt = C.statusOf(s)).over && ply < 300) { s = C.stepState(s, s.turn === human ? greedy(s, rng, 0.21) : C.think(s, 1, { rng }).move); ply++; }
+      if (stt.over && stt.winner === human) w++; }
+    ok(w / N >= 0.3, rule + ' casual bot beats L1 in at least 30% of games', w + '/' + N); console.log(`casual vs L1 (${rule}): ${w}/${N} wins`); }
+}
+ok(/level: 1, color/.test(html), 'default level is 1 入門');
+{ // round 2 [中／3]: no wall between L1 and L2 — the casual bot wins 15–30% against L2 (the review's r2/sim-low.js seeds, 40 games)
+  const greedy = (st, rng, rand) => { const R = C.RULES[st.rule], ms = C.genMoves(st.b, st.turn, R); if (ms.length === 1 || rng() < rand) return ms[Math.floor(rng() * ms.length)]; let best, bv = -1e9; for (const m of ms) { const v = -C.evaluate(C.applyMove(st.b, m, st.turn), st.turn ^ 1, R) + rng() * 2; if (v > bv) { bv = v; best = m; } } return best; };
+  for (const rule of RULESET) { let w = 0; const N = 40;
+    for (let g = 0; g < N; g++) { const rng = C.seededRng(9000 + g * 31 + 2), human = g % 2; let s = C.initState(rule), ply = 0, stt;
+      while (!(stt = C.statusOf(s)).over && ply < 300) { s = C.stepState(s, s.turn === human ? greedy(s, rng, 0.21) : C.think(s, 2, { rng }).move); ply++; }
+      if (stt.over && stt.winner === human) w++; }
+    ok(w / N >= 0.15 && w / N <= 0.3, rule + ' casual bot wins 15–30% against L2', w + '/' + N); console.log(`casual vs L2 (${rule}): ${w}/${N} wins`); }
+}
+ok(/CELL \* 0\.26 \* pulse/.test(html), 'landing dots are 0.26 of a cell');
+ok(!/北歐咖啡館/.test(html), 'start screen subtitle explains how to play');
+
+// 13. Browser regressions with real CDP touch (one Chromium; waits on conditions, no timing-derived values)
+(async () => {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { try { ({ chromium } = require('playwright')); } catch (e2) { console.log('playwright missing: browser checks skipped'); } }
+  if (chromium) await browserChecks(chromium).catch(e => ok(false, 'browser checks crashed', String(e && e.stack || e)));
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})();
+
+async function browserChecks(chromium) {
+  const ORIGIN = 'https://draughts.test', T0 = Date.now();
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const errors = [];
+  async function ctxOpen(vp, init) {
+    const ctx = await browser.newContext({ viewport: vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.route('**/*', r => { const u = r.request().url(); if (u.startsWith(ORIGIN)) return r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }); if (u.startsWith('blob:') || u.startsWith('data:')) return r.continue(); errors.push('external request ' + u); return r.abort(); });
+    if (init) await ctx.addInitScript(init);
+    const page = await ctx.newPage();
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+    const cdp = await ctx.newCDPSession(page);
+    const down = (x, y) => cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+    const up = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const tap = async (x, y) => { await down(x, y); await up(); };
+    // waits until the element stops moving (overlay cards pop in with a scale animation), then taps its centre
+    const tapEl = async sel => {
+      const b = await page.evaluate(sel => new Promise((res, rej) => { let last = '', same = 0, n = 0; const el = document.querySelector(sel); if (!el) return rej(new Error('no ' + sel));
+        const f = () => { const r = el.getBoundingClientRect(), k = [r.x, r.y, r.width, r.height].map(v => v.toFixed(1)).join(); const moving = [el.closest('.card'), el.closest('.ov')].some(x => x && x.getAnimations().some(an => an.playState === 'running' || an.playState === 'pending'));
+          if (k === last && r.width && !moving) same++; else same = 0; last = k;
+          if (same >= 2 || ++n > 600) { el.scrollIntoView({ block: 'nearest' }); const q = el.getBoundingClientRect(); res({ x: q.x, y: q.y, width: q.width, height: q.height }); } else requestAnimationFrame(f); }; f(); }), sel);
+      await tap(b.x + b.width / 2, b.y + b.height / 2); };
+    const until = (fn, arg, timeout = 15000) => page.waitForFunction(fn, arg, { timeout, polling: 20 });
+    const sqc = i => page.evaluate(i => __dr.sqClient(i), i);
+    await page.goto(ORIGIN + '/', { waitUntil: 'load' });
+    return { ctx, page, tap, tapEl, until, sqc, down, up };
+  }
+  async function startGame(h, o) {
+    await h.until(() => !document.querySelector('#ovSetup').classList.contains('hidden'));
+    for (const [box, v] of [['sgRule', o.rule || 'br'], ['sgMode', o.mode || 'ai']].concat((o.mode || 'ai') === 'ai' ? [['sgLevel', String(o.level || 1)], ['sgColor', o.color || '0']] : [])) await h.tapEl(`#${box} button[data-v="${v}"]`);
+    await h.tapEl('#sStart');
+    await h.until(() => __dr.phase === 'play' && __dr.canInput());
+  }
+  const lit = (page, board) => page.evaluate(board => { const cv = document.getElementById('cv'), g = cv.getContext('2d'), rc = cv.getBoundingClientRect(), k = cv.width / rc.width, B = board || __dr.cur.b; let n = 0;
+    for (let i = 0; i < 32; i++) if (B[i]) { const p = __dr.sqClient(i), d = g.getImageData(Math.round((p.x - rc.left) * k), Math.round((p.y - rc.top) * k - 2), 1, 1).data; const dk = B[i] < 0; if (dk ? (d[0] < 120) : (d[0] > 200 && d[1] > 185)) n++; } return n; }, board || null);
+
+  // [嚴重／1] empty board after 開始對局: every rAF timestamp is moved 40 ms before the tap that started the game
+  // (the race the review hit 21/30 times); the deal-in must still finish with all 24 pieces drawn, 6 starts in a row
+  {
+    const h = await ctxOpen(null, () => { const raw = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = cb => raw(t => cb(t - 40)); });
+    await startGame(h, { level: 1 });
+    let full = 0;
+    for (let k = 0; k < 6; k++) {
+      if (k) { await h.tapEl('#bNew'); await h.until(() => !document.querySelector('#ovSetup').classList.contains('hidden')); await h.tapEl('#sStart');
+        if (await h.page.evaluate(() => !document.querySelector('#ovConfirm').classList.contains('hidden'))) await h.tapEl('#cfYes');
+        await h.until(() => __dr.phase === 'play'); }
+      try { await h.until(() => !__dr.dealing, null, 8000); } catch (e) {}
+      await h.page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      if (await lit(h.page) === 24) full++;
+    }
+    ok(full === 6, 'deal-in always ends with every piece drawn (rAF time earlier than the tap)', full + '/6');
+    await h.ctx.close();
+  }
+  // pvp game for the input checks
+  const h = await ctxOpen();
+  await startGame(h, { mode: 'pvp' });
+  const st = () => h.page.evaluate(() => ({ n: __dr.G.moves.length, sel: __dr.sel, turn: __dr.cur.turn, anim: __dr.anim, cell: __dr.cell }));
+  // round 2 [小／2]: with nothing selected, a tap 0.45 cell off a movable piece selects it; next to a piece that cannot move nothing is selected
+  {
+    const t = await h.page.evaluate(() => { const L = __dr.legal, m = L.find(x => !x.caps.length); const back = [28, 29, 30, 31].find(i => __dr.cur.b[i] && !L.some(x => x.f === i)); return { f: m.f, t: m.t, back }; });
+    const a = await h.sqc(t.f), b = await h.sqc(t.t), cell = (await st()).cell, dl = Math.hypot(b.x - a.x, b.y - a.y);
+    await h.tap(a.x + (b.x - a.x) / dl * cell * 0.45, a.y + (b.y - a.y) / dl * cell * 0.45);
+    await h.until(f => __dr.sel && __dr.sel.f === f, t.f, 5000).catch(() => {});
+    ok((await st()).sel && (await st()).sel.f === t.f, 'near-miss tap with nothing selected picks the closest movable piece', await st());
+    await h.tap(a.x, a.y); await h.until(() => !__dr.sel);
+    const k = await h.sqc(t.back); // a light square beside a back-row piece that cannot move
+    await h.tap(k.x + cell * 0.45 * (k.x > 200 ? -1 : 1), k.y);
+    await h.page.evaluate(() => new Promise(r => setTimeout(r, 80)));
+    ok(!(await st()).sel, 'a tap beside a piece that cannot move selects nothing', await st());
+  }
+  // [中／2] a tap that misses the landing square by 0.6 cell still moves; a tap on an empty square keeps the selection
+  {
+    const m = await h.page.evaluate(() => { const L = __dr.legal; for (const m of L) { const others = L.filter(x => x.f === m.f && x.t !== m.t); if (others.length === 1) return { f: m.f, t: m.t, o: others[0].t }; } return null; });
+    const a = await h.sqc(m.f), b = await h.sqc(m.t), o = await h.sqc(m.o), cell = (await st()).cell;
+    await h.tap(a.x, a.y); await h.until(f => __dr.sel && __dr.sel.f === f, m.f);
+    // far empty square (row 3/4 middle that is not a target): selection stays
+    const empty = await h.page.evaluate(([f, t, o]) => { for (let i = 12; i < 20; i++) if (!__dr.cur.b[i] && i !== t && i !== o) return i; return -1; }, [m.f, m.t, m.o]);
+    const e = await h.sqc(empty);
+    if (Math.hypot(e.x - b.x, e.y - b.y) > cell * 0.8 && Math.hypot(e.x - o.x, e.y - o.y) > cell * 0.8) { await h.tap(e.x, e.y); await h.page.evaluate(() => new Promise(r => setTimeout(r, 50))); ok((await st()).sel && (await st()).sel.f === m.f, 'tap on an empty square keeps the selection'); }
+    // 0.6 cell away from the target, pointing away from the other landing square
+    const dx = b.x - o.x, dy = b.y - o.y, dl = Math.hypot(dx, dy) || 1, n0 = (await st()).n;
+    await h.tap(b.x + dx / dl * cell * 0.6 * 0.7, b.y - cell * 0.6 * 0.7);
+    await h.until(n => __dr.G.moves.length === n + 1, n0);
+    ok((await h.page.evaluate(() => __dr.G.moves[__dr.G.moves.length - 1].p)).join() === [m.f, m.t].join(), 'near-miss tap snaps to the closest landing square');
+    // data saved at the moment of the move (not when the animation ends)
+    const saved = await h.page.evaluate(() => (JSON.parse(localStorage.getItem('draughts.game') || '{}').moves || []).length);
+    ok(saved === n0 + 1, 'move saved immediately', saved);
+  }
+  // [小／2] pvp: a tap on the next side's piece during the move animation is applied when the animation ends
+  // (the page records whether the tap really arrived during the animation; retried if a slow machine missed it)
+  {
+    await h.page.evaluate(() => document.getElementById('cv').addEventListener('pointerdown', () => { window.__downAnim = __dr.anim; }, true));
+    let res = null;
+    for (let tr = 0; tr < 4 && !res; tr++) {
+      await h.until(() => __dr.canInput() && !__dr.sel);
+      const m = await h.page.evaluate(() => { const L = __dr.legal, m = L.find(x => !x.caps.length) || L[0]; const nb = applyMove(__dr.cur.b, m, __dr.cur.turn), om = genMoves(nb, __dr.cur.turn ^ 1, RULES[__dr.cur.rule]); return { f: m.f, t: m.t, opp: om[0].f }; });
+      const a = await h.sqc(m.f), b = await h.sqc(m.t), c = await h.sqc(m.opp);
+      await h.tap(a.x, a.y); await h.until(f => __dr.sel && __dr.sel.f === f, m.f);
+      await h.tap(b.x, b.y); await h.tap(c.x, c.y);
+      const during = await h.page.evaluate(() => window.__downAnim);
+      await h.until(() => !__dr.anim && __dr.canInput());
+      const s2 = await st();
+      if (during) res = { ok: !!(s2.sel && s2.sel.f === m.opp), sel: s2.sel };
+      if (s2.sel) { await h.tap(c.x, c.y); await h.until(() => !__dr.sel); }
+    }
+    ok(res && res.ok, 'tap during the move animation selects the next side\'s piece afterwards', res);
+  }
+  // [細節] backgrounds are cached: flipping twice and starting a new game build nothing new
+  {
+    const b0 = await h.page.evaluate(() => __dr.bgBuilds);
+    await h.tapEl('#bFlip'); await h.tapEl('#bFlip'); await h.page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    ok(await h.page.evaluate(() => __dr.bgBuilds) === b0, 'flip uses the cached board background');
+  }
+  // overwriting a game in progress asks first; 取消 keeps it
+  {
+    const n0 = (await st()).n;
+    await h.tapEl('#bNew'); await h.until(() => !document.querySelector('#ovSetup').classList.contains('hidden')); await h.tapEl('#sStart');
+    await h.until(() => !document.querySelector('#ovConfirm').classList.contains('hidden'));
+    await h.tapEl('#cfNo'); await h.until(() => document.querySelector('#ovConfirm').classList.contains('hidden'));
+    ok((await st()).n === n0 && n0 > 0, 'new game over a game in progress needs confirmation; cancel keeps the game', n0);
+  }
+  // [小／4] review: resign, open 回顧棋局, step back and forth through every position
+  {
+    // first play a move that gives the opponent a capture, and take it, so the final position has fewer than 24 pieces
+    await h.until(() => __dr.canInput() && !__dr.sel);
+    const line = await h.page.evaluate(() => { const R = RULES[__dr.cur.rule], t = __dr.cur.turn; for (const a of __dr.legal) { const b1 = applyMove(__dr.cur.b, a, t), om = genMoves(b1, t ^ 1, R); if (om.length && om[0].caps.length) { const c = om.find(x => om.filter(y => y.f === x.f && y.t === x.t).length === 1); if (c) return [a.f, a.t, c.f, c.t]; } } return null; });
+    for (let k = 0; line && k < 4; k += 2) { const n0 = (await st()).n, p = await h.sqc(line[k]), q = await h.sqc(line[k + 1]); await h.until(() => __dr.canInput()); await h.tap(p.x, p.y); await h.until(f => __dr.sel && __dr.sel.f === f, line[k]); await h.tap(q.x, q.y); await h.until(n => __dr.G.moves.length === n + 1 && !__dr.anim, n0); }
+    const fin = await h.page.evaluate(() => [document.getElementById('kTop').textContent, document.getElementById('kBot').textContent].join());
+    ok(!!line && fin !== '12,12', 'a capture was played before the review', fin);
+    const n = (await st()).n;
+    await h.tapEl('#bMenu'); await h.until(() => !document.querySelector('#ovMenu').classList.contains('hidden'));
+    await h.tapEl('#mResign'); await h.until(() => !document.querySelector('#ovConfirm').classList.contains('hidden')); await h.tapEl('#cfYes');
+    await h.until(() => !document.querySelector('#ovResult').classList.contains('hidden'));
+    await h.tapEl('#rBoard'); await h.until(() => __dr.rv >= 0);
+    ok(await h.page.evaluate(() => __dr.rv) === n && await h.page.evaluate(() => !document.querySelector('#rvBar').classList.contains('hidden')), 'review opens at the final position with its bar');
+    await h.tapEl('#rvPrev'); await h.until(i => __dr.rv === i, n - 1);
+    await h.tapEl('#rvFirst'); await h.until(() => __dr.rv === 0);
+    ok(await h.page.evaluate(() => new Promise(r => requestAnimationFrame(() => r(true)))) && await lit(h.page, C.initBoard()) === 24, 'review shows the start position (24 pieces drawn)');
+    const bars = () => h.page.evaluate(() => [document.getElementById('kTop').textContent, document.getElementById('kBot').textContent, document.getElementById('cTop').childElementCount, document.getElementById('cBot').childElementCount].join());
+    ok(await bars() === '12,12,0,0', 'round 2 [小／5]: in review the player bars show the reviewed position (start: 12 / 12, nothing taken)', await bars());
+    await h.tapEl('#rvNext'); await h.until(() => __dr.rv === 1);
+    ok((await h.page.evaluate(() => document.getElementById('rvPos').textContent)).startsWith('1／' + n), 'review counter', await h.page.evaluate(() => document.getElementById('rvPos').textContent));
+    await h.tapEl('#rvExit'); await h.until(() => __dr.rv === -1 && !document.querySelector('#ovResult').classList.contains('hidden'));
+    ok((await bars()).startsWith(fin), 'after the review the bars show the final position again', await bars());
+  }
+  // [細節] idle must-capture pulse is drawn at a low rate (upper bound only, so machine load cannot make it fail)
+  {
+    await h.tapEl('#rAgain'); await h.until(() => __dr.phase === 'play' && __dr.canInput() && !__dr.dealing);
+    // play into a forced capture: 22-18 is answered by ... use the core to find a two-ply line that leaves a capture
+    const line = await h.page.evaluate(() => { const R = RULES[__dr.cur.rule]; for (const a of genMoves(__dr.cur.b, 0, R)) { const b1 = applyMove(__dr.cur.b, a, 0); for (const b of genMoves(b1, 1, R)) { const b2 = applyMove(b1, b, 1); if (genMoves(b2, 0, R)[0].caps.length) return [a.f, a.t, b.f, b.t]; } } return null; });
+    for (let k = 0; k < 4; k += 2) { const p = await h.sqc(line[k]), q = await h.sqc(line[k + 1]); await h.until(() => __dr.canInput()); await h.tap(p.x, p.y); await h.until(f => __dr.sel && __dr.sel.f === f, line[k]); await h.tap(q.x, q.y); await h.until(n => __dr.G.moves.length === n, k / 2 + 1); }
+    await h.until(() => __dr.canInput() && __dr.legal[0].caps.length > 0 && !__dr.sel && !__dr.fxBusy && !__dr.dealing, null, 20000);
+    const fr = await h.page.evaluate(() => new Promise(res => { let n = 0; const raw = window.requestAnimationFrame; window.requestAnimationFrame = cb => raw(t => { n++; cb(t); }); const t0 = performance.now(); setTimeout(() => { window.requestAnimationFrame = raw; res(n / ((performance.now() - t0) / 1000)); }, 1500); }));
+    ok(fr <= 30, 'idle must-capture pulse redraws at most ~15 fps', fr.toFixed(1));
+  }
+  await h.ctx.close();
+  // [小／2+7] short screens: compact bars give bigger cells; [小／7] 開始對局 is on screen without scrolling
+  for (const vp of [{ width: 375, height: 500 }, { width: 390, height: 610 }, { width: 844, height: 390 }, { width: 640, height: 360 }, { width: 360, height: 640 }, { width: 390, height: 844 }]) {
+    const p = await ctxOpen(vp);
+    await p.until(() => !document.querySelector('#ovSetup').classList.contains('hidden'));
+    const r = await p.page.evaluate(() => { const b = document.getElementById('sStart').getBoundingClientRect(), x = document.getElementById('sStats').getBoundingClientRect(); return { start: b.bottom <= innerHeight && b.top >= 0, stats: x.bottom <= innerHeight, ov: document.getElementById('ovSetup').scrollHeight <= innerHeight + 1, sw: document.documentElement.scrollWidth <= innerWidth }; });
+    ok(r.start && r.stats && r.ov && r.sw, `${vp.width}×${vp.height}: whole start card fits, 開始對局 visible without scrolling`, r);
+    await p.tapEl('#sStart'); await p.until(() => __dr.phase === 'play');
+    const c = await p.page.evaluate(() => ({ cell: __dr.cell, short: document.body.classList.contains('short'), tools: [...document.querySelectorAll('.tools:not(.hidden) .tbtn')].every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().bottom <= innerHeight), sw: document.documentElement.scrollWidth <= innerWidth }));
+    const minCell = vp.height === 500 ? 36 : vp.width === 360 ? 40 : 40;
+    ok(c.cell >= minCell && c.tools && c.sw, `${vp.width}×${vp.height}: cell ${c.cell.toFixed(1)}px (≥${minCell}), toolbar ≥44px and on screen${c.short ? ', compact bars' : ''}`, c);
+    await p.ctx.close();
+  }
+  // [小／3] a win after using 提示 is recorded as assisted and does not unlock 屠龍: saved game one move before a win vs L5
+  {
+    const line = (() => { const rng = C.seededRng(4242);
+      for (let tr = 0; tr < 200; tr++) { let s = C.initState('br'); const mv = [];
+        for (let ply = 0; ply < 160; ply++) { const ms = C.genMoves(s.b, s.turn, C.RULES.br); if (!ms.length) break;
+          if (s.turn === 0) { const win = ms.find(m => { const o = C.statusOf(C.stepState(s, m)); return o.over && o.winner === 0 && ms.filter(x => x.f === m.f && x.t === m.t).length === 1; }); if (win) return { moves: mv, win }; }
+          const m = s.turn === 0 ? C.think(s, 3, { depth: 3, ms: 200, rng }).move : ms[Math.floor(rng() * ms.length)];
+          mv.push({ p: m.path.slice(), c: m.caps.slice() }); s = C.stepState(s, m); if (C.statusOf(s).over) break; } } return null; })();
+    ok(!!line, 'found a won line for the assisted-win check');
+    if (line) {
+      const G0 = { rule: 'br', mode: 'ai', level: 5, human: 0, daily: false, day: 0, pre: 0, moves: line.moves, over: null, lone: false, hints: 1, undos: 0, maxCap: 0, date: Date.now() };
+      const h2 = await ctxOpen(null, new Function('localStorage.setItem("draughts.game", ' + JSON.stringify(JSON.stringify(G0)) + ')'));
+      await h2.until(() => __dr.phase === 'play' && __dr.canInput());
+      const a = await h2.sqc(line.win.f), b = await h2.sqc(line.win.t);
+      await h2.tap(a.x, a.y); await h2.until(f => __dr.sel && __dr.sel.f === f, line.win.f);
+      await h2.tap(b.x, b.y);
+      await h2.until(() => !document.querySelector('#ovResult').classList.contains('hidden'));
+      const r = await h2.page.evaluate(() => JSON.parse(localStorage.getItem('draughts.stats')));
+      ok(r.rec.br5 && r.rec.br5.w === 1 && r.rec.br5.a === 1 && !r.ach.master && r.ach.first, 'assisted win counted with an 輔助 mark, no 屠龍', r);
+      ok(/悔棋／提示/.test(await h2.page.evaluate(() => document.getElementById('rSub').textContent)), 'result card says the win was assisted');
+      await h2.ctx.close();
+    }
+  }
+  await browser.close();
+  ok(!errors.length, 'no page / console errors or external requests in the browser checks', errors.slice(0, 5));
+  console.log(`browser checks: ${((Date.now() - T0) / 1000).toFixed(1)}s`);
+}
