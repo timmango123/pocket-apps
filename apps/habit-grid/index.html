@@ -691,8 +691,26 @@ applyTheme();
 
 /* toast */
 let toastT=null,undoFn=null;
-function toast(t,u){$('#toast-text').textContent=t;$('#toast-undo').hidden=!u;undoFn=u||null;$('#toast').hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{$('#toast').hidden=true;undoFn=null},5000)}
+function toast(t,u){$('#toast-text').textContent=t;$('#toast-undo').hidden=!u;undoFn=u||null;$('#toast').hidden=false;placeToast();clearTimeout(toastT);toastT=setTimeout(()=>{$('#toast').hidden=true;undoFn=null},5000)}
 $('#toast-undo').addEventListener('click',()=>{const f=undoFn;undoFn=null;$('#toast').hidden=true;if(f)f()});
+/* The toast floats, so it is placed where it hides nothing that matters: never over the heatmap or the settings
+   button (hard rule), and its 復原 button not over any other control (as far as the screen allows). Measured from
+   the real layout, so fonts and screen sizes don't matter. Re-placed while the page scrolls or resizes. */
+function placeToast(){const t=$('#toast');if(t.hidden)return;
+  const ov=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+  const vis=r=>r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;
+  const tr=t.getBoundingClientRect(),H=tr.height,u=$('#toast-undo'),ur=u.hidden?null:u.getBoundingClientRect();
+  const hard=[$('#settings-btn').getBoundingClientRect(),$('#scroller').getBoundingClientRect()].filter(vis);
+  const soft=[...document.querySelectorAll('button,input,textarea,select,label,[role=tab],a')].filter(e=>!t.contains(e)&&!e.closest('[hidden]')).map(e=>e.getBoundingClientRect()).filter(vis);
+  const padT=parseFloat(getComputedStyle($('.top')).paddingTop)||0,padB=Math.max(0,(parseFloat(getComputedStyle(document.body).paddingBottom)||28)-28);
+  const lo=8+padT,hi=Math.max(lo,innerHeight-H-8-padB),pref=Math.min(hi,lo+58);let best=null;
+  for(let y=lo;y<=hi+.5;y+=4){const at=dy=>({left:tr.left,right:tr.right,top:y+dy,bottom:y+dy+H});const box=at(0);
+    let cost=Math.abs(y-pref)*.01;for(const h of hard)if(ov(box,h)>0)cost+=1e7+ov(box,h);
+    if(ur){const ub={left:ur.left,right:ur.right,top:y+(ur.top-tr.top),bottom:y+(ur.top-tr.top)+ur.height};for(const s of soft)cost+=ov(ub,s)}
+    if(!best||cost<best.c)best={c:cost,y}}
+  t.style.top=best.y+'px';t.dataset.at=[scrollX,scrollY,innerWidth,innerHeight].map(Math.round).join()}
+let toastRaf=0;const reToast=()=>{if(!toastRaf&&!$('#toast').hidden)toastRaf=requestAnimationFrame(()=>{toastRaf=0;placeToast()})};
+addEventListener('scroll',reToast,{passive:true});addEventListener('resize',reToast);
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
@@ -703,6 +721,6 @@ let wasWide=wide();addEventListener('resize',()=>{if(wide()!==wasWide){wasWide=w
 
 if(!canStore)$('#nostore').hidden=false;
 renderAll();
-window.__hg={streakDaily,streakWeekly,longest,monthStats,monthWeekly,monthWeeks,longestWeekly,graphemes,addDays,todayKey,get data(){return data},setToday(k){today=k;renderAll()},checkDay};
+window.__hg={toast:(t,u)=>toast(t,u||null),streakDaily,streakWeekly,longest,monthStats,monthWeekly,monthWeeks,longestWeekly,graphemes,addDays,todayKey,get data(){return data},setToday(k){today=k;renderAll()},checkDay};
 })();
 </script>

@@ -95,16 +95,40 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
 
     // [5] nothing fixed covers the heatmap: add button is in the flow; toast is at the top and lets taps through
     ok(await p.evaluate(() => getComputedStyle(document.querySelector('.addbar')).position !== 'fixed'), 'add bar is not fixed over content');
-    for (const vh of [640, 500, 844]) {
-      await p.setViewportSize({ width: 390, height: vh });
-      await p.evaluate(() => { const g = document.querySelector('#hgrid').getBoundingClientRect(); scrollBy(0, g.bottom - innerHeight + 4); });
-      await p.evaluate(() => { const t = document.querySelector('#toast'); t.hidden = false; document.querySelector('#toast-text').textContent = '已新增「一個很長很長的習慣名稱」'; document.querySelector('#toast-undo').hidden = false; });
-      const cov = await p.evaluate(() => { let vis = 0, bad = []; const L = document.querySelector('#scroller').getBoundingClientRect().left;
-        for (const c of document.querySelectorAll('#hgrid .c:not([disabled])')) { const b = c.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
-          if (y < 0 || y > innerHeight || x < L || x > innerWidth) continue; vis++; if (document.elementFromPoint(x, y) !== c) bad.push(c.dataset.k); } return { vis, bad }; });
-      ok(cov.vis > 50 && cov.bad.length === 0, `390x${vh}: ${cov.vis} visible cells, none covered (with toast) ${cov.bad.slice(0, 5)}`);
-      await p.evaluate(() => { document.querySelector('#toast').hidden = true; });
+    // The toast is shown for real (placed by the app) and checked at several scroll positions, with the default font and
+    // with a wide, tall fallback font, since CI runners have different fonts and so different element heights.
+    const FONTS = { default: '', wide: '*{font-family:"DejaVu Sans Mono","Liberation Mono",monospace!important;letter-spacing:.08em!important;line-height:1.8!important}' };
+    const SCROLLS = { gridBottom: 'g.bottom - innerHeight + 4', gridTop0: 'g.top', gridTop60: 'g.top - 60', gridTop30: 'g.top - 30', gridMid: 'g.top - innerHeight / 2', pageTop: '-1e6' };
+    for (const [font, css] of Object.entries(FONTS)) {
+      await p.evaluate(css => { let st = document.getElementById('test-font'); if (!st) { st = document.createElement('style'); st.id = 'test-font'; document.head.appendChild(st); } st.textContent = css; }, css);
+      for (const vh of [640, 500, 844]) {
+        await p.setViewportSize({ width: 390, height: vh });
+        const { bad, checked } = await p.evaluate(async SCROLLS => {
+          const frame = () => new Promise(r => requestAnimationFrame(r));
+          const stamp = () => [scrollX, scrollY, innerWidth, innerHeight].map(Math.round).join();
+          const ov = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+          const bad = []; let checked = 0;
+          for (const [where, expr] of Object.entries(SCROLLS)) {
+            scrollTo(0, 0);
+            __hg.toast('已刪除「一二三四五六七八九十一二三四五六七八九十」', () => {});
+            const g = document.querySelector('#hgrid').getBoundingClientRect(); scrollBy(0, eval(expr));
+            // the app re-places the toast on the frame after a scroll; wait for it (condition, not a timer)
+            for (let i = 0; i < 600 && document.querySelector('#toast').dataset.at !== stamp(); i++) await frame();
+            const t = document.querySelector('#toast').getBoundingClientRect(), sc = document.querySelector('#scroller').getBoundingClientRect(), se = document.querySelector('#settings-btn').getBoundingClientRect();
+            let vis = 0; const cells = [];
+            for (const c of document.querySelectorAll('#hgrid .c:not([disabled])')) { const b = c.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
+              if (y < 0 || y > innerHeight || x < sc.left || x > innerWidth) continue; vis++; if (document.elementFromPoint(x, y) !== c) cells.push(c.dataset.k); }
+            const seVis = se.bottom > 0 && se.top < innerHeight;
+            const cov = { placed: document.querySelector('#toast').dataset.at === stamp(), shown: !document.querySelector('#toast').hidden, vis, cells, overGrid: sc.bottom > 0 && sc.top < innerHeight && ov(t, sc), overSettings: seVis && (ov(t, se) || !document.elementFromPoint(se.x + se.width / 2, se.y + se.height / 2).closest('#settings-btn')) };
+            checked += vis;
+            if (!cov.placed || !cov.shown || cells.length || cov.overGrid || cov.overSettings) bad.push(where + ':' + JSON.stringify(cov).slice(0, 160));
+          }
+          return { bad, checked };
+        }, SCROLLS);
+        ok(bad.length === 0 && checked > 50, `${font} font 390x${vh}: toast never covers a heatmap cell or the settings button (6 scroll positions, ${checked} cell checks) ${bad.join(' ')}`);
+      }
     }
+    await p.evaluate(() => { document.getElementById('test-font').remove(); document.querySelector('#toast').hidden = true; });
     await p.setViewportSize({ width: 390, height: 844 });
 
     // [1] weekly-target habit stats are in weeks
