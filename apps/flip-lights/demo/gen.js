@@ -131,13 +131,17 @@ function genLevel(L, pl) {
 }
 
 const P = plan();
+// Release-review fix (2026-11): the plan's +1 move per level made a wall at L7 for casual players. L5-L24 keep their
+// boards but follow this gentler curve with breather levels (minimum drops back); difficulty may dip on those levels.
+const CURVE = { 5: 4, 6: 5, 7: 4, 8: 5, 9: 6, 10: 5, 11: 7, 12: 8, 13: 7, 14: 9, 15: 10, 16: 9, 17: 11, 18: 12, 19: 11, 20: 13, 21: 15, 22: 17, 23: 18, 24: 20 };
+for (const L in CURVE) P[L - 1] = { ...P[L - 1], m: CURVE[L] };
 const LEVELS = [];
 let prevD = 0, ok = true;
 for (let i = 0; i < P.length; i++) {
   const L = i + 1, g = genLevel(L, P[i]);
   if (!g) { console.error('FAILED to generate level', L, JSON.stringify({ n: P[i].c.n, p: P[i].c.p, type: P[i].c.type, m: P[i].m })); process.exit(1); }
   const D = C.diffCoef(g.B, g.rec[7]);
-  if (D < prevD * R - 1e-9) ok = false;
+  if (D < prevD * R - 1e-9 && !CURVE[L] && !CURVE[L - 1]) ok = false;
   console.error('L' + L, P[i].c.type, g.rec[0] + 'x' + g.rec[1], 'p' + g.rec[2], 'cells', g.B.n, 'kinds', g.rec[4].length > 1 ? 'mixed' : g.rec[4], 'm', g.rec[7], 'D', D.toFixed(1), prevD ? '+' + ((D / prevD - 1) * 100).toFixed(1) + '%' : '', 'nullity', g.nullity);
   prevD = D; LEVELS.push(g.rec);
 }
