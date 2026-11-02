@@ -24,9 +24,6 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 })();
 </script>
 <title>塗鴉射擊</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=LXGW+WenKai+TC:wght@400;700&display=swap">
 <style>
 /* Notebook page centred on a desk; game canvas fills the page, sticky-note overlays on top. Committed light paper look. */
 :root {
@@ -42,8 +39,9 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   --note: #fff3a1;
   --note-edge: #e9d978;
   --tape: rgb(220 214 190 / .75);
-  --hand: "Caveat", "LXGW WenKai TC", "Kaiti TC", "BiauKai", "STKaiti", cursive;
-  --kai: "LXGW WenKai TC", "Kaiti TC", "BiauKai", "STKaiti", "Noto Serif TC", serif;
+  /* system fonts only (no web-font request): handwriting faces that ship with iOS / macOS / Windows, then Kai, then cursive */
+  --hand: "Chalkboard SE", "Bradley Hand", "Segoe Print", "Marker Felt", "Comic Sans MS", "Kaiti TC", "BiauKai", "STKaiti", "DFKai-SB", cursive;
+  --kai: "Kaiti TC", "BiauKai", "STKaiti", "DFKai-SB", "KaiTi", "Noto Serif TC", "Noto Serif CJK TC", serif;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -63,9 +61,10 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
   overflow: hidden;
 }
 #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#cv:focus { outline: none; }   /* tabindex -1 play surface: never draw a focus ring */
 
 .tools {
-  position: absolute; z-index: 3; display: flex; gap: 8px;
+  position: absolute; z-index: 6; display: flex; gap: 8px;
   top: max(10px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right));
 }
 .tool {
@@ -75,6 +74,7 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
   color: var(--pencil);
 }
 .tool:active { transform: rotate(-6deg) scale(.94); }
+.tool.off { display: none; }   /* pause only exists in play; mute then sits in the corner */
 .tool svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
 .ov {
@@ -95,7 +95,24 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
   .note h1, .note h2 { font-size: 30px; }
   .note p, .note ul { font-size: 14px; line-height: 1.45; }
 }
-@media (max-height: 440px) { #ovStart .note ul, #ovStart .note > p:first-of-type { display: none; } }
+/* keep every sticky note below the mute / pause buttons (they sit above the overlays and stay tappable) */
+.ov { padding-top: max(64px, calc(env(safe-area-inset-top) + 54px)); }
+/* short screens (375x500, landscape): on menus only the 44px mute button is up there and the notes' centred titles
+   clear it, so the notes start near the top; the level grid gets the height left over so 返回 is on screen */
+@media (max-height: 560px) {
+  .ov:not(#ovPause) { padding-top: max(14px, calc(env(safe-area-inset-top) + 4px)); }
+  #ovSelect .lvwrap { max-height: max(96px, calc(100vh - 270px)); max-height: max(96px, calc(100dvh - 270px)); }
+  #ovSelect .prog { font-size: 14px; line-height: 1.35; }
+  .score { font-size: 36px; }
+  #ovOver .note, #ovEnd .note { gap: 3px; }
+  .newbest { font-size: 16px; padding: 2px 8px; }
+  .hbtn { min-height: 44px; font-size: 18px; padding: 8px 16px; }
+  .hbtn.ghost { min-height: 44px; font-size: 17px; }
+}
+@media (max-height: 440px) { #ovStart .note li:not(:first-child), #ovStart .note > p:first-of-type, #ovEnd .note > p { display: none; } }
+@media (pointer: coarse) { .kbd { display: none; } }
+.page.narrow .lvgrid { grid-template-columns: repeat(4, 1fr); }
+.prac { font-size: 14px; color: var(--redpen); }
 .note.alt { transform: rotate(1.4deg); background: #ffd7e2; border-bottom-color: #efb3c4; }
 .note::before {
   content: ""; position: absolute; top: -12px; left: 50%; width: 110px; height: 26px; transform: translateX(-50%) rotate(2deg);
@@ -173,7 +190,7 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
         <button class="hbtn" id="startBtn">開始畫！</button>
         <button class="hbtn ghost" id="selectBtn">選關</button>
       </div>
-      <div class="small">鍵盤：方向鍵 / WASD 移動，P 暫停</div>
+      <div class="small kbd">鍵盤：方向鍵 / WASD 移動，P 暫停</div>
     </div>
   </section>
 
@@ -194,6 +211,7 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
       <div class="score" id="overScore">0</div>
       <div class="newbest" id="overNew" hidden>新紀錄！</div>
       <div class="small" id="overStage"></div>
+      <div class="prac" id="overPrac" hidden>練習關卡（超過進度）不計最高分</div>
       <div class="small">最高分<b id="overBest">0</b></div>
       <div class="row">
         <button class="hbtn" id="againBtn">再畫一次</button>
@@ -205,7 +223,7 @@ button:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
   <section class="ov" id="ovSelect" hidden>
     <div class="note">
       <h2>選擇關卡</h2>
-      <div class="prog">已解鎖 <b id="unlockSel">1</b> / 100 關・每關難度都會上升</div>
+      <div class="prog">已解鎖 <b id="unlockSel">1</b> / 100 關・<span id="selHint">每關難度都會上升</span></div>
       <button class="sw" id="unlockAllSw" role="switch" aria-checked="false"><span class="track"><span class="knob"></span></span><span>解鎖全部關卡</span></button>
       <div class="lvwrap" id="lvwrap"></div>
       <button class="hbtn ghost" id="selBack">返回</button>
@@ -235,8 +253,8 @@ const cv = $('#cv'), ctx = cv.getContext('2d'), page = $('#page');
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const LW = 360;
 let LH = 640, SC = 1, DPR = 1;
-const HAND = '"Caveat", "LXGW WenKai TC", "Kaiti TC", cursive';
-const KAI = '"LXGW WenKai TC", "Kaiti TC", "BiauKai", serif';
+const HAND = '"Chalkboard SE", "Bradley Hand", "Segoe Print", "Marker Felt", "Comic Sans MS", "Kaiti TC", cursive';
+const KAI = '"Kaiti TC", "BiauKai", "STKaiti", "DFKai-SB", "KaiTi", "Noto Serif TC", serif';
 const C = { paper: '#fbf8ef', rule: '#a9c4e6', margin: '#e58a8a', ink: '#1d3fa8', pencil: '#2a2a2e', red: '#d23b3b', hole: '#e9e3d4' };
 
 const store = {
@@ -244,6 +262,32 @@ const store = {
   set(k, v) { try { localStorage.setItem('doodleShooter.' + k, JSON.stringify(v)); } catch (e) {} }
 };
 let best = store.get('best', 0) | 0;
+
+/* Buttons fire on pointerup: with a thumb already resting on the canvas the browser never sends a click for a second
+   finger's tap. The click the browser sends after a normal tap is swallowed so nothing fires twice; keyboard and
+   assistive-tech clicks (no pointer activation just before) still go through. */
+const btnDown = new Map();
+/* move focus to the next control only for keyboard users; after a finger or mouse just drop the old focus so no ring shows */
+let kbdNav = false;
+addEventListener('keydown', () => { kbdNav = true; }, true);
+addEventListener('pointerdown', () => { kbdNav = false; }, true);
+function kfocus(el) {
+  if (kbdNav) el.focus({ preventScroll: true });
+  else if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+}
+let lastPtrFire = -1e9;
+document.addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('button'); if (b && !b.disabled) btnDown.set(e.pointerId, b); }, true);
+document.addEventListener('pointercancel', e => { btnDown.delete(e.pointerId); }, true);
+document.addEventListener('pointerup', e => {
+  const b = btnDown.get(e.pointerId); btnDown.delete(e.pointerId);
+  if (!b || b.disabled || !b.isConnected) return;
+  const r = b.getBoundingClientRect();
+  if (!r.width || e.clientX < r.left - 8 || e.clientX > r.right + 8 || e.clientY < r.top - 8 || e.clientY > r.bottom + 8) return;
+  lastPtrFire = performance.now(); b.click();
+}, true);
+document.addEventListener('click', e => {
+  if (e.isTrusted && e.detail > 0 && performance.now() - lastPtrFire < 1000 && e.target.closest && e.target.closest('button')) { e.stopImmediatePropagation(); e.preventDefault(); }
+}, true);
 
 /* ================= audio ================= */
 let ac = null, noiseBuf = null, muted = !!store.get('muted', false);
@@ -360,6 +404,8 @@ const HORN_L = [0.6, 1, -0.2, 0.3, -0.5, -1], HORN_R = [-0.6, 1, 0.2, 0.3, 0.5, 
 const CROWN = [-1, 1, -1, -0.6, -0.5, 0.1, 0, -1, 0.5, 0.1, 1, -0.6, 1, 1];
 const ANT = [0, 0, 0.1, -1];
 const TENT = new Float32Array(16);
+const SHEET = [-.88, -1, .6, -1, .88, -.72, .88, .8, .6, 1, .3, .76, 0, 1, -.3, .76, -.6, 1, -.88, .8];
+const FOLD = [.6, -1, .6, -.72, .88, -.72];
 
 /* ================= state ================= */
 const P = { x: 180, y: 560, power: 1, lives: 3, inv: 0, fireT: 0, vis: true };
@@ -368,8 +414,8 @@ let waveIdx = 0, queue = [], qi = 0, qT = 0, gapT = 0, nEnemies = 0, boss = null
 let scroll = 0, shakeA = 0, time = 0, banner = null;
 const MAX_STAGE = 100;
 const CHAPTERS = ['作業本入侵', '鉛筆盒風暴', '橡皮擦戰爭', '便利貼迷宮', '螢光筆森林', '墨水海洋', '直尺要塞', '修正帶沙漠', '考卷暴風', '期末大決戰'];
-const BOSS_NAMES = ['大烏雲', '墨水章魚', '鉛筆機器人'];
-const BOSS_BASE_COLS = ['#dfe3ea', '#c9bdf2', '#cfd8dc'];
+const BOSS_NAMES = ['大烏雲', '墨水章魚', '鉛筆機器人', '橡皮擦魔', '考卷幽靈'];   // the last two join from chapter 7
+const BOSS_BASE_COLS = ['#dfe3ea', '#c9bdf2', '#cfd8dc', '#ffd1dc', '#ffffff'];
 const BOSS_COLS = ['#ffc9a8', '#b8f0d0', '#ffe08a', '#a8d8ff', '#ffb3c7', '#d6c4a8', '#c9bdf2', '#f2b8b8', '#bfe3a0', '#e0c3f0', '#9fd3c7'];
 const PREFIX = ['紅臉', '巨大', '暴走', '雙倍', '閃電', '黃金', '暗黑', '超級', '究極', '狂怒', '鋼鐵'];
 // difficulty curve: t goes 0 (stage 1) -> 1 (stage 100)
@@ -397,6 +443,19 @@ let cleared = Math.max(0, Math.min(MAX_STAGE, store.get('cleared', 0) | 0));
 const realNext = () => Math.min(MAX_STAGE, cleared + 1);
 let unlockAll = !!store.get('unlockAll', false);   // separate from real progress
 const unlocked = () => unlockAll ? MAX_STAGE : realNext();
+// per-stage record { stage: { s: stars 1-3, p: best points scored in that stage } }; only stages within real progress
+const stars = (() => {
+  const v = store.get('stars', {}), o = {};
+  if (v && typeof v === 'object' && !Array.isArray(v)) for (const k in v) {
+    const n = k | 0, r = v[k];
+    if (n >= 1 && n <= MAX_STAGE && r && typeof r === 'object') o[n] = { s: Math.max(1, Math.min(3, r.s | 0)), p: Math.max(0, r.p | 0) };
+  }
+  return o;
+})();
+const starStr = s => '★'.repeat(s) + '☆'.repeat(3 - s);
+let runRanked = true, runBest0 = 0, stageScore0 = 0, stageLost = 0;
+// best score only counts runs that start inside real progress ("unlock all" runs beyond it are practice)
+function saveBest() { if (runRanked && score > best) { best = score; store.set('best', best); syncStart(); } }
 
 function mkPool(n, f) { const a = []; for (let i = 0; i < n; i++) a.push(Object.assign({ on: false }, f)); return a; }
 const pbs = mkPool(140, { x: 0, y: 0, vx: 0, vy: 0 });
@@ -479,7 +538,7 @@ function pShot(x, y, a) {
   b.on = true; b.x = x; b.y = y; b.vx = Math.sin(a) * 640; b.vy = -Math.cos(a) * 640;
 }
 function spawnBoss() {
-  const fin = stage === MAX_STAGE, kind = fin ? 0 : (stage - 1) % 3, tier = Math.floor((stage - 1) / 3);
+  const fin = stage === MAX_STAGE, kind = fin ? 0 : stage > 60 ? (stage - 1) % 5 : (stage - 1) % 3, tier = Math.floor((stage - 1) / 3);
   const max = bossMax();
   const sz = fin ? 1.3 : 0.9 + 0.1 * (tier % 4);
   const col = fin ? '#ffd84a' : tier === 0 ? BOSS_BASE_COLS[kind] : BOSS_COLS[(tier * 3 + kind) % BOSS_COLS.length];
@@ -487,6 +546,8 @@ function spawnBoss() {
   const pats = []; const st = tier % 6;
   const EASY = [0, 1, 3, 2]; // before stage 20 bosses skip ink rain and the double ring
   for (let k = 0; k < np; k++) pats.push(stage < 20 ? EASY[(st + k) % 4] : (st + k) % 6);
+  // chapters 7-10 each add a signature pattern: ruler wall, correction-tape scissor, exam-paper storm, final flower
+  if (stage > 60) pats[1] = 6 + Math.min(3, Math.floor((stage - 61) / 10));
   const name = fin ? '終極塗鴉王' : (tier === 0 ? '' : PREFIX[(tier - 1) % PREFIX.length]) + BOSS_NAMES[kind] + (tier >= 11 ? ' Lv' + (1 + Math.floor(tier / 11)) : '');
   boss = { kind, fin, sz, col, pats, pi: 0, name, horns: tier >= 11, x: LW / 2, y: -80, ty: Math.max(158, LH * 0.24), hp: max, max, t: 0, pat: pats[0], nextDrop: max * 0.75, patT: 3.2, shotT: 1.2, ang: 0, hitT: 0, seed: 7 + tier };
 }
@@ -515,8 +576,10 @@ function syncStart() {
   $('#startBtn').textContent = cleared > 0 ? '繼續第 ' + realNext() + ' 關' : '開始畫！';
 }
 syncStart();
-function toTitle() { state = 'title'; paused = false; clearPools(); boss = null; banner = null; }
+function toTitle() { state = 'title'; paused = false; clearPools(); boss = null; banner = null; drag = null; syncTools(); }
+function syncTools() { $('#pauseBtn').classList.toggle('off', state !== 'play'); }
 function openSelect() {
+  saveBest();
   toTitle();
   const wrap = $('#lvwrap'); wrap.textContent = '';
   const u = unlocked();
@@ -526,75 +589,78 @@ function openSelect() {
     for (let k = 1; k <= 10; k++) {
       const n = c * 10 + k, b = document.createElement('button');
       b.className = 'lv' + (n <= cleared ? ' done' : '') + (n === u && n > cleared ? ' next' : '');
-      const dn = diffNum(n), pct = Math.round(Math.log(dn / 100) / Math.log(diffNum(MAX_STAGE) / 100) * 100);
-      b.innerHTML = n + '<small>難 ' + dn + '</small><i style="--d:' + Math.max(3, pct) + '%;--h:' + pct + '"></i>';
-      b.setAttribute('aria-label', '第 ' + n + ' 關，難度 ' + dn + (n <= cleared ? '（已通過）' : n > u ? '（未解鎖）' : ''));
+      const dn = diffNum(n), pct = Math.round(Math.log(dn / 100) / Math.log(diffNum(MAX_STAGE) / 100) * 100), st = n <= cleared ? stars[n] : null;
+      b.innerHTML = n + '<small>' + (st ? starStr(st.s) : '難 ' + dn) + '</small><i style="--d:' + Math.max(3, pct) + '%;--h:' + pct + '"></i>';
+      b.setAttribute('aria-label', '第 ' + n + ' 關，難度 ' + dn + (n <= cleared ? '（已通過' + (st ? '，' + st.s + ' 星，本關最佳 ' + st.p + ' 分' : '') + '）' : n > u ? '（未解鎖）' : n > realNext() ? '（練習，不計進度）' : ''));
       if (n > u) b.disabled = true; else b.addEventListener('click', () => newGame(n));
       g.appendChild(b);
     }
   }
   $('#unlockSel').textContent = realNext();
+  $('#selHint').textContent = unlockAll ? '超過進度的關卡只算練習' : '每關難度都會上升';
   sw.setAttribute('aria-checked', String(unlockAll));
   showOv(ovSelect);
   const cur = wrap.querySelector('.next') || wrap.querySelectorAll('.lv:not(:disabled)')[u - 1];
-  if (cur) { cur.focus({ preventScroll: true }); wrap.scrollTop = Math.max(0, cur.offsetTop - wrap.offsetTop - 80); }
+  if (cur) { kfocus(cur); wrap.scrollTop = Math.max(0, cur.offsetTop - wrap.offsetTop - 80); }
 }
 function clearPools() { for (const pool of [pbs, ebs, ens, parts, picks]) for (const o of pool) o.on = false; nEnemies = 0; }
 function newGame(from) {
   initAudio();
   clearPools();
   stage = Math.max(1, Math.min(unlocked(), from | 0 || 1));
+  runRanked = stage <= realNext(); runBest0 = best;
   score = 0; boss = null; P.x = LW / 2; P.y = LH - 90; P.power = startPower(); P.lives = 3; P.inv = 1.5; P.fireT = 0; P.vis = true;
-  startStage(); state = 'play'; paused = false;
+  startStage(); state = 'play'; paused = false; syncTools(); grabDrag();
   showOv(null);
-  cv.focus({ preventScroll: true });
+  kfocus(cv);
 }
 function startStage() {
-  phase = 'intro'; phaseT = 0; waveIdx = 0; queue.length = 0; qi = 0; gapT = 0;
+  phase = 'intro'; phaseT = 0; waveIdx = 0; queue.length = 0; qi = 0; gapT = 0; stageScore0 = score; stageLost = 0;
   banner = { t: 0, dur: 2.2, a: '第 ' + stage + ' 關', b: stage === MAX_STAGE ? '最終關！' : '第 ' + (Math.floor((stage - 1) / 10) + 1) + ' 章・' + CHAPTERS[Math.floor((stage - 1) / 10)], c: '難度 ' + diffNum(stage) };
 }
 function hurt() {
   if (P.inv > 0 || state !== 'play') return;
-  P.lives--; P.power = Math.max(1, P.power - 1); P.inv = 2.2;
+  P.lives--; stageLost++; P.power = Math.max(1, P.power - 1); P.inv = 2.2;
   for (const b of ebs) if (b.on) { b.on = false; part(1, b.x, b.y, 0, 0, 0.25, 4); }
   burst(P.x, P.y, 12, 18); sfx.hurt(); shake(10);
   if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
-  if (P.lives <= 0) { state = 'dying'; dyingT = 1.4; P.vis = false; sfx.big(); for (let i = 0; i < 3; i++) burst(P.x + (Math.random() - .5) * 30, P.y + (Math.random() - .5) * 30, 10, 24); }
+  if (P.lives <= 0) { state = 'dying'; dyingT = 1.4; drag = null; syncTools(); saveBest(); P.vis = false; sfx.big(); for (let i = 0; i < 3; i++) burst(P.x + (Math.random() - .5) * 30, P.y + (Math.random() - .5) * 30, 10, 24); }
 }
 function gameOver() {
-  state = 'over';
-  const isBest = score > best;
-  if (isBest) { best = score; store.set('best', best); }
+  state = 'over'; syncTools();
+  const isBest = runRanked && score > runBest0;
+  saveBest();
   $('#overScore').textContent = score;
-  $('#overNew').hidden = !isBest;
+  $('#overNew').hidden = !isBest; $('#overPrac').hidden = runRanked;
   $('#overBest').textContent = best; syncStart();
   $('#overStage').textContent = '倒在第 ' + stage + ' 關・已解鎖 ' + unlocked() + ' / 100';
   $('#againBtn').textContent = '從第 ' + stage + ' 關再來';
-  $('#overTitle').textContent = isBest ? '畫出新紀錄！' : '被擦掉了！';
-  showOv(ovOver); $('#againBtn').focus({ preventScroll: true });
+  $('#overTitle').textContent = '被擦掉了！';   // the 新紀錄 stamp says the rest
+  showOv(ovOver); kfocus($('#againBtn'));
 }
 function showEnding() {
-  state = 'over';
-  const isBest = score > best;
-  if (isBest) { best = score; store.set('best', best); }
+  state = 'over'; syncTools();
+  const isBest = runRanked && score > runBest0;
+  saveBest();
   $('#endScore').textContent = score; $('#endNew').hidden = !isBest; $('#endBest').textContent = best; syncStart();
-  showOv(ovEnd); sfx.clear(); $('#endSelect').focus({ preventScroll: true });
+  showOv(ovEnd); sfx.clear(); kfocus($('#endSelect'));
 }
 function setPause(v) {
   if (state !== 'play') return;
-  paused = v; ovPause.hidden = !v; drag = null;
-  if (v) $('#resumeBtn').focus({ preventScroll: true }); else { cv.focus({ preventScroll: true }); last = performance.now(); }
+  paused = v; ovPause.hidden = !v;
+  if (v) drag = null; else grabDrag();   // a finger still resting on the canvas keeps steering after resume
+  if (v) kfocus($('#resumeBtn')); else { kfocus(cv); last = performance.now(); }
 }
 $('#startBtn').addEventListener('click', () => newGame(realNext()));
 const sw = $('#unlockAllSw');
 sw.addEventListener('click', () => {
   unlockAll = !unlockAll; store.set('unlockAll', unlockAll);
-  const top = $('#lvwrap').scrollTop; openSelect(); $('#lvwrap').scrollTop = top; sw.focus({ preventScroll: true });
+  const top = $('#lvwrap').scrollTop; openSelect(); $('#lvwrap').scrollTop = top; kfocus(sw);
 });
 $('#selectBtn').addEventListener('click', openSelect);
 $('#againBtn').addEventListener('click', () => newGame(stage));
 $('#overSelect').addEventListener('click', openSelect);
-$('#selBack').addEventListener('click', () => { syncStart(); showOv(ovStart); $('#startBtn').focus({ preventScroll: true }); });
+$('#selBack').addEventListener('click', () => { syncStart(); showOv(ovStart); kfocus($('#startBtn')); });
 $('#endSelect').addEventListener('click', openSelect);
 $('#endRestart').addEventListener('click', () => newGame(1));
 $('#resumeBtn').addEventListener('click', () => setPause(false));
@@ -605,20 +671,28 @@ $('#pauseBtn').addEventListener('click', () => setPause(!paused));
 let drag = null;
 const keys = Object.create(null);
 cv.setAttribute('tabindex', '-1');
+const touches = new Map();   // every pointer resting on the canvas: id -> last position
+function grabDrag() {        // hand steering to the most recent finger still on the canvas
+  drag = null;
+  if (state !== 'play' || paused) return;
+  for (const [id, t] of touches) drag = { id, x: t.x, y: t.y };
+}
 cv.addEventListener('pointerdown', e => {
   initAudio();
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
   if (state !== 'play' || paused) return;
   e.preventDefault();
   drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
-  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 });
 cv.addEventListener('pointermove', e => {
+  const t = touches.get(e.pointerId); if (t) { t.x = e.clientX; t.y = e.clientY; }
   if (!drag || e.pointerId !== drag.id) return;
   const k = 1.15 / SC;
   P.x += (e.clientX - drag.x) * k; P.y += (e.clientY - drag.y) * k;
   drag.x = e.clientX; drag.y = e.clientY; clampP();
 });
-const endDrag = e => { if (drag && e.pointerId === drag.id) drag = null; };
+const endDrag = e => { touches.delete(e.pointerId); if (drag && e.pointerId === drag.id) grabDrag(); };
 cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('keydown', e => {
@@ -775,7 +849,7 @@ function updateBoss(dt, d) {
   b.ty = Math.max(158, LH * 0.24) + Math.max(0, b.sz - 1) * 70;
   if (b.t < 2.2) { b.y += (b.ty - b.y) * Math.min(1, dt * 2.2); return; }
   b.y += (b.ty + Math.sin(b.t * 1.3) * 14 - b.y) * Math.min(1, dt * 3);
-  b.x = LW / 2 + Math.sin((b.t - 2.2) * 0.6) * LW * 0.27;
+  b.x = LW / 2 + Math.sin((b.t - 2.2) * 0.6) * LW * 0.27 * Math.min(1, 1 / b.sz);   // big bosses sway less so they stay on the page
   const rage = b.hp < b.max * 0.4, rate = (rage ? 0.68 : 1) * bossEase();
   b.patT -= dt;
   if (b.patT <= 0) { b.pi = (b.pi + 1) % b.pats.length; b.pat = b.pats[b.pi]; b.patT = 4; b.shotT = 0.5; }
@@ -802,6 +876,22 @@ function updateBoss(dt, d) {
     } else if (b.pat === 4) {   // ink rain
       for (let k = 0; k < 2; k++) eShot(ox + (Math.random() - .5) * 130 * b.sz, oy, Math.PI / 2 + (Math.random() - .5) * 0.35, sp * (0.75 + Math.random() * 0.5), 3.5);
       b.shotT = 0.13 * rate * dens;
+    } else if (b.pat === 6) {   // ruler wall: a falling row of shots with one gap near the player
+      const gw = 78, gx = Math.max(gw / 2 + 8, Math.min(LW - gw / 2 - 8, P.x + (Math.random() - .5) * 140));
+      for (let x = 9; x < LW; x += 18) if (Math.abs(x - gx) > gw / 2) eShot(x, b.y + 30 * b.sz, Math.PI / 2, sp * 0.62, 4);
+      b.shotT = 1.5 * rate * dens;
+    } else if (b.pat === 7) {   // correction tape: two side rollers sweep across each other
+      const s = Math.sin(b.t * 1.8) * 0.75;
+      eShot(ox - 46 * b.sz, oy, Math.PI / 2 - s, sp * 1.05, 4); eShot(ox + 46 * b.sz, oy, Math.PI / 2 + s, sp * 1.05, 4);
+      b.shotT = 0.13 * rate * dens;
+    } else if (b.pat === 8) {   // exam-paper storm: the wind blows shots in from the top edge, changing side now and then
+      const wind = Math.sin(b.t * 0.7) > 0 ? 1 : -1;
+      for (let k = 0; k < 2; k++) eShot(Math.random() * LW, -6, Math.PI / 2 - wind * (0.35 + Math.random() * 0.2), sp * (0.7 + Math.random() * 0.35), 3.5);
+      b.shotT = 0.16 * rate * dens;
+    } else if (b.pat === 9) {   // final flower: two sets of petals turning opposite ways
+      const arms = 4 + (rage ? 1 : 0); b.ang += 0.21;
+      for (let k = 0; k < arms; k++) { const a = k * Math.PI * 2 / arms; eShot(ox, b.y, b.ang + a, sp * 0.9, 4); eShot(ox, b.y, -b.ang + a + 0.3, sp * 0.75, 3.5); }
+      b.shotT = 0.3 * rate * dens;
     } else {                    // double ring + aimed shot
       const n = Math.min(28, 10 + Math.floor(s1 * 0.18)); b.ang += 0.19;
       for (let k = 0; k < n; k++) { eShot(ox, b.y, b.ang + k * Math.PI * 2 / n, sp * 0.8, 4); eShot(ox, b.y, b.ang + (k + 0.5) * Math.PI * 2 / n, sp * 1.1, 3.5); }
@@ -816,15 +906,25 @@ function updateBoss(dt, d) {
   }
 }
 function bossDie() {
-  const b = boss;
-  addScore(2500 * stage);
+  const b = boss, bonus = 2500 * stage;
+  addScore(bonus);
   for (let i = 0; i < 6; i++) burst(b.x + (Math.random() - .5) * 90, b.y + (Math.random() - .5) * 60, 10, 30);
   for (const e of ebs) e.on = false;
   sfx.big(); setTimeout(() => sfx.clear(), 500); shake(14);
   dropPick(b.x - 20, b.y, 0); if (P.lives < 5) dropPick(b.x + 20, b.y, 1);
   boss = null; phase = 'clear'; phaseT = 0;
-  if (stage > cleared) { cleared = stage; store.set('cleared', cleared); }
-  banner = stage === MAX_STAGE ? { t: 0, dur: 3.2, a: '全部通關！', b: '+' + (2500 * stage) + ' 分' } : { t: 0, dur: 3, a: '第 ' + stage + ' 關 完成！', b: '+' + (2500 * stage) + ' 分・解鎖第 ' + (stage + 1) + ' 關' };
+  // real progress only moves one stage at a time: a stage reached through "unlock all" is practice
+  const progressed = stage === cleared + 1;
+  if (progressed) { cleared = stage; store.set('cleared', cleared); }
+  let rec = '';
+  if (stage <= cleared) {
+    const s = stageLost === 0 ? 3 : stageLost === 1 ? 2 : 1, p = score - stageScore0, o = stars[stage];
+    if (!o || s > o.s || p > o.p) { stars[stage] = { s: Math.max(s, o ? o.s : 0), p: Math.max(p, o ? o.p : 0) }; store.set('stars', stars); }
+    rec = starStr(s) + '　本關 ' + p + ' 分';
+  }
+  saveBest();
+  const tail = stage === MAX_STAGE ? '' : progressed ? '・解鎖第 ' + (stage + 1) + ' 關' : rec ? '' : '・練習不計進度';
+  banner = { t: 0, dur: stage === MAX_STAGE ? 3.2 : 3, a: stage === MAX_STAGE ? '全部通關！' : '第 ' + stage + ' 關 完成！', b: '+' + bonus + ' 分' + tail, c: rec || undefined };
 }
 
 /* ================= render ================= */
@@ -910,6 +1010,24 @@ function drawBoss(b) {
     sketch(HANDCIRC, x, y + 10, 7, 6 + Math.sin(b.t * 4) * 2, 0, SMOOTH, sd + 30, '#2a2a2e', C.pencil, 2, false);
     // ink drips
     dot(x - 34, y + 4, 3, C.ink); dot(x + 30, y - 22, 2.5, C.ink);
+  } else if (b.kind === 3) {    // eraser: pink rubber with a paper sleeve, crumbs falling off
+    sketch(RECT, x, y, 56, 30, Math.sin(b.t * 2) * 0.04, CLOSED, sd, bc, C.pencil, 3, true);
+    sketch(RECT, x + 32, y, 16, 32, Math.sin(b.t * 2) * 0.04, CLOSED, sd + 2, fl ? '#fff' : '#7fa6e8', C.pencil, 2.5, false);
+    for (let s = -1; s <= 1; s += 2) {
+      sketch(HANDCIRC, x - 14 + s * 16, y - 6, 9, 9, 0, SMOOTH, sd + s, '#fff', C.pencil, 2, false);
+      dot(x - 14 + s * 16 + ex, y - 6 + ey, 4, C.pencil);
+      line(s < 0 ? BROW_L : BROW_R, x - 14 + s * 6, y - 19, 18, 18, C.pencil, 3, sd + 8 + s);
+    }
+    line(FROWN, x - 14, y + 4, 18, 18, C.pencil, 2.6, sd + 20, SMOOTH);
+    for (let k = 0; k < 4; k++) dot(x - 40 + k * 22 + Math.sin(b.t * 3 + k) * 3, y + 38 + ((b.t * 30 + k * 9) % 24), 2.4, C.pencil);
+  } else if (b.kind === 4) {    // exam-paper ghost: ruled sheet with a red zero
+    sketch(SHEET, x, y, 52, 54, Math.sin(b.t * 1.6) * 0.04, CLOSED, sd, bc, C.pencil, 3, true);
+    line(FOLD, x, y, 52, 54, C.pencil, 2, sd + 5);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let k = 0; k < 3; k++) { ctx.moveTo(x - 38, y + 6 + k * 12); ctx.lineTo(x + 38, y + 6 + k * 12); } ctx.stroke();
+    for (let s = -1; s <= 1; s += 2) { dot(x + s * 16 + ex, y - 22 + ey, 5, C.pencil); line(s < 0 ? BROW_L : BROW_R, x + s * 6, y - 36, 18, 18, C.pencil, 3, sd + 8 + s); }
+    ctx.font = '700 26px ' + HAND; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = C.red; ctx.fillText('0', x + 22, y + 16);
+    sketch(HANDCIRC, x + 22, y + 16, 13, 13, 0, SMOOTH, sd + 30, null, C.red, 2.2, false);
   } else {
     line(ANT, x, y - 36, 4, 22, C.pencil, 3, sd + 40);
     sketch(HANDCIRC, x, y - 60, 6, 6, 0, SMOOTH, sd + 41, (time * 3 | 0) % 2 ? C.red : '#fff', C.pencil, 2, false);
@@ -1041,8 +1159,8 @@ function drawTitleDemo() {
 let safeTop = 0;
 function resize() {
   const vw = innerWidth, vh = page.parentElement.clientHeight || innerHeight;
-  const w = Math.min(vw, Math.round(vh * 0.62), 560);
-  page.style.width = w + 'px';
+  const w = Math.min(vw, Math.round(vh * 0.75), 560);   // landscape gets a wider page (HUD text stays >= 12px)
+  page.style.width = w + 'px'; page.classList.toggle('narrow', w < 340);
   const r = page.getBoundingClientRect();
   SC = r.width / LW; LH = r.height / SC;
   DPR = Math.min(2, window.devicePixelRatio || 1);
@@ -1067,9 +1185,11 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { running = false; if (state === 'play' && !paused) setPause(true); }
+  if (document.hidden) { running = false; saveBest(); if (state === 'play' && !paused) setPause(true); }
   else if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
 });
+addEventListener('pagehide', saveBest);
+syncTools();
 requestAnimationFrame(frame);
 })();
 </script>
