@@ -57,6 +57,14 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   await fill('#d-rate1', '15% off'); assert((await txt('#d-final')).replace(/\s/g, '') === '$765', '15% off 再 9 折 = 765');
   await p.click('#d-rate2-chip-08');
   assert((await txt('#d-final')).replace(/\s/g, '') === '$680' && (await txt('#d-eq')) === '相當於 68 折', '85 折再 8 折 = 680（相當於 68 折）');
+  await fill('#d-rate1', '3'); await fill('#d-rate2', '5');
+  assert((await txt('#d-final')).replace(/\s/g, '') === '$150' && (await txt('#d-eq')) === '相當於 1.5 折', '3 折再 5 折 = 150（相當於 1.5 折，不是 15 折）');
+  await fill('#d-rate1', '85'); await p.click('#d-rate2-chip-08');
+  await p.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new Error('denied')); document.execCommand = () => false; });
+  await p.click('#copy-btn'); await p.waitForSelector('#copy-sheet:not([hidden])');
+  const hit = await p.evaluate(() => { scrollTo(0, 0); const r = document.querySelector('#theme-btn').getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).closest('#theme-btn') != null; });
+  assert(hit && (await p.inputValue('#copy-text')).includes('$680'), '複製失敗時顯示可見文字框，頁首按鈕不被隱形層蓋住');
+  await p.click('#copy-close');
   await fill('#d-price', '99.999'); assert((await txt('#d-price-msg')).includes('捨去'), '小數第三位提示');
   await fill('#d-price', '100000000'); assert((await txt('#d-price-msg')).includes('上限'), '金額上限提示');
   await fill('#d-price', '1000');
