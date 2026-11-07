@@ -69,7 +69,7 @@ const shot = (p, n) => p.screenshot({ path: path.join(OUT, n) });
     const t1 = Date.now(); await page.evaluate(() => 1); const resp = Date.now() - t1;
     assert(dt < 6000 && resp < 500, `safe mode aborts ${JSON.stringify(loop.trim().split('\n').pop())} in ${dt} ms (incl. 0.8 s debounce), page responsive (${resp} ms)`);
   }
-  assert(/__g\(\);/.test(await page.evaluate(() => window.__hp.guardLoops('for (const a of [1]) { x(a) }'))) && await page.evaluate(() => window.__hp.guardLoops("const s = 'while(1){}';")) === "const s = 'while(1){}';", 'guard skips strings, instruments real loops');
+  assert(/__g\(\d+\);/.test(await page.evaluate(() => window.__hp.guardLoops('for (const a of [1]) { x(a) }'))) && await page.evaluate(() => window.__hp.guardLoops("const s = 'while(1){}';")) === "const s = 'while(1){}';", 'guard skips strings, instruments real loops');
 
   // canvas template (loops inside rAF) must not be falsely aborted
   await page.click('#moreBtn'); await page.click('#mTpl'); await page.click('#tpl-canvas'); await page.waitForTimeout(3200);
@@ -147,7 +147,7 @@ const shot = (p, n) => p.screenshot({ path: path.join(OUT, n) });
   await waitLog(page, /^imported$/);
   const exp = await page.evaluate(() => window.__hp.buildDoc(true));
   assert(exp.startsWith('<!doctype html>') && exp.includes('<title>匯入測試</title>') && exp.includes('h2{color:blue}') && !exp.includes('__g') && !exp.includes('postMessage'), 'export = clean single HTML (no bridge)');
-  assert(await page.isHidden('#mDl'), 'download hidden without downloads capability (copy offered)');
+  assert(await page.evaluate(() => !document.getElementById('mDl').hidden), 'download offered without downloads capability (Blob + <a download> fallback)');
   await page.keyboard.press('Escape');
   await noHScroll(page, '390 after flows');
   await page.click('#worksBtn'); await page.waitForTimeout(150); await shot(page, '390x844-works.png'); await page.click('#dlgWorks [data-close]');
