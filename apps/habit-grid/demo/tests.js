@@ -118,8 +118,8 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
             let vis = 0; const cells = [];
             for (const c of document.querySelectorAll('#hgrid .c:not([disabled])')) { const b = c.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
               if (y < 0 || y > innerHeight || x < sc.left || x > innerWidth) continue; vis++; if (document.elementFromPoint(x, y) !== c) cells.push(c.dataset.k); }
-            const seVis = se.bottom > 0 && se.top < innerHeight;
-            const cov = { placed: document.querySelector('#toast').dataset.at === stamp(), shown: !document.querySelector('#toast').hidden, vis, cells, overGrid: sc.bottom > 0 && sc.top < innerHeight && ov(t, sc), overSettings: seVis && (ov(t, se) || !document.elementFromPoint(se.x + se.width / 2, se.y + se.height / 2).closest('#settings-btn')) };
+            const sx = se.x + se.width / 2, sy = se.y + se.height / 2, seVis = sy > 0 && sy < innerHeight && sx > 0 && sx < innerWidth;
+            const cov = { placed: document.querySelector('#toast').dataset.at === stamp(), shown: !document.querySelector('#toast').hidden, vis, cells, overGrid: sc.bottom > 0 && sc.top < innerHeight && ov(t, sc), overSettings: seVis && (ov(t, se) || !document.elementFromPoint(sx, sy)?.closest('#settings-btn')) };
             checked += vis;
             if (!cov.placed || !cov.shown || cells.length || cov.overGrid || cov.overSettings) bad.push(where + ':' + JSON.stringify(cov).slice(0, 160));
           }
@@ -290,4 +290,4 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
   await browser.close();
   console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
   process.exit(fails ? 1 : 0);
-})();
+})().catch(e => { console.log('FAIL uncaught: ' + String((e && e.message) || e).split('\n').slice(0, 3).join(' ')); process.exit(1); });
