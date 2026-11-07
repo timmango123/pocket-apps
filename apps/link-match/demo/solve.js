@@ -3,12 +3,14 @@
 // 2) regenerates all 100 levels exactly as the page does and replays the generator's clearing sequence with the real
 //    rules (same-type, unfrozen, same chain group, path <=2 turns, thaw + gravity) -> every level can be fully cleared
 // 3) rotation levels (80+): independent DFS solve that also applies the 90-degree turn every ROT_EVERY clears
+// 3b) the two replay layouts per level (ALT) pass the same checks
 // 4) checks the parameter table: difficulty D strictly increasing, mechanics introduced at the specified levels
 // Usage: node solve.js
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const coreSrc = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
 const ATT = JSON.parse(html.match(/var ATT = (\[[^\]]*\]);/)[1]);
+const ALT = JSON.parse(html.match(/var ALT = (\[[\s\S]*?\]\]);/)[1]);
 const C = new Function(coreSrc + '\nreturn {levelParams, diffOf, genLevel, findPath, canPair, listMoves, applyMove, gravity, rotGrav, solve, countTiles, mkRng, emptyBoard, reshuffle, ROT_EVERY};')();
 let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log('FAIL', msg); } };
@@ -62,6 +64,15 @@ for (let L = 1; L <= 100; L++) {
   prevD = P.D;
   rows.push({ L, size: P.C + 'x' + P.R, pairs: P.pairs, K: P.K, time: P.time, ppt: P.ppt.toFixed(2), ice, chains, grav: P.grav, rot: P.rot, D: P.D.toFixed(1), diff: C.diffOf(L).toFixed(2), moves: r.sol.length, ok, rotOk });
 }
+// replay layouts (ALT): same checks as the main layout of each level
+let altGood = 0;
+for (let L = 1; L <= 100; L++) for (const a of ALT[L - 1]) {
+  const r = C.genLevel(L, 0, a, false), P = r.P; let good = r.att === a && replay(r);
+  if (P.rot) { const s = C.solve(r.g, { W2: P.W2, H2: P.H2, grav: P.grav, rot: C.ROT_EVERY }, 300, C.mkRng(a + 1)); good = good && !!s && replayRot(r.g, P, s); }
+  good = good && r.g.filter(c => c & 32).length === P.ice && new Set(r.g.filter(c => c >> 6).map(c => c >> 6)).size === P.chains && C.listMoves(r.g, P.W2, P.H2, true).length > 0;
+  check(good, 'level ' + L + ' replay layout att ' + a); if (good) altGood++;
+}
+console.log('replay layouts verified:', altGood, '/ 200');
 // mechanics introduced at the specified levels
 const first = f => (rows.find(f) || {}).L;
 check(first(r => r.ice > 0) === 15, 'ice from level 15');
