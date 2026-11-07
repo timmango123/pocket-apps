@@ -460,7 +460,10 @@ function buildGrid(W,start){
 function updateLabels(){if(!mlabs.length)return;const left=$('#scroller').getBoundingClientRect().left-.5;
   let fv=mlabs.findIndex(m=>m.first.getBoundingClientRect().left>=left);if(fv<0)fv=0;
   mlabs.forEach((m,w)=>{let t=w<fv?'':m.base;if(w===fv&&!t&&!mlabs.slice(fv+1,fv+3).some(x=>x.base))t=m.month;if(m.el.textContent!==t)m.el.textContent=t})}
-let labRaf=0;$('#scroller').addEventListener('scroll',()=>{if(!labRaf)labRaf=requestAnimationFrame(()=>{labRaf=0;updateLabels()})},{passive:true});
+/* the newest week stays in view: if the heatmap was scrolled to its right end, keep it there when its width changes */
+let hmAtEnd=true;const scEnd=sc=>sc.scrollWidth-sc.clientWidth-sc.scrollLeft<2;
+let labRaf=0;$('#scroller').addEventListener('scroll',()=>{hmAtEnd=scEnd($('#scroller'));if(!labRaf)labRaf=requestAnimationFrame(()=>{labRaf=0;updateLabels()})},{passive:true});
+if(window.ResizeObserver)new ResizeObserver(()=>{const sc=$('#scroller');if(hmAtEnd&&!scEnd(sc))sc.scrollLeft=sc.scrollWidth;updateLabels()}).observe($('#scroller'));
 function renderHeatmap(){
   const W=wide()?53:22;const end=monday(today);const start=addDays(end,-(W-1)*7);
   const key=W+'|'+end,rebuild=key!==gridKey;
@@ -469,7 +472,7 @@ function renderHeatmap(){
   // switching habits only updates the existing cells (no rebuild)
   for(const k in cellMap){const b=cellMap[k];const c=cellClass(k);if(b.className!==c)b.className=c;b.setAttribute('aria-label',cellLabel(k));
     b.disabled=c.includes(' fut')||(!h&&c.includes(' pre'))}
-  if(rebuild){const sc=$('#scroller');sc.scrollLeft=sc.scrollWidth}
+  if(rebuild){const sc=$('#scroller');sc.scrollLeft=sc.scrollWidth;hmAtEnd=true}
   updateLabels();
   $('#hm-title').textContent=h?`${h.emoji} ${h.name}${h.target<7?`（每週 ${h.target} 天）`:''}`:'全部習慣';
   $('#edit-sel').hidden=!h;$('#cal-open').hidden=!h;
@@ -691,7 +694,7 @@ applyTheme();
 
 /* toast */
 let toastT=null,undoFn=null;
-function toast(t,u){$('#toast-text').textContent=t;$('#toast-undo').hidden=!u;undoFn=u||null;$('#toast').hidden=false;placeToast();clearTimeout(toastT);toastT=setTimeout(()=>{$('#toast').hidden=true;undoFn=null},5000)}
+function toast(t,u){$('#toast-text').textContent=t;$('#toast-undo').hidden=!u;undoFn=u||null;$('#toast').hidden=false;placeToast();reToast();clearTimeout(toastT);toastT=setTimeout(()=>{$('#toast').hidden=true;undoFn=null},5000)}
 $('#toast-undo').addEventListener('click',()=>{const f=undoFn;undoFn=null;$('#toast').hidden=true;if(f)f()});
 /* The toast floats, so it is placed where it hides nothing that matters: never over the heatmap or the settings
    button (hard rule), and its 復原 button not over any other control (as far as the screen allows). Measured from
@@ -711,6 +714,8 @@ function placeToast(){const t=$('#toast');if(t.hidden)return;
   t.style.top=best.y+'px';t.dataset.at=[scrollX,scrollY,innerWidth,innerHeight].map(Math.round).join()}
 let toastRaf=0;const reToast=()=>{if(!toastRaf&&!$('#toast').hidden)toastRaf=requestAnimationFrame(()=>{toastRaf=0;placeToast()})};
 addEventListener('scroll',reToast,{passive:true});addEventListener('resize',reToast);
+/* layout can also change under a shown toast without a scroll (content re-rendered, fonts, sheet closing): re-place then too */
+if(window.ResizeObserver)new ResizeObserver(reToast).observe(document.body);
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 

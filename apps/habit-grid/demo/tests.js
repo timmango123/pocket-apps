@@ -114,21 +114,41 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
             const g = document.querySelector('#hgrid').getBoundingClientRect(); scrollBy(0, eval(expr));
             // the app re-places the toast on the frame after a scroll; wait for it (condition, not a timer)
             for (let i = 0; i < 600 && document.querySelector('#toast').dataset.at !== stamp(); i++) await frame();
-            const t = document.querySelector('#toast').getBoundingClientRect(), sc = document.querySelector('#scroller').getBoundingClientRect(), se = document.querySelector('#settings-btn').getBoundingClientRect();
+            await frame(); await frame(); // let scroll and layout settle on slow runners
+            for (let i = 0; i < 600 && document.querySelector('#toast').dataset.at !== stamp(); i++) await frame();
+            const scEl = document.querySelector('#scroller'), t = document.querySelector('#toast').getBoundingClientRect(), sc = scEl.getBoundingClientRect(), se = document.querySelector('#settings-btn').getBoundingClientRect();
             let vis = 0; const cells = [];
             for (const c of document.querySelectorAll('#hgrid .c:not([disabled])')) { const b = c.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
-              if (y < 0 || y > innerHeight || x < sc.left || x > innerWidth) continue; vis++; if (document.elementFromPoint(x, y) !== c) cells.push(c.dataset.k); }
+              // only cells the scroller actually shows (cells clipped by its overflow can't be tapped, they aren't "covered")
+              if (y < Math.max(0, sc.top) || y > Math.min(innerHeight, sc.bottom) || x < sc.left || x > Math.min(innerWidth, sc.right)) continue;
+              vis++; const e = document.elementFromPoint(x, y); if (e !== c) cells.push(c.dataset.k + '@' + Math.round(x) + ',' + Math.round(y) + '>' + (e ? (e.id || e.className || e.tagName) : 'null')); }
             const sx = se.x + se.width / 2, sy = se.y + se.height / 2, seVis = sy > 0 && sy < innerHeight && sx > 0 && sx < innerWidth;
-            const cov = { placed: document.querySelector('#toast').dataset.at === stamp(), shown: !document.querySelector('#toast').hidden, vis, cells, overGrid: sc.bottom > 0 && sc.top < innerHeight && ov(t, sc), overSettings: seVis && (ov(t, se) || !document.elementFromPoint(sx, sy)?.closest('#settings-btn')) };
+            const R = r => [r.left, r.top, r.right, r.bottom].map(Math.round).join(',');
+            const atEnd = scEl.scrollWidth - scEl.clientWidth - scEl.scrollLeft < 2;
+            const cov = { atEnd, scrollLeft: Math.round(scEl.scrollLeft), maxLeft: scEl.scrollWidth - scEl.clientWidth, toast: R(t), grid: R(sc), settings: R(se), scrollY: Math.round(scrollY), vh: innerHeight, placed: document.querySelector('#toast').dataset.at === stamp(), shown: !document.querySelector('#toast').hidden, vis, cells, overGrid: sc.bottom > 0 && sc.top < innerHeight && ov(t, sc), overSettings: seVis && (ov(t, se) || !document.elementFromPoint(sx, sy)?.closest('#settings-btn')) };
             checked += vis;
-            if (!cov.placed || !cov.shown || cells.length || cov.overGrid || cov.overSettings) bad.push(where + ':' + JSON.stringify(cov).slice(0, 160));
+            if (!cov.placed || !cov.shown || cells.length || cov.overGrid || cov.overSettings) bad.push({ where, ...cov });
           }
           return { bad, checked };
         }, SCROLLS);
-        ok(bad.length === 0 && checked > 50, `${font} font 390x${vh}: toast never covers a heatmap cell or the settings button (6 scroll positions, ${checked} cell checks) ${bad.join(' ')}`);
+        // full detail, one short line per fact so CI logs (which cut lines at 200 chars) keep all of it
+        for (const b of bad) {
+          console.log(`FAIL   detail ${font} 390x${vh} ${b.where}: toast=${b.toast} grid=${b.grid} settings=${b.settings} scrollY=${b.scrollY} vh=${b.vh}`);
+          console.log(`FAIL   detail ${font} 390x${vh} ${b.where}: atEnd=${b.atEnd} scrollLeft=${b.scrollLeft}/${b.maxLeft} placed=${b.placed} shown=${b.shown} overGrid=${b.overGrid} overSettings=${b.overSettings} vis=${b.vis}`);
+          for (let i = 0; i < b.cells.length; i += 4) console.log(`FAIL   detail ${font} 390x${vh} ${b.where}: covered ${b.cells.slice(i, i + 4).join(' ')}`);
+        }
+        ok(bad.length === 0 && checked > 50, `${font} font 390x${vh}: toast never covers a heatmap cell or the settings button (6 scroll positions, ${checked} cell checks)${bad.length ? ' failed at ' + bad.map(b => b.where).join(',') : ''}`);
       }
     }
     await p.evaluate(() => { document.getElementById('test-font').remove(); document.querySelector('#toast').hidden = true; });
+    // the heatmap stays on the newest week when its width changes (e.g. a scrollbar or font change narrows it)
+    const pin = await p.evaluate(async () => {
+      const frame = () => new Promise(r => requestAnimationFrame(r)); const sc = document.querySelector('#scroller');
+      sc.scrollLeft = sc.scrollWidth; await frame(); await frame();
+      const st = document.createElement('style'); st.id = 'narrow'; st.textContent = '.wd{width:70px}'; document.head.appendChild(st);
+      for (let i = 0; i < 600 && sc.scrollWidth - sc.clientWidth - sc.scrollLeft >= 2; i++) await frame();
+      const r = { gap: sc.scrollWidth - sc.clientWidth - sc.scrollLeft, max: sc.scrollWidth - sc.clientWidth }; st.remove(); await frame(); await frame(); return r; });
+    ok(pin.gap < 2 && pin.max > 0, `heatmap re-pinned to the newest week after narrowing (gap ${pin.gap}px of ${pin.max})`);
     await p.setViewportSize({ width: 390, height: 844 });
 
     // [1] weekly-target habit stats are in weeks
