@@ -1,7 +1,7 @@
 // Verification for 新接龍 (freecell).
 // 1) Re-solves ALL 100 embedded levels in Node with the game's own core code (extracted from index.html between
 //    CORE-START/CORE-END): asserts solvable with that level's free-cell count, that expanded nodes / L* / S match the
-//    embedded table, that S strictly increases level by level, and that the embedded solution replays to a win.
+//    embedded table (S: from L51), that the S column strictly increases level by level, and that the embedded solution replays to a win.
 // 2) A bot clears levels 50, 75, 99, 100 in the real page in Chromium using real touch input (CDP
 //    Input.dispatchTouchEvent): taps for foundation moves, press-and-drag for everything else, at human pace
 //    (>=150 ms between actions). Records level-NN(.mp4|-Nx.mp4) and level-NN-result.png in this folder.
@@ -26,9 +26,11 @@ function solveAll() {
     const S = r.ok ? Math.log(r.nodes) + r.len / 30 + COEF[cells] : NaN;
     const full = core.expandSolution(S0, decodeSol(sol));
     const expected = cells === (n <= 50 ? 4 : n <= 80 ? 3 : 2);
-    const good = r.ok && r.len === Lstar && Math.abs(S - Semb) < 0.002 && S > prevS && !!full && expected;
+    // L1-L50 are ordered by bot win rate (qa/skill-tiers/freecell/calib.js + reorder.js) and their S column is computed
+    // from that deal's own win rate (difficulty.js), not the solver score; from L51 the S column is the solver score.
+    const good = r.ok && r.len === Lstar && (n <= 50 || Math.abs(S - Semb) < 0.002) && Semb > prevS && !!full && expected;
     if (!good) { ok = false; console.log('LEVEL', n, 'PROBLEM', JSON.stringify({ ok: r.ok, len: r.len, Lstar, S, Semb, prevS, replay: !!full, cellsOk: expected })); }
-    prevS = S;
+    prevS = Semb;
     res.push({ n, deal, cells, nodes: r.nodes, len: r.len, S, full });
   }
   const ss = res.map(r => r.S), gaps = ss.slice(1).map((s, i) => s - ss[i]);
