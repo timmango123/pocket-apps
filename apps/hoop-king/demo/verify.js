@@ -45,7 +45,7 @@ async function playLevel(browser, n, seed) {
   await page.locator('.lt[data-n="' + n + '"]').scrollIntoViewIfNeeded(); await sleep(400);
   await tap(cdp, page, '.lt[data-n="' + n + '"]'); await sleep(600);
   if (await page.isVisible('#iOk')) { await sleep(1200); await tap(cdp, page, '#iOk'); }
-  const c = HK.levelCfg(n);
+  const st0 = await page.evaluate(() => window.__game.state()); const c = HK.levelCfg(n, false, st0.variant || 0);
   let r = HK.rng(seed), swipeLat = 0.15, lastAction = 0, shots = 0;
   const wall0 = Date.now();
   for (let guard = 0; guard < 4000; guard++) {
