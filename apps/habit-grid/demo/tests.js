@@ -120,7 +120,7 @@ const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++
             let vis = 0; const cells = [];
             for (const c of document.querySelectorAll('#hgrid .c:not([disabled])')) { const b = c.getBoundingClientRect(); const x = b.x + b.width / 2, y = b.y + b.height / 2;
               // only cells the scroller actually shows (cells clipped by its overflow can't be tapped, they aren't "covered")
-              if (y < Math.max(0, sc.top) || y > Math.min(innerHeight, sc.bottom) || x < sc.left || x > Math.min(innerWidth, sc.right)) continue;
+              if (y < Math.max(0, sc.top) || y > sc.bottom || y >= innerHeight || x < sc.left || x > sc.right || x >= innerWidth) continue;
               vis++; const e = document.elementFromPoint(x, y); if (e !== c) cells.push(c.dataset.k + '@' + Math.round(x) + ',' + Math.round(y) + '>' + (e ? (e.id || e.className || e.tagName) : 'null')); }
             const sx = se.x + se.width / 2, sy = se.y + se.height / 2, seVis = sy > 0 && sy < innerHeight && sx > 0 && sx < innerWidth;
             const R = r => [r.left, r.top, r.right, r.bottom].map(Math.round).join(',');
