@@ -95,8 +95,6 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
       b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }, sel);
       const k = [b.x, b.y, b.w].map(v => v.toFixed(1)).join(); if (k === prev || Date.now() - t0 > 2000) break; prev = k;
     }
-    // a closing overlay can still sit on top while it fades out: wait until the button is what a finger would hit
-    for (let t0 = Date.now(); !(await page.evaluate(([s, x, y]) => { const h = document.elementFromPoint(x, y), e = document.querySelector(s); return !!h && (h === e || e.contains(h)); }, [sel, b.x, b.y])) && Date.now() - t0 < 3000;) await sleep(30);
     // a loaded runner sends the click well after touchend: return only once it has arrived, so the next touch can't race it
     await page.evaluate(s => { window.__tapClick = false; document.querySelector(s).addEventListener('click', () => { window.__tapClick = true; }, { once: true, capture: true }); }, sel);
     await touch(cdp, 'touchStart', b.x, b.y); await sleep(40); await touch(cdp, 'touchEnd');
