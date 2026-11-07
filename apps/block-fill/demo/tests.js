@@ -79,7 +79,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
     const cdp = await ctx.newCDPSession(page);
     return { ctx, page, cdp };
   }
-  const waitFor = async (page, fn, arg, ms = 8000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + fn.toString().slice(0, 90)); await sleep(25); } };
+  const waitFor = async (page, fn, arg, ms = 8000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + fn.toString().slice(0, 90) + (arg !== undefined ? ' [' + JSON.stringify(arg) + ']' : '')); await sleep(25); } };
   const waitVis = (page, sel) => waitFor(page, s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel, 5000).then(() => true, () => false);
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
@@ -87,18 +87,24 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   // right after a reload a slow runner can drop the first synthetic touch; these checks are about saved state, not touch
   // delivery (covered elsewhere), so press the title button directly once it is shown
   const pressAfterReload = async (page, sel) => { await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel); await page.evaluate(s => document.querySelector(s).click(), sel); };
+  // A tap must reach the button, and the test must not go on before it has. On a starved runner the click can come
+  // seconds after touchend (measured up to ~5 s under load), so waiting a fixed 1.5 s and then carrying on let the next
+  // check read the state from before the click (undo after a refresh read [3,3,1]). Overlays also pop in (scale
+  // animation); a rect read before their first frame looks "settled" but is not where the button ends up. So: touch
+  // only once no animation on the button or its ancestors is running and the button is what a finger there would hit,
+  // then wait for that click itself and fail loudly if it never comes.
   async function tap(cdp, page, sel) {
-    await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel);
-    // overlays pop in (scale animation): on a slow runner the button can still be moving, so tap once it has settled
-    let b, prev = '';
-    for (let t0 = Date.now(); ; await sleep(30)) {
-      b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }, sel);
-      const k = [b.x, b.y, b.w].map(v => v.toFixed(1)).join(); if (k === prev || Date.now() - t0 > 2000) break; prev = k;
-    }
-    // a loaded runner sends the click well after touchend: return only once it has arrived, so the next touch can't race it
-    await page.evaluate(s => { window.__tapClick = false; document.querySelector(s).addEventListener('click', () => { window.__tapClick = true; }, { once: true, capture: true }); }, sel);
+    const b = await waitFor(page, s => {
+      const e = document.querySelector(s);
+      if (!e || e.classList.contains('hidden') || e.closest('.hidden')) return null;
+      if (document.getAnimations().some(a => a.playState !== 'finished' && a.effect && a.effect.target && a.effect.target.contains(e))) return null;
+      const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, h = document.elementFromPoint(x, y);
+      return h && e.contains(h) ? { x, y } : null;
+    }, sel);
+    await page.evaluate(s => { window.__tapHit = null; document.addEventListener('click', e => { window.__tapHit = e.target.closest(s) ? 'ok' : (e.target.id || e.target.className || e.target.tagName) + ''; }, { capture: true, once: true }); }, sel);
     await touch(cdp, 'touchStart', b.x, b.y); await sleep(40); await touch(cdp, 'touchEnd');
-    for (let t0 = Date.now(); !(await page.evaluate(() => window.__tapClick)) && Date.now() - t0 < 1500;) await sleep(20);
+    const hit = await waitFor(page, () => window.__tapHit, undefined, 15000).catch(() => 'nothing (no click within 15 s)');
+    ok(hit === 'ok', 'tap on ' + sel + ' landed on ' + hit);
     await sleep(30);
   }
   const settled = (page, sel) => waitFor(page, s => !document.querySelector(s).getAnimations({ subtree: true }).length, sel); // card pop-in done
