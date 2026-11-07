@@ -30,8 +30,8 @@ button:disabled{cursor:default}
 #tmid{flex:1;min-width:0;text-align:center;line-height:1.15;text-shadow:0 1px 6px var(--shadow)}
 #tmid b{font-size:18px;letter-spacing:2px}
 #tmid div{font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hist{position:fixed;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:4px 10px;z-index:3;scrollbar-width:none;touch-action:pan-x;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent)}
+#hist{position:fixed;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:4px 14px;z-index:3;scrollbar-width:none;touch-action:pan-x;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 14px),transparent);mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 14px),transparent)}
 #hist::-webkit-scrollbar{display:none}
 .chip{flex:none;display:flex;align-items:center;gap:4px;height:28px;padding:0 9px;border-radius:14px;font-size:12px;white-space:nowrap;
   background:color-mix(in srgb,var(--panel) 82%,transparent);border:1px solid var(--line)}
@@ -76,6 +76,8 @@ button:disabled{cursor:default}
 #coach{flex:1;min-height:0;overflow-y:auto;font-size:12.5px;border-radius:12px;background:var(--dim);padding:4px 8px;margin-bottom:8px}
 .crow{display:flex;align-items:center;gap:6px;min-height:26px;border-bottom:1px solid var(--line)}
 .crow:last-child{border:0}
+.crow.key{font-weight:700;background:color-mix(in srgb,var(--glow) 16%,transparent);border-radius:8px;margin:2px -4px;padding:0 4px;border:0}
+.crow.cap{color:var(--ink2);font-size:11.5px;min-height:20px}
 .crow svg{width:16px;height:16px;flex:none}
 .crow .w{width:3.4em;color:var(--ink2);flex:none}
 .crow .r{margin-left:auto;text-align:right;white-space:nowrap}
@@ -97,10 +99,10 @@ button:disabled{cursor:default}
 .btn:active{transform:translateY(1px)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
-.srow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--line);font-size:14px}
 .srow:last-of-type{border:0}
 .seg{display:flex;background:var(--dim);border-radius:12px;padding:3px;gap:3px;flex:none}
-.seg button{min-width:44px;height:38px;padding:0 9px;border-radius:9px;font-size:13px;color:var(--ink2)}
+.seg button{min-width:44px;height:44px;padding:0 9px;border-radius:9px;font-size:13px;color:var(--ink2)}
 .seg button.on{background:var(--btn2);color:var(--ink);font-weight:700;box-shadow:0 1px 0 var(--shadow)}
 .sw{width:56px;height:44px;flex:none;position:relative}
 .sw::before{content:"";position:absolute;left:4px;right:4px;top:9px;height:26px;border-radius:13px;background:var(--dim);border:1px solid var(--line);transition:background .2s}
@@ -184,6 +186,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div class="card">
     <h1 class="logo serif">吹牛骰</h1>
     <div class="sub">燈籠茶館・喊點、加碼、開盅</div>
+    <button class="btn pri" id="sCont" style="margin-bottom:8px" hidden>繼續對局<small id="sContD"></small></button>
     <button class="btn pri" id="sPlay">開始對局<small id="sDesc"></small></button>
     <div class="grid2">
       <button class="btn" id="sDuel">單挑高手<small>一對一・掌櫃</small></button>
@@ -247,6 +250,14 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   </div>
 </div>
 
+<div class="ov" id="ovAsk" hidden style="z-index:15">
+  <div class="card">
+    <h2 class="serif" id="askT"></h2>
+    <div class="sub" id="askS"></div>
+    <div class="grid2"><button class="btn" id="askNo">取消</button><button class="btn pri" id="askOk" style="min-height:48px;font-size:16px">確定</button></div>
+  </div>
+</div>
+
 <div class="ov" id="ovEnd" hidden>
   <div class="card">
     <div class="endt serif" id="endT">勝利</div>
@@ -264,12 +275,14 @@ var LD = (function () {
   // ---------- PRNG ----------
   function rng(seed) {
     var a = seed >>> 0;
-    return function () {
+    var f = function () {
       a = (a + 0x6D2B79F5) >>> 0; var t = a;
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
+    f.state = function () { return a; }; // rng(f.state()) continues the same sequence (saved matches)
+    return f;
   }
   function rollHand(n, r) { var h = []; for (var i = 0; i < n; i++) h.push(1 + Math.floor(r() * 6)); return h; }
 
@@ -451,9 +464,13 @@ var LD = (function () {
   function wildAfter(v, b) { return v.wild && b.f !== 1; }
   function mood(kind, r) { return kind; }
 
+  // 新手: reads only its own dice and makes beginner mistakes - lets doubtful bids pass, sometimes calls a likely bid,
+  // often over-raises or picks a face it barely holds. Never uses the learned model of the player.
+  var NOV = { thr: 0.2, rashCall: 0.5, over: 0.8, wrongFace: 0.6 };
   function thinkNovice(v, R) {
-    var l = v.bids.length ? v.bids[v.bids.length - 1] : null, pl = l ? pSimple(v, l, v.wild) : 1;
-    if (l && pl < 0.45) return { act: 'call', p: pl, mood: 'stern' };
+    var l = v.bids.length ? v.bids[v.bids.length - 1] : null, pl = l ? pSimple(v, l, v.wild) : 1, X = v.x || NOV;
+    if (l && pl < X.thr) return { act: 'call', p: pl, mood: 'stern' };
+    if (l && pl < 0.75 && R() < X.rashCall) return { act: 'call', p: pl, mood: 'stern' }; // calls a bid that is probably true
     // face I hold most of (ties -> higher rank)
     var bf = 2, bc = -1;
     for (var f = 1; f <= 6; f++) {
@@ -461,17 +478,21 @@ var LD = (function () {
       var c = ownC(v, f, v.wild);
       if (c > bc || (c === bc && rank(f) > rank(bf))) { bc = c; bf = f; }
     }
+    if (R() < X.wrongFace) bf = 2 + Math.floor(R() * 5); // goes with a hunch instead of the dice
     var q = minQ(l, bf, v.total, v.ms);
     if (!q) { // no raise on my face: take any minimal raise
       var cs = candidates(v, 0); if (!cs.length) return { act: 'call', p: pl, mood: 'stern' };
       var b = cs[0], bp = -1; cs.forEach(function (c) { var p = pSimple(v, c, v.wild); if (p > bp) { bp = p; b = c; } }); q = b.q; bf = b.f;
     }
+    if (R() < X.over) q = Math.min(v.total, q + 1 + (R() < 0.4 ? 1 : 0)); // raises too far
     var b2 = { q: q, f: bf }, p2 = pSimple(v, b2, v.wild);
     return { act: 'bid', q: q, f: bf, p: pl, pb: p2, mood: p2 > 0.6 ? 'happy' : p2 < 0.35 ? 'nervous' : 'calm' };
   }
 
+  // 一般 also slips now and then (a mid-level player between 新手 and 高手): misjudges the last bid or raises too far
+  var NRM = { slip: 0.35 };
   function thinkNormal(v, R) {
-    var l = v.bids.length ? v.bids[v.bids.length - 1] : null, pers = v.pers || PERS[0];
+    var l = v.bids.length ? v.bids[v.bids.length - 1] : null, pers = v.pers || PERS[0], slip = (v.x && v.x.slip != null) ? v.x.slip : NRM.slip;
     var lv = Math.max(1, Math.min(3, v.lives || 3));
     // P(last bid true): mostly trusts that the bidder holds one die of his face
     var pl = l ? 0.8 * pCredit(v, l, v.wild, 1) + 0.2 * pSimple(v, l, v.wild) : 1;
@@ -500,6 +521,11 @@ var LD = (function () {
     });
     if (l && 1 - pl > best.v + 0.3) return { act: 'call', p: pl, mood: 'stern' };
     var pick = best, bl = false;
+    if (R() < slip) { // a slip: lets a doubtful bid stand or opens a likely one, and raises a step too far
+      if (l && pl < 0.85 && R() < 0.35) return { act: 'call', p: pl, mood: 'stern' };
+      var far = cs.filter(function (c) { return c.f === best.f && c.q === best.q + 1; })[0];
+      if (far) return { act: 'bid', q: far.q, f: far.f, p: pl, pb: far.p, bluff: true, mood: 'nervous' };
+    }
     if (R() < 0.15 * pers.bluff) { // bluff: a face I barely hold, still plausible
       var opts = cs.filter(function (c) { return c.own <= 1 && c.v >= best.v - 0.08; });
       opts.sort(function (a, b) { return b.v - a.v; });
@@ -725,14 +751,15 @@ var sel = { q: 1, f: 2 }, myReady = false, peek = false, peekHold = false, ownLi
 var rv = null; // reveal animation
 var verdict = null, banner = null, parts = [], motes = [];
 var obs = null; // per-game observations for AI models
-var grudge = null, gameInfo = null, roundStartLives = null;
+var grudge = null, gameInfo = null, roundStartLives = null, practice = false, matchDone = false, shakeTok = 0, shakeEndBy = '';
 var clock = 0, timers = [];
 function later(ms, fn) { var e = epoch; timers.push({ t: clock + ms, fn: function () { if (e === epoch) fn(); } }); }
 function dailyKey() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
 function hashStr(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 function newMatch(k, seed) {
-  epoch++; timers = []; kind = k || 'normal';
+  epoch++; timers = []; kind = k || 'normal'; matchDone = false;
+  var dk = dailyKey(); practice = kind === 'daily' && ST.daily[dk] != null; // only the first daily game of a day counts
   var n, lv, mode = S.mode, special = S.special, start = S.start;
   if (kind === 'duel') { n = 2; lv = 2; }
   else if (kind === 'daily') { n = 4; lv = 1; mode = 'lives'; special = true; start = 'players'; }
@@ -746,27 +773,35 @@ function newMatch(k, seed) {
   for (var i = 1; i < n; i++) { lvls.push(lv); chars.push(pick[i - 1]); }
   seats = []; for (var j = 0; j < n; j++) seats.push({ bub: null, bubT: 0, mood: 'calm', moodT: 0, lift: 0, liftT: 0, shake: 0, think: false, fade: -1, fadeT: 0, blink: 2 + Math.random() * 3 });
   obs = []; grudge = []; for (var k2 = 0; k2 < n; k2++) { obs.push({ bids: 0, bluffs: 0, cs: 0, cn: 0, rs: 0, rn: 0 }); grudge.push(0); }
-  gameInfo = { lvl: lv, calls: 0, callsWon: 0, lostLives: 0, ach: [], order: [], rounds: 0 };
-  hideAll(); $('panel').hidden = false; showBid(false);
+  gameInfo = { lvl: lv, calls: 0, callsWon: 0, lostLives: 0, ach: [], order: [], rounds: 0, dkey: dk };
+  hideAll(); $('panel').hidden = false; showBid(false); clearHist();
   layout();
   later(250, startRound);
-  updTop();
+  updTop(); saveMatch();
+  if (practice) toast('今日已完成，這局為練習');
 }
 function updTop() {
   if (!G) { $('tinfo').textContent = '燈籠茶館'; return; }
-  var t = kind === 'duel' ? '單挑・高手' : kind === 'daily' ? '每日牌局 ' + dailyKey().slice(5) : (G.P.length - 1) + ' 位電腦・' + LVN[lvls[1]];
+  var t = kind === 'duel' ? '單挑・高手' : kind === 'daily' ? '每日牌局 ' + (gameInfo && gameInfo.dkey || dailyKey()).slice(5) + (practice ? '（練習）' : '') : (G.P.length - 1) + ' 位電腦・' + LVN[lvls[1]];
   $('tinfo').textContent = '第 ' + Math.max(1, G.round) + ' 輪・' + t + (G.o.mode === 'dice' ? '・減骰' : '');
 }
 function startRound() {
-  LD.startRound(G); gameInfo.rounds++; ST.rounds++;
+  LD.startRound(G); gameInfo.rounds++; ST.rounds++; saveMatch(); save('stats', ST);
   roundStartLives = G.P.map(function (p) { return p.lives; });
   rv = null; verdict = null; banner = null; peek = false;
   seats.forEach(function (s) { s.bub = null; s.lift = s.lift || 0; s.liftT = 0; s.think = false; s.mood = 'calm'; });
-  phase = 'shake'; clearHist(); showBid(false); setHint(G.pal ? '孤注輪：本輪 1 不萬用' : '搖骰中…');
+  phase = 'shake'; clearHist(); showBid(false); setHint(G.pal ? '孤注輪：本輪 1 不萬用' : '搖骰中…<small>（點桌面跳過）</small>', true);
   seats.forEach(function (s, i) { if (!G.P[i].out) s.shake = 1; });
   SFX.shake(); vib(15);
   updTop();
-  later(1150, function () { seats.forEach(function (s) { s.shake = 0; }); phase = 'bid'; if (G.pal) toast('孤注輪：1 不萬用'); nextTurn(); });
+  var tk = ++shakeTok;
+  later(1150, function () { endShake(tk); });
+}
+// end of the shake animation; a tap on the table ends it early
+function endShake(tk) {
+  if (tk !== shakeTok || phase !== 'shake' || !G) return;
+  shakeTok++; shakeEndBy = arguments[1] || 'timer';
+  seats.forEach(function (s) { s.shake = 0; }); phase = 'bid'; if (G.pal) toast('孤注輪：1 不萬用'); nextTurn();
 }
 function nextTurn() {
   if (G.phase !== 'bid') return;
@@ -813,7 +848,7 @@ function afterBid(p, b) {
   seats[p].bub = { q: b.q, f: b.f }; seats[p].bubT = clock;
   SFX.bid(p);
   if (b.f === 1 && G.bids.filter(function (x) { return x.f === 1; }).length === 1 && !G.pal && G.zhai) { toast('喊 1 ——「齋」！1 不再萬用'); }
-  addHist(nb);
+  addHist(nb); saveMatch();
   later(p === 0 ? 250 : 450, nextTurn);
   return true;
 }
@@ -833,13 +868,13 @@ function doCallUI(caller) {
   seats[caller].bub = { call: 1 }; seats[caller].bubT = clock;
   SFX.clack(); vib(20);
   setHint((caller === 0 ? '你' : CH[chars[caller]].n) + ' 開盅！');
-  addHist({ call: 1, p: caller });
+  addHist({ call: 1, p: caller }); saveMatch();
   var D = 1.15;
   later(250, function () { SFX.drum(D); });
   later(250 + D * 1000 - 300, function () { seats.forEach(function (s, i) { if (!G.P[i].out) s.liftT = 1; }); peek = true; });
   later(250 + D * 1000 + 250, function () { startCount(res); });
 }
-function startCount(res) {
+function startCount(res, instant) {
   var f = res.bid.f, steps = [], order = [];
   for (var i = 1; i < G.P.length; i++) order.push(i); order.push(0);
   order.forEach(function (p) {
@@ -850,6 +885,12 @@ function startCount(res) {
     if (G.o.special && P.hand.length === 5 && LD.handCount(P.hand, f, res.wild, true) === 6) steps.push({ p: p, d: -1, tag: '豹子 +1', plus: 1 });
   });
   rv = { res: res, steps: steps, k: 0, n: 0, lit: {}, tags: {}, pop: 0 };
+  if (instant) { // resumed save: show the open cups already counted
+    steps.forEach(function (st) { if (st.d >= 0) { rv.lit[st.p + ':' + st.d] = clock - 1000; rv.n++; } else { rv.tags[st.p] = st.tag; if (st.plus) rv.n++; } });
+    rv.k = steps.length; rv.pop = clock - 1000;
+    if (G.phase === 'reveal') finishRound(res);
+    return;
+  }
   var dt = Math.max(150, Math.min(330, 2600 / Math.max(1, steps.length)));
   steps.forEach(function (st, i) {
     later(i * dt, function () {
@@ -897,6 +938,7 @@ function finishRound(res) {
   banner = { a: line, b: nm(L) + (G.o.mode === 'dice' ? ' 少一顆骰' : ' 扣一條命') + (G.P[L].out ? '・出局' : ''), good: L !== 0 };
   if (G.P[L].out) gameInfo.order.push(L);
   save('stats', ST);
+  if (G.phase === 'over' || G.P[0].out) recordEnd(); else saveMatch(); // result is stored before any animation
   later(900, function () { showResult(res, bidTxt); });
 }
 function learn(res) {
@@ -918,12 +960,13 @@ function showResult(res) {
   var nm = function (p) { return p === 0 ? '你' : CH[chars[p]].n; };
   $('resT').innerHTML = '<span class="' + (res.loser === 0 ? 'no' : 'ok') + '">' + banner.a + '</span><br><small style="font-weight:500;color:var(--ink2)">' + banner.b + '</small>';
   // coach: every bid this round, its true count, and your estimate at the time
+  // the called bid comes first and highlighted, then the earlier bids newest first
   var h = '';
-  G.bids.forEach(function (b) {
+  G.bids.slice().reverse().forEach(function (b, i) {
     var w = b.wild && b.f !== 1, cnt = LD.countAll(G, b.f, w).total, ok = cnt >= b.q, est = Math.round(LD.probFor(G, 0, b, b.wild) * 100);
-    h += '<div class="crow"><span class="w">' + nm(b.p) + '</span><b>' + b.q + '</b>×' + dieSVG(b.f) + '<span class="r"><span class="' + (ok ? 'ok' : 'no') + '">實際 ' + cnt + (ok ? ' ✓' : ' ✗') + '</span>　你估 ' + est + '%</span></div>';
+    h += '<div class="crow' + (i === 0 ? ' key' : '') + '"><span class="w">' + (i === 0 ? '被開' : nm(b.p)) + '</span><b>' + b.q + '</b>×' + dieSVG(b.f) + (i === 0 ? '<small style="color:var(--ink2);font-weight:500">' + nm(b.p) + '</small>' : '') + '<span class="r"><span class="' + (ok ? 'ok' : 'no') + '">實際 ' + cnt + (ok ? ' ✓' : ' ✗') + '</span>　你估 ' + est + '%</span></div>';
   });
-  $('coach').innerHTML = '<div class="crow" style="color:var(--ink2);font-size:11.5px"><span>機率教練：每句喊點的實際數量，與當時以你的骰子估計的成立機率</span></div>' + h;
+  $('coach').innerHTML = '<div class="crow cap"><span>機率教練：實際數量・你當時估計的成立機率</span></div>' + h;
   var over = G.phase === 'over' || G.P[0].out;
   $('bNext').textContent = over ? '查看結果' : '下一輪';
   $('coach').scrollTop = 0;
@@ -938,26 +981,100 @@ function nextRound() {
   verdict = null; banner = null; rv = null;
   later(450, startRound);
 }
-function endGame() {
-  phase = 'over';
+// the match is decided for the player: record it once, right away (not when the end screen opens)
+function recordEnd() {
+  if (matchDone) return;
+  matchDone = true;
   var win = !G.P[0].out && G.winner === 0;
   var lives = G.o.mode === 'dice' ? G.P[0].dice : G.P[0].lives;
   ST.games++; if (win) ST.wins++;
   var lv = gameInfo.lvl; ST.lvl[lv][0]++; if (win) ST.lvl[lv][1]++;
   if (win && gameInfo.lostLives === 0) unlock('clean');
   if (win && kind === 'duel') unlock('duel');
-  if (kind === 'daily') { unlock('day'); var k = dailyKey(), sc = win ? lives : 0; if (ST.daily[k] == null || sc > ST.daily[k]) ST.daily[k] = sc; }
-  save('stats', ST);
+  if (kind === 'daily') { unlock('day'); var k = gameInfo.dkey || dailyKey(); if (!practice && ST.daily[k] == null) ST.daily[k] = win ? lives : 0; }
+  gameInfo.end = { win: win, lives: lives, place: win ? 1 : G.P.length - gameInfo.order.indexOf(0) };
+  save('stats', ST); clearMatch();
+}
+function endGame() {
+  recordEnd();
+  phase = 'over';
+  var E = gameInfo.end, win = E.win, lives = E.lives, dk = gameInfo.dkey || dailyKey();
   $('endT').textContent = win ? '勝利！' : '落敗';
   $('endT').style.color = win ? 'var(--glow)' : 'var(--ink2)';
-  var place = win ? 1 : G.P.length - gameInfo.order.indexOf(0);
-  $('endS').textContent = win ? '茶館裡最後留下的人是你' + (kind === 'daily' ? '・剩餘 ' + lives + (G.o.mode === 'dice' ? ' 顆骰' : ' 條命') : '') : '名次：第 ' + place + ' 名・' + (G.winner > 0 ? CH[chars[G.winner]].n + ' 獲勝' : '再接再厲');
-  $('endGrid').innerHTML = '<div><b>' + gameInfo.rounds + '</b>輪數</div><div><b>' + gameInfo.callsWon + '/' + gameInfo.calls + '</b>開盅成功</div><div><b>' + (kind === 'daily' ? (ST.daily[dailyKey()] || 0) : (ST.games ? Math.round(ST.wins / ST.games * 100) : 0) + '%') + '</b>' + (kind === 'daily' ? '今日最佳' : '總勝率') + '</div>';
+  $('endS').textContent = (win ? '茶館裡最後留下的人是你' + (kind === 'daily' ? '・剩餘 ' + lives + (G.o.mode === 'dice' ? ' 顆骰' : ' 條命') : '') : '名次：第 ' + E.place + ' 名・' + (G.winner > 0 ? CH[chars[G.winner]].n + ' 獲勝' : '再接再厲')) + (practice ? '（練習，不計今日成績）' : '');
+  $('endGrid').innerHTML = '<div><b>' + gameInfo.rounds + '</b>輪數</div><div><b>' + gameInfo.callsWon + '/' + gameInfo.calls + '</b>開盅成功</div><div><b>' + (kind === 'daily' ? (ST.daily[dk] || 0) : (ST.games ? Math.round(ST.wins / ST.games * 100) : 0) + '%') + '</b>' + (kind === 'daily' ? '今日成績' : '總勝率') + '</div>';
   $('endAch').innerHTML = gameInfo.ach.map(function (id) { var a = ACH.filter(function (x) { return x[0] === id; })[0]; return '<div class="ach got"><i>' + a[1] + '</i><div>新成就：' + a[2] + '<span>' + a[3] + '</span></div></div>'; }).join('');
   hideAll(); $('panel').hidden = true; $('ovEnd').hidden = false; layout();
   if (win) { SFX.win(); for (var i = 0; i < 4; i++) later(i * 250, function () { burst({ x: cvW * (0.2 + Math.random() * 0.6), y: cvH * 0.35 }, 30, 'confetti'); }); vib([30, 60, 30]); }
   else SFX.lose();
 }
+
+// ---------- saved match (liarsdice:match) ----------
+function snapG() {
+  return { o: G.o, r: G.r.state(), aiR: G.aiR.state(), P: G.P, round: G.round, starter: G.starter, turn: G.turn, phase: G.phase, bids: G.bids,
+    zhai: G.zhai, pal: G.pal, palNext: G.palNext, winner: G.winner, res: G.res || null };
+}
+function saveMatch() {
+  if (!G || matchDone) return;
+  save('match', { v: 1, g: snapG(), kind: kind, lvls: lvls, chars: chars, obs: obs, grudge: grudge, gameInfo: gameInfo, banner: banner, practice: practice, t: Date.now() });
+}
+function clearMatch() { try { localStorage.removeItem(KEY + 'match'); } catch (e) {} }
+function loadMatch() {
+  try {
+    var m = JSON.parse(localStorage.getItem(KEY + 'match') || 'null');
+    if (!m || m.v !== 1 || !m.g || !m.g.P || !m.g.o || !m.gameInfo || !m.lvls || !m.chars) return null;
+    if (m.g.phase === 'over' || m.g.P[0].out) return null;
+    return m;
+  } catch (e) { return null; }
+}
+function resumeMatch(m) {
+  epoch++; timers = []; matchDone = false;
+  kind = m.kind || 'normal'; lvls = m.lvls; chars = m.chars; obs = m.obs; grudge = m.grudge; gameInfo = m.gameInfo; practice = !!m.practice;
+  var g = m.g; G = {}; for (var k in g) G[k] = g[k];
+  G.r = LD.rng(g.r); G.aiR = LD.rng(g.aiR); G.log = [];
+  var n = G.P.length;
+  seats = []; for (var j = 0; j < n; j++) seats.push({ bub: null, bubT: 0, mood: 'calm', moodT: 0, lift: 0, liftT: 0, shake: 0, think: false, fade: -1, fadeT: 0, blink: 2 + Math.random() * 3 });
+  rv = null; verdict = null; banner = m.banner || null; peek = false; paused = false;
+  hideAll(); $('panel').hidden = false; showBid(false); clearHist();
+  layout(); updTop();
+  G.bids.forEach(addHist);
+  if (G.phase === 'idle') { later(250, startRound); return; }
+  if (G.phase === 'bid') {
+    var l = LD.last(G); if (l) { seats[l.p].bub = { q: l.q, f: l.f }; seats[l.p].bubT = clock; }
+    phase = 'bid'; setHint('對局已恢復'); nextTurn(); return;
+  }
+  // a call was made (reveal) or the round was already judged (settled): show the open cups at once
+  var res = G.res;
+  addHist({ call: 1, p: res.caller });
+  phase = 'reveal'; seats.forEach(function (s, i) { if (!G.P[i].out || i === res.loser) { s.liftT = 1; s.lift = 1; } }); peek = true;
+  if (G.phase === 'reveal') { startCount(res, true); return; }
+  startCount(res, true);
+  verdict = { res: res, t: clock - 1000 };
+  if (!banner) banner = { a: res.truth ? '喊點成立' : '吹牛被識破', b: '', good: res.loser !== 0 };
+  showResult(res);
+}
+// leaving an unfinished match for a new one counts as a loss (and fixes today's daily score at 0)
+function abandonSaved() {
+  var m = loadMatch(); clearMatch();
+  if (!m || m.g.round < 1) return;
+  var lv = m.gameInfo.lvl; ST.games++; if (ST.lvl[lv]) ST.lvl[lv][0]++;
+  if (m.kind === 'daily' && !m.practice) { var k = m.gameInfo.dkey || dailyKey(); if (ST.daily[k] == null) ST.daily[k] = 0; }
+  save('stats', ST);
+}
+function liveMatch() { if (G && !matchDone) return G.round >= 1 ? G : null; if (G) return null; var m = loadMatch(); return m && m.g.round >= 1 ? m : null; }
+function startNew(k, seed) {
+  if (!liveMatch()) { if (!G || matchDone) clearMatch(); newMatch(k, seed); return; }
+  ask('放棄目前對局？', '目前的對局還沒結束，開新局會把它記為一敗。', '放棄並開新局', function () {
+    if (G && !matchDone) saveMatch();
+    abandonSaved(); matchDone = true; paused = false; newMatch(k, seed);
+  });
+}
+function ask(t, sub, okTxt, fn) {
+  $('askT').textContent = t; $('askS').textContent = sub; $('askOk').textContent = okTxt; askFn = fn; $('ovAsk').hidden = false;
+}
+var askFn = null;
+$('askNo').onclick = function () { $('ovAsk').hidden = true; askFn = null; };
+$('askOk').onclick = function () { $('ovAsk').hidden = true; var f = askFn; askFn = null; if (f) f(); };
 function unlock(id) { if (!ST.ach[id]) { ST.ach[id] = Date.now(); gameInfo.ach.push(id); var a = ACH.filter(function (x) { return x[0] === id; })[0]; toast('成就解鎖：' + a[2]); save('stats', ST); } }
 
 // ---------- panel ----------
@@ -1023,10 +1140,25 @@ function pickFace(f) {
   if (!LD.legal(G, sel)) { var m = LD.minQ(LD.last(G), f, LD.totalDice(G), LD.minStart(G)); if (m) sel.q = m; }
   SFX.tap(); refreshPanel();
 }
-$('qm').onclick = function () { bumpQ(-1); };
-$('qp').onclick = function () { bumpQ(1); };
-FB.forEach(function (b) { b.onclick = function () { pickFace(+b.dataset.f); }; });
-$('bBid').onclick = playerBid;
+// Fire on pointerup of the pointer that went down on the button: a second finger (e.g. while the first one holds the
+// cup to peek) gets no click from the browser, so click alone would drop it. The click that follows a handled
+// pointerup is ignored; keyboard / script clicks (detail 0) still work.
+function onTap(el, fn) {
+  var down = {}, lastUp = -1e9;
+  el.addEventListener('pointerdown', function (e) { if (e.button > 0) return; down[e.pointerId] = 1; });
+  el.addEventListener('pointercancel', function (e) { delete down[e.pointerId]; });
+  el.addEventListener('pointerup', function (e) {
+    if (!down[e.pointerId]) return; delete down[e.pointerId];
+    var r = el.getBoundingClientRect(), m = 12;
+    if (e.clientX < r.left - m || e.clientX > r.right + m || e.clientY < r.top - m || e.clientY > r.bottom + m) return;
+    lastUp = performance.now(); if (!el.disabled) fn();
+  });
+  el.addEventListener('click', function (e) { if (e.detail > 0 && performance.now() - lastUp < 700) return; if (!el.disabled) fn(); });
+}
+onTap($('qm'), function () { bumpQ(-1); });
+onTap($('qp'), function () { bumpQ(1); });
+FB.forEach(function (b) { onTap(b, function () { pickFace(+b.dataset.f); }); });
+onTap($('bBid'), playerBid);
 // hold-to-call
 var holdT = null, holdStart = 0;
 function holdEnd() { if (holdT) { cancelAnimationFrame(holdT); holdT = null; } $('cfill').style.width = '0'; }
@@ -1041,7 +1173,7 @@ $('bCall').addEventListener('pointerdown', function (e) {
   if (S.vib && navigator.vibrate) try { navigator.vibrate(8); } catch (x) {}
 });
 ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (t) { $('bCall').addEventListener(t, function () { if (holdT && performance.now() - holdStart < 500) toast('「開！」要按住 0.5 秒'); holdEnd(); }); });
-$('bNext').onclick = nextRound;
+onTap($('bNext'), nextRound);
 
 // ---------- history ----------
 function clearHist() { $('hist').innerHTML = ''; }
@@ -1049,23 +1181,39 @@ function addHist(b) {
   var d = document.createElement('div'), nm = b.p === 0 ? '你' : CH[chars[b.p]].n;
   d.className = 'chip' + (b.p === 0 ? ' me' : '') + (b.f === 1 && !b.call ? ' zh' : '');
   d.innerHTML = b.call ? nm + ' <b style="color:var(--red2)">開！</b>' : nm + ' <b>' + b.q + '</b>×' + dieSVG(b.f);
-  $('hist').appendChild(d); $('hist').scrollLeft = 1e5;
+  $('hist').appendChild(d); fitHist();
+}
+// scroll so the newest chips show whole: the leftmost visible chip starts just past the narrow left fade and the
+// chip before it ends at the edge (never half cut)
+function fitHist() {
+  var h = $('hist'), sp = h.querySelector('.hsp'); if (sp) h.removeChild(sp);
+  var cs = h.children; if (!cs.length) return;
+  var pad = 6, room = h.clientWidth - pad - 14, end = cs[cs.length - 1].offsetLeft + cs[cs.length - 1].offsetWidth, i = cs.length - 1;
+  while (i > 0 && end - cs[i - 1].offsetLeft <= room) i--;
+  var want = Math.max(0, cs[i].offsetLeft - pad), short = want + h.clientWidth - h.scrollWidth;
+  if (want > 0 && short > 0) { sp = document.createElement('i'); sp.className = 'hsp'; sp.style.cssText = 'flex:none;width:' + Math.ceil(short) + 'px'; h.appendChild(sp); }
+  h.scrollLeft = want;
 }
 
 // ---------- overlays ----------
 function hideAll() { ['ovStart', 'ovMenu', 'ovSet', 'ovRules', 'ovStats', 'ovEnd'].forEach(function (id) { $(id).hidden = true; }); }
+var OVS = ['ovStart', 'ovMenu', 'ovSet', 'ovRules', 'ovStats', 'ovEnd', 'ovAsk'];
 var prevOv = null;
 function openOv(id, from) { prevOv = from || null; hideAll(); $(id).hidden = false; }
 function closeOv() { hideAll(); if (prevOv) $(prevOv).hidden = false; prevOv = null; }
-function home() { epoch++; timers = []; G = null; phase = 'menu'; hideAll(); $('panel').hidden = true; clearHist(); $('ovStart').hidden = false; updStart(); updTop(); demoSeats(); layout(); }
+function home() { if (G && !matchDone) saveMatch(); epoch++; timers = []; G = null; paused = false; phase = 'menu'; hideAll(); $('panel').hidden = true; clearHist(); $('ovStart').hidden = false; updStart(); updTop(); demoSeats(); layout(); }
 function updStart() {
   $('sDesc').textContent = S.ais + ' 位電腦・' + LVN[S.lvl] + '・' + (S.mode === 'dice' ? '減骰制' : '扣命制');
-  var d = ST.daily[dailyKey()]; $('sDailyD').textContent = d == null ? '今日未玩' : '今日最佳 ' + d + ' 命';
+  var d = ST.daily[dailyKey()]; $('sDailyD').textContent = d == null ? '今日未玩' : '今日 ' + d + ' 命・再玩為練習';
+  var m = loadMatch();
+  $('sCont').hidden = !m; $('sPlay').classList.toggle('pri', !m);
+  if (m) $('sContD').textContent = '第 ' + Math.max(1, m.g.round) + ' 輪・' + (m.kind === 'duel' ? '單挑高手' : m.kind === 'daily' ? '每日牌局' : (m.g.P.length - 1) + ' 位電腦・' + LVN[m.lvls[1]]);
 }
 var hashSeed = (/seed=(\d+)/.exec(location.hash) || [])[1];
-$('sPlay').onclick = function () { ac(); SFX.tap(); newMatch('normal', hashSeed != null ? +hashSeed : null); hashSeed = null; };
-$('sDuel').onclick = function () { ac(); SFX.tap(); newMatch('duel'); };
-$('sDaily').onclick = function () { ac(); SFX.tap(); newMatch('daily'); };
+$('sCont').onclick = function () { ac(); SFX.tap(); var m = loadMatch(); if (m) resumeMatch(m); else updStart(); };
+$('sPlay').onclick = function () { ac(); SFX.tap(); var sd = hashSeed != null ? +hashSeed : null; hashSeed = null; startNew('normal', sd); };
+$('sDuel').onclick = function () { ac(); SFX.tap(); startNew('duel'); };
+$('sDaily').onclick = function () { ac(); SFX.tap(); startNew('daily'); };
 $('sSet').onclick = function () { openSet('ovStart'); };
 $('sStats').onclick = function () { openStats('ovStart'); };
 $('sRules').onclick = function () { openOv('ovRules', 'ovStart'); };
@@ -1074,9 +1222,9 @@ $('bMenu').onclick = function () { if (G && phase !== 'over') { openOv('ovMenu')
 $('mRes').onclick = function () { hideAll(); paused = false; };
 $('mRules').onclick = function () { openOv('ovRules', 'ovMenu'); };
 $('mSet').onclick = function () { openSet('ovMenu'); };
-$('mNew').onclick = function () { paused = false; newMatch(kind); };
+$('mNew').onclick = function () { startNew(kind); };
 $('mHome').onclick = function () { paused = false; home(); };
-$('endAgain').onclick = function () { newMatch(kind); };
+$('endAgain').onclick = function () { startNew(kind); };
 $('endHome').onclick = home;
 function openSet(from) {
   openOv('ovSet', from);
@@ -1090,7 +1238,9 @@ document.querySelectorAll('#ovSet .seg button').forEach(function (b) {
 document.querySelectorAll('#ovSet .sw').forEach(function (b) {
   b.onclick = function () { var k = b.dataset.k; S[k] = !S[k]; save('settings', S); b.setAttribute('aria-checked', S[k] ? 'true' : 'false'); if (k === 'sound') sndIcon(); SFX.tap(); refreshPanel(); };
 });
-$('clrModel').onclick = function () { MD = freshModel(); save('model', MD); $('mdlInfo').textContent = '已清除'; };
+$('clrModel').onclick = function () {
+  ask('清除學習資料？', '電腦會忘記你的喊點與開盅習慣，無法復原。', '清除', function () { MD = freshModel(); save('model', MD); $('mdlInfo').textContent = '已清除'; });
+};
 $('setOk').onclick = function () { closeOv(); updStart(); };
 function openStats(from) {
   openOv('ovStats', from);
@@ -1101,7 +1251,9 @@ function openStats(from) {
   $('achList').innerHTML = ACH.map(function (a) { return '<div class="ach' + (ST.ach[a[0]] ? ' got' : '') + '"><i>' + a[1] + '</i><div>' + a[2] + '<span>' + a[3] + '</span></div></div>'; }).join('');
 }
 $('statOk').onclick = closeOv;
-$('statReset').onclick = function () { ST = freshStats(); save('stats', ST); openStats(prevOv); };
+$('statReset').onclick = function () {
+  ask('重設統計？', '所有戰績、成就與每日成績都會清除，無法復原。', '重設', function () { ST = freshStats(); save('stats', ST); openStats(prevOv); });
+};
 function sndIcon() { $('sndIcon').innerHTML = S.sound ? '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>' : '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>'; }
 $('bSnd').onclick = function () { S.sound = !S.sound; save('settings', S); sndIcon(); if (S.sound) SFX.tap(); };
 sndIcon();
@@ -1111,8 +1263,9 @@ function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('on')
 // ---------- keyboard ----------
 document.addEventListener('keydown', function (e) {
   if (e.repeat && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-  if (!G || paused || ['ovStart', 'ovMenu', 'ovSet', 'ovRules', 'ovStats', 'ovEnd'].some(function (id) { return !$(id).hidden; })) {
-    if (e.key === 'Escape' && !$('ovMenu').hidden) $('mRes').click();
+  if (!G || paused || OVS.some(function (id) { return !$(id).hidden; })) {
+    if (e.key === 'Escape' && !$('ovAsk').hidden) $('askNo').click();
+    else if (e.key === 'Escape' && !$('ovMenu').hidden) $('mRes').click();
     return;
   }
   if (e.key === ' ') { e.preventDefault(); peekHold = true; return; }
@@ -1158,6 +1311,7 @@ function layout() {
   // history strip
   var hs = $('hist').style; hs.left = (x0 + 8) + 'px'; hs.width = (w - 16) + 'px'; hs.top = (Lc.cTop + ch - 40) + 'px'; hs.height = '38px';
   $('hist').hidden = !G;
+  if (G) fitHist();
 }
 addEventListener('resize', function () { layout(); });
 
@@ -1373,15 +1527,19 @@ function draw(t, dt) {
     var md = st.think ? 'think' : st.mood; if (!st.think && clock - st.moodT > 4200 && md !== 'sad' && phase !== 'result') md = 'calm';
     var who = G ? chars[p] : p - 1;
     face(s.x, s.ay + Math.sin(t * 1.6 + p) * 1.2, s.r, who, md, t, bl, P.out);
-    cx.fillStyle = TH.ink; cx.font = '700 12px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
-    cx.fillText(CH[who].n + (G ? '・' + LVN[lvls[p]] : ''), s.x, s.nameY);
     if (st.think) { cx.fillStyle = TH.gold; for (var d = 0; d < 3; d++) { cx.globalAlpha = 0.3 + 0.7 * Math.max(0, Math.sin(t * 6 - d * 0.8)); cx.beginPath(); cx.arc(s.x + s.r + 8 + d * 6, s.ay - s.r * 0.7, 2.4, 0, 7); cx.fill(); } cx.globalAlpha = 1; }
-    drawLives(p, P, t);
-    // dice (only when cups are up) and cup
+    // dice (only when cups are up) and cup; the lifted cup passes behind the name and lanterns
     st.lift += (st.liftT - st.lift) * Math.min(1, dt * 7);
+    if (!P.out) {
+      if (G && st.lift > 0.03) drawHand(p, s.ds, t);
+      cup(s.x, s.cupY, s.cupW, s.cupH, st.lift, st.shake, t);
+    }
+    cx.font = '700 12px system-ui,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    var nmT = CH[who].n + (G ? '・' + LVN[lvls[p]] : '');
+    if (st.lift > 0.05) { cx.lineJoin = 'round'; cx.lineWidth = 4; cx.strokeStyle = TH.L ? 'rgba(250,240,220,.92)' : 'rgba(30,18,10,.85)'; cx.strokeText(nmT, s.x, s.nameY); }
+    cx.fillStyle = TH.ink; cx.fillText(nmT, s.x, s.nameY);
+    drawLives(p, P, t);
     if (P.out) { cx.fillStyle = TH.ink2; cx.font = '700 13px system-ui,sans-serif'; cx.fillText('出局', s.x, s.cupY - s.cupH * 0.45); continue; }
-    if (G && st.lift > 0.03) drawHand(p, s.ds, t);
-    cup(s.x, s.cupY, s.cupW, s.cupH, st.lift, st.shake, t);
     if (G && rv && rv.tags[p]) tagLabel(s.x, s.cupY - s.ds - 14, rv.tags[p]);
     if (st.bub && st.lift < 0.5) bubble(s.x, s.cupY - s.cupH * 0.42, st.bub, st.bubT, clock);
   }
@@ -1502,15 +1660,18 @@ function demoSeats() { seats = []; for (var j = 0; j < 4; j++) seats.push({ bub:
 
 // ---------- peek input on canvas ----------
 function inOwnCup(x, y) { var o = Lc.own; return o && x > o.x - o.cupW / 2 - 16 && x < o.x + o.cupW / 2 + 16 && y > o.y - o.cupH * 2.1 && y < o.y + 8; }
+var peekPid = null;
 cv.addEventListener('pointerdown', function (e) {
   ac();
-  if (!G || G.P[0].out) return;
-  if (!inOwnCup(e.clientX, e.clientY)) return;
-  if (phase === 'reveal' || phase === 'result' || phase === 'shake') return;
-  if (S.peek === 'tap') peek = !peek; else peek = true;
+  if (!G || paused) return;
+  if (phase === 'shake') { endShake(shakeTok, 'tap'); return; } // tap the table to skip the shake
+  if (G.P[0].out || !inOwnCup(e.clientX, e.clientY)) return;
+  if (phase === 'reveal' || phase === 'result') return;
+  if (S.peek === 'tap') peek = !peek; else { peek = true; peekPid = e.pointerId; try { cv.setPointerCapture(e.pointerId); } catch (x) {} }
   if (peek) { tone(300, 0.06, 'triangle', 0.08); }
 });
-['pointerup', 'pointercancel'].forEach(function (t) { cv.addEventListener(t, function () { if (S.peek !== 'tap' && phase !== 'reveal' && phase !== 'result') peek = false; }); });
+// hold mode: only the finger that holds the cup closes it again
+['pointerup', 'pointercancel'].forEach(function (t) { cv.addEventListener(t, function (e) { if (S.peek !== 'tap' && phase !== 'reveal' && phase !== 'result' && e.pointerId === peekPid) { peek = false; peekPid = null; } }); });
 
 // ---------- loop ----------
 var paused = false, last = 0, raf = 0;
@@ -1533,13 +1694,16 @@ function init() {
 // test hook (player's own information only)
 window.__ld = {
   state: function () {
-    if (!G) return { phase: phase };
+    if (!G) return { phase: phase, saved: !!loadMatch() };
     var l = LD.last(G), adv = null;
     if (G.phase === 'bid' && G.turn === 0 && phase === 'bid') { var a = LD.think(LD.viewFor(G, 0, { lvl: 1, pers: LD.PERS[0], seed: G.round * 31 + G.bids.length })); adv = a.act === 'call' ? { act: 'call' } : { act: 'bid', q: a.q, f: a.f }; }
     return { phase: phase, gphase: G.phase, myTurn: myReady && G.turn === 0 && phase === 'bid' && G.phase === 'bid', hand: G.P[0].hand.slice(), last: l && { q: l.q, f: l.f, p: l.p }, sel: { q: sel.q, f: sel.f },
-      total: LD.totalDice(G), round: G.round, lives: G.P.map(function (p) { return G.o.mode === 'dice' ? p.dice : p.lives; }), out: G.P[0].out, winner: G.winner, advice: adv, ownLift: ownLift, cup: Lc.own && { x: Lc.own.x, y: Lc.own.y - Lc.own.cupH * 0.5 }, overVisible: !$('ovEnd').hidden };
+      total: LD.totalDice(G), round: G.round, lives: G.P.map(function (p) { return G.o.mode === 'dice' ? p.dice : p.lives; }), out: G.P[0].out, winner: G.winner, advice: adv, ownLift: ownLift, cup: Lc.own && { x: Lc.own.x, y: Lc.own.y - Lc.own.cupH * 0.5 }, overVisible: !$('ovEnd').hidden,
+      saved: !!loadMatch(), practice: practice, kind: kind, bids: G.bids.length, clock: clock, shakeEndBy: shakeEndBy, matchDone: matchDone };
   },
-  thinkMs: thinkMs, worker: function () { return !!W; }, newMatch: newMatch
+  thinkMs: thinkMs, worker: function () { return !!W; }, newMatch: newMatch,
+  // test-only: lets tests reach the end of a match or fill the history strip without playing every round
+  debug: { G: function () { return G; }, recordEnd: recordEnd, addHist: addHist }
 };
 init();
 })();
