@@ -28,7 +28,7 @@ function genCheck() {
       for (let a = 0; a < 360; a++) { const tp = HD.typeAt(L, a + 0.5, 0); if (tp === HD.SAFE) safe++; else if (tp === HD.LAVA) lava++; }
       if (!L.bonus) { if (safe / 360 < minSafe) { minSafe = safe / 360; minSafeAt = [s, n]; } }
       if (s === 1) ramp[n] = { gap: L.bonus ? 0 : HD.gapWidth(n), p: HD.lavaFrac(n), lava: lava / 360, diff: HD.difficulty(n),
-        flow: L.lavas.some(v => v.sp), osc: L.osc > 0, trap: L.trapC != null, spin: L.spin !== 0, bonus: L.bonus };
+        flow: L.lavas.some(v => v.sp || v.sw), osc: L.osc > 0, fast: L.osc >= 0.5, drift: L.dA > 0, trap: L.trapC != null, spin: L.spin !== 0, bonus: L.bonus };
       if (L.bonus) continue;
       if (L.trapC != null) {
         traps++;
@@ -41,7 +41,7 @@ function genCheck() {
       gaps++;
       let blocked = 0, longest = 0;
       for (let t = 0; t < 30; t += 0.05) {
-        const w = HD.gapW(L, t), c = L.g + L.spin * t;
+        const w = HD.gapW(L, t), c = HD.gapC(L, 0, t) + L.spin * t;
         let ok = false;
         for (let d = -w / 2 + 3; d <= w / 2 - 3 && !ok; d += 1.5) {
           const a = c + d;
@@ -51,7 +51,7 @@ function genCheck() {
         if (!ok) { blocked += 0.05; longest = Math.max(longest, blocked); } else blocked = 0;
       }
       if (longest > worstBlocked) { worstBlocked = longest; worstBlockedAt = [s, n]; }
-      const flowing = M.lavas.some(v => v.sp) || M.spin || L.spin;
+      const flowing = M.lavas.some(v => v.sp || v.sw) || M.spin || L.spin;
       if (!flowing && longest > 0) staticBlocked++;
       if (longest > 4) { fails++; failWait++; }
       // human-limit rule: for every landing angle, a non-lava angle on M is reachable within (0.55-0.15)*400 = 160 deg
@@ -68,14 +68,14 @@ function genCheck() {
   console.log('  minimum safe slab share', (minSafe * 100).toFixed(1) + '% at', minSafeAt);
   console.log('  trap layers', traps, '| decoy gap fully over lava:', trapOk);
   console.log('  ramp (seed 1):  n  gap°  p(formula)  lava-share  難度  new elements');
-  for (const n of [1, 10, 14, 15, 24, 25, 34, 35, 49, 54, 55, 79, 80, 99, 149, 199, 299]) {
+  for (const n of [1, 3, 4, 10, 14, 15, 24, 27, 34, 35, 40, 49, 54, 55, 79, 80, 99, 101, 149, 151, 199, 201, 299]) {
     const r = ramp[n]; if (!r) continue;
-    const el = [r.flow && '流動熔岩', r.osc && '開合缺口', r.trap && '陷阱', r.spin && '反向自轉', r.bonus && '彩蛋平台'].filter(Boolean).join(',');
+    const el = [r.flow && '流動熔岩', r.osc && '開合缺口', r.trap && '陷阱', r.spin && '反向自轉', r.fast && '快速開合', r.drift && '漂移缺口', r.bonus && '彩蛋平台'].filter(Boolean).join(',');
     console.log('   ', String(n).padStart(4), r.gap.toFixed(1).padStart(5), r.p.toFixed(3).padStart(8), (r.lava * 100).toFixed(1).padStart(9) + '%', String(r.diff).padStart(4), ' ', el);
   }
   // feature onset over all seeds
   const T = HD.makeTower(12345, false); const first = {};
-  for (let n = 1; n <= 200; n++) { const L = T.get(n); if (L.lavas.some(v => v.sp && !v.trap) && !first.flow) first.flow = n; if (L.osc && !first.osc) first.osc = n; if (L.trapC != null && !first.trap) first.trap = n; if (L.spin && !first.spin) first.spin = n; }
+  for (let n = 1; n <= 200; n++) { const L = T.get(n); if (L.lavas.some(v => (v.sp || v.sw) && !v.trap) && !first.flow) first.flow = n; if (L.osc && !first.osc) first.osc = n; if (L.trapC != null && !first.trap) first.trap = n; if (L.spin && !first.spin) first.spin = n; }
   console.log('  first layer with: flowing lava', first.flow, '| opening gaps', first.osc, '| trap', first.trap, '| counter-spin', first.spin);
   return fails === 0 && trapOk === traps;
 }
