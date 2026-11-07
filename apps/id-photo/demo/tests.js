@@ -217,9 +217,14 @@ const openPhoto = async (p, name, buf, type = 'image/jpeg') => {
   {
     const { ctx, p } = await open(390, 844); await p.evaluate(() => __id.goStep(3)); await p.waitForFunction(() => __id.S.lastLayout && __id.S.lastLayout.rot);
     const it = await p.evaluate(() => __id.S.lastLayout.items.find(i => i.rot));
-    const r = await p.evaluate(it => { const c = document.querySelector('#paper'), x = c.getContext('2d'), s = c.width / c.clientWidth, X0 = Math.round(it.x / 25.4 * 300), Y0 = Math.round(it.y / 25.4 * 300);
-      let n = 0; for (let k = 0; k < 120; k++) { const d = x.getImageData(X0 + k, Y0 + k, 1, 1).data; if (d[2] > 120 && d[0] < 80) n++; } return n / s; }, it);
-    assert(r * Math.SQRT2 >= 12, `↻ 標記在預覽上約 ${(r * Math.SQRT2).toFixed(0)}px（原約 6px）`);
+    // measure the blue disc's bounding box (independent of what is drawn inside it) after the last pending redraw
+    await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const r = await p.evaluate(it => { const c = document.querySelector('#paper'), s = c.width / c.getBoundingClientRect().width, X0 = Math.round(it.x / 25.4 * 300), Y0 = Math.round(it.y / 25.4 * 300), N = 160;
+      const d = c.getContext('2d').getImageData(X0, Y0, N, N).data; let x0 = N, x1 = -1, y0 = N, y1 = -1, white = 0;
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const i = (y * N + x) * 4; if (d[i + 2] > 120 && d[i] < 80 && d[i + 2] - d[i] > 60) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const i = (y * N + x) * 4; if (d[i] > 230 && d[i + 1] > 230 && d[i + 2] > 230) white++; }
+      return { w: (x1 - x0 + 1) / s, h: (y1 - y0 + 1) / s, white, s }; }, it);
+    assert(r.w >= 12 && r.w <= 24 && Math.abs(r.w - r.h) < 1.5 && r.white > 50, `↻ 標記在預覽上約 ${r.w.toFixed(1)}×${r.h.toFixed(1)}px（原約 6px），內有白色箭頭 ${r.white}px`);
     await ctx.close();
   }
 
