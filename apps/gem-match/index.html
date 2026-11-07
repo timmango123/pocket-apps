@@ -124,7 +124,8 @@ body.land .pips{display:none}
 .node.cur{animation:curp 1.4s ease-in-out infinite}
 @keyframes curp{50%{transform:scale(1.09);box-shadow:0 4px 0 #0b5577,0 0 0 8px #46d3e655}}
 .node.lock{background:radial-gradient(circle at 35% 30%,#6a8295,#3b5366 70%);box-shadow:0 4px 0 #26394a;color:#c5d3de;border-color:#ffffff22}
-.node.lock svg{width:20px;height:20px;stroke:#c5d3de;fill:none;stroke-width:2.4}
+.node.lock svg{position:static;display:block;width:15px;height:15px;margin:1px auto 0;stroke:#c5d3de;fill:none;stroke-width:2.6}
+.node.lock .n{font-size:18px;opacity:.85}
 .node.daily{background:radial-gradient(circle at 35% 30%,#ffb3c7,#e85d8a 60%,#a8335c);box-shadow:0 4px 0 #7d2346,0 8px 16px #0005}
 .node:active{transform:scale(.94)}
 .toast{position:fixed;left:50%;top:calc(var(--sat) + 132px);transform:translateX(-50%);z-index:8;background:#021a2ee6;color:#fff;padding:10px 16px;border-radius:14px;font-size:14px;font-weight:700;width:max-content;max-width:90vw;text-align:center;pointer-events:none;transition:opacity .4s}
@@ -285,8 +286,26 @@ var MASKS = [
   function(x, y, w){ var c = (w - 1) / 2; return (y === 0 && (x < 2 || x > w - 3)) || (y === w - 1 && x === c); },
   function(x, y, w){ return (x === 2 || x === w - 3) && (y === 2 || y === w - 3); },
   function(x, y, w){ var c = (w - 1) / 2; return x === c && (y === 3 || y === 5); },
-  function(x, y, w){ var c = (w - 1) / 2; return (Math.abs(x - c) === 2 && Math.abs(y - c) === 2) || (x === c && y === c); }
+  function(x, y, w){ var c = (w - 1) / 2; return (Math.abs(x - c) === 2 && Math.abs(y - c) === 2) || (x === c && y === c); },
+  function(x, y, w){ var c = (w - 1) / 2; return Math.abs(x - c) + Math.abs(y - c) <= 1; },
+  function(x, y, w){ var c = (w - 1) / 2; return (x === 2 || x === w - 3) && Math.abs(y - c) <= 1; },
+  function(x, y, w){ var c = (w - 1) / 2; return Math.abs(x - c) === 1 && Math.abs(y - c) === 1; },
+  function(x, y, w){ return (x === 1 || x === w - 2) && (y === 1 || y === w - 2); },
+  function(x, y, w){ return (x === 0 && y <= 2) || (x === w - 1 && y >= w - 3); },
+  function(x, y, w){ var c = (w - 1) / 2; return (y === w - 1 && Math.abs(x - c) <= 1) || (y === 0 && (x === 0 || x === w - 1)); },
+  function(x, y, w){ var c = (w - 1) / 2; return (y === c && Math.abs(x - c) === 2) || (x === c && Math.abs(y - c) === 2); }
 ];
+// levels 50-60 keep their original shapes; from 61 on every mask (mirrored by level) is used, ring levels only interior ones
+var RING_SAFE = [4, 5, 6, 7, 8, 9, 10, 13];
+function maskOf(n){
+  if (n < 50) return null;
+  if (n < 61) return { i: n % 7, fx: 0, fy: 0 };
+  var i = n >= 85 ? RING_SAFE[(n * 3) % RING_SAFE.length] : (n * 5) % MASKS.length;
+  // every third level adds a second, small interior shape on top
+  var j = n % 3 === 0 ? RING_SAFE[(n * 5 + 3) % RING_SAFE.length] : -1;
+  if (j === i || (j === 7 && (i === 9 || i === 13))) j = RING_SAFE[(n * 5 + 6) % RING_SAFE.length];
+  return { i: i, j: j === i ? -1 : j, fx: (n >> 1) & 1, fy: n & 1 };
+}
 var PATS = [
   function(x, y, c){ return Math.max(Math.abs(x - c), Math.abs(y - c)); },
   function(x, y, c){ return 2 * c - y; },
@@ -302,8 +321,8 @@ function levelDef(n, k, star, madj){
   var L = { n: n, w: w, h: h, N: N, colors: n <= 20 ? 5 : 6, seed: (n * 2654435761 + 97) | 0, kinds: goalKinds(n) };
   var mask = new Uint8Array(N).fill(1);
   if (n >= 50) {
-    var mi = n >= 85 ? [4, 5, 6][n % 3] : n % 7;
-    for (i = 0; i < N; i++) if (MASKS[mi](i % w, (i / w) | 0, w)) mask[i] = 0;
+    var mo = maskOf(n);
+    for (i = 0; i < N; i++) { x = i % w; y = (i / w) | 0; var tx = mo.fx ? w - 1 - x : x, ty = mo.fy ? h - 1 - y : y; if (MASKS[mo.i](tx, ty, w) || (mo.j >= 0 && MASKS[mo.j](tx, ty, w))) mask[i] = 0; }
   }
   L.mask = mask;
   L.ring = null;
@@ -396,6 +415,8 @@ function goalLeft(S, g){
   if (g.t === 'stone') { for (i = 0; i < S.L.N; i++) if (S.stone[i]) n++; return n; }
   return 0;
 }
+// what the fail card shows for a goal that is still open: points still missing for a score goal, otherwise the count left
+function leftText(g, left){ return g.t === 'score' ? '還差 ' + left + ' 分' : String(left); }
 function goalsMet(S){ for (var i = 0; i < S.L.goals.length; i++) if (goalLeft(S, S.L.goals[i]) > 0) return false; return true; }
 function isAdj(L, a, b){ var d = Math.abs(a - b); return (d === 1 && ((a / L.w) | 0) === ((b / L.w) | 0)) || d === L.w; }
 function matchAt(S, i){
@@ -667,7 +688,7 @@ function simulate(L, seed, rec){
 }
 /*CORE-END*/
 
-var TUNE = [[131,5700,1,0],[150,6250,1,0],[150,6050,1,0],[129,5400,1,0],[144,5900,2,0],[108,5650,2,0],[106,5500,2,0],[141,5750,2,0],[88,5500,2,0],[103,5550,2,0],[121,5050,2,0],[146,4400,2,0],[106,5400,2,0],[172,4350,2,0],[134,5650,2,0],[148,4450,2,0],[89,4700,2,0],[161,4650,2,0],[122,5300,2,0],[157,4500,2,0],[51,2500,2,0],[110,2500,3,0],[49,2500,3,0],[99,2800,3,-1],[54,2500,3,0],[58,2000,3,-1],[71,3150,3,0],[102,2650,3,0],[53,2500,3,0],[68,2400,3,0],[53,2600,4,0],[64,2400,4,0],[59,2650,4,0],[120,2500,4,0],[155,1000,4,-1],[127,2550,4,0],[60,2750,4,0],[195,650,4,0],[124,2550,4,0],[177,1200,5,-1],[100,2850,5,-1],[50,2450,5,0],[109,1550,5,0],[133,3150,5,0],[123,1700,5,-1],[102,3150,5,0],[68,3000,5,0],[108,1650,5,-1],[29,2900,5,0],[130,1500,5,0],[117,2700,5,0],[59,2850,6,0],[80,2000,6,1],[51,2050,6,0],[54,2550,6,1],[104,2450,6,1],[50,2100,6,0],[71,1800,6,-1],[91,2500,6,0],[72,2350,6,0],[77,2400,6,0],[33,1650,6,0],[100,2800,6,0],[84,2150,6,0],[94,1950,6,0],[89,2450,6,0],[53,1650,7,0],[100,1800,7,0],[57,1650,7,1],[89,2300,7,0],[36,1550,7,0],[114,2350,7,0],[104,2550,7,0],[216,1400,7,0],[63,1550,7,0],[36,1750,7,0],[136,2450,7,0],[88,2400,8,0],[551,1500,8,0],[72,2250,8,-1],[120,1900,8,0],[86,2000,8,0],[68,1500,8,0],[92,1850,8,0],[92,2700,8,0],[49,1850,8,0],[121,2250,8,-1],[72,2100,8,0],[198,1650,8,0],[64,2100,8,0],[159,2350,8,0],[107,2300,8,1],[79,1600,8,0],[267,1600,8,1],[62,2050,8,0],[73,1500,8,0],[100,2400,9,0],[55,1400,9,1],[109,1900,9,1],[119,2600,9,1]];
+var TUNE = [[131,5700,1,0],[150,6250,1,0],[150,6050,1,0],[129,5400,1,0],[144,5900,2,0],[108,5650,2,0],[106,5500,2,0],[141,5750,2,0],[88,5500,2,0],[103,5550,2,0],[121,5050,2,0],[146,4400,2,0],[106,5400,2,0],[172,4350,2,0],[134,5650,2,0],[148,4450,2,0],[89,4700,2,0],[161,4650,2,0],[122,5300,2,0],[157,4500,2,0],[51,2500,2,0],[110,2500,3,0],[49,2500,3,0],[99,2800,3,-1],[54,2500,3,0],[58,2000,3,-1],[71,3150,3,0],[102,2650,3,0],[53,2500,3,0],[68,2400,3,0],[53,2600,4,0],[64,2400,4,0],[59,2650,4,0],[120,2500,4,0],[155,1000,4,-1],[127,2550,4,0],[60,2750,4,0],[195,650,4,0],[124,2550,4,0],[177,1200,5,-1],[100,2850,5,-1],[50,2450,5,0],[109,1550,5,0],[133,3150,5,0],[123,1700,5,-1],[102,3150,5,0],[68,3000,5,0],[108,1650,5,-1],[29,2900,5,0],[130,1500,5,0],[117,2700,5,0],[59,2850,6,0],[80,2000,6,1],[51,2050,6,0],[54,2550,6,1],[104,2450,6,1],[50,2100,6,0],[71,1800,6,-1],[91,2500,6,0],[72,2350,6,0],[77,2800,6,3],[85,1100,6,-4],[22,5000,6,5],[84,2500,6,3],[94,2050,6,1],[25,4100,6,5],[38,2200,7,5],[100,2100,7,3],[39,2100,7,6],[89,2450,7,1],[36,1800,7,3],[37,3200,7,5],[97,3300,7,5],[184,1800,7,5],[61,2050,7,5],[53,1450,7,-2],[99,3200,7,5],[83,3150,8,5],[551,1900,8,4],[53,3000,8,4],[74,2500,8,5],[86,2400,8,3],[68,1700,8,2],[54,2350,8,4],[92,3050,8,2],[49,2100,8,2],[121,2750,8,2],[72,2250,8,1],[218,1750,8,1],[64,2500,8,3],[159,2700,8,2],[107,2600,8,3],[74,2150,8,5],[198,2050,8,5],[75,2200,8,1],[50,1950,8,4],[100,3100,9,4],[55,1500,9,2],[109,2550,9,6],[119,3550,9,6]];
 </script>
 <script>
 (function(){
@@ -829,6 +850,7 @@ function makeSprite(g0, size){
     } else if (c === 5) {
       var pg = g.createRadialGradient(-r*0.3, -r*0.32, r*0.05, 0, 0, r*0.85); pg.addColorStop(0, '#ffffff'); pg.addColorStop(0.5, '#efe9fb'); pg.addColorStop(0.85, '#c7bbe0'); pg.addColorStop(1, '#9d8fbf');
       g.fillStyle = pg; g.beginPath(); g.arc(0, 0, r*0.8, 0, Math.PI*2); g.fill();
+      g.lineWidth = Math.max(1.2, r*0.09); g.strokeStyle = '#6f5f9e'; g.stroke();
       var sh = g.createLinearGradient(-r, r, r, -r); sh.addColorStop(0.3, '#ffd6ec00'); sh.addColorStop(0.5, '#ffd6ec66'); sh.addColorStop(0.7, '#c6f1ff00'); g.fillStyle = sh; g.fill();
     } else {
       if (c === 3) g.rotate(-0.35);
@@ -865,6 +887,18 @@ function makeSprite(g0, size){
   return cvs;
 }
 function sprite(g){ var k = gemKey(g); if (!cache[k]) cache[k] = makeSprite(g, cacheSize); return cache[k]; }
+// every sprite a level can show is drawn ahead of time, a few per frame, so a big combo never builds canvases mid-animation
+var warmQ = [];
+function queueWarm(){
+  warmQ = [];
+  for (var c = 0; c < 6; c++) for (var s = 0; s < 4; s++) warmQ.push(mkCode(c, s, 0));
+  warmQ.push(mkCode(-1, 4, 0), mkCode(-1, 0, 1));
+}
+function warmStep(){
+  if (!L || !cacheSize) return;
+  for (var n = 0; n < 4 && warmQ.length; n++) { var g = warmQ.shift(); if (typeof g === 'number') sprite(g); }
+  if (!warmQ.length && L.stone && !stoneCache['1_' + Math.round(board.cs*DPR)]) { stoneSprite(1, Math.round(board.cs*DPR)); stoneSprite(2, Math.round(board.cs*DPR)); }
+}
 var stoneCache = {};
 function stoneSprite(hp, size){
   var k = hp + '_' + size; if (stoneCache[k]) return stoneCache[k];
@@ -915,6 +949,9 @@ function drawBomb(g, x, y, s, t){
 /* ---------------- state ---------------- */
 var levelN = 1, L = null, S = null, VS = null, status = 'title', busy = false, mode = '', daily = null;
 var spr = {}, sel = -1, drag = null, hintPair = null, idleT = 0, forcedSeed = null, attemptSeed = 0;
+// runId changes whenever the level is left or restarted: a running move coroutine sees the change after its next await and stops.
+// queued = the last swipe/tap made while an animation was playing; it runs as soon as the board is idle again.
+var runId = 0, queued = null, dropped = 0, winInfo = null, pausedAt = -1;
 var board = { x: 0, y: 0, cs: 40 }, shake = 0, flash = 0, beltPhase = 0;
 var parts = [], fxs = [], floats = [], anims = [];
 var bubbles = []; for (var bi = 0; bi < 34; bi++) bubbles.push({ x: Math.random(), y: Math.random(), r: 1 + Math.random()*4, v: 0.02 + Math.random()*0.05, w: Math.random()*6 });
@@ -939,14 +976,18 @@ var now = 0;
 function tw(dur, fn){ return new Promise(function(res){ if (RM()) dur *= 0.6; anims.push({ t0: now, d: Math.max(1, dur), fn: fn, res: res }); }); }
 function wait(ms){ return tw(ms, function(){}); }
 function stepAnims(){
+  if (status === 'paused') { if (pausedAt < 0) pausedAt = now; return; }
+  if (pausedAt >= 0) { var dp = now - pausedAt; pausedAt = -1; for (var k = 0; k < anims.length; k++) anims[k].t0 += dp; }
   for (var i = anims.length - 1; i >= 0; i--) { var a = anims[i], p = Math.min(1, (now - a.t0) / a.d); a.fn(p); if (p >= 1) { anims.splice(i, 1); a.res(); } }
 }
 function easeOut(p){ return 1 - (1-p)*(1-p); }
 function easeInOut(p){ return p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p + 2, 2)/2; }
 
 /* ---------------- particles / fx ---------------- */
+var partBudget = 160;
 function burst(x, y, color, n, spd, kind){
   if (RM()) n = Math.ceil(n/3);
+  n = Math.min(n, partBudget); partBudget -= n;
   for (var i = 0; i < n && parts.length < 300; i++) { var a = Math.random()*Math.PI*2, v = (0.3 + Math.random())*spd;
     parts.push({ x: x, y: y, vx: Math.cos(a)*v, vy: Math.sin(a)*v - spd*0.3, life: 0, max: 0.5 + Math.random()*0.5, r: board.cs*(0.04 + Math.random()*0.07), c: color, k: kind || 'bub' }); }
 }
@@ -1049,9 +1090,10 @@ function playFx(f){
   else if (f.k === 'rain') { SFX.rain(); fxs.push({ k: 'rain', i: f.i, t: f.t, t0: now, d: 520 }); flash = Math.max(flash, 0.25); }
   else if (f.k === 'all') { SFX.rain(); SFX.boom(); fxs.push({ k: 'all', t0: now, d: 700 }); flash = 0.8; shake = 1; }
 }
-async function playEvents(ev){
-  for (var i = 0; i < ev.length; i++) { var e = ev[i]; if (PLAY[e.t]) await PLAY[e.t](e); }
+async function playEvents(ev, my){
+  for (var i = 0; i < ev.length; i++) { if (my !== runId) return; var e = ev[i]; if (PLAY[e.t]) await PLAY[e.t](e); }
 }
+function abandonRun(){ runId++; anims.length = 0; queued = null; drag = null; busy = false; pausedAt = -1; sset('stats', stats); }
 
 /* ---------------- layout ---------------- */
 var land = false;
@@ -1067,12 +1109,13 @@ function layout(){
   else {
     var gb = $('goalbar').getBoundingClientRect(), bt = $('bottom').getBoundingClientRect();
     var top = $('goalbar').classList.contains('hidden') ? 120 : gb.bottom + 10, bot = $('bottom').classList.contains('hidden') ? H - 70 : bt.top - 4;
-    area = { x: 8, y: top, w: W - 16, h: bot - top };
+    area = { x: 4, y: top, w: W - 8, h: bot - top };
   }
   var cs = Math.floor(Math.min(area.w / L.w, area.h / L.h, 66));
   board.cs = cs; board.x = Math.round(area.x + (area.w - cs*L.w)/2); board.y = Math.round(area.y + Math.max(0, (area.h - cs*L.h)/2));
   var size = Math.round(cs*DPR*1.08);
   if (size !== cacheSize) { cacheSize = size; cache = {}; stoneCache = {}; }
+  queueWarm();
 }
 
 /* ---------------- render ---------------- */
@@ -1181,7 +1224,8 @@ var running = true;
 function frame(t){
   if (!running) return;
   var dt = Math.min(0.05, (t - (lastT || t))/1000); lastT = t; now = t;
-  stepAnims();
+  partBudget = 160;
+  stepAnims(); warmStep();
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   drawBg(t);
   if (L && (status === 'play' || status === 'over' || status === 'paused')) drawBoard(t); else drawTitleGems(t, dt);
@@ -1233,21 +1277,22 @@ function startLevel(n, opts){
   levelN = n; L = daily ? daily.L : getDef(n);
   attemptSeed = forcedSeed != null ? forcedSeed : daily ? daily.seed : (Math.random()*4294967296) | 0;
   forcedSeed = null;
-  S = newGame(L, attemptSeed); spr = {}; parts.length = 0; fxs.length = 0; floats.length = 0; anims.length = 0;
-  sel = -1; drag = null; hintPair = null; mode = ''; busy = false; idleT = now;
+  abandonRun(); winInfo = null;
+  S = newGame(L, attemptSeed); spr = {}; parts.length = 0; fxs.length = 0; floats.length = 0;
+  sel = -1; hintPair = null; mode = ''; idleT = now;
   status = 'play'; showOnly(null); setPlayUI(true); buildGoals(); layout(); syncSprites();
   // drop-in intro animation
   for (var id in spr) { var o = spr[id]; (function(o, ty){ o.y = ty - L.h - 1; var dl = (L.h - ty)*30 + Math.random()*60; tw(420 + dl, function(p){ var q = Math.max(0, (p*(420 + dl) - dl)/420); o.y = ty - (L.h + 1)*(1 - q*q); }); })(o, o.y); }
-  busy = true; wait(700).then(function(){ if (S && !S.over) busy = false; });
+  busy = true; var my = runId; wait(700).then(function(){ if (my === runId && S && !S.over) setIdle(); });
   var m = null; MECH.forEach(function(x){ if (x.lv === n && !daily) m = x; });
   if (m && !introSeen[m.key]) { introSeen[m.key] = 1; sset('intro', introSeen); showIntro(m); }
   else toast(goalText());
 }
 function goalText(){
-  return L.goals.map(function(g){ return g.t === 'score' ? '得到 ' + g.q + ' 分' : g.t === 'collect' ? '收集 ' + g.q + ' 個' + GEMN[g.c] : g.t === 'ice' ? '打破所有冰塊' : g.t === 'stone' ? '擊碎所有礁石' : '運送 ' + g.q + ' 顆金珍珠'; }).join('、') + '（' + L.moves + ' 步）';
+  return L.goals.map(function(g){ return g.t === 'score' ? '得到 ' + g.q + ' 分' : g.t === 'collect' ? '收集 ' + g.q + ' 個' + GEMN[g.c] : g.t === 'ice' ? '打破所有冰塊' : g.t === 'stone' ? '擊碎所有礁石' : '運送 ' + g.q + ' 顆金珍珠'; }).join('、') + '（' + L.moves + '\u00a0步）';
 }
 function showIntro(m){
-  status = 'paused';
+  status = 'paused'; if (pausedAt < 0) pausedAt = now;
   $('iTitle').textContent = '新玩法：' + m.name;
   $('iBody').innerHTML = '';
   var d = document.createElement('div'); d.className = 'mech'; d.appendChild(iconCanvas(m.icon, 56));
@@ -1255,37 +1300,54 @@ function showIntro(m){
   var p = document.createElement('p'); p.textContent = '本關目標：' + goalText(); $('iBody').appendChild(p);
   showOnly('intro');
 }
+function setIdle(){
+  busy = false;
+  if (!queued || status !== 'play' || !S || S.over) { queued = null; return; }
+  var q = queued; queued = null;
+  // replay only if the gem the finger was on is the one that settled in that cell; otherwise the swipe was aimed at another gem
+  var c = q.tap != null ? q.tap : q.a;
+  if (!S.cell[c] || gid(S.cell[c]) !== q.vg) { dropped++; return; }
+  if (q.tap != null) tapCell(q.tap); else attempt(q.a, q.b);
+}
 async function attempt(a, b){
   if (busy || S.over || a < 0 || b < 0) return;
   hintPair = null; idleT = now; sel = -1;
   if (!S.cell[a] || !S.cell[b]) return;
-  busy = true;
+  busy = true; var my = runId;
   if (!validSwap(S, a, b)) {
     var oa = spr[gid(S.cell[a])], ob = spr[gid(S.cell[b])], A = cellXY(a), B = cellXY(b); SFX.bad(); buzz(12);
     await tw(220, function(p){ var q = Math.sin(p*Math.PI)*0.45; if (oa) { oa.x = A[0] + (B[0]-A[0])*q; oa.y = A[1] + (B[1]-A[1])*q; } if (ob) { ob.x = B[0] + (A[0]-B[0])*q; ob.y = B[1] + (A[1]-B[1])*q; } });
-    syncSprites(); busy = false; return;
+    if (my !== runId) return;
+    syncSprites(); setIdle(); return;
   }
   var ev = []; trySwap(S, a, b, ev); VS._last = 0;
-  await playEvents(ev); syncSprites(); idleT = now;
-  await afterMove();
-  busy = false;
+  var bev = commitResult();
+  await playEvents(ev, my); if (my !== runId) return;
+  syncSprites(); idleT = now;
+  await afterMove(my, bev); if (my !== runId) return;
+  setIdle();
 }
-async function afterMove(){
+// Called right after the rules resolve a move (before any animation): a win is scored (bonus included) and saved at once,
+// so leaving or reloading during the celebration never loses it. Returns the bonus events still to be shown.
+function commitResult(){
+  if (S.over !== 'win') { if (S.over) sset('stats', stats); return null; }
+  var bev = []; if (S.moves > 0) bonus(S, bev);
+  recordWin(); return bev;
+}
+async function afterMove(my, bev){
   if (S.over === 'win') {
     status = 'over'; setPlayUI(true);
-    if (S.moves > 0) { floatText('Bonus！', board.x + board.cs*L.w/2, board.y + board.cs*L.h*0.45, board.cs*1.2, '#ffe27a'); await wait(600);
-      var ev = []; bonus(S, ev); await playEvents(ev); syncSprites(); }
-    await wait(300); showWin();
+    if (bev && bev.length) { floatText('Bonus！', board.x + board.cs*L.w/2, board.y + board.cs*L.h*0.45, board.cs*1.2, '#ffe27a'); await wait(600); if (my !== runId) return;
+      await playEvents(bev, my); if (my !== runId) return; syncSprites(); }
+    await wait(300); if (my !== runId) return; showWin();
   } else if (S.over) {
-    status = 'over'; SFX.lose(); await wait(400); showFail();
+    status = 'over'; SFX.lose(); await wait(400); if (my !== runId) return; showFail();
   }
   sset('stats', stats);
 }
 function starCount(){ if (S.extra) return 0; var st = L.star; return S.score >= st*2.2 ? 3 : S.score >= st*1.5 ? 2 : 1; }
-function showWin(){
+function recordWin(){
   var stars = starCount();
-  SFX.whale(); buzz([30, 60, 30]);
-  for (var i = 0; i < 4; i++) setTimeout(function(){ burst(W*(0.2 + Math.random()*0.6), H*(0.2 + Math.random()*0.3), ['#ffd25e', '#46d3e6', '#ff8aa8', '#7cf0a8'][Math.floor(Math.random()*4)], 26, Math.min(W, H)*0.5, 'spark'); }, i*220);
   stats.wins++;
   var best = 0;
   if (daily) {
@@ -1297,6 +1359,13 @@ function showWin(){
     if (isNew3) { hammers++; sset('hammers', hammers); }
   }
   sset('stats', stats);
+  winInfo = { stars: stars, best: best };
+}
+function showWin(){
+  if (!winInfo) recordWin();
+  var stars = winInfo.stars, best = winInfo.best, my = runId;
+  SFX.whale(); buzz([30, 60, 30]);
+  for (var i = 0; i < 4; i++) setTimeout(function(){ if (my === runId) burst(W*(0.2 + Math.random()*0.6), H*(0.2 + Math.random()*0.3), ['#ffd25e', '#46d3e6', '#ff8aa8', '#7cf0a8'][Math.floor(Math.random()*4)], 26, Math.min(W, H)*0.5, 'spark'); }, i*220);
   $('wTitle').textContent = stars === 3 ? '完美通關！' : S.extra ? '驚險過關！' : '過關！';
   var sh = ''; for (var k = 0; k < 3; k++) sh += k < stars ? '<span class="on" style="animation-delay:' + (0.25 + k*0.28) + 's">★</span>' : '<span>★</span>'; $('wStars').innerHTML = sh;
   $('wScore').textContent = S.score; $('wBest').textContent = best;
@@ -1309,7 +1378,7 @@ function showFail(){
   $('fTitle').textContent = bomb ? '水雷爆炸了！' : '步數用完了';
   $('fMsg').textContent = bomb ? '水雷倒數歸零前要把它消除。' : '還差這些目標：';
   var fg = $('fGoals'); fg.innerHTML = '';
-  L.goals.forEach(function(g){ var left = goalLeft(S, g); var d = document.createElement('div'); d.className = 'goal'; d.appendChild(iconCanvas(goalIcon(g), 34)); var s = document.createElement('span'); s.innerHTML = left > 0 ? String(left) : '<span class="ck">✓</span>'; d.appendChild(s); fg.appendChild(d); });
+  L.goals.forEach(function(g){ var left = goalLeft(S, g); var d = document.createElement('div'); d.className = 'goal'; d.appendChild(iconCanvas(goalIcon(g), 34)); var s = document.createElement('span'); if (left > 0) s.textContent = leftText(g, left); else s.innerHTML = '<span class="ck">✓</span>'; d.appendChild(s); fg.appendChild(d); });
   $('fExtra').classList.toggle('hidden', S.extra > 0 || bomb);
   showOnly('fail');
 }
@@ -1329,11 +1398,11 @@ function cellAt(px, py){
 function neighbor(i, dx, dy){ var x = i % L.w + dx, y = ((i / L.w) | 0) + dy; if (x < 0 || y < 0 || x >= L.w || y >= L.h) return -1; return y*L.w + x; }
 cv.addEventListener('pointerdown', function(e){
   audio();
-  if (status !== 'play' || busy || !L) return;
+  if (status !== 'play' || !L || (busy && (S.over || mode === 'hammer'))) return;
   var i = cellAt(e.clientX, e.clientY); idleT = now; hintPair = null;
-  if (i < 0) { sel = -1; return; }
+  if (i < 0) { if (!busy) sel = -1; return; }
   if (mode === 'hammer') { useHammer(i); return; }
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, i: i, moved: false };
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, i: i, moved: false, vg: busy ? gemUnder(e.clientX, e.clientY) : 0 };
   try { cv.setPointerCapture(e.pointerId); } catch(err) {}
 });
 cv.addEventListener('pointermove', function(e){
@@ -1342,13 +1411,24 @@ cv.addEventListener('pointermove', function(e){
   if (Math.max(Math.abs(dx), Math.abs(dy)) < Math.min(18, board.cs*0.4)) return;
   drag.moved = true;
   var j = Math.abs(dx) > Math.abs(dy) ? neighbor(drag.i, dx > 0 ? 1 : -1, 0) : neighbor(drag.i, 0, dy > 0 ? 1 : -1);
-  if (j >= 0) attempt(drag.i, j);
+  if (j < 0) return;
+  if (busy) { if (!S.over) { queued = { a: drag.i, b: j, vg: drag.vg }; sel = -1; } return; }
+  attempt(drag.i, j);
 });
 function endDrag(e){
   if (!drag || drag.id !== e.pointerId) return;
   var d = drag; drag = null;
-  if (d.moved || busy) return;
-  var i = d.i;
+  if (d.moved) return;
+  if (busy) { if (!S.over) queued = { tap: d.i, vg: d.vg }; return; }
+  tapCell(d.i);
+}
+// id of the gem drawn under a screen point right now (mid-animation it can differ from the rules' board); 0 if none
+function gemUnder(px, py){
+  var gx = (px - board.x)/board.cs - 0.5, gy = (py - board.y)/board.cs - 0.5, bd = 0.5, best = 0;
+  for (var id in spr) { var o = spr[id]; if (o.a <= 0.5 || o.sc <= 0.5) continue; var d = Math.max(Math.abs(o.x - gx), Math.abs(o.y - gy)); if (d < bd) { bd = d; best = +id; } }
+  return best;
+}
+function tapCell(i){
   if (sel >= 0 && sel !== i && isAdj(L, sel, i)) { var s0 = sel; sel = -1; attempt(s0, i); }
   else if (sel === i) sel = -1;
   else if (S.cell[i]) { sel = i; SFX.click(); }
@@ -1357,12 +1437,15 @@ cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', function(e){ if (drag && drag.id === e.pointerId) drag = null; });
 async function useHammer(i){
   if (hammers <= 0) { mode = ''; updateHud(); return; }
-  busy = true; var ev = [];
+  busy = true; var ev = [], my = runId;
   if (!hammer(S, i, ev)) { busy = false; toast('這裡不能敲喔'); return; }
   mode = ''; hammers--; sset('hammers', hammers); VS._last = 0;
+  var bev = commitResult();
   var xy = cellXY(i); SFX.hammer(); shake = 0.6; burst(cx(xy[0]), cy(xy[1]), '#ffcf5a', 14, board.cs*3, 'spark');
-  await playEvents(ev); syncSprites(); idleT = now;
-  await afterMove(); busy = false;
+  await playEvents(ev, my); if (my !== runId) return;
+  syncSprites(); idleT = now;
+  await afterMove(my, bev); if (my !== runId) return;
+  setIdle();
 }
 
 /* ---------------- level select map ---------------- */
@@ -1381,7 +1464,7 @@ function buildMap(){
     b.style.left = pts[k-1][0] + '%'; b.style.top = (pts[k-1][1] - 31) + 'px'; b.dataset.n = k;
     b.setAttribute('aria-label', '第 ' + k + ' 關，難度 ' + d.D + (ok ? '' : '，未解鎖'));
     var ss = ''; for (var q = 0; q < 3; q++) ss += q < st ? '<span class="on">★</span>' : '★';
-    b.innerHTML = ok ? '<span class="n">' + k + '</span><span class="d">難度 ' + d.D + '</span><span class="st">' + ss + '</span>' : '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span class="d">難度 ' + d.D + '</span>';
+    b.innerHTML = ok ? '<span class="n">' + k + '</span><span class="d">難度 ' + d.D + '</span><span class="st">' + ss + '</span>' : '<span class="n">' + k + '</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span class="d">難度 ' + d.D + '</span>';
     b.style.setProperty('--dc', diffColor(d.D));
     if (isDone(k)) { done++; stars += st; }
     inn.appendChild(b);
@@ -1390,7 +1473,7 @@ function buildMap(){
   $('unlockSw').setAttribute('aria-checked', unlockAll ? 'true' : 'false');
 }
 function openSelect(){
-  status = 'select'; L = null; setPlayUI(false); showOnly('select'); buildMap();
+  abandonRun(); status = 'select'; L = null; setPlayUI(false); showOnly('select'); buildMap();
   var cur = highestUnlocked(); $('map').scrollTop = Math.max(0, 50 + (cur-1)*NODE_GAP - $('map').clientHeight/2);
 }
 $('mapin').addEventListener('click', function(e){
@@ -1404,7 +1487,8 @@ $('unlockSw').addEventListener('click', function(){ audio(); SFX.click(); unlock
 function on(id, fn){ $(id).addEventListener('click', function(e){ audio(); SFX.click(); fn(e); }); }
 on('tPlay', function(){ startLevel(highestUnlocked()); });
 on('tSelect', openSelect);
-on('sBack', function(){ status = 'title'; setPlayUI(false); showOnly('title'); });
+function toTitle(){ abandonRun(); status = 'title'; setPlayUI(false); showOnly('title'); }
+on('sBack', toTitle);
 on('tDaily', function(){
   var dl = dailyLevel(), Ld = levelDef(dl.n, TUNE[dl.n-1][0]/100, TUNE[dl.n-1][1], TUNE[dl.n-1][3]); Ld.D = TUNE[dl.n-1][2];
   var dd = sget('daily', {}); startLevel(dl.n, { daily: { L: Ld, seed: dl.seed } });
@@ -1431,19 +1515,20 @@ function showDex(){
 }
 on('hOk', function(){ showOnly(helpBack === 'pause' ? 'pause' : 'title'); });
 on('iOk', function(){ showOnly(null); status = 'play'; idleT = now; toast(goalText()); });
-on('bPause', function(){ if (status !== 'play') return; status = 'paused'; $('pInfo').textContent = (daily ? '每日挑戰' : '第 ' + levelN + ' 關') + '・' + goalText(); showOnly('pause'); });
+function pauseGame(){ status = 'paused'; if (pausedAt < 0) pausedAt = now; drag = null; $('pInfo').textContent = (daily ? '每日挑戰' : '第 ' + levelN + ' 關') + '・' + goalText(); showOnly('pause'); }
+on('bPause', function(){ if (status === 'play') pauseGame(); });
 on('pResume', function(){ showOnly(null); status = 'play'; idleT = now; });
 on('pRestart', function(){ startLevel(levelN, { daily: daily }); });
 on('pSelect', openSelect);
 on('wNext', function(){ startLevel(Math.min(NL, levelN + 1)); });
 on('wRetry', function(){ startLevel(levelN, { daily: daily }); });
-on('wSelect', function(){ daily ? (status = 'title', setPlayUI(false), showOnly('title')) : openSelect(); });
+on('wSelect', function(){ daily ? toTitle() : openSelect(); });
 on('fRetry', function(){ startLevel(levelN, { daily: daily }); });
 on('fSelect', openSelect);
 on('fExtra', function(){ S.moves += 5; S.extra = 1; S.over = ''; VS.moves = S.moves; status = 'play'; showOnly(null); updateHud(); toast('再 5 步！加油！'); if (!listMoves(S).length) shuffle(S, null), syncSprites(); });
 on('bMute', function(){ muted = !muted; sset('mute', muted); setMuteIcon(); });
 on('bHammer', function(){ if (status !== 'play' || busy) return; if (mode === 'hammer') mode = ''; else if (hammers > 0) { mode = 'hammer'; toast('點一顆寶物或礁石把它敲碎', 1400); } updateHud(); });
-on('bHint', function(){ if (status === 'play' && !busy) showHint(true); });
+on('bHint', function(){ if (mode === 'hammer') { mode = ''; updateHud(); } if (status === 'play' && !busy) showHint(true); });
 on('wShare', function(){
   var st = starCount(), txt = '我在《深海珍珠》' + (daily ? '每日挑戰' : '第 ' + levelN + ' 關') + '拿到 ' + S.score + ' 分 ' + '★★★'.slice(0, st) + '☆☆☆'.slice(0, 3 - st) + '！';
   try { if (navigator.share) { navigator.share({ text: txt }).catch(function(){}); return; } } catch(e) {}
@@ -1452,14 +1537,14 @@ on('wShare', function(){
 
 /* ---------------- lifecycle ---------------- */
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden) { running = false; if (AC && AC.state === 'running') AC.suspend().catch(function(){}); if (status === 'play' && !busy) { status = 'paused'; $('pInfo').textContent = goalText(); showOnly('pause'); } }
+  if (document.hidden) { running = false; if (AC && AC.state === 'running') AC.suspend().catch(function(){}); if (status === 'play') pauseGame(); }
   else { if (!running) { running = true; lastT = 0; requestAnimationFrame(frame); } }
 });
 addEventListener('resize', function(){ layout(); if (status === 'select') buildMap(); });
 if (mqDark && mqDark.addEventListener) mqDark.addEventListener('change', function(){ if (status === 'select') buildMap(); });
 setMuteIcon(); layout(); requestAnimationFrame(frame);
 window.__game = {
-  state: function(){ return { status: status, busy: busy, level: levelN, moves: S ? S.moves : 0, score: S ? S.score : 0, over: S ? S.over : '', w: L ? L.w : 0, h: L ? L.h : 0, board: board, cells: S ? Array.from(S.cell) : [], anims: anims.length }; },
+  state: function(){ return { status: status, busy: busy, level: levelN, moves: S ? S.moves : 0, score: S ? S.score : 0, over: S ? S.over : '', w: L ? L.w : 0, h: L ? L.h : 0, board: board, cells: S ? Array.from(S.cell) : [], anims: anims.length, queued: !!queued, warm: warmQ.length, sprites: Object.keys(cache).length, sel: sel, mode: mode, hammers: hammers, dropped: dropped }; },
   setSeed: function(s){ forcedSeed = s | 0; },
   seed: function(){ return attemptSeed; }
 };
