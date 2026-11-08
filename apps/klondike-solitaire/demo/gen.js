@@ -2,6 +2,13 @@
 // Deals seeded deals (mulberry32 + Fisher-Yates, the game's own deal()), solves each with the game's own solver
 // (omniscient DFS + transposition table + safe auto-foundation pruning, node cap), scores difficulty
 // S = ln(N) + L/40 + R*0.8 + rule coefficient, and picks 100 levels with strictly increasing S.
+// v2 (2026-11 release review): deals the review's world-class bot could not clear (solver N > 20000: old 59, 65, 68, 73, 75,
+// 78, 81, 82, 85, 86-100) were replaced by pool deals with N <= 12000, and each band is ordered by a shown difficulty
+// D = ln N + L/40 + 0.3 R + 2 F (+ band offset so bands continue), F = share of 11 heuristic-bot attempts
+// (qa/skill-tiers/klondike-solitaire/tier-sim.js clumsy x5, casual x3, skilled x3) that fail; D is stored in place of S.
+// v3 (round 2): levels 1-60 keep the deals every heuristic bot clears and add pool deals (N <= 5000) that one-step greedy
+// play loses but the skilled bot (lookahead + undo) wins, so skill shows; D uses 4 F instead of 2 F.
+// v4 (round 3): six 61-70 deals the skilled bot lost were swapped for gentler draw-3 deals (skilled 3/3, casual 2/3).
 // Usage: node gen.js [seedsPerBand=700]  -> prints the LEVELS array (JSON) to embed in index.html; chunk results are cached in $GEN_CACHE
 const fs = require('fs'), path = require('path'), os = require('os'), { fork } = require('child_process');
 const CACHE = process.env.GEN_CACHE || path.join(os.tmpdir(), 'klondike-gen-cache');

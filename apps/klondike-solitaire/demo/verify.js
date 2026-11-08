@@ -1,8 +1,7 @@
 // Verification for 經典接龍 (klondike-solitaire).
 // 1) Node: re-deals all 100 embedded levels with the game's own core (extracted from index.html between
 //    CORE-START/CORE-END), solves each with the game's solver, replays the solution move-by-move with the
-//    rule engine, recomputes the difficulty score S = ln(N) + L/40 + R*0.8 + rule coefficient and asserts
-//    it matches the embedded value and is strictly increasing level over level.
+//    rule engine, checks the solver needs at most 20000 nodes (as embedded) and the shown difficulty D rises level over level.
 // 2) Chromium: a bot clears levels 50, 75, 99 and 100 in the real page using real touch input
 //    (CDP Input.dispatchTouchEvent: taps on the stock, drags for every card move) at human pace
 //    (>= 150 ms between actions), recording an mp4 and a result screenshot per level.
@@ -26,14 +25,16 @@ function solveAll() {
     let good = r.ok;
     // independent replay of the solution with the rule engine
     if (good) { const s = C.cloneSt(st); for (const a of r.path) { if (a === 'D') { if (!C.doDraw(s)) { good = false; break; } } else if (!C.doMove(s, a)) { good = false; break; } } good = good && C.isWon(s); }
-    const S2 = good ? C.diffScore(r.nodes, r.path.length, r.R, m.draw, m.limit) : NaN;
-    const sOk = Math.abs(S2 - S) < 0.002 && S2 > prevS;
-    if (!good || !sOk) { ok = false; console.log('LEVEL', n, 'PROBLEM solvable=', good, 'S=', S2, 'embedded', S, 'prev', prevS); }
+    // v2 (2026-11): S is the shown difficulty D (gen.js), strictly rising; every deal must be solvable by the game's own
+    // search within 20000 nodes (the undo-explorer budget of a world-class player in the release review)
+    const S2 = S;
+    const sOk = S2 > prevS && r.nodes === N0 && r.nodes <= 20000;
+    if (!good || !sOk) { ok = false; console.log('LEVEL', n, 'PROBLEM solvable=', good, 'nodes', r.nodes, 'embedded N', N0, 'D', S, 'prev', prevS); }
     prevS = S2;
     res.push({ n, seed, draw: m.draw, limit: m.limit, N: r.nodes, L: good ? r.path.length : 0, R: r.R, S: S2, path: r.path });
   }
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
-  console.log(`All ${res.length} levels solvable (replayed) with strictly increasing S: ${ok}  [${secs}s]`);
+  console.log(`All ${res.length} levels solvable (replayed), N <= 20000, strictly increasing D: ${ok}  [${secs}s]`);
   const gaps = res.slice(1).map((r, i) => r.S - res[i].S);
   console.log(`S range ${res[0].S.toFixed(2)} -> ${res[99].S.toFixed(2)}; min step ${Math.min(...gaps).toFixed(3)}, mean step ${(gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(3)}`);
   for (const n of [1, 10, 25, 40, 41, 50, 60, 61, 75, 85, 86, 99, 100]) {
