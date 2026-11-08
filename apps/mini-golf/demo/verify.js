@@ -22,12 +22,19 @@ function checkAll() {
     const bad = [];
     if (!r.holed || r.strokes !== d.best) bad.push('replay ' + r.holed + '/' + r.strokes);
     if (d.par !== d.best + 1 || d.par < 2 || d.par > 6) bad.push('par ' + d.par);
-    if (num !== d.num || num <= prev) bad.push('metric ' + num + ' prev ' + prev);
+    // d.rt: hand-retuned after generation (release review); it keeps its displayed difficulty d.num, which must still rise
+    if (d.rt ? (d.num <= prev || d.num < num) : (num !== d.num || num <= prev)) bad.push('metric ' + num + '/' + d.num + ' prev ' + prev);
     if (d.k < 3 || d.k > 8) bad.push('cells ' + d.k);
     (d.mk || []).forEach(m => { if (!mechAt[m]) mechAt[m] = n; });
     if (bad.length) { ok = false; console.log('HOLE', n, 'PROBLEM', bad.join(', ')); }
-    prev = num;
+    prev = d.rt ? d.num : num;
   }
+  // release-review fixes: wider cup speed window; hole 50's pond no longer leaves only a 7 px lane where the ball leaves the ice
+  const vmax = +html.match(/HOLE_VMAX = (\d+)/)[1], d50 = LEVELS[49], w50 = d50.z.find(z => z[0] === 3);
+  const top50 = Math.max(...d50.f.filter(f => f[0] < w50[1] + w50[3] && f[0] + f[2] > w50[1] && f[1] < w50[2] && f[1] + f[3] > w50[2]).map(f => f[1]));
+  if (vmax < 480) { ok = false; console.log('HOLE_VMAX', vmax, '< 480'); }
+  if (w50[2] - top50 - 5 < 15) { ok = false; console.log('HOLE 50 dry lane', w50[2] - top50 - 5, 'px < 15'); }
+  console.log('Cup accepts up to', vmax, 'px/s | hole 50 dry lane past the pond', w50[2] - top50 - 5, 'px');
   const D = n => (LEVELS[n - 1].num / LEVELS[LEVELS.length - 1].num * 100).toFixed(1);
   console.log('Holes:', LEVELS.length, '| all solver solutions replay into the cup, par = best+1 in 2..6, metric strictly increasing:', ok);
   const pars = {}; LEVELS.forEach(d => pars[d.par] = (pars[d.par] || 0) + 1);

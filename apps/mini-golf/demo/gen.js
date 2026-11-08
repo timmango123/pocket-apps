@@ -5,6 +5,7 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 const CORE = process.env.CORE || path.join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(CORE, 'utf8').match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
 const C = new Function(src + '\nreturn {buildLevel,initState,simShot,solveLevel,replay,makeHeur,distField,fieldAt,isSolidAt,cloneState};')();
+const { placePlanks } = require('./planks.js');
 
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const R4 = v => Math.round(v / 4) * 4, R2 = v => Math.round(v / 2) * 2;
@@ -235,6 +236,8 @@ function attempt(n, k, c, nb, seed) {
     const d = buildFromPlan(n, plan, rnd);
     if (!connected(d)) continue;
     if (!placeObstacles(d, nb, rnd, n)) continue;
+    // angled planks from hole 56 on (opt-in so a plain regeneration still reproduces the baked holes)
+    if (process.env.GEN_PLANKS && n >= 56) { const d2 = placePlanks(C, d, n, mulberry32(seed + 31 * t)); if (d2) d.a = d2.a; }
     const sol = solveD(d);
     if (!sol) continue;
     return finish(d, sol, k, nb);
