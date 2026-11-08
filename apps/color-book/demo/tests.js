@@ -276,7 +276,8 @@ async function touchPlay() {
     await page.evaluate(() => localStorage.setItem('color-book:v1:p:鬱金香', '{"o":42,"t":1e400,"f":-3,"m":"x","h":null,"b":"NaN"}'));
     await page.evaluate(() => __cb.open(41)); await ready(41);
     s0 = await st();
-    ok(s0.filled === 0 && s0.rec.t === 0 && s0.rec.m === 0 && s0.rec.h === 0 && s0.rec.b === 0, 'corrupt saved record loads as a fresh picture: ' + JSON.stringify(s0.rec));
+    // the play clock starts as soon as the picture opens, so on a slow runner t can already be a second or two in; 1e400 must not survive
+    ok(s0.filled === 0 && Number.isFinite(s0.rec.t) && s0.rec.t >= 0 && s0.rec.t < 10 && s0.rec.m === 0 && s0.rec.h === 0 && s0.rec.b === 0, 'corrupt saved record loads as a fresh picture: ' + JSON.stringify(s0.rec));
 
     // 8. a picture asked for while another is building is opened afterwards, not dropped
     await page.evaluate(() => { __cb.open(0); __cb.open(34); });
