@@ -126,9 +126,14 @@ const assert = (c, m) => { if (!c) { errors.push('ASSERT: ' + m); console.log('F
   await page.click('.toast button'); await page.waitForTimeout(150);
   assert((await page.$$eval('#noteList .item', e => e.length)) === before, 'undo delete restores note');
   await page.click('#scrim', { position: { x: 370, y: 400 } });
-  // export fallback (no downloads capability in file://) -> copy dialog
-  await page.click('#moreBtn'); await page.click('[data-m="html"]'); await page.waitForTimeout(300);
-  const exp = await page.inputValue('#copyArea');
+  // export without a downloads capability (file://, Pages) -> a real file download, copy stays as a fallback
+  await page.click('#moreBtn');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-m="html"]')]);
+  const exp = fs.readFileSync(await dl.path(), 'utf8');
+  // (file:// pages are an opaque origin, so Chromium ignores the download name there; tests.js checks it over http)
+  assert(/\.html$|^download$/.test(dl.suggestedFilename()), 'html export downloaded: ' + dl.suggestedFilename());
+  await page.click('.toast button'); await page.waitForSelector('#copyArea');
+  assert((await page.inputValue('#copyArea')) === exp, 'copy fallback holds the same html');
   assert(exp.startsWith('<!doctype html>') && exp.includes('<title>' + (await page.textContent('#titleBtn')) + '</title>') && !exp.includes('data-line'), 'html export standalone: ' + exp.slice(0, 300).replace(/\n/g, ' '));
   assert(!/<script/i.test(exp.replace(/&lt;script/g, '')), 'html export contains no script');
   await page.click('#cdClose');
