@@ -274,9 +274,12 @@ async function touchPlay() {
 
     // 7. bad saved numbers are ignored
     await page.evaluate(() => localStorage.setItem('color-book:v1:p:鬱金香', '{"o":42,"t":1e400,"f":-3,"m":"x","h":null,"b":"NaN"}'));
+    // the play-time clock starts at 0 and keeps running while the picture is open (a slow runner can be on it for a
+    // second before the check), so it may hold at most the time since the picture was asked for, never the bad 1e400
+    const tOpen = Date.now();
     await page.evaluate(() => __cb.open(41)); await ready(41);
-    s0 = await st();
-    ok(s0.filled === 0 && s0.rec.t === 0 && s0.rec.m === 0 && s0.rec.h === 0 && s0.rec.b === 0, 'corrupt saved record loads as a fresh picture: ' + JSON.stringify(s0.rec));
+    s0 = await st(); const tMax = (Date.now() - tOpen) / 1000;
+    ok(s0.filled === 0 && s0.rec.t >= 0 && s0.rec.t <= tMax && s0.rec.m === 0 && s0.rec.h === 0 && s0.rec.b === 0, 'corrupt saved record loads as a fresh picture (play time within ' + tMax.toFixed(2) + ' s): ' + JSON.stringify(s0.rec));
 
     // 8. a picture asked for while another is building is opened afterwards, not dropped
     await page.evaluate(() => { __cb.open(0); __cb.open(34); });
