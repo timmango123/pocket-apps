@@ -86,7 +86,7 @@ async function genImages(page, specs) {
   assert(pan.ox > 0 && pan.oy === 0, 'pan clamped: ox ' + pan.ox.toFixed(3) + ' > 0, oy stays 0');
   // tap selects cell -> toolbar; rotate & flip
   await page.mouse.click(c0x, cy);
-  assert(await page.isVisible('#cellBar'), 'tap shows cell toolbar');
+  assert(await page.isEnabled('#cRotate') && (await page.textContent('#cellLbl')).includes('第 1 格'), 'tap selects the cell: toolbar tools enabled');
   await page.click('#cRotate'); await page.click('#cFlip');
   assert(await page.evaluate(() => __pc.st.cells[0].rot === 1 && __pc.st.cells[0].flip), 'rotate 90 + flip applied');
   // long-press swap cell 0 -> cell 2
@@ -122,6 +122,7 @@ async function genImages(page, specs) {
   // settings persisted
   await page.reload(); await page.waitForTimeout(400);
   assert(await page.evaluate(() => __pc.st.border === 40 && __pc.st.gap === 20 && __pc.st.ratio === '1:1' && __pc.st.fmt === 'png'), 'settings persisted after reload');
+  assert(await page.evaluate(() => __pc.st.photos.length === 0 && __pc.st.layoutId === '2a'), 'saved state (all photos removed, layout 2a) kept after reload, no samples forced back');
   await page.evaluate(() => { localStorage.clear(); });
   await ctx.close();
 
