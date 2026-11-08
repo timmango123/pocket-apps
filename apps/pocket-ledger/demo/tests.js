@@ -46,6 +46,10 @@ const PROBE = () => { window.__clicks = 0; addEventListener('click', e => { if (
     await reload(p); const d2 = await dist(p);
     assert(d0 === d1 && d1 === d2 && !/其他\/out:[4-9]\d/.test(d2), '重新整理兩次，各分類筆數不變 ' + d2.slice(0, 80));
     assert(await L(p, () => window.__ledger.entries.find(e => e.cents === 8800).catId === 'd-transit'), '剛記的交通重新整理後仍是交通');
+    // a change is journaled synchronously, so reloading the moment after recording (before IndexedDB commits) keeps it
+    await p.fill('#amount', '77'); await p.click('#cats [data-cat] >> nth=1');
+    await reload(p);
+    assert(await L(p, () => window.__ledger.entries.filter(e => e.cents === 7700).length === 1 && !localStorage.getItem('pocket-ledger:v1:pending')), '記帳後立刻重新整理，紀錄仍在且只有一筆');
     await ctx.close();
   }
 

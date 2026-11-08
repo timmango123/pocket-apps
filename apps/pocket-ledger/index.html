@@ -316,7 +316,7 @@ body.sheet-open .toast{bottom:auto;top:calc(12px + env(safe-area-inset-top))}
 (() => {
 'use strict';
 const APP = 'pocket-ledger';
-const K = { cats: APP+':v1:categories', settings: APP+':v1:settings', entries: APP+':v1:entries', tab: APP+':v1:tab' };
+const K = { cats: APP+':v1:categories', settings: APP+':v1:settings', entries: APP+':v1:entries', pending: APP+':v1:pending', tab: APP+':v1:tab' };
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => { const a = new Uint8Array(8); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2,'0')).join(''); };
@@ -424,8 +424,23 @@ const store = {
   },
   // Never trim old rows to make room; if the write fails, say so (after any toast the current action shows).
   lsFlush(){ if (this.mode === 'ls' && !lsSet(K.entries, JSON.stringify(entries))) setTimeout(() => toast('瀏覽器儲存空間已滿，這次的變更沒有存起來。請到設定下載 JSON 備份，或刪除部分紀錄。'), 0); },
-  async put(list){ if (this.mode === 'idb'){ try { await this.tx('readwrite', os => { list.forEach(e => os.put(e)); }); return; } catch(e){ this.mode='ls'; } } this.lsFlush(); },
-  async del(ids){ if (this.mode === 'idb'){ try { await this.tx('readwrite', os => { ids.forEach(id => os.delete(id)); }); return; } catch(e){ this.mode='ls'; } } this.lsFlush(); }
+  // IndexedDB commits asynchronously, so a reload or app switch right after a change could lose it.
+  // Each change is first journaled synchronously in localStorage and dropped once the transaction commits;
+  // replayJournal() applies anything left over on the next start.
+  journal(changes){ let j = {}; try { j = JSON.parse(lsGet(K.pending) || '{}') || {}; } catch(e){} if (typeof j !== 'object' || Array.isArray(j)) j = {}; for (const [id, v] of changes) j[id] = v; lsSet(K.pending, JSON.stringify(j)); return j; },
+  unjournal(changes){ let j; try { j = JSON.parse(lsGet(K.pending) || '{}') || {}; } catch(e){ return; } for (const [id, v] of changes) if (JSON.stringify(j[id]) === JSON.stringify(v)) delete j[id]; if (Object.keys(j).length) lsSet(K.pending, JSON.stringify(j)); else { try { localStorage.removeItem(K.pending); } catch(e){} } },
+  async put(list){ if (this.mode === 'idb'){ const ch = list.map(e => [e.id, e]); this.journal(ch); try { await this.tx('readwrite', os => { list.forEach(e => os.put(e)); }); this.unjournal(ch); return; } catch(e){ this.mode='ls'; } } this.lsFlush(); },
+  async del(ids){ if (this.mode === 'idb'){ const ch = ids.map(id => [id, null]); this.journal(ch); try { await this.tx('readwrite', os => { ids.forEach(id => os.delete(id)); }); this.unjournal(ch); return; } catch(e){ this.mode='ls'; } } this.lsFlush(); },
+  async replayJournal(){
+    let j; try { j = JSON.parse(lsGet(K.pending) || 'null'); } catch(e){ j = null; }
+    if (!j || typeof j !== 'object' || Array.isArray(j)) { try { localStorage.removeItem(K.pending); } catch(e){} return; }
+    const puts = [], dels = [];
+    for (const [id, v] of Object.entries(j)){ if (v === null) dels.push(id); else { const c = cleanEntry(v); if (c) puts.push(c); } }
+    if (dels.length){ const d = new Set(dels); entries = entries.filter(e => !d.has(e.id)); }
+    for (const c of puts){ const i = entries.findIndex(e => e.id === c.id); if (i >= 0) entries[i] = c; else entries.push(c); }
+    if (this.mode === 'idb'){ try { await this.tx('readwrite', os => { dels.forEach(id => os.delete(id)); puts.forEach(e => os.put(e)); }); localStorage.removeItem(K.pending); } catch(e){} }
+    else { this.lsFlush(); try { localStorage.removeItem(K.pending); } catch(e){} }
+  }
 };
 function cleanEntry(e){
   if (!e || typeof e.id !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.date) || !Number.isInteger(e.cents) || e.cents <= 0 || (e.type!=='out'&&e.type!=='in')) return null;
@@ -1117,6 +1132,7 @@ window.__ledger = { parseExpr, toCSV, parseCSV, importCSV, importJSON, repairCat
   render();
   await store.init();
   entries = (await store.all()).map(cleanEntry).filter(Boolean);
+  await store.replayJournal();
   const repaired = repairCats(entries);
   if (repaired.length){ await store.put(repaired); }
   if (!entries.length && !settings.seeded){
