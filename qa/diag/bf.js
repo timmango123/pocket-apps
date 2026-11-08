@@ -72,7 +72,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-    await page.addInitScript(() => { window.__ev=[]; ['touchstart','touchend','pointerdown','pointerup','click'].forEach(t=>addEventListener(t,e=>window.__ev.push(t+':'+((e.target&&e.target.id)||(e.target&&e.target.tagName))+'@'+Math.round(performance.now())),{capture:true,passive:true})); addEventListener('DOMContentLoaded', () => { window.__cap = 0; const cv = document.getElementById('cv'), o = cv.setPointerCapture.bind(cv); cv.setPointerCapture = id => { window.__cap++; return o(id); }; }); });
+    await page.addInitScript(() => { window.__ev=[]; ['touchstart','touchend','pointerdown','pointerup','pointercancel','mousedown','mouseup','click','scroll'].forEach(t=>addEventListener(t,e=>window.__ev.push(t+':'+((e.target&&e.target.id)||(e.target&&e.target.tagName))+'@'+Math.round(performance.now())),{capture:true,passive:true})); addEventListener('DOMContentLoaded', () => { window.__cap = 0; const cv = document.getElementById('cv'), o = cv.setPointerCapture.bind(cv); cv.setPointerCapture = id => { window.__cap++; return o(id); }; }); });
     await page.goto(URL + '?seed=42');
     await page.evaluate(p => { localStorage.clear(); localStorage.setItem('blockfill.settings', JSON.stringify({ sound: false, vib: false, theme: 'auto' })); for (const k in p) localStorage.setItem('blockfill.' + k, typeof p[k] === 'string' ? p[k] : JSON.stringify(p[k])); }, prep || {});
     await page.reload();
@@ -83,7 +83,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   const waitVis = (page, sel) => waitFor(page, s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel, 5000).then(() => true, () => false);
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
-  async function touch(cdp, type, x, y) { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }); }
+  async function touch(cdp, type, x, y, ts) { const o = { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }; if (ts) o.timestamp = ts; await cdp.send('Input.dispatchTouchEvent', o); }
   // right after a reload a slow runner can drop the first synthetic touch; these checks are about saved state, not touch
   // delivery (covered elsewhere), so press the title button directly once it is shown
   const pressAfterReload = async (page, sel) => { await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel); await page.evaluate(s => document.querySelector(s).click(), sel); };
@@ -110,6 +110,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   async function drag(cdp, a, b, steps = 8) {
     await touch(cdp, 'touchStart', a.x, a.y);
     for (let i = 1; i <= steps; i++) { await sleep(20); await touch(cdp, 'touchMove', a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); }
+    if (process.env.STILL) { const t = Date.now() / 1000 + 0.3; await touch(cdp, 'touchMove', b.x, b.y, t); await touch(cdp, 'touchEnd', 0, 0, t); return; }
     await sleep(20); await touch(cdp, 'touchEnd');
   }
   async function placeAi(page, cdp) { const n = (await st(page)).placed, m = await page.evaluate(() => window.__game.aiMove()); await drag(cdp, m.from, m.to); await waitFor(page, n => window.__game.state().placed > n && !window.__game.state().flying, n); }
