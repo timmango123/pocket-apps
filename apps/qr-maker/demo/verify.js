@@ -3,10 +3,10 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path');
 const fs = require('fs');
 // Artifact 宿主會把頁面包進含 viewport meta 的文件；測試時重現這一層。
-const SRC = path.resolve(__dirname, '../index.html'), WRAP = path.join(__dirname, '.wrapped.html');
+const SRC = path.resolve(__dirname, '../index.html'), WRAP = path.join(fs.mkdtempSync(path.join(require('os').tmpdir(), 'qr-maker-')), 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(SRC, 'utf8') + '</body></html>');
 const URL_ = 'file://' + WRAP;
-const OUT = __dirname;
+const OUT = fs.mkdtempSync(path.join(require('os').tmpdir(), 'qr-maker-shots-'));   // screenshots stay out of the repo
 let fails = 0;
 const ok = (cond, msg) => { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (!cond) fails++; };
 
@@ -163,11 +163,11 @@ async function decodeSVG(page) {
 
   // PNG 2048 銳利度 + 下載
   const sharp = await page.evaluate(() => {
-    const c = renderCanvas(2048), data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, set = new Set();
+    const c = exportCanvas(2048), data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, set = new Set();
     for (let i = 0; i < data.length; i += 4) set.add(data[i] + ',' + data[i + 1] + ',' + data[i + 2] + ',' + data[i + 3]);
     return { w: c.width, colors: set.size };
   });
-  ok(sharp.colors === 2 && sharp.w <= 2048 && sharp.w > 1900, `2048 PNG：${sharp.w}px，僅 ${sharp.colors} 種顏色（無模糊）`);
+  ok(sharp.colors === 2 && sharp.w === 2048, `2048 PNG：${sharp.w}px，僅 ${sharp.colors} 種顏色（無模糊）`);
   await page.selectOption('#png-size', '2048');
   await page.click('#btn-png'); await page.click('#btn-svg'); await page.waitForTimeout(400);
   const saved = await page.evaluate(() => window.__saved);
@@ -185,10 +185,11 @@ async function decodeSVG(page) {
   await page.click('#full'); await page.waitForTimeout(100);
 
   // ---- 4. 無 downloads 能力時 ----
-  const ctx2 = await browser.newContext({ viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const ctx2 = await browser.newContext({ viewport: { width: 360, height: 780 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true });
   const p2 = await ctx2.newPage(); p2.on('pageerror', e => errors.push(String(e))); p2.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await p2.goto(URL_); await p2.waitForTimeout(400);
-  ok(await p2.locator('#btn-png').isHidden() && await p2.locator('#save-hint').isVisible(), '無 downloads 能力：隱藏下載鈕、顯示長按儲存提示');
+  const [d2] = await Promise.all([p2.waitForEvent('download', { timeout: 5000 }).catch(() => null), p2.click('#btn-png')]);
+  ok(await p2.locator('#btn-png').isVisible() && d2 && d2.suggestedFilename().endsWith('.png'), '無 downloads 能力：仍顯示下載鈕，改用 <a download> 下載 ' + (d2 && d2.suggestedFilename()));
 
   // ---- 5. 截圖與版面 ----
   const shots = [
