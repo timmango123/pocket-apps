@@ -34,6 +34,13 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     assert(r.hg300 === 'l' && r.hg230 === 's' && r.br298 === 'l', 'Hg liquid at 300 K, solid at 230 K (mp 234.3 K); Br liquid');
     assert(r.s.slice(0, 5).every(x => x === 'O'), 'search 8 / O / 氧 / oxygen all -> O');
     assert(JSON.stringify(r.masses) === JSON.stringify(['1.008', '12.011', '35.45', '55.845', '196.97', '[294]']), 'IUPAC masses');
+    // review round 1 fixes: 1 atm phases (C/As sublime, P boils, He never solid), search normalisation, data
+    const r2 = await page.evaluate(() => { const p = __pt, ph = (z, T) => p.phaseAt(p.E[z - 1], T);
+      return { ph: [ph(6, 4500), ph(15, 600), ph(33, 900), ph(2, 0.5)].join(), s: ['aluminum', 'caesium', 'sulphur', '８', 'ｆｅ', '氫氣', '26號'].map(q => p.search(q).map(e => e.z).join('|')).join(),
+        zr: p.E[39].mass, rad: [p.E[1].radius, p.E[9].radius].join() }; });
+    assert(r2.ph === 'g,g,g,l', 'C 4500 K gas, P 600 K gas, As 900 K gas, He 0.5 K liquid: ' + r2.ph);
+    assert(r2.s === '13,55,16,8,26,1,26', 'search aliases / full-width / suffixes: ' + r2.s);
+    assert(r2.zr === '91.224' && r2.rad === '31,38', 'Zr 91.224, He/Ne radius 31/38 pm');
     // open all 118 details, check no undefined/NaN
     const bad = await page.evaluate(() => { const out = []; for (let z = 1; z <= 118; z++) { __pt.openDetail(z); const t = document.getElementById('detInner').textContent; if (/undefined|NaN|null/.test(t)) out.push(z); } return out; });
     assert(bad.length === 0, 'all 118 details render without undefined/NaN/null ' + bad.join(','));
