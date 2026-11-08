@@ -42,7 +42,7 @@ function solveAll(doBfs) {
   let cok = true; CLASSICS.forEach(c => { const L = core.parseLevel(c[1]); if (!checkSolution(L, decodeSol(c[3])) || decodeSol(c[3]).length !== c[2]) cok = false; if (doBfs && core.solve(L, L.pieces).len !== c[2]) cok = false; });
   console.log('All ' + LEVELS.length + ' levels solvable, embedded solutions legal' + (doBfs ? ', BFS minimum == embedded M' : '') + ', M and difficulty strictly increasing: ' + ok);
   console.log('Classic layouts (' + CLASSICS.length + ') verified: ' + cok + '  [' + CLASSICS.map(c => c[0] + ' ' + c[2]).join(', ') + ']');
-  for (const n of [1, 10, 25, 50, 69, 70, 75, 85, 99, 100]) { const r = rows[n - 1]; console.log('  level', String(n).padStart(3), 'min moves', String(r.M).padStart(3), 'difficulty', r.D.toFixed(1), 'box', r.size, 'pieces', r.pieces, r.lock ? '(locked block)' : ''); }
+  for (const n of [1, 10, 25, 27, 33, 38, 41, 50, 60, 69, 70, 75, 85, 99, 100]) { const r = rows[n - 1]; console.log('  level', String(n).padStart(3), 'min moves', String(r.M).padStart(3), 'difficulty', r.D.toFixed(1), 'box', r.size, 'pieces', r.pieces, r.lock ? '(locked block)' : ''); }
   return rows;
 }
 
