@@ -45,7 +45,7 @@ const ready = p => p.waitForSelector('html[data-ready="1"]');
     await ctx.close();
   }
 
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true });
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
   const p = await ctx.newPage(); watch(p, 'flow');
   await p.goto(URL); await ready(p);
@@ -145,9 +145,10 @@ const ready = p => p.waitForSelector('html[data-ready="1"]');
   await p.reload(); await ready(p);
   const persisted = await p.evaluate(() => window.__ledger.entries.length);
   assert(persisted > 1000, `重新整理後資料仍在（${persisted} 筆，${mode}）`);
-  // export fallback (no downloads capability here)
-  await p.click('#openSettings'); await p.click('#csvMonth'); await p.waitForTimeout(150);
-  assert(await p.isVisible('#expOut') || (await p.textContent('#toastLayer')).includes('複製'), 'downloads 不可用時改為複製 CSV');
+  // export without the downloads capability: a real file download (Blob + <a download>)
+  await p.click('#openSettings');
+  const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }).catch(() => null), p.click('#csvMonth')]);
+  assert(dl && /^ledger-\d{4}-\d{2}\.csv$/.test(dl.suggestedFilename()), 'downloads 不可用時以檔案下載 CSV');
   await p.click('#sDone');
   // corrupt storage
   await p.evaluate(() => { localStorage.setItem('pocket-ledger:v1:categories', '{x'); localStorage.setItem('pocket-ledger:v1:settings', 'null'); });
