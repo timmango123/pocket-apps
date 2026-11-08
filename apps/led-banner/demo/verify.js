@@ -99,6 +99,8 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     const W = await page.evaluate(() => __led.pl.W);
     assert(W === 844, 'rotated logical width = screen height');
     await page.screenshot({ path: OUT + '/390x844-play-portrait.png' });
+    assert(await page.locator('#gHelp').isVisible(), 'first play shows the gesture help');
+    await page.mouse.click(195, 300); await page.waitForFunction(() => document.querySelector('#gHelp').hidden); await page.waitForTimeout(400);
     await page.mouse.click(195, 300); await page.waitForTimeout(120); await page.mouse.click(195, 300); await page.waitForTimeout(100);
     assert(await page.locator('#player').isHidden(), 'double tap exits');
 
