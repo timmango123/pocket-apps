@@ -83,33 +83,43 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   const waitVis = (page, sel) => waitFor(page, s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel, 5000).then(() => true, () => false);
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
-  async function touch(cdp, type, x, y) { await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] }); }
-  // right after a reload a slow runner can drop the first synthetic touch; these checks are about saved state, not touch
-  // delivery (covered elsewhere), so press the title button directly once it is shown
-  const pressAfterReload = async (page, sel) => { await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel); await page.evaluate(s => document.querySelector(s).click(), sel); };
+  // Every synthetic touch carries a timestamp from one clock that only moves forward, so a drag can be given a
+  // release that Chromium's gesture detector reads as a resting finger however late a loaded runner sends it (see drag)
+  let lastTs = 0;
+  async function touch(cdp, type, x, y, hold = 0) {
+    lastTs = Math.max(Date.now() / 1000, lastTs + hold + 0.001);
+    await cdp.send('Input.dispatchTouchEvent', { type, timestamp: lastTs, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+  }
   async function tap(cdp, page, sel) {
     await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden'); }, sel);
-    // overlays pop in (scale animation): on a slow runner the button can still be moving, so tap once it has settled
-    let b, prev = '';
-    for (let t0 = Date.now(); ; await sleep(30)) {
-      b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }, sel);
-      const k = [b.x, b.y, b.w].map(v => v.toFixed(1)).join(); if (k === prev || Date.now() - t0 > 2000) break; prev = k;
-    }
-    // a loaded runner sends the click well after touchend: return only once it has arrived, so the next touch can't race it
+    // overlays pop in (scale animation). Polling the button's rect is not enough: on a slow runner two reads can fall in one
+    // frame and look settled while the card is still growing, so the press lands on 返回 and the tap on the card beside it.
+    // Tap once no animation runs on the button or any parent and its centre hits the button itself (not a toast over it).
+    const b = await waitFor(page, s => {
+      const e = document.querySelector(s);
+      for (let n = e; n; n = n.parentElement) if (n.getAnimations().some(a => a.pending || a.playState === 'running')) return false;
+      const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, h = document.elementFromPoint(x, y);
+      return !!h && e.contains(h) && { x, y };
+    }, sel);
+    // a loaded runner sends the click well after touchend: return only once it has arrived, so the next touch can't race it,
+    // and fail here if it never does (a lost click would otherwise show up later as a wrong score or a missing card)
     await page.evaluate(s => { window.__tapClick = false; document.querySelector(s).addEventListener('click', () => { window.__tapClick = true; }, { once: true, capture: true }); }, sel);
     await touch(cdp, 'touchStart', b.x, b.y); await sleep(40); await touch(cdp, 'touchEnd');
-    for (let t0 = Date.now(); !(await page.evaluate(() => window.__tapClick)) && Date.now() - t0 < 1500;) await sleep(20);
-    await sleep(30);
+    await waitFor(page, () => window.__tapClick).catch(() => { throw new Error('tap on ' + sel + ': touches sent, no click'); });
   }
   const settled = (page, sel) => waitFor(page, s => !document.querySelector(s).getAnimations({ subtree: true }).length, sel); // card pop-in done
   const geo = page => page.evaluate(() => window.__game.layout());
   const slotPt = (L, i) => ({ x: L.tray.x + L.tray.w / 3 * (i + 0.5), y: L.tray.y + L.tray.h / 2 });
   // finger position that drops shape `key` with its top-left cell on (r, c)
   const fingerAt = (L, key, r, c) => { const s = C.SHAPES[ID(key)]; return { x: L.bx + c * L.cell + s.w * L.cell / 2, y: L.by + r * L.cell + s.h * L.cell + L.lift }; };
+  // The finger rests on the target before it lifts, as when a player drops a piece. Released mid-move, Chromium reads the
+  // drag as a fling; the next tap then only stops that fling and gets no click, which on a slow runner (where the fling is
+  // still running) lost the 選單 / 悔棋 tap that follows a placement, even across a reload. So the last move and the lift are
+  // stamped 0.2 s after the previous move: the gesture detector sees zero velocity at release, whatever the runner's load.
   async function drag(cdp, a, b, steps = 8) {
     await touch(cdp, 'touchStart', a.x, a.y);
     for (let i = 1; i <= steps; i++) { await sleep(20); await touch(cdp, 'touchMove', a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); }
-    await sleep(20); await touch(cdp, 'touchEnd');
+    await touch(cdp, 'touchMove', b.x, b.y, 0.2); await touch(cdp, 'touchEnd');
   }
   async function placeAi(page, cdp) { const n = (await st(page)).placed, m = await page.evaluate(() => window.__game.aiMove()); await drag(cdp, m.from, m.to); await waitFor(page, n => window.__game.state().placed > n && !window.__game.state().flying, n); }
   // a save with a hand of [a, b, c] on a board given as a list of filled cells
@@ -229,7 +239,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
     await tap(cdp, page, '#tNew'); await waitFor(page, () => window.__game.state().mode === 'play');
     await placeAi(page, cdp);
     ok((await st(page)).best > 0, 'best rose');
-    await page.reload(); await pressAfterReload(page, '#tCont'); await waitFor(page, () => window.__game.state().mode === 'play');
+    await page.reload(); await tap(cdp, page, '#tCont'); await waitFor(page, () => window.__game.state().mode === 'play');
     ok(!(await page.evaluate(() => document.getElementById('bUndo').disabled)), 'undo still available after refresh');
     await tap(cdp, page, '#bUndo');
     const s = await st(page); eq([s.score, s.best, s.placed], [0, 0, 0]);
@@ -257,7 +267,7 @@ const ID = k => C.SHAPES.findIndex(s => s.key === k);
   await t('daily streak, history on the result card and 18 tiered achievements', async () => {
     const { ctx, page, cdp } = await open(390, 844, 'light', { hinted: 1 });
     await page.evaluate(() => { const d = new Date(Date.now() - 864e5), y = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); const o = {}; o[y] = 120; localStorage.setItem('blockfill.dhist', JSON.stringify({ days: o, streak: 2, maxStreak: 2, last: y })); });
-    await page.reload(); await pressAfterReload(page, '#tDaily'); await waitFor(page, () => window.__game.state().gmode === 'daily');
+    await page.reload(); await tap(cdp, page, '#tDaily'); await waitFor(page, () => window.__game.state().gmode === 'daily');
     await tap(cdp, page, '#bMenu'); await tap(cdp, page, '#pHome');
     ok(/連續 3 天/.test(await page.textContent('#tDailyInfo')), 'streak on title: ' + await page.textContent('#tDailyInfo'));
     await tap(cdp, page, '#tStats');
