@@ -41,15 +41,29 @@ function mkBattle(n, extra) {
     const cdp = await ctx.newCDPSession(page);
     return { ctx, page, cdp };
   }
-  const waitFor = async (page, fn, arg, ms = 15000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + fn.toString().slice(0, 90)); await sleep(30); } };
+  const waitFor = async (page, fn, arg, ms = 15000) => { const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout waiting for ' + fn.toString().slice(0, 90) + (arg !== undefined ? ' [' + JSON.stringify(arg) + ']' : '')); await sleep(30); } };
   const st = page => page.evaluate(() => window.__game.state());
   const visible = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); return !!e && !e.classList.contains('hidden') && !e.closest('.hidden') && e.getBoundingClientRect().width > 0; }, sel);
   const pts = arr => arr.map((p, i) => ({ x: p.x, y: p.y, id: p.id != null ? p.id : i + 1 }));
   const touch = (cdp, type, list) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts(list) });
+  // Taps where the control will be when the touch arrives: overlays fade in and their .card pops from scale(.85), so a point
+  // measured while that animation is pending (a slow machine may not have drawn its first frame yet) misses a button near
+  // the card's edge (#stOk moves ~20 px) and the tap lands on the card. So wait until no animation on the control or its
+  // ancestors is still running and the centre point hits it, then wait for the click itself (a starved runner can deliver
+  // it seconds after touchend) and fail loudly if it lands elsewhere or never comes.
   async function tap(cdp, page, sel) {
-    await waitFor(page, s => { const e = document.querySelector(s); return e && !e.classList.contains('hidden') && !e.closest('.hidden') && !e.disabled; }, sel);
-    const b = await page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
-    await touch(cdp, 'touchStart', [b]); await sleep(40); await touch(cdp, 'touchEnd', []); await sleep(60);
+    const b = await waitFor(page, s => {
+      const e = document.querySelector(s);
+      if (!e || e.classList.contains('hidden') || e.closest('.hidden') || e.disabled) return null;
+      if (document.getAnimations().some(a => a.playState !== 'finished' && a.effect && a.effect.target && a.effect.target.contains(e))) return null;
+      const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, h = document.elementFromPoint(x, y);
+      return h && e.contains(h) ? { x, y } : null;
+    }, sel);
+    await page.evaluate(s => { window.__tapHit = null; document.addEventListener('click', e => { window.__tapHit = e.target.closest(s) ? 'ok' : (e.target.id || e.target.className || e.target.tagName) + ''; }, { capture: true, once: true }); }, sel);
+    await touch(cdp, 'touchStart', [b]); await sleep(40); await touch(cdp, 'touchEnd', []);
+    const hit = await waitFor(page, () => window.__tapHit, undefined, 15000).catch(() => 'nothing (no click within 15 s)');
+    ok(hit === 'ok', 'tap on ' + sel + ' landed on ' + hit);
+    await sleep(60);
   }
   async function playLevel(page, cdp, n) {
     await tap(cdp, page, '#tSelect');
@@ -166,14 +180,19 @@ function mkBattle(n, extra) {
     await playLevel(page, cdp, 18);
     await tap(cdp, page, '#aUp'); await tap(cdp, page, '#aUp'); await tap(cdp, page, '#pDn');
     await tap(cdp, page, '#wbar .wb[data-k="triple"]');
+    // the shot is the aim on the panel; a starved runner can deliver touchend late enough for the page to see a held
+    // ＋/－ (it repeats after 420 ms, as it should), so the replay is compared with the aim that was really fired
+    const shown = await page.evaluate(() => [parseInt(document.getElementById('vAng').textContent), parseInt(document.getElementById('vPow').textContent)]);
+    ok(shown[0] > 45 && shown[1] < 60, 'the aim buttons moved the aim: ' + shown);
     await tap(cdp, page, '#bFire');
     await waitFor(page, () => window.__game.state().phase === 'fly');
     const shot = (await st(page)).lastShot;
+    eq([shot.a, shot.p, shot.kind], [shown[0], shown[1], 'triple'], 'fired the aim on the panel');
     await page.reload();
     await tap(cdp, page, '#tResume');
     await waitFor(page, () => window.__game.state().phase === 'fly');
     const s = await st(page);
-    eq([s.lastShot.a, s.lastShot.p, s.lastShot.kind, s.ammo.triple], [47, 59, 'triple', 0], 'same shot, ammo spent once');
+    eq([s.lastShot.a, s.lastShot.p, s.lastShot.kind, s.ammo.triple], [shown[0], shown[1], 'triple', 0], 'same shot, ammo spent once');
     ok(Math.abs(s.lastShot.t0 - shot.t0) < 1e-9, 'same launch time (clouds/gusts line up)');
     await ctx.close();
   });

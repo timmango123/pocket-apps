@@ -90,6 +90,21 @@ body.lightfelt .ttl .sub{color:#5b4a30}
   .tbtns{width:min(320px,42vw);margin:0}
   .tbtns .btn{min-height:46px;margin-top:8px}
 }
+@media (orientation:landscape) and (max-height:560px){
+  #settings .card{width:min(640px,100%);display:grid;grid-template-columns:1fr 1fr;grid-auto-flow:row dense;column-gap:18px;align-items:start;padding:14px 18px}
+  #settings .card h2{grid-column:1/-1;margin:0 0 4px}
+  #settings .setrow{grid-column:1}
+  #settings .h3,#settings .skins,#settings .card>.btn{grid-column:2}
+  #settings .h3{grid-row:2;margin:12px 0 0}
+  #settings .skins{grid-row:3/span 2;margin:0}
+  #settings .card>.btn{grid-row:5;margin-top:0}
+}
+.days{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.dayb{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;border-radius:14px;padding:0 14px;background:var(--btn);color:var(--ink);font-weight:700;font-size:15px;box-shadow:0 3px 0 var(--line);text-align:left}
+.dayb.today{background:linear-gradient(180deg,#e7c873,#c99a3a);color:#3a2513;box-shadow:0 3px 0 #8f6a22}
+.dayb small{font-size:13px;font-weight:600;color:inherit;opacity:.8;font-variant-numeric:tabular-nums}
+.dayb:active{transform:translateY(2px)}
+@media (orientation:landscape) and (max-height:560px){ .days{display:grid;grid-template-columns:1fr 1fr} #dailyPick .card{width:min(560px,100%)} }
 /* level select */
 #select{align-items:stretch;padding:0;background:linear-gradient(180deg,#0d3d2b,#082a1e)}
 .selwrap{display:flex;flex-direction:column;width:100%;height:100%;max-width:680px;margin:0 auto}
@@ -110,6 +125,7 @@ body.lightfelt .ttl .sub{color:#5b4a30}
 .lt .n{font-size:18px;font-weight:800;line-height:1;font-family:ui-serif,Georgia,serif}
 .lt .st{font-size:11px;letter-spacing:1px;color:#cdbf9f;line-height:1}
 .lt .st .on{color:#c99a3a}
+.lt .bt{font-size:10px;line-height:1;color:#6b5d48;font-variant-numeric:tabular-nums}
 .lt .db{width:70%;height:4px;border-radius:2px;background:#e2d6bc;overflow:hidden}
 .lt .db i{display:block;height:100%;border-radius:2px}
 .lt.done{background:linear-gradient(180deg,#f3f7ea,#dfeacd)}
@@ -243,6 +259,14 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <button class="btn" id="eGo">發牌</button>
 </div></div>
 
+<div class="ov hidden" id="dailyPick"><div class="card">
+  <button class="close" data-close="dailyPick" aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <h2>每日牌局</h2>
+  <p>每天一副新牌，求解器先確認可以解開。錯過的日子可以補玩最近 7 天。</p>
+  <div class="seg" id="dDraw"><button data-d="1">翻一張</button><button data-d="3">翻三張</button></div>
+  <div class="days" id="days"></div>
+</div></div>
+
 <div class="ov hidden" id="dealing"><div class="card"><h2>洗牌中</h2><div class="spin"></div><p id="dealMsg">求解器正在確認這局可以解開…</p></div></div>
 
 <div class="ov hidden" id="menu"><div class="card">
@@ -278,7 +302,8 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
       <li>點牌庫翻牌；翻完後點 <b>↻</b> 把廢牌翻回重來（有些關卡限制次數）。</li>
       <li><b>點一下</b>牌會自動送到最佳位置；也可以<b>拖曳</b>到想放的地方。</li>
       <li>暗牌全翻開、牌庫用完時，會<b>自動收牌</b>。</li>
-      <li>計分：廢牌→牌桌 +5、進基礎堆 +10、翻開暗牌 +5、基礎堆拉回 −15、悔棋 −5、翻回扣分；完成時依秒數加時間獎勵。</li>
+      <li>計分：廢牌→牌桌 +5、進基礎堆 +10、翻開暗牌 +5、基礎堆拉回 −15、悔棋 −5、翻回扣分；完成時再加時間獎勵 700000 ÷ 秒數（越快越多；30 秒內完成不計）。</li>
+      <li>關卡星等：過關 ★、<b>不用提示且悔棋不超過 10 次</b> ★、在目標時間內完成 ★。</li>
       <li>關卡的牌局都經過求解器驗證<b>一定解得開</b>：卡住時試試悔棋，換條路走。</li>
       <li>鍵盤：空白鍵翻牌、Z 悔棋、H 提示、A 自動收牌。</li>
     </ul>
@@ -512,117 +537,138 @@ function levelMode(n){ return n <= 40 ? { draw: 1, limit: -1 } : n <= 60 ? { dra
 var $ = function(id){ return document.getElementById(id); };
 var LEVELS = [
 [100491,6.792,75,99,0],
-[100156,6.907,78,102,0],
-[100222,7.168,85,109,0],
-[100208,7.584,69,102,1],
-[100669,7.69,73,104,1],
-[100458,7.792,75,107,1],
-[100012,7.892,75,111,1],
-[100102,8.032,80,114,1],
-[100580,8.144,83,117,1],
-[100443,8.254,86,120,1],
-[100073,8.364,89,123,1],
-[100079,8.468,94,125,1],
-[100651,8.614,96,130,1],
-[100133,8.715,147,117,1],
-[100036,8.819,79,114,2],
-[100257,8.969,79,120,2],
-[100289,9.094,79,125,2],
-[100311,9.194,81,128,2],
-[100359,9.318,85,131,2],
-[100252,9.475,97,132,2],
-[100476,9.618,94,139,2],
-[100094,9.762,120,135,2],
-[100275,9.938,143,135,2],
-[100096,10.102,128,146,2],
-[100632,10.244,81,138,3],
-[100046,10.414,89,141,3],
-[100152,10.586,91,147,3],
-[100592,10.763,343,133,2],
-[100019,10.907,108,153,3],
-[100439,11.095,662,152,1],
-[100184,11.259,1352,130,1],
-[100371,11.448,270,138,3],
-[100040,11.625,160,166,3],
-[100526,11.832,722,146,2],
-[100494,12.022,733,153,2],
-[100396,12.18,4044,123,1],
-[100495,12.357,82,158,5],
-[100101,12.7,97,165,5],
-[100262,12.825,227,200,3],
-[100339,12.981,2852,137,2],
-[200209,13.165,311,141,3],
-[200196,13.299,2262,131,1],
-[200036,13.463,274,158,3],
-[200522,13.643,180,182,3],
-[200577,13.755,534,143,3],
-[200445,13.917,514,151,3],
-[200416,14.054,1642,142,2],
-[200200,14.3,2766,131,2],
-[200683,14.48,9224,122,1],
-[200019,14.634,1193,146,3],
-[200614,14.852,506,189,3],
-[200694,14.978,1412,153,3],
-[200587,15.197,7309,128,2],
-[200342,15.371,2092,153,3],
-[200530,15.57,2253,158,3],
-[200692,15.68,1188,188,3],
-[200447,15.948,12679,136,2],
-[200650,16.188,4736,153,3],
-[200297,16.384,58913,124,1],
-[200351,16.528,6493,154,3],
-[300454,16.651,1856,125,5],
-[300193,16.782,975,124,6],
-[300212,16.925,131,146,8],
-[300457,17.034,2402,130,5],
-[300231,17.196,24244,108,3],
-[300230,17.362,1322,135,6],
-[300644,17.495,176,157,8],
-[300337,17.677,36390,111,3],
-[300487,17.787,120,152,9],
-[300338,17.929,2848,127,6],
-[300683,18.063,2599,136,6],
-[300697,18.255,448,150,8],
-[300524,18.382,58784,120,3],
-[300216,18.532,839,200,6],
-[300388,18.673,203442,114,2],
-[300265,18.861,351,152,9],
-[300051,18.972,14718,135,5],
-[300081,19.184,21672,128,5],
-[300030,19.329,9222,136,6],
-[300065,19.513,4619,139,7],
-[300681,19.626,268539,109,3],
-[300305,19.796,59653,112,5],
-[300477,19.946,17967,134,6],
-[300022,20.079,1279,149,9],
-[300393,20.299,69471,126,5],
-[400052,20.451,140250,108,3],
-[400243,20.598,45372,159,3],
-[400427,20.796,174670,113,3],
-[400556,20.959,107313,139,3],
-[400191,21.148,261319,111,3],
-[400360,21.334,330588,141,2],
-[400019,21.495,280595,122,3],
-[400695,21.663,426199,112,3],
-[400339,21.789,81991,183,3],
-[400316,21.893,549969,111,3],
-[400408,22.029,204605,156,3],
-[400151,22.19,535121,124,3],
-[400697,22.433,518135,135,3],
-[400345,22.55,198869,178,3],
-[400021,22.984,330791,175,3]
-]; // [seed, S, N(nodes), L(solution actions), R(recycles)]
+[100208,7.084,69,102,1],
+[100669,7.19,73,104,1],
+[100156,7.27,78,102,0],
+[100012,7.392,75,111,1],
+[100102,7.532,80,114,1],
+[100222,7.895,85,109,0],
+[100257,7.969,79,120,2],
+[100289,8.094,79,125,2],
+[100073,8.227,89,123,1],
+[100632,8.744,81,138,3],
+[100311,8.922,81,128,2],
+[100079,9.059,94,125,1],
+[100443,9.209,86,120,1],
+[100359,9.409,85,131,2],
+[100580,9.462,83,117,1],
+[101618,9.611,85,122,1],
+[100046,9.641,89,141,3],
+[101504,9.698,86,125,1],
+[100152,9.813,91,147,3],
+[100252,9.929,97,132,2],
+[100275,10.029,143,135,2],
+[100495,10.22,82,158,5],
+[101133,10.261,94,132,2],
+[101491,10.354,81,110,1],
+[101805,10.649,84,140,3],
+[101077,10.668,90,138,3],
+[101586,10.902,94,126,1],
+[101223,11.07,89,140,3],
+[100857,11.088,84,143,3],
+[100096,11.284,128,146,2],
+[101706,11.379,91,154,4],
+[101088,11.638,95,143,2],
+[101335,12.123,106,146,3],
+[101269,12.184,97,152,3],
+[100974,12.203,297,120,2],
+[101428,13.07,774,148,3],
+[100339,13.08,2852,137,2],
+[101773,13.527,237,158,4],
+[101134,13.648,248,185,2],
+[200708,13.798,79,113,1],
+[200113,14.385,80,124,2],
+[200701,14.519,87,126,2],
+[200636,14.607,86,130,2],
+[200375,15.051,82,118,1],
+[200209,16.104,311,141,3],
+[200430,16.179,103,130,3],
+[200614,16.336,506,189,3],
+[200605,16.629,98,150,3],
+[200363,16.664,99,151,3],
+[200068,16.724,100,153,3],
+[200443,16.765,154,181,3],
+[200445,16.857,514,151,3],
+[200754,17.141,172,148,3],
+[200579,17.44,215,151,3],
+[200342,17.583,2092,153,3],
+[200692,18.256,1188,188,3],
+[200530,18.509,2253,158,3],
+[200577,19.24,534,143,3],
+[200416,20.039,1642,142,2],
+[300842,20.189,86,105,2],
+[300800,20.527,85,107,3],
+[300892,21.201,87,121,4],
+[300604,21.879,81,127,6],
+[300652,22.653,83,133,8],
+[300125,22.952,85,144,8],
+[300454,25.024,1856,125,5],
+[300457,25.044,2402,130,5],
+[300265,25.598,351,152,9],
+[300683,26.3,2599,136,6],
+[300714,26.875,4323,119,4],
+[300338,26.894,2848,127,6],
+[300093,27.25,8077,121,3],
+[300261,27.64,2598,170,4],
+[300216,27.86,839,200,6],
+[300022,27.907,1279,149,9],
+[300197,28.01,5896,140,5],
+[300065,28.341,4619,139,7],
+[300164,28.423,1844,155,9],
+[300913,28.61,10360,132,7],
+[300030,28.657,9222,136,6],
+[300051,28.8,14718,135,5],
+[300919,29.205,9206,146,7],
+[300477,29.274,17967,134,6],
+[300806,29.577,6147,153,9],
+[401181,29.727,203,118,3],
+[401087,30.015,506,105,2],
+[400173,30.202,868,108,3],
+[400244,30.47,249,125,3],
+[400603,30.763,994,125,3],
+[400462,31.021,515,118,3],
+[400519,31.569,913,117,3],
+[401127,31.852,2501,100,2],
+[400541,32.126,4514,119,3],
+[400880,32.136,1528,119,3],
+[400779,32.428,2156,117,3],
+[400447,32.986,4719,108,3],
+[400012,33.26,4483,121,3],
+[400512,33.521,5399,124,3],
+[400758,33.792,10043,110,3]
+]; // [seed, D (shown difficulty, rises every level), N (solver nodes), L (solution actions), R (recycles)] — see demo/gen.js
+// level order before the 2026-11 rebalance (by seed), used once to move saved stars/best times onto the same deals
+var V3_SEEDS = [100491,100208,100669,100156,100012,100102,100222,100257,100289,100073,100632,100311,100079,100443,100359,100580,101618,100046,101504,100152,100252,100275,100495,101133,101491,101805,101077,101586,101223,100857,100096,101706,101088,101335,101269,100974,101428,100339,101773,101134,200708,200113,200701,200636,200375,200209,200430,200614,200605,200363,200068,200443,200445,200754,200579,200342,200692,200530,200577,200416,300454,300457,300212,300265,300487,300644,300193,300683,300697,300230,300714,300338,300093,300261,300216,300022,300197,300065,300164,300913,300030,300051,300919,300477,300806,401181,401087,400173,400244,400603,400462,400519,401127,400541,400880,400779,400447,400012,400512,400758]; // order of round 2
+var V2_SEEDS = [100491,100208,100156,100669,100012,100222,100102,100257,100073,100289,100443,100079,100580,100311,100632,100359,100036,100252,100046,100458,100152,100275,100651,100495,100096,100133,100019,100094,100476,100040,100371,100592,100101,100439,100184,100339,100526,100494,100262,100396,200209,200445,200614,200196,200036,200522,200019,200342,200577,200692,200530,200351,200416,200694,200200,200683,200587,200368,200650,200447,300212,300487,300454,300644,300457,300193,300265,300697,300230,300683,300714,300338,300093,300261,300216,300022,300197,300065,300164,300030,300913,300051,300919,300477,300806,401181,401087,400244,400173,400462,400603,400519,401127,400880,400779,400541,400447,400012,400512,400758]; // order 2026-11-07 (round 1 fix)
+var OLD_SEEDS = [100491,100156,100222,100208,100669,100458,100012,100102,100580,100443,100073,100079,100651,100133,100036,100257,100289,100311,100359,100252,100476,100094,100275,100096,100632,100046,100152,100592,100019,100439,100184,100371,100040,100526,100494,100396,100495,100101,100262,100339,200209,200196,200036,200522,200577,200445,200416,200200,200683,200019,200614,200694,200587,200342,200530,200692,200447,200650,200297,200351,300454,300193,300212,300457,300231,300230,300644,300337,300487,300338,300683,300697,300524,300216,300388,300265,300051,300081,300030,300065,300681,300305,300477,300022,300393,400052,400243,400427,400556,400191,400360,400019,400695,400339,400316,400408,400151,400697,400345,400021];
 var NLV = LEVELS.length, S_MIN = LEVELS[0][1], S_MAX = LEVELS[NLV - 1][1];
 function diffN(n){ return 1 + 9 * (LEVELS[n - 1][1] - S_MIN) / (S_MAX - S_MIN); }
-function parTime(n){ return Math.round(90 + LEVELS[n - 1][3] * 1.6); }
+// target time for the 3rd star: longer for limited recycles and draw-3, where a careful player spends more time planning
+function parTime(n){ return Math.round((90 + LEVELS[n - 1][3] * 1.6) * (n <= 40 ? 1 : n <= 60 ? 1.3 : n <= 85 ? 1.8 : 2)); }
 
 // ---------- storage ----------
 var PFX = 'klondike:';
 function sget(k, d){ try { var v = localStorage.getItem(PFX + k); return v == null ? d : JSON.parse(v); } catch (e){ return d; } }
 function sset(k, v){ try { localStorage.setItem(PFX + k, JSON.stringify(v)); } catch (e){} }
 function sdel(k){ try { localStorage.removeItem(PFX + k); } catch (e){} }
-var settings = Object.assign({ sound: true, vib: true, left: false, big: false, skin: 0, edraw: 1, esolv: true }, sget('settings', {}) || {});
+var settings = Object.assign({ sound: true, vib: true, left: false, big: false, skin: 0, edraw: 1, esolv: true, ddraw: 1 }, sget('settings', {}) || {});
 var progress = Object.assign({ best: {}, cur: 1, seen: {} }, sget('progress', {}) || {});
+var LV_VER = 4;
+function levelOfSeed(seed){ for (var i = 0; i < NLV; i++) if (LEVELS[i][0] === seed) return i + 1; return 0; }
+// Levels were re-ordered / partly replaced in v2, v3 and v4: records follow their deal (by seed); records of retired deals keep
+// their number (or the nearest free number in the same rule band), so no star or best time is lost.
+function migrateProgress(){
+  if (progress.lv === LV_VER) return;
+  var old = progress.best || {}, nb = {}, left = [], from = progress.lv === 3 ? V3_SEEDS : progress.lv === 2 ? V2_SEEDS : OLD_SEEDS;
+  Object.keys(old).forEach(function(k){ var n = +k, r = old[k]; if (!r || !(n >= 1 && n <= from.length)) return; var m = levelOfSeed(from[n - 1]); if (m && !nb[m]) nb[m] = r; else left.push([n, r]); });
+  left.forEach(function(e){
+    var n = e[0], lo = n <= 40 ? 1 : n <= 60 ? 41 : n <= 85 ? 61 : 86, hi = n <= 40 ? 40 : n <= 60 ? 60 : n <= 85 ? 85 : 100;
+    for (var d = 0; d <= 100; d++){ var a = n - d, b = n + d; if (a >= lo && !nb[a]){ nb[a] = e[1]; return; } if (b <= hi && !nb[b]){ nb[b] = e[1]; return; } }
+  });
+  progress.best = nb; progress.lv = LV_VER;
+  sset('progress', progress);
+}
+migrateProgress();
 var unlockAll = !!sget('unlockAll', false);
 function blankMode(){ return { p: 0, w: 0, best: 0, fast: 0, streak: 0, bstreak: 0, open: 0 }; }
 var stats = sget('stats', null) || {};
@@ -698,7 +744,7 @@ function layout(){
   if (land){ bot = H - 6; rgt = bar.width ? bar.left - 6 : W - 6; lft = 6; } else { bot = (bar.height ? bar.top : H) - 6; }
   var aw = rgt - lft, ah = bot - top, cw, gap, g, ch, colX = [], o = { land: land, top: top, bot: bot };
   if (!land){
-    g = W < 420 ? 8 : 14; gap = W < 420 ? 5 : 8;
+    g = W < 480 ? 8 : 14; gap = W < 420 ? 5 : W < 480 ? 6 : 8;
     cw = (aw - 2 * g - 6 * gap) / 7;
     cw = Math.min(cw, (ah - 2 * gap - 12 * 18) / (2.8 + 0.9), 104);
     cw = Math.floor(Math.max(cw, 30)); ch = Math.round(cw * 1.4);
@@ -709,7 +755,9 @@ function layout(){
     o.found = fcols.map(function(c){ return { x: colX[c], y: top }; });
     o.stock = { x: colX[left ? 0 : 6], y: top };
     o.waste = { x: colX[left ? 1 : 5], y: top };
-    o.fan = { dx: (left ? 1 : -1) * Math.round(cw * 0.3), dy: 0 };
+    // draw-3 fan: the playable top card is the rightmost one, the two below peek out on its left so their rank corner shows
+    // (right-handed: fan grows left into the free 5th column; left-handed: it grows right into the free 3rd column)
+    o.fan = { dx: Math.round(cw * 0.4), dy: 0, anchorRight: !left };
   } else {
     gap = 6; g = 4;
     cw = (aw - 2 * g - 9 * gap - 10) / 10;
@@ -827,9 +875,11 @@ function startGame(cfg){
   // cfg: {mode, n, seed, draw, limit, restore}
   var st = cfg.restore ? cfg.restore.st : deal(cfg.seed, cfg.draw, cfg.limit);
   if (G && G.started && G.status !== 'won') markAbandon();
+  collectTok++;
   G = { mode: cfg.mode, n: cfg.n || 0, seed: cfg.seed, draw: st.draw, limit: st.limit, st: st, score: 0, undoPen: 0, undos: 0, moves: 0, hints: 0, timeMs: 0,
         started: false, status: 'play', hist: [], hl: null, dateKey: cfg.dateKey || null };
-  if (cfg.restore){ var r = cfg.restore; G.score = r.score; G.undoPen = r.undoPen; G.undos = r.undos; G.moves = r.moves; G.hints = r.hints; G.timeMs = r.timeMs; G.started = r.started; }
+  if (cfg.restore){ var r = cfg.restore; G.score = r.score; G.undoPen = r.undoPen; G.undos = r.undos; G.moves = r.moves; G.hints = r.hints; G.timeMs = r.timeMs; G.started = r.started;
+    if (Array.isArray(r.hist)) G.hist = r.hist.filter(function(h){ return h && h.st && Array.isArray(h.st.t) && h.st.t.length === 7; }); }
   screen = 'game';
   $('hud').classList.remove('hidden'); $('bar').classList.remove('hidden'); $('title').classList.add('hidden');
   hideStuck(); clearWinFx();
@@ -847,7 +897,8 @@ function startGame(cfg){
     for (var k = 0; k < 28; k++) SFX.deal(k);
   }
   updateHud(); saveCurrent();
-  if (G.mode === 'level') maybeIntro(G.n);
+  if (cfg.restore && canAutoFinish()) startAuto(); // reloaded in the middle of 自動收牌: carry on
+  if (G.mode === 'level'){ maybeIntro(G.n); levelSolution(G, function(){}); }
 }
 function curModeKey(){ return G.mode === 'level' ? 'level' : G.mode === 'daily' ? 'daily' : (G.draw === 3 ? 'e3' : 'e1'); }
 function markAbandon(){ /* unfinished game: streak handled when next game starts */ }
@@ -925,12 +976,14 @@ function collectAll(){
   if (busy()) return;
   var m = nextFoundMove(G.st);
   if (!m){ toast('目前沒有可以收的牌'); SFX.bad(); return; }
-  var k = 0;
-  var step = function(){ if (busy()) return; var mm = nextFoundMove(G.st); if (!mm) return; doMoveAction(mm); if (++k < 52 && G.status === 'play') setTimeout(step, 110); };
+  var k = 0, tok = ++collectTok, gen = G;
+  var step = function(){ if (tok !== collectTok || G !== gen || busy()) return; var mm = nextFoundMove(G.st); if (!mm) return; doMoveAction(mm); if (++k < 52 && G.status === 'play') setTimeout(step, 110); };
   step();
 }
+var collectTok = 0; // bumped by 悔棋 / 重來 / new game so a running 收牌 chain stops
 function undo(){
   if (!G || screen !== 'game' || G.status !== 'play') return;
+  collectTok++;
   if (!G.hist.length){ toast('已經是最開始了'); SFX.bad(); return; }
   var s = G.hist.pop(); G.st = s.st; G.score = s.score; G.moves = s.moves; G.undos++; G.undoPen += 5; G.hl = null;
   var T = targets(), now = performance.now();
@@ -947,7 +1000,7 @@ var stuckShown = false;
 function checkStuck(){
   if (!G || G.status !== 'play') return;
   var mv = genMoves(G.st, false);
-  if (!mv.length){ if (!stuckShown){ stuckShown = true; $('stuck').classList.remove('hidden'); SFX.stuck(); } }
+  if (!mv.length){ if (!stuckShown){ stuckShown = true; $('stuck').classList.remove('hidden'); popped('stuck'); SFX.stuck(); } }
   else hideStuck();
 }
 function hideStuck(){ stuckShown = false; $('stuck').classList.add('hidden'); }
@@ -961,7 +1014,8 @@ function targets(){
   n = st.w.length; var fanN = G.draw === 3 ? Math.min(3, n) : Math.min(1, n);
   for (i = 0; i < n; i++){
     var fi = i - (n - fanN); var pos = fi > 0 ? fi : 0;
-    T[st.w[i]] = { x: L.waste.x + L.fan.dx * pos, y: L.waste.y + L.fan.dy * pos, up: true, z: 100 + i, hide: i < n - 4 };
+    var px = L.fan.anchorRight ? L.waste.x - L.fan.dx * (fanN - 1 - pos) : L.waste.x + L.fan.dx * pos;
+    T[st.w[i]] = { x: px, y: L.waste.y + L.fan.dy * pos, up: true, z: 100 + i, hide: i < n - 4 };
   }
   // foundations
   for (var s = 0; s < 4; s++) for (var r = 1; r <= 13; r++){ c = s * 13 + r - 1; if (r <= st.f[s]) T[c] = { x: L.found[s].x, y: L.found[s].y, up: true, z: 200 + r, hide: r < st.f[s] - 1 }; }
@@ -974,8 +1028,8 @@ function targets(){
 }
 function colOffsets(col){
   var st = G.st, cc = st.t[col], d = st.d[col], u = cc.length - d;
-  var dOff = Math.max(5, Math.round(L.ch * 0.12)), uOff = Math.round(L.ch * (settings.big ? 0.36 : 0.32));
-  var avail = L.bot - L.tabY - L.ch - 4;
+  var avail = L.bot - L.tabY - L.ch - 4, roomy = !L.land && avail > L.ch * 5; // tall phones: open the fan up instead of leaving the lower table empty
+  var dOff = Math.max(5, Math.round(L.ch * (roomy ? 0.16 : 0.12))), uOff = Math.round(L.ch * (roomy ? (settings.big ? 0.46 : 0.42) : (settings.big ? 0.36 : 0.32)));
   var nd = Math.min(d, Math.max(0, cc.length - 1)), nu = Math.max(0, u - 1);
   if (nd * dOff + nu * uOff > avail && nu > 0){
     uOff = Math.max(L.land ? 12 : 16, (avail - nd * dOff) / nu);
@@ -1026,12 +1080,35 @@ function bestAutoMove(h){
 
 // ---------- input ----------
 var press = null;
+// Ghost-click guard: the table acts on pointerdown/up, so the browser's follow-up click must never land on a button that
+// the tap itself just revealed (win card, stuck banner). Touches handled by the canvas cancel their click, and any click
+// that arrives shortly after a canvas tap aimed at another element is dropped.
+var cvTapAt = -1e9, cvDown = false;
+cv.addEventListener('touchend', function(e){ if (e.cancelable) e.preventDefault(); }, { passive: false });
+var lastDownEl = null;
+document.addEventListener('pointerdown', function(e){ cvDown = e.target === cv; lastDownEl = e.target; }, true);
+document.addEventListener('pointerup', function(e){ if (e.target === cv || cvDown) cvTapAt = performance.now(); }, true);
+document.addEventListener('click', function(e){
+  var stray = (e.target !== cv && cvDown && performance.now() - cvTapAt < 450) ||                       // after a table tap
+              (btnTapEl && lastDownEl && btnTapEl.contains(lastDownEl) && !btnTapEl.contains(e.target) && performance.now() - btnTapAt < 600);            // after a play button acted
+  if (stray){ e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); }
+}, true);
+// buttons that pop up as a result of play ignore taps for a moment after they appear
+var popAt = {};
+function popped(id){ popAt[id] = performance.now(); }
+function fresh(id){ return performance.now() - (popAt[id] || -1e9) < 300; }
 function ptr(e){ var r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 cv.addEventListener('pointerdown', function(e){
   audio();
   if (winFx && winFx.active){ finishWinFx(); return; }
-  if (press || busy()) return;
+  if (busy()) return;
   var p = ptr(e), h = hitTest(p.x, p.y);
+  if (press && press.id !== e.pointerId){
+    // a second finger landed while the first is still down: never swallow it
+    var pr0 = press;
+    if (pr0.maxd < 8){ press = null; releaseDrag(pr0); tap(pr0.h); if (busy()) return; h = hitTest(p.x, p.y); }
+    else { if (h && h.kind !== 'down' && h.kind !== 'slot' && !(h.kind === 'card' && pr0.cards && pr0.cards.indexOf(cardsOf(h)[0]) >= 0)) tap(h); e.preventDefault(); return; }
+  }
   if (!h || h.kind === 'down' || h.kind === 'slot') return;
   try { cv.setPointerCapture(e.pointerId); } catch (er){}
   press = { id: e.pointerId, h: h, x0: p.x, y0: p.y, x: p.x, y: p.y, t0: performance.now(), drag: false, maxd: 0, cards: null };
@@ -1054,6 +1131,7 @@ function endPress(e, cancel){
     var m = findDrop(pr);
     releaseDrag(pr);
     if (m){ doMoveAction(m, true); }
+    else if (pr.maxd < 24 && performance.now() - pr.t0 < 1500){ tap(pr.h); } // a shaky tap, not a drag
     else { SFX.bad(); }
   }
 }
@@ -1109,36 +1187,68 @@ document.addEventListener('keydown', function(e){
 // ---------- hint (solver in a Web Worker, sync fallback) ----------
 var worker = null, wreq = {}, wid = 0;
 try {
-  var wsrc = $('coreSrc').textContent + '\nonmessage=function(e){var d=e.data;var r=solve(d.st,d.maxNodes,d.ms?Date.now()+d.ms:0);postMessage({id:d.id,ok:r.ok,nodes:r.nodes,first:r.ok?r.path[0]:null,len:r.ok?r.path.length:0});};';
+  var wsrc = $('coreSrc').textContent + '\nonmessage=function(e){var d=e.data;var r=solve(d.st,d.maxNodes,d.ms?Date.now()+d.ms:0);postMessage({id:d.id,ok:r.ok,nodes:r.nodes,aborted:r.aborted,first:r.ok?r.path[0]:null,len:r.ok?r.path.length:0,path:d.full&&r.ok?r.path:null});};';
   worker = new Worker(URL.createObjectURL(new Blob([wsrc], { type: 'text/javascript' })));
   worker.onmessage = function(e){ var cb = wreq[e.data.id]; delete wreq[e.data.id]; if (cb) cb(e.data); };
   worker.onerror = function(){ worker = null; Object.keys(wreq).forEach(function(id){ var cb = wreq[id]; delete wreq[id]; cb(null); }); };
 } catch (e){ worker = null; }
-function solveAsync(st, maxNodes, ms, cb){
-  var fallback = function(){ var r = solve(st, maxNodes, Date.now() + Math.min(ms || 1000, 1000)); return { ok: r.ok, nodes: r.nodes, first: r.ok ? r.path[0] : null, len: r.ok ? r.path.length : 0 }; };
+function solveAsync(st, maxNodes, ms, cb, full){
+  var fallback = function(){ var r = solve(st, maxNodes, Date.now() + Math.min(ms || 1000, 1000)); return { ok: r.ok, nodes: r.nodes, aborted: r.aborted, first: r.ok ? r.path[0] : null, len: r.ok ? r.path.length : 0, path: full && r.ok ? r.path : null }; };
   if (worker){
     var id = ++wid, done = false;
     wreq[id] = function(r){ if (done) return; done = true; cb(r || fallback()); };
-    try { worker.postMessage({ id: id, st: st, maxNodes: maxNodes, ms: ms }); } catch (e){ delete wreq[id]; done = true; cb(fallback()); return; }
+    try { worker.postMessage({ id: id, st: st, maxNodes: maxNodes, ms: ms, full: !!full }); } catch (e){ delete wreq[id]; done = true; cb(fallback()); return; }
     setTimeout(function(){ if (wreq[id]){ delete wreq[id]; if (!done){ done = true; cb(fallback()); } } }, (ms || 6000) + 2500);
   } else setTimeout(function(){ cb(fallback()); }, 20);
 }
 var hintBusy = false;
+// Level deals are verified solvable: their solution (solved once from the opening deal, in the worker, as soon as the level
+// starts) is replayed alongside the game; while the board is still on that line the hint is its next action, instantly.
+var solCache = {};
+function posKey(st){ return JSON.stringify([st.t, st.d, st.s, st.w, st.f, st.passes]); }
+function levelSolution(g, cb){
+  var key = g.seed + ':' + g.draw + ':' + g.limit, c = solCache[key];
+  if (c && c.keys){ cb(c); return; }
+  if (c){ c.wait.push(cb); return; }
+  c = solCache[key] = { wait: [cb] };
+  solveAsync(deal(g.seed, g.draw, g.limit), 600000, 8000, function(r){
+    var out = solCache[key];
+    if (r && r.ok && r.path){
+      var st = deal(g.seed, g.draw, g.limit), keys = {}; keys[posKey(st)] = 0;
+      for (var i = 0; i < r.path.length; i++){ var a = r.path[i]; if (a === 'D') doDraw(st); else doMove(st, a); if (!(posKey(st) in keys)) keys[posKey(st)] = i + 1; }
+      out.path = r.path; out.keys = keys;
+    } else { out.path = null; out.keys = {}; }
+    var w = out.wait; out.wait = []; w.forEach(function(f){ f(out); });
+  }, true);
+}
 function hint(){
   if (busy() || hintBusy) return;
   hintBusy = true; G.hints++; updateHud();
   var gen = G, slow = setTimeout(function(){ toast('思考中…'); }, 250);
-  solveAsync(cloneSt(G.st), 400000, worker ? 1500 : 200, function(r){
+  var finish = function(a, msg){
     clearTimeout(slow); hintBusy = false;
-    if (G !== gen || G.status !== 'play') return;
-    var a = r && r.ok ? r.first : null;
+    if (G !== gen || G.status !== 'play' || screen !== 'game') return;
     if (!a){
       var g = genMoves(G.st, false)[0];
-      if (!g){ checkStuck(); toast('找不到可行的下一步，試試悔棋'); SFX.bad(); return; }
+      if (!g){ checkStuck(); toast(msg || '找不到可行的下一步，試試悔棋'); SFX.bad(); return; }
       a = g.acts ? 'D' : g.m;
-      if (r && !r.ok) toast('這條路可能走不通了，建議悔棋');
     }
+    if (msg) toast(msg);
     showHint(a);
+  };
+  var fromSearch = function(){
+    solveAsync(cloneSt(G.st), 600000, worker ? 1500 : 400, function(r){
+      if (r && r.ok) finish(r.first);
+      else if (r && !r.aborted) finish(null, '這條路走不通了，建議悔棋'); // searched every line: really a dead end
+      else finish(null, '想不出確定的走法，先試試這一步');      // ran out of time: no claim about the position
+    });
+  };
+  if (G.mode !== 'level'){ fromSearch(); return; }
+  levelSolution(G, function(sol){
+    if (G !== gen){ clearTimeout(slow); hintBusy = false; return; }
+    var k = sol.keys[posKey(G.st)];
+    if (sol.path && k != null && k < sol.path.length) finish(sol.path[k]);
+    else fromSearch();
   });
 }
 function showHint(a){
@@ -1313,7 +1423,7 @@ function updateHud(){
   if (!G) return;
   var name, dtxt;
   if (G.mode === 'level'){ name = '第 ' + G.n + ' 關'; var d = diffN(G.n); $('hDiffN').textContent = d.toFixed(1); $('hPips').innerHTML = pipsHTML(d); $('hDiff').classList.remove('hidden'); }
-  else { name = G.mode === 'daily' ? '每日牌局' : '無盡・' + (G.draw === 3 ? '翻三張' : '翻一張'); $('hDiff').classList.add('hidden'); }
+  else { name = G.mode === 'daily' ? '每日牌局' + (G.draw === 3 ? '・翻三' : '') : '無盡・' + (G.draw === 3 ? '翻三張' : '翻一張'); $('hDiff').classList.add('hidden'); }
   $('hLevel').textContent = name;
   $('hMoves').textContent = G.moves; $('hScore').textContent = dispScore(); updateTime();
   $('bUndo').disabled = !G.hist.length;
@@ -1324,7 +1434,7 @@ function toast(msg){ var t = $('toast'); t.textContent = msg; t.classList.remove
 function muteIcon(){ $('muteIcon').innerHTML = settings.sound ? '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/>' : '<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/>'; }
 
 // ---------- overlays ----------
-var OVS = ['select', 'endless', 'dealing', 'menu', 'settings', 'help', 'stats', 'intro', 'win', 'share'];
+var OVS = ['select', 'endless', 'dailyPick', 'dealing', 'menu', 'settings', 'help', 'stats', 'intro', 'win', 'share'];
 function anyOverlay(){ for (var i = 0; i < OVS.length; i++) if (!$(OVS[i]).classList.contains('hidden')) return true; return false; }
 function show(id){ $(id).classList.remove('hidden'); }
 function hide(id){ $(id).classList.add('hidden'); needDraw = true; }
@@ -1337,34 +1447,53 @@ function goTitle(){
 }
 $('tLevels').addEventListener('click', function(){ audio(); SFX.click(); openSelect(); });
 $('tEndless').addEventListener('click', function(){ audio(); SFX.click(); openEndless(); });
-$('tDaily').addEventListener('click', function(){ audio(); SFX.click(); startDaily(); });
+$('tDaily').addEventListener('click', function(){ audio(); SFX.click(); openDaily(); });
 $('tStats').addEventListener('click', function(){ audio(); SFX.click(); openStats(); });
 $('tSettings').addEventListener('click', function(){ audio(); SFX.click(); openSettings(); });
 $('tResume').addEventListener('click', function(){ audio(); SFX.click(); resumeGame(); });
-$('sBack').addEventListener('click', function(){ SFX.click(); hide('select'); if (screen !== 'game') goTitle(); });
-$('bMenu').addEventListener('click', function(){ audio(); SFX.click(); openMenu(); });
-$('bMute').addEventListener('click', function(){ settings.sound = !settings.sound; saveSettings(); muteIcon(); audio(); SFX.click(); syncSwitches(); });
-$('bUndo').addEventListener('click', function(){ audio(); undo(); });
-$('bHint').addEventListener('click', function(){ audio(); hint(); });
-$('bRestart').addEventListener('click', function(){ audio(); restartGame(); });
-$('bAuto').addEventListener('click', function(){ audio(); collectAll(); });
-$('sUndo').addEventListener('click', function(){ audio(); undo(); });
-$('sRestart').addEventListener('click', function(){ audio(); hideStuck(); restartGame(); });
+$('sBack').addEventListener('click', function(){ SFX.click(); hide('select'); if (screen !== 'game' || !G || G.status === 'won') goTitle(); });
+// Play buttons act on pointerup of the same pointer that went down on them (a tap with a second finger while the first is
+// still on the table never produces a click), and the click that may follow is swallowed so nothing runs twice.
+// Keyboard / assistive clicks (no pointer) still work through the click.
+var tapOwner = {}, btnTapAt = -1e9, btnTapEl = null;
+function onTap(el, fn){
+  el.addEventListener('pointerdown', function(e){ tapOwner[e.pointerId] = el; });
+  el.addEventListener('pointercancel', function(e){ if (tapOwner[e.pointerId] === el) delete tapOwner[e.pointerId]; });
+  el.addEventListener('pointerup', function(e){
+    if (tapOwner[e.pointerId] !== el) return;
+    delete tapOwner[e.pointerId];
+    var r = el.getBoundingClientRect(), m = 10;
+    if (el.disabled || e.clientX < r.left - m || e.clientX > r.right + m || e.clientY < r.top - m || e.clientY > r.bottom + m) return;
+    el.__tapAt = btnTapAt = performance.now(); btnTapEl = el; if (e.cancelable) e.preventDefault();
+    fn();
+  });
+  // the button already acted: cancel the touch's compatibility click (it could land on a panel the tap just opened)
+  el.addEventListener('touchend', function(e){ if (performance.now() - (el.__tapAt || -1e9) < 600 && e.cancelable) e.preventDefault(); }, { passive: false });
+  el.addEventListener('click', function(e){ if (performance.now() - (el.__tapAt || -1e9) < 1000){ el.__tapAt = -1e9; return; } fn(); });
+}
+onTap($('bMenu'), function(){ audio(); SFX.click(); openMenu(); });
+onTap($('bMute'), function(){ settings.sound = !settings.sound; saveSettings(); muteIcon(); audio(); SFX.click(); syncSwitches(); });
+onTap($('bUndo'), function(){ audio(); undo(); });
+onTap($('bHint'), function(){ audio(); hint(); });
+onTap($('bRestart'), function(){ audio(); restartGame(); });
+onTap($('bAuto'), function(){ audio(); collectAll(); });
+onTap($('sUndo'), function(){ if (fresh('stuck')) return; audio(); undo(); });
+onTap($('sRestart'), function(){ if (fresh('stuck')) return; audio(); hideStuck(); restartGame(); });
 $('mResume').addEventListener('click', function(){ SFX.click(); hide('menu'); });
-$('mNew').addEventListener('click', function(){ SFX.click(); hide('menu'); if (G.mode === 'level') openSelect(); else if (G.mode === 'daily') startDaily(); else openEndless(); });
+$('mNew').addEventListener('click', function(){ SFX.click(); hide('menu'); if (G.mode === 'level') openSelect(); else if (G.mode === 'daily') openDaily(); else openEndless(); });
 $('mSettings').addEventListener('click', function(){ SFX.click(); openSettings(); });
 $('mHelp').addEventListener('click', function(){ SFX.click(); show('help'); });
 $('mHome').addEventListener('click', function(){ SFX.click(); goTitle(); });
 function openMenu(){
   if (!G) return;
-  var info = G.mode === 'level' ? '第 ' + G.n + ' 關・難度 ' + diffN(G.n).toFixed(1) + '・' + ruleName(G.n) : (G.mode === 'daily' ? '每日牌局・' + G.dateKey : '無盡模式・' + (G.draw === 3 ? '翻三張' : '翻一張'));
+  var info = G.mode === 'level' ? '第 ' + G.n + ' 關・難度 ' + diffN(G.n).toFixed(1) + '・' + ruleName(G.n) : (G.mode === 'daily' ? '每日牌局・' + G.dateKey + (G.draw === 3 ? '・翻三張' : '') : '無盡模式・' + (G.draw === 3 ? '翻三張' : '翻一張'));
   $('mInfo').textContent = info;
   $('mNew').textContent = G.mode === 'level' ? '選擇關卡' : '新牌局';
   show('menu');
 }
 function ruleName(n){ var m = levelMode(n); return (m.draw === 3 ? '翻三張' : '翻一張') + (m.limit >= 0 ? '・限翻回 ' + m.limit + ' 次' : ''); }
 // level select
-function unlocked(n){ return unlockAll || n <= progress.cur; }
+function unlocked(n){ return unlockAll || n <= progress.cur || !!progress.best[n]; }
 function diffColor(d){ var t = (d - 1) / 9; var h = 120 - 120 * t; return 'hsl(' + h.toFixed(0) + ',62%,45%)'; }
 var BANDS = [[1, 40, '翻一張', '翻回不限次數'], [41, 60, '翻一張', '限翻回 3 次'], [61, 85, '翻三張', '翻回不限次數'], [86, 100, '翻三張', '限翻回 3 次']];
 function buildGrid(){
@@ -1377,7 +1506,7 @@ function buildGrid(){
       if (!un){ html += '<button class="lt lock" data-n="' + n + '" aria-label="第 ' + n + ' 關（未解鎖）"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span class="dn" style="font-size:11px">' + n + '</span></button>'; continue; }
       var s = best ? best.s : 0, sh = '';
       for (var k = 0; k < 3; k++) sh += '<span class="' + (k < s ? 'on' : '') + '">★</span>';
-      html += '<button class="lt' + (best ? ' done' : '') + (n === progress.cur && !best ? ' cur' : '') + '" data-n="' + n + '" aria-label="第 ' + n + ' 關，難度 ' + d.toFixed(1) + '"><span class="n">' + n + '</span><span class="st">' + sh + '</span><span class="db"><i style="width:' + (d * 10).toFixed(0) + '%;background:' + diffColor(d) + '"></i></span></button>';
+      html += '<button class="lt' + (best ? ' done' : '') + (n === progress.cur && !best ? ' cur' : '') + '" data-n="' + n + '" aria-label="第 ' + n + ' 關，難度 ' + d.toFixed(1) + (best && best.t < 1e9 ? '，最佳 ' + fmtT(best.t) : '') + '"><span class="n">' + n + '</span><span class="st">' + sh + '</span><span class="db"><i style="width:' + (d * 10).toFixed(0) + '%;background:' + diffColor(d) + '"></i></span>' + (best && best.t && best.t < 1e9 ? '<span class="bt">' + fmtT(best.t) + '</span>' : '') + '</button>';
     }
     html += '</div>';
   });
@@ -1445,15 +1574,34 @@ function newEndless(){
   attempt();
 }
 // daily
-function todayKey(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
-function startDaily(){
+function dayKey(off){ var n = new Date(), d = new Date(n.getFullYear(), n.getMonth(), n.getDate() - (off || 0)); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function todayKey(){ return dayKey(0); }
+var WDAY = '日一二三四五六';
+function openDaily(){
+  OVS.forEach(function(o){ if (o !== 'dailyPick') hide(o); });
+  var h = '', dd = settings.ddraw === 3 ? 3 : 1;
+  document.querySelectorAll('#dDraw button').forEach(function(b){ b.setAttribute('aria-pressed', String(+b.getAttribute('data-d') === dd)); });
+  for (var i = 0; i < 7; i++){
+    var key = dayKey(i), p = key.split('-'), wd = WDAY[new Date(+p[0], +p[1] - 1, +p[2]).getDay()], rec = stats.daily[dailyRecKey(key, dd)];
+    var label = (+p[1]) + '/' + (+p[2]) + '（' + (i === 0 ? '今天' : i === 1 ? '昨天' : '週' + wd) + '）';
+    h += '<button class="dayb' + (i === 0 ? ' today' : '') + '" data-day="' + key + '"><span>' + label + '</span><small>' + (rec ? '✓ ' + fmtT(rec.t) + '・' + rec.sc + ' 分' : (i === 0 ? '開始' : '補玩')) + '</small></button>';
+  }
+  $('days').innerHTML = h; show('dailyPick');
+}
+$('days').addEventListener('click', function(e){ var b = e.target.closest('.dayb'); if (!b) return; audio(); SFX.click(); startDaily(b.getAttribute('data-day'), settings.ddraw === 3 ? 3 : 1); });
+document.querySelectorAll('#dDraw button').forEach(function(b){ b.addEventListener('click', function(){ SFX.click(); settings.ddraw = +b.getAttribute('data-d'); saveSettings(); openDaily(); }); });
+// draw-1 dailies keep their old record key (the date); draw-3 records live under "date/3"
+function dailyRecKey(key, draw){ return draw === 3 ? key + '/3' : key; }
+function startDaily(dk, draw){
   OVS.forEach(hide);
-  var key = todayKey(), base = (parseInt(key.replace(/-/g, ''), 10) * 2654435761) >>> 0, k = 0;
-  $('dealMsg').textContent = '準備今天的牌局（' + key + '）…'; show('dealing');
+  draw = draw === 3 ? 3 : 1;
+  var key = dk || todayKey(), base = (parseInt(key.replace(/-/g, ''), 10) * 2654435761) >>> 0, k = 0;
+  if (draw === 3) base = (base ^ 0x9e3779b9) >>> 0;
+  $('dealMsg').textContent = '準備' + (draw === 3 ? '翻三張' : '') + '每日牌局（' + key + '）…'; show('dealing');
   var attempt = function(){
     var seed = (base + k * 7919) >>> 0;
-    solveAsync(deal(seed, 1, -1), 250000, 0, function(r){
-      if ((r && r.ok) || k >= 12){ hide('dealing'); startGame({ mode: 'daily', seed: seed, draw: 1, limit: -1, dateKey: key }); var rec = stats.daily[key]; if (rec) toast('今天已完成：' + fmtT(rec.t) + '・' + rec.sc + ' 分，再挑戰一次！'); }
+    solveAsync(deal(seed, draw, -1), 250000, draw === 3 ? 1500 : 0, function(r){
+      if ((r && r.ok) || k >= 12){ hide('dealing'); startGame({ mode: 'daily', seed: seed, draw: draw, limit: -1, dateKey: key }); var rec = stats.daily[dailyRecKey(key, draw)]; if (rec) toast((key === todayKey() ? '今天' : key) + '已完成：' + fmtT(rec.t) + '・' + rec.sc + ' 分，再挑戰一次！'); }
       else { k++; attempt(); }
     });
   };
@@ -1501,9 +1649,9 @@ function onWin(){
   grant('first'); if (!G.undos) grant('noundo'); if (secs < 180) grant('fast3'); if (m.streak >= 5) grant('streak5'); if (G.draw === 3) grant('d3');
   if (!G.hints){ stats.nohint++; if (stats.nohint >= 10) grant('nohint10'); }
   if (G.final.score >= 5000) grant('score5k');
-  if (G.mode === 'daily'){ grant('daily'); var prev = stats.daily[G.dateKey]; if (!prev || secs < prev.t) stats.daily[G.dateKey] = { t: secs, sc: G.final.score, m: G.moves }; }
+  if (G.mode === 'daily'){ grant('daily'); var dk = dailyRecKey(G.dateKey, G.draw), prev = stats.daily[dk]; if (!prev || secs < prev.t) stats.daily[dk] = { t: secs, sc: G.final.score, m: G.moves }; }
   if (G.mode === 'level'){
-    var n = G.n, stars = 1 + (G.hints ? 0 : 1) + (secs <= parTime(n) ? 1 : 0);
+    var n = G.n, stars = 1 + (cleanPlay() ? 1 : 0) + (secs <= parTime(n) ? 1 : 0);
     G.stars = stars;
     var b = progress.best[n];
     progress.best[n] = { s: Math.max(stars, b ? b.s : 0), sc: Math.max(G.final.score, b ? b.sc : 0), t: Math.min(secs, b ? b.t : 1e9) };
@@ -1515,13 +1663,15 @@ function onWin(){
   SFX.win(); vib([20, 40, 20]);
   setTimeout(function(){ if (G && G.status === 'won') startWinFx(); }, 350);
 }
+var UNDO_STAR = 10; // the "clean play" star allows a few take-backs, not peeking through the stock with unlimited 悔棋
+function cleanPlay(){ return !G.hints && G.undos <= UNDO_STAR; }
 function showWin(){
   var f = G.final;
   $('wTitle').textContent = G.mode === 'level' ? '第 ' + G.n + ' 關 過關！' : G.mode === 'daily' ? '每日牌局完成！' : '漂亮收牌！';
   if (G.mode === 'level'){
     var s = '', i; for (i = 0; i < 3; i++) s += '<span class="' + (i < G.stars ? 'on' : '') + '" style="animation-delay:' + (i * 0.18) + 's">★</span>';
     $('wStars').innerHTML = s; $('wStars').classList.remove('hidden');
-    $('wNote').innerHTML = '<span class="ok">✓ 過關</span>・<span class="' + (G.hints ? '' : 'ok') + '">' + (G.hints ? '✗' : '✓') + ' 未用提示</span>・<span class="' + (f.secs <= parTime(G.n) ? 'ok' : '') + '">' + (f.secs <= parTime(G.n) ? '✓' : '✗') + ' ' + fmtT(parTime(G.n)) + ' 內完成</span>';
+    $('wNote').innerHTML = '<span class="ok">✓ 過關</span>・<span class="' + (cleanPlay() ? 'ok' : '') + '">' + (cleanPlay() ? '✓' : '✗') + ' 未用提示・悔棋 ≤ ' + UNDO_STAR + ' 次</span>・<span class="' + (f.secs <= parTime(G.n) ? 'ok' : '') + '">' + (f.secs <= parTime(G.n) ? '✓' : '✗') + ' ' + fmtT(parTime(G.n)) + ' 內完成</span>';
     $('wNext').textContent = G.n < NLV ? '下一關' : '回到關卡';
     $('wBack').textContent = '選擇關卡';
   } else {
@@ -1530,30 +1680,34 @@ function showWin(){
   }
   $('wRes').innerHTML = '<div><b>' + fmtT(f.secs) + '</b>時間</div><div><b>' + G.moves + '</b>步數</div><div><b>' + f.score + '</b>分數</div>';
   $('wBonus').textContent = f.bonus ? '含時間獎勵 +' + f.bonus + (G.undos ? '・悔棋 ' + G.undos + ' 次' : '') : '時間獎勵需 30 秒以上才計' + (G.undos ? '・悔棋 ' + G.undos + ' 次' : '');
-  show('win');
+  show('win'); popped('win');
   burstConfetti();
 }
 function burstConfetti(){ for (var k = 0; k < 4; k++) burst(W * (0.2 + 0.2 * k), H * 0.3, 18); }
 $('wNext').addEventListener('click', function(){
+  if (fresh('win')) return;
   audio(); SFX.click(); hide('win'); clearWinFx();
   if (G.mode === 'level'){ if (G.n < NLV) startLevel(G.n + 1); else openSelect(); }
   else if (G.mode === 'daily') goTitle(); else newEndless();
 });
-$('wBack').addEventListener('click', function(){ SFX.click(); hide('win'); clearWinFx(); if (G.mode === 'level') openSelect(); else goTitle(); });
+$('wBack').addEventListener('click', function(){ if (fresh('win')) return; SFX.click(); hide('win'); clearWinFx(); if (G.mode === 'level') openSelect(); else goTitle(); });
 $('wShare').addEventListener('click', function(){
+  if (fresh('win')) return;
   SFX.click();
-  var f = G.final, head = G.mode === 'level' ? '第 ' + G.n + ' 關' : G.mode === 'daily' ? '每日牌局 ' + G.dateKey : '無盡・' + (G.draw === 3 ? '翻三張' : '翻一張');
+  var f = G.final, head = G.mode === 'level' ? '第 ' + G.n + ' 關' : G.mode === 'daily' ? '每日牌局 ' + G.dateKey + (G.draw === 3 ? ' 翻三張' : '') : '無盡・' + (G.draw === 3 ? '翻三張' : '翻一張');
   var txt = '經典接龍｜' + head + '｜步數 ' + G.moves + '｜' + fmtT(f.secs) + '｜' + f.score + ' 分' + (G.mode === 'level' ? '｜' + '★★★'.slice(0, G.stars) : '');
   var fallback = function(){ try { navigator.clipboard && navigator.clipboard.writeText(txt).catch(function(){}); } catch (e){} $('shText').textContent = txt; show('share'); };
   if (navigator.share){ navigator.share({ text: txt }).catch(function(err){ if (!err || err.name !== 'AbortError') fallback(); }); } else fallback();
 });
 // save / resume
+var HIST_SAVE = 100; // undo steps kept across a reload
 function saveCurrent(){
   if (!G || G.status === 'won') return;
-  sset('current', { mode: G.mode, n: G.n, seed: G.seed, draw: G.draw, limit: G.limit, dateKey: G.dateKey, st: G.st, score: G.score, undoPen: G.undoPen, undos: G.undos, moves: G.moves, hints: G.hints, timeMs: G.timeMs, started: G.started });
+  sset('current', { mode: G.mode, n: G.n, seed: G.seed, draw: G.draw, limit: G.limit, dateKey: G.dateKey, st: G.st, hist: G.hist.slice(-HIST_SAVE), score: G.score, undoPen: G.undoPen, undos: G.undos, moves: G.moves, hints: G.hints, timeMs: G.timeMs, started: G.started });
 }
 function resumeGame(){
   var c = sget('current', null); if (!c || !c.st){ goTitle(); return; }
+  if (c.mode === 'level'){ var ln = levelOfSeed(c.seed); if (ln) c.n = ln; }
   startGame({ mode: c.mode, n: c.n, seed: c.seed, draw: c.draw, limit: c.limit, dateKey: c.dateKey, restore: c });
 }
 
@@ -1568,7 +1722,9 @@ window.addEventListener('pagehide', saveCurrent);
 
 // test / bot hooks
 window.__game = {
-  state: function(){ if (!G) return { screen: screen }; var st = G.st; return { screen: screen, status: G.status, mode: G.mode, n: G.n, moves: G.moves, score: dispScore(), won: isWon(st), stock: st.s.length, waste: st.w.length, f: st.f.slice(), passes: st.passes, hints: G.hints, stars: G.stars, time: Math.round(G.timeMs / 1000), anim: animBusy() }; },
+  state: function(){ if (!G) return { screen: screen }; var st = G.st; return { screen: screen, status: G.status, mode: G.mode, n: G.n, draw: G.draw, moves: G.moves, score: dispScore(), won: isWon(st), stock: st.s.length, waste: st.w.length, f: st.f.slice(), passes: st.passes, hints: G.hints, stars: G.stars, time: Math.round(G.timeMs / 1000), anim: animBusy(), fx: !!(winFx && winFx.active), hl: !!G.hl, undoable: G.hist.length, undos: G.undos }; },
+  // x of the visible waste cards, bottom to top (draw-3 fan check)
+  wasteXs: function(){ var T = targets(), w = G.st.w, n = Math.min(G.draw === 3 ? 3 : 1, w.length), out = []; for (var i = w.length - n; i < w.length; i++) out.push(T[w[i]].x); return out; },
   // screen point to grab the card at tableau col/idx, waste top or foundation top
   srcPt: function(from, fc, idx){ var T = targets(), c; if (from === 'w') c = G.st.w[G.st.w.length - 1]; else if (from === 'f') c = fc * 13 + G.st.f[fc] - 1; else c = G.st.t[fc][idx]; var p = T[c]; var vis = (from === 't' && idx < G.st.t[fc].length - 1) ? Math.min(L.ch, T[G.st.t[fc][idx + 1]].y - p.y) : L.ch; return { x: p.x + L.cw / 2, y: p.y + Math.min(vis / 2, L.ch / 2) }; },
   dstPt: function(to, tc, suit){ if (to === 'f'){ var f = L.found[suit]; return { x: f.x + L.cw / 2, y: f.y + L.ch / 2 }; } var cc = G.st.t[tc], T = targets(); if (!cc.length) return { x: L.colX[tc] + L.cw / 2, y: L.tabY + L.ch / 2 }; var p = T[cc[cc.length - 1]]; return { x: p.x + L.cw / 2, y: p.y + L.ch * 0.5 + colOffsets(tc).u }; },

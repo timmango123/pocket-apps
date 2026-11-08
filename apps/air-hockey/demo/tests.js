@@ -157,15 +157,20 @@ const st = page => page.evaluate(() => window.__game.state());
       await T(cdp, 'touchEnd', []); await sleep(200);
       ok((await st(page)).tut === false && await page.evaluate(() => localStorage.getItem('hockey.tut')) === '1', 'the tutorial goes away after dragging and is remembered');
       // mid-match save and resume
-      await page.evaluate(() => window.__game.shoot(1)); await sleep(1600);
+      // the computer plays on while the test drags, and on a slow runner it can score first (and the puck is then frozen
+      // for the serve, so shoot() does nothing): shoot once the puck is live, wait for that goal, and check the save
+      // against the score at that moment
+      const s0 = (await st(page)).score;
+      await page.waitForFunction(() => window.__game.shoot(1), null, { timeout: 15000, polling: 50 });
+      await page.waitForFunction(n => window.__game.state().score[1] > n, s0[1], { timeout: 15000 });
       const before = await st(page);
-      ok(before.score[1] === 1, 'player goal counted (' + before.score + ')');
-      await page.reload(); await sleep(700);
+      ok(before.score[1] === s0[1] + 1, 'player goal counted (' + s0 + ' -> ' + before.score + ')');
+      await page.reload(); await page.waitForSelector('#tCont', { state: 'visible', timeout: 15000 }).catch(() => {});
       const cont = await page.textContent('#tCont');
-      ok(await page.isVisible('#tCont') && /第 1 關/.test(cont) && /1 : 0/.test(cont), 'after a reload the title offers to continue the match (' + cont + ')');
-      await tap(cdp, page, '#tCont', 400);
+      ok(await page.isVisible('#tCont') && /第 1 關/.test(cont) && cont.includes(before.score[1] + ' : ' + before.score[0]), 'after a reload the title offers to continue the match (' + cont + ')');
+      await tap(cdp, page, '#tCont', 0); await page.waitForFunction(() => window.__game.state().scene === 'play', null, { timeout: 15000 }).catch(() => {});
       const after = await st(page);
-      ok(after.scene === 'play' && after.level === 1 && after.score[0] === 0 && after.score[1] === 1 && after.tut === false, 'continuing restores level and score (' + after.score + ')');
+      ok(after.scene === 'play' && after.level === 1 && after.score[0] === before.score[0] && after.score[1] === before.score[1] && after.tut === false, 'continuing restores level and score (' + after.score + ')');
       await tap(cdp, page, '#bPause', 300); await tap(cdp, page, '#pQuit', 400);
       await page.reload(); await sleep(600);
       ok(await page.isHidden('#tCont'), 'leaving the match clears the saved match');
