@@ -94,6 +94,8 @@ const mobile = { isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
   await page.reload(); await page.waitForTimeout(500);
   assert(await page.evaluate(() => document.querySelectorAll('#strip .fthumb').length) === 13, 'custom preset persists after reload');
   assert(await page.evaluate(() => __pf.S.params.exposure) === 1, 'last params restored');
+  await page.waitForFunction(() => __pf.idle(), null, { timeout: 30000 });
+  assert(await page.evaluate(() => __pf.S.name === 'gray-12mp.png' && __pf.S.iw === 4000 && !__pf.S.sample), 'opened photo restored from IndexedDB after reload');
   await page.evaluate(() => { localStorage.clear(); }); await page.reload(); await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT, '390x844.png') });
   await ctx.close();
