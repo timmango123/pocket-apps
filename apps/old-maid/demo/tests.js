@@ -108,6 +108,35 @@ function mk(hands, o, turn) { // a state built from explicit hands
   const f = l => { const c = { nervous: 0, calm: 0, smirk: 0 }; for (let s = 0; s < 1000; s++) c[OM.face({ lvl: l, hasJ: true, seed: s })]++; return c.nervous / 1000; };
   ok(f(0) === 1 && f(1) > 0.55 && f(1) < 0.75 && f(2) < 0.15, 'faces: 新手 honest, 一般 half honest, 高手 reversed (nervous with joker: ' + [f(0), f(1), f(2)].join(' / ') + ')');
 }
+// --- joker tracking & the 高手 holder's model of balancing drawers (release review 2026-11-08: levels barely mattered) ---
+{
+  // seat 0 draws the joker from seat 1: it lands at the end of seat 0's hand and every seat knows where it is
+  const M = OM.newMatch(7, {}, 3); OM.startRound(M);
+  let S = mk(['5S 9H', 'JK KD 2C', 'KS 4D', '9D 4C'], {}, 0);
+  let ev = OM.draw(S, 0); OM.observe(M, ev);
+  ok(ev.card === 52 && M.prof[0].jx === 2, 'drawn joker is tracked at the end of the drawer\'s hand (jx=' + M.prof[0].jx + ')');
+  S.turn = 3; ev = OM.draw(S, 0); OM.observe(M, ev); // seat 3 draws index 0 (5S) from seat 0: the joker shifts left
+  ok(M.prof[0].jx === 1, 'tracking follows later draws from that hand (jx=' + M.prof[0].jx + ')');
+  const H = OM.blankProf(); H.jx = 3; H.jh = 2; H.jm = 0;
+  let hit = 0; for (let s = 0; s < 300; s++) if (OM.pick({ n: 6, ri: -1, lvl: 2, seed: s, hp: H }).idx === 3) hit++;
+  ok(hit < 300 * 0.25, '高手 mostly avoids the tracked joker (' + hit + '/300 draws took it)');
+  let hit1 = 0; for (let s = 0; s < 300; s++) if (OM.pick({ n: 6, ri: -1, lvl: 1, seed: s, hp: H }).idx === 3) hit1++;
+  let hit0 = 0; for (let s = 0; s < 300; s++) if (OM.pick({ n: 6, ri: -1, lvl: 0, seed: s, hp: H }).idx === 3) hit0++;
+  ok(hit < hit1 && hit1 < hit0, 'tracking strength grows with level (新手 ' + hit0 + ' > 一般 ' + hit1 + ' > 高手 ' + hit + ')');
+  const Hs = OM.blankProf(); Hs.jx = 3; Hs.jh = 0; Hs.jm = 6;   // a holder who re-sorts (洗混) breaks the tracking
+  let hs = 0; for (let s = 0; s < 300; s++) if (OM.pick({ n: 6, ri: -1, lvl: 2, seed: s, hp: Hs }).idx === 3) hs++;
+  ok(hs > 20, 'a holder whose order keeps changing is not tracked (' + hs + '/300)');
+  const M2 = OM.newMatch(8, {}, 3); M2.prof[0].jx = 2; OM.startRound(M2); ok(M2.prof[0].jx === -1, 'tracking resets every deal');
+  const B = OM.blankProf(); B.z = [3, 3, 0, 3, 3]; B.am = 6; B.fm = 0;
+  let a = 0; for (let s = 0; s < 100; s++) { const A = OM.arrange({ hand: cs('2S 3S 4S 5S 6S 7S 8S 9S 10S JK'), lvl: 2, seed: s, prof: B }); if (A.how === 'anti' && OM.zone(A.order.indexOf(52), 10) === 2) a++; }
+  ok(a === 100, '高手 holder waits in the least used zone of a drawer who balances its zones (' + a + '/100)');
+  // level gradient: a habitual player (likes the right end, never re-sorts) against each level, 400 five-round matches
+  const habit = { arrange: m => ({ order: m.hand.slice(), raised: -1 }), pick: m => { const r = OM.rng(m.seed); return { idx: r() < 0.6 ? m.n - 1 : (r() * m.n) | 0 }; } };
+  const rate = lv => { let w = 0; for (let i = 0; i < 400; i++) { const M = OM.newMatch(OM.hash('grad', lv, i), {}, 5); while (!M.over) OM.simRound(M, [habit, lv, lv, lv]); if (M.winners.includes(0)) w++; } return w / 4; };
+  const g = [0, 1, 2].map(rate);
+  console.log('  level gradient (habitual player wins): ' + g.join('% → ') + '%');
+  ok(g[0] > g[1] + 3 && g[1] > g[2] + 3, 'champion rate of a habitual player falls with level: ' + g.join('% → ') + '%');
+}
 // --- 10000 auto-played rounds over all variants and levels ---
 {
   const variants = [{}, { double: true }, { color: true }, { quick: true }, { double: true, color: true, quick: true }, { start: 'random' }];
@@ -128,5 +157,124 @@ function mk(hands, o, turn) { // a state built from explicit hands
   ok(bad === 0, `10000 rounds: cards conserved, exactly one loser holding only the joker (split double-joker: 2), points 3/2/1 — ${bad} violations`);
   console.log(`  auto-play: ${rounds} rounds, avg ${(draws / rounds).toFixed(1)} draws, max ${maxDraws} (no stall); double-joker rounds: ${split} split (2 losers), ${paired} jokers paired (no loser)`);
 }
-console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// --- the real page (release review 2026-11-08): two fingers, pointerup buttons, saved match, layout ---
+(async () => {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('  (playwright not found: page tests skipped)'); return; }
+  const URL = 'http://om.test/', T0 = Date.now(), sleep = ms => new Promise(r => setTimeout(r, ms));
+  const browser = await chromium.launch();
+  async function open(o = {}) {
+    const ctx = await browser.newContext({ viewport: o.vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: 'dark', timezoneId: 'Asia/Taipei' });
+    await ctx.addInitScript(st => { try { if (!sessionStorage.getItem('init')) { sessionStorage.setItem('init', '1'); localStorage.clear(); for (const k in st) localStorage.setItem('oldmaid:' + k, JSON.stringify(st[k])); } } catch (e) {} },
+      Object.assign({ settings: { lvl: 2, rounds: 3, speed: 1.8, quick: true, draw: 'slide', start: 'most', sound: false, vib: false, theme: 'auto' }, stats: { rounds: 3 } }, o.store || {}));
+    await ctx.addInitScript(() => { window.__clicks = []; document.addEventListener('click', e => window.__clicks.push((e.target.closest('[id]') || e.target).id), true); });
+    await ctx.route('**/*', r => r.request().url().split('#')[0] === URL ? r.fulfill({ status: 200, contentType: 'text/html', body: html }) : r.abort());
+    const page = await ctx.newPage(), errors = [];
+    page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    await page.goto(URL); await page.waitForFunction(() => window.__om);
+    const cdp = await ctx.newCDPSession(page);
+    const st = () => page.evaluate(() => Object.assign(window.__om.info(), { paused: window.__om.paused(), fast: window.__om.fast(), stage: window.__om.stage() }));
+    const until = async (fn, what, ms = 40000) => { const t = Date.now(); for (;;) { const s = await st(); if (fn(s)) return s; if (Date.now() - t > ms) throw new Error('timeout waiting for ' + what + ' ' + JSON.stringify(s).slice(0, 300)); await sleep(30); } };
+    const center = async sel => { await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {}); const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(sel + ' not visible'); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const tap = async (sel, hold = 40, id = 7) => { const c = typeof sel === 'string' ? await center(sel) : sel; await touch('touchStart', [{ x: c.x, y: c.y, id }]); await sleep(hold); await touch('touchEnd', [{ x: c.x, y: c.y, id }]); };
+    const fan = i => page.evaluate(i => window.__om.fanPt(i), i), hand = i => page.evaluate(i => window.__om.handPt(i), i);
+    // play on until it is my turn to draw (speeding through the computers' turns, answering round results)
+    const toPick = async () => { for (let k = 0; k < 400; k++) { const s = await st();
+      if (s.phase === 'pick' && !s.paused) return s;
+      if (s.ov.includes('ovRound')) { await tap('#bNext'); await sleep(150); continue; }
+      if (!s.fast && ['ai', 'aiPick', 'idle'].includes(s.phase) && !s.ov.length) { await tap('#bSkip'); await sleep(60); continue; }
+      await sleep(50); } throw new Error('never my turn'); };
+    return { ctx, page, errors, st, until, center, touch, tap, fan, hand, toPick };
+  }
+  try {
+    // a) layout: every fan / hand card keeps a >=44px strip, the raised fan card stays below the 總分 labels
+    const P0 = await open({ vp: { width: 390, height: 844 } });
+    for (const vp of [{ width: 360, height: 640 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      const P = P0; await P.page.setViewportSize(vp); await P.page.waitForFunction(w => window.__om.layout().land === (w > 600), vp.width);
+      const g = await P.page.evaluate(() => [2, 4, 6, 7, 8, 10, 12, 14].map(n => window.__om.geo(n)));
+      ok(g.every(x => x.fan >= 44 && x.hand >= 44), `${vp.width}x${vp.height}: fan and hand touch strips >= 44px for 2–14 cards (min fan ${Math.min(...g.map(x => x.fan)).toFixed(1)}, hand ${Math.min(...g.map(x => x.hand)).toFixed(1)})`);
+      ok(g.every(x => x.fanTop > x.label), `${vp.width}x${vp.height}: a raised + highlighted fan card stays below the opponents' 總分 labels`);
+    }
+    await P0.ctx.close();
+    const P = await open({ vp: { width: 360, height: 640 } });
+    // b) menu row fits the first screen at 360x640; start; tap the table to skip the deal; 洗混 is disabled while dealing
+    const rowB = await P.page.locator('#bSet').boundingBox();
+    ok(rowB.y + rowB.height <= 640, '360x640 menu: 每日／統計／設定 visible without scrolling');
+    await P.tap('#bStart');
+    let s = await P.until(s => s.phase === 'deal', 'dealing');
+    ok(await P.page.evaluate(() => document.getElementById('bShuffle').disabled), '洗混 is disabled during the deal');
+    const tDeal = Date.now(); await P.tap({ x: 30, y: 330 });
+    s = await P.until(s => s.phase !== 'deal', 'deal skipped', 8000);
+    ok(Date.now() - tDeal < 4000, 'tapping the table skips the deal (' + (Date.now() - tDeal) + 'ms)');
+    ok(await P.page.evaluate(() => !!window.__om.saved()), 'match saved as soon as the round is dealt');
+    const E = await P.page.evaluate(() => ({ x: 14, y: Math.round(window.__om.layout().pileY + 20) }));   // empty table, away from the fan and my cards
+    // c) finger 1 on a fan card, finger 2 on my own card: finger 1's release draws
+    s = await P.toPick();
+    let f = await P.fan(0), h = await P.hand(0);
+    await P.touch('touchStart', [{ x: f.x, y: f.y, id: 1 }]); await sleep(80);
+    await P.touch('touchStart', [{ x: f.x, y: f.y, id: 1 }, { x: h.x, y: h.y, id: 2 }]); await sleep(60);
+    await P.touch('touchEnd', [{ x: f.x, y: f.y, id: 1 }]); await sleep(120);
+    s = await P.st(); ok(s.phase !== 'pick', 'two fingers: releasing the fan finger draws while another finger holds my card (' + s.phase + ')');
+    await P.touch('touchEnd', [{ x: h.x, y: h.y, id: 2 }]);
+    // d) finger 1 on the fan, finger 2 taps the table: nothing is drawn until finger 1 lifts
+    s = await P.toPick(); f = await P.fan(0);
+    await P.touch('touchStart', [{ x: f.x, y: f.y, id: 1 }]); await sleep(80);
+    await P.touch('touchStart', [{ x: f.x, y: f.y, id: 1 }, { x: E.x, y: E.y, id: 2 }]); await sleep(60);
+    await P.touch('touchEnd', [{ x: E.x, y: E.y, id: 2 }]); await sleep(150);
+    s = await P.st(); ok(s.phase === 'pick', 'two fingers: another finger\'s release does not draw the held card');
+    await P.touch('touchEnd', [{ x: f.x, y: f.y, id: 1 }]); await sleep(120);
+    s = await P.st(); ok(s.phase !== 'pick', '…and the fan finger\'s own release does');
+    // e) buttons fire for a second finger (no click from the browser) and exactly once for single / slow taps
+    const snd = () => P.page.evaluate(() => JSON.parse(localStorage.getItem('oldmaid:settings')).sound);
+    const two = async sel => { const c = await P.center(sel); await P.touch('touchStart', [{ x: E.x, y: E.y, id: 1 }]); await sleep(60);
+      await P.touch('touchStart', [{ x: E.x, y: E.y, id: 1 }, { x: c.x, y: c.y, id: 2 }]); await sleep(60); await P.touch('touchEnd', [{ x: c.x, y: c.y, id: 2 }]); await sleep(100);
+      await P.touch('touchEnd', [{ x: E.x, y: E.y, id: 1 }]); await sleep(120); };
+    let v0 = await snd(); await two('#bMute'); ok(await snd() === !v0, 'second finger: 音效 toggles');
+    for (const hold of [40, 600, 1000]) { v0 = await snd(); await P.tap('#bMute', hold); await sleep(250); ok(await snd() === !v0, '音效 tap held ' + hold + 'ms toggles exactly once'); }
+    await two('#bMenu'); s = await P.st(); ok(s.ov.includes('ovPause') && s.paused, 'second finger: 選單 opens the pause menu');
+    await two('#bResume'); s = await P.st(); ok(!s.ov.length && !s.paused, 'second finger: 繼續 resumes');
+    for (const hold of [600, 1000]) { await P.tap('#bMenu', hold); await sleep(200); await P.tap('#bResume', hold); await sleep(250); s = await P.st(); ok(!s.ov.length && !s.paused, '選單 → 繼續 with ' + hold + 'ms taps'); }
+    if ((await P.st()).hand >= 2) { let changed = false;
+      for (let k = 0; k < 6 && !changed; k++) { await P.until(s => s.phase !== 'deal' && s.phase !== 'aiPull', 'shuffle ok'); const h0 = await P.page.evaluate(() => window.__om.hand().join());
+        await two('#bShuffle'); changed = await P.page.evaluate(() => window.__om.hand().join()) !== h0; }
+      ok(changed, 'second finger: 洗混 shuffles'); }
+    // f) a reload mid-match comes back to the same table (my turn: same hand, same fan, same scores)
+    s = await P.toPick();
+    const before = await P.page.evaluate(() => ({ hand: window.__om.hand().join(), round: window.__om.match().round, totals: window.__om.match().totals.join(), fan: window.__om.state().hands[window.__om.info().target].join() }));
+    await P.page.reload(); await P.page.waitForFunction(() => window.__om);
+    ok(await P.page.isVisible('#bCont'), 'reload: the menu offers 繼續比賽');
+    await P.tap('#bCont'); s = await P.until(s => s.phase === 'pick', 'resumed to my turn', 15000);
+    const after = await P.page.evaluate(() => ({ hand: window.__om.hand().join(), round: window.__om.match().round, totals: window.__om.match().totals.join(), fan: window.__om.state().hands[window.__om.info().target].join() }));
+    ok(JSON.stringify(after) === JSON.stringify(before), 'resumed at my turn with the same hand, fan order, round and scores');
+    // g) reload while the computers are drawing
+    await P.tap(await P.fan(0)); await P.until(s => s.phase !== 'pick' && s.phase !== 'anim', 'computers playing');
+    const nA = await P.page.evaluate(() => window.__om.state().n);
+    await P.page.reload(); await P.page.waitForFunction(() => window.__om); await P.tap('#bCont');
+    ok(await P.page.evaluate(() => window.__om.state().n) >= nA, 'reload during the computers\' turns resumes the same round (draw ' + nA + ')');
+    // h) reload on the round result: same result shown, stats counted once; then the next round deals
+    let roundsCounted = -1;
+    for (const tR = Date.now(); Date.now() - tR < 60000;) { s = await P.st(); if (s.ov.includes('ovRound')) break; if (s.phase === 'pick' && !s.paused) { await P.tap(await P.fan(0)); await sleep(80); continue; } if (!s.fast && ['ai', 'aiPick', 'idle'].includes(s.phase)) await P.tap('#bSkip'); await sleep(60); }
+    ok((await P.st()).ov.includes('ovRound'), 'played a round to its result');
+    const nb = await P.page.locator('#bNext').boundingBox();
+    ok(nb.y >= 0 && nb.y + nb.height <= 640, '360x640: 下一局 is on the first screen of the result panel');
+    roundsCounted = await P.page.evaluate(() => window.__om.stats().rounds);
+    const title = await P.page.textContent('#rTitle');
+    await P.page.reload(); await P.page.waitForFunction(() => window.__om); await P.tap('#bCont');
+    s = await P.until(s => s.ov.includes('ovRound'), 'result again', 8000);
+    ok(await P.page.textContent('#rTitle') === title && await P.page.evaluate(() => window.__om.stats().rounds) === roundsCounted, 'reload on the result shows it again without counting the round twice');
+    await P.page.evaluate(() => window.__clicks.length = 0);
+    await P.tap('#bNext'); s = await P.until(s => !s.ov.includes('ovRound'), 'next round');
+    await sleep(300);
+    ok((await P.page.evaluate(() => window.__clicks)).every(id => id !== 'bNext' && id !== 'ovMenu'), 'the click after 下一局 is swallowed (no ghost)');
+    // i) starting a new match over a save asks first; 取消 keeps it
+    await P.page.reload(); await P.page.waitForFunction(() => window.__om);
+    await P.tap('#bStart'); s = await P.st(); ok(s.ov.includes('ovAsk'), 'new match over a saved one asks first');
+    await P.tap('#bAskNo'); ok(await P.page.evaluate(() => !!window.__om.saved()), '取消 keeps the saved match');
+    // j) local date (not UTC) for the daily deal / 今天
+    ok(await P.page.evaluate(() => window.__om.ymd(new Date(2026, 10, 8, 7, 30)) === '2026-11-08' && window.__om.today() === window.__om.ymd(new Date())), 'daily date is the local calendar day (07:30 in Taipei is still today)');
+    ok(!P.errors.length, 'no page / console errors' + (P.errors.length ? ': ' + P.errors.join(' | ') : ''));
+    await P.ctx.close();
+  } catch (e) { ok(false, 'page test: ' + e.message); }
+  await browser.close();
+  console.log('  page tests ' + ((Date.now() - T0) / 1000).toFixed(1) + 's');
+})().then(() => { console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }, e => { console.log('FAIL', e); process.exit(1); });
