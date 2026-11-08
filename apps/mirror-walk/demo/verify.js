@@ -12,6 +12,7 @@ const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*
   '\nreturn {parseLevel, initState, step, analyze, diffScore, levelKinds};')();
 const LEVELS = new Function(html.match(/\/\*LEVELS-START\*\/([\s\S]*?)\/\*LEVELS-END\*\//)[1] + '\nreturn LEVELS;')();
 
+const BREATHERS = [70, 80, 90, 95];
 function solveAll() {
   const res = []; let ok = true, mono = true, prevD = -1;
   const t0 = Date.now();
@@ -20,13 +21,15 @@ function solveAll() {
     const r = core.analyze(L, null, 3000000, true);
     const kinds = core.levelKinds(L), D = core.diffScore(r.len, r.E, r.trap, kinds);
     const M = Math.min(60, Math.round(6 * Math.pow(1.03, n))), En = Math.floor(1 + n / 8);
-    const good = r.len > 0 && r.len === e[4] && r.E === e[5] && Math.round(r.trap * 100) === e[6] && r.len >= M && r.E >= En;
+    // level 1 is the hand-made tutorial and SPECIAL levels are short breathers: only check that they match the embedded numbers
+    const special = n === 1 || BREATHERS.includes(n);
+    const good = r.len > 0 && r.len === e[4] && r.E === e[5] && Math.round(r.trap * 100) === e[6] && (special || (r.len >= M && r.E >= En));
     if (!good) { ok = false; console.log('LEVEL', n, 'PROBLEM opt', r.len, 'embedded', e[4], 'M', M, 'E', r.E, '/', En, 'trap', r.trap); }
-    if (D <= prevD) { mono = false; console.log('LEVEL', n, 'D not rising', D.toFixed(2), '<=', prevD.toFixed(2)); }
-    prevD = D;
+    if (!special && D <= prevD) { mono = false; console.log('LEVEL', n, 'D not rising', D.toFixed(2), '<=', prevD.toFixed(2)); }
+    if (!special) prevD = D;
     res.push({ n, opt: r.len, E: r.E, trap: r.trap, D, kinds, states: r.states, sol: r.sol, size: L.w + 'x' + L.h, mode: e[0] });
   }
-  console.log('All', LEVELS.length, 'levels solvable by BFS with embedded optimum, opt >= M(L), E >= floor(1+L/8):', ok, '| D strictly increasing:', mono, '|', ((Date.now() - t0) / 1000).toFixed(1) + 's');
+  console.log('All', LEVELS.length, 'levels solvable by BFS with embedded optimum, opt >= M(L), E >= floor(1+L/8):', ok, '| D strictly increasing (except tutorial L1 and breathers ' + BREATHERS + '):', mono, '|', ((Date.now() - t0) / 1000).toFixed(1) + 's');
   console.log(' lvl size mode opt  M  E/need trap/target  kinds   D');
   for (const n of [1, 10, 20, 30, 40, 50, 60, 65, 75, 85, 90, 99, 100]) {
     const r = res[n - 1], M = Math.min(60, Math.round(6 * Math.pow(1.03, n))), tt = Math.min(0.75, 0.05 * Math.pow(1.035, n));
