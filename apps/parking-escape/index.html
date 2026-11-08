@@ -99,9 +99,9 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .sw[aria-checked="true"] .trk::after{transform:translateX(18px)}
 .selsum{padding:0 16px 8px;font-size:13px;color:var(--ink2)}
 .grid{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 12px calc(var(--sab) + 20px);display:grid;grid-template-columns:repeat(5,1fr);gap:8px;align-content:start;touch-action:pan-y}
-@media (min-width:600px){ .grid{grid-template-columns:repeat(10,1fr)} }
+@media (min-width:600px){ .grid{grid-template-columns:repeat(10,1fr)} .lt{height:62px} }
 .sec-h{grid-column:1/-1;font-size:12px;color:var(--ink2);font-weight:700;padding:8px 2px 0;letter-spacing:1px}
-.lt{min-height:58px;aspect-ratio:1/1.1;border-radius:14px;background:var(--card2);box-shadow:0 3px 0 #0005;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;padding:3px}
+.lt{height:clamp(58px,calc((100vw - 56px) / 5 * 1.1),80px);border-radius:14px;background:var(--card2);box-shadow:0 3px 0 #0005;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;padding:3px}
 .lt .n{font-size:19px;font-weight:800;line-height:1}
 .lt .st{font-size:11px;letter-spacing:1px;color:var(--line);line-height:1}
 .lt .st .on{color:var(--gold)}
@@ -126,6 +126,28 @@ button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .ach.got .ic{background:var(--gold);color:#3a2a00;box-shadow:0 0 12px #ffd16688}
 .ach small{display:block;color:var(--ink2);font-size:12px}
 .replaybar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--sab) + 14px);z-index:9}
+.pill.armed{box-shadow:0 0 0 2px var(--red),0 0 16px #ff3b5c88;color:var(--red)} .pill.armed svg{stroke:var(--red)}
+.pill.glow{box-shadow:0 0 0 2px var(--gold),0 0 18px #ffd16699;animation:pglow 1s ease-in-out infinite alternate}
+@keyframes pglow{from{box-shadow:0 0 0 2px var(--gold),0 0 6px #ffd16655}to{box-shadow:0 0 0 2px var(--gold),0 0 20px #ffd166aa}}
+.kv .wk{display:flex;gap:4px;justify-content:flex-end}
+.kv .wk i{font-style:normal;width:18px;height:18px;border-radius:5px;background:var(--line);font-size:11px;line-height:18px;text-align:center;color:transparent}
+.kv .wk i.on{background:var(--accent);color:#062a26}
+/* landscape phones: HUD becomes a left column so the board can use the full height; toast and replay bar stay off the board */
+@media (orientation:landscape) and (max-height:520px){
+  .hud{right:auto;width:calc(var(--sal) + 178px);flex-wrap:wrap;align-content:flex-start;justify-content:space-between;padding-right:0}
+  .hud .hmid{order:3;flex:1 0 100%;height:auto;flex-direction:column;align-items:flex-start;padding:8px 12px;gap:4px}
+  .hud .stat{text-align:left}
+  .inplay .toast{left:calc(var(--sal) + 10px);transform:none;top:calc(var(--sat) + 162px);max-width:168px;font-size:13px;padding:8px 12px}
+  .replaybar{left:auto;right:calc(var(--sar) + 10px);transform:none;top:calc(var(--sat) + 64px);bottom:auto}
+  #win .card{width:min(560px,100%);padding:14px 18px;display:grid;grid-template-columns:repeat(3,1fr);column-gap:10px;align-items:start}
+  #win .card > h2,#win .stars,#win .res,#win .card > p,#wNext{grid-column:1/-1}
+  #win .card > h2{margin:0 0 2px;font-size:22px}
+  #win .stars{font-size:32px;margin:0}
+  #win .res{margin:0}
+  #win .card > p{margin:2px 0}
+  #win .row2{display:contents}
+  #win .btn{height:46px;margin-top:8px}
+}
 </style>
 <style id="mobile-shim">
 /* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
@@ -357,6 +379,42 @@ function mechFactor(B) {
   return f;
 }
 function rawDifficulty(B, minMoves, reach) { return minMoves * (1 + 0.02 * Math.log10(Math.max(1, reach))) * mechFactor(B); }
+// Daily puzzle from a base board (no one-way cars): explore its whole state component, BFS distance-to-goal from every
+// solved state, then pick (seeded) one of the deepest states other than the base itself. Returns {code, m, sol, R} | null.
+function dailyVariant(code, seed, cap) {
+  var B = parseBoard(code), n = B.cars.length, W = B.W, mul = [], m = 1, i, h;
+  for (i = 0; i < n; i++) { if (B.cars[i].ow) return null; mul.push(m); m *= W; }
+  var k0 = numKey(B, B.start), idx = new Map(), keys = [k0], st = [B.start], adj = [];
+  idx.set(k0, 0); cap = cap || 60000;
+  for (h = 0; h < st.length; h++) {
+    var s = st[h], g = gridOf(B, s), a = [];
+    for (i = 0; i < n; i++) {
+      var r = rangeOf(B, s, g, i), p = s[i];
+      for (var v = r[0]; v <= r[1]; v++) {
+        if (v === p) continue;
+        var k = keys[h] + (v - p) * mul[i], o = idx.get(k);
+        if (o === undefined) { o = st.length; idx.set(k, o); keys.push(k); var t = s.slice(); t[i] = v; st.push(t); }
+        a.push(o, i, v);
+      }
+    }
+    adj.push(a);
+    if (st.length > cap) return null;
+  }
+  var N = st.length, dist = new Int16Array(N), q = [], j, x;
+  for (j = 0; j < N; j++) { dist[j] = -1; if (isWin(B, st[j])) { dist[j] = 0; q.push(j); } }
+  if (!q.length) return null;
+  for (h = 0; h < q.length; h++) { var aj = adj[q[h]]; for (x = 0; x < aj.length; x += 3) if (dist[aj[x]] < 0) { dist[aj[x]] = dist[q[h]] + 1; q.push(aj[x]); } }
+  var mx = 0; for (j = 0; j < N; j++) if (dist[j] > mx) mx = dist[j];
+  var cand = []; for (j = 1; j < N; j++) if (dist[j] >= mx - 2) cand.push(j);
+  if (!cand.length) cand = [0];
+  var sd = (seed >>> 0) || 1; for (i = 0; i < 4; i++) sd = (Math.imul(sd, 1103515245) + 12345) >>> 0;
+  var pick = cand[sd % cand.length], path = [];
+  for (j = pick; dist[j] > 0;) {
+    var aa = adj[j];
+    for (x = 0; x < aa.length; x += 3) if (dist[aa[x]] === dist[j] - 1) { path.push([aa[x + 1], aa[x + 2]]); j = aa[x]; break; }
+  }
+  return { code: encodeBoard(B, st[pick]), m: dist[pick], sol: encodeSol(path), R: N };
+}
 /*CORE-END*/
 
 /*LEVELS-START*/
@@ -512,6 +570,7 @@ var DAILY = [
 var PFX = 'parking.';
 function sget(k, d){ try{ var v = localStorage.getItem(PFX+k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } }
 function sset(k, v){ try{ localStorage.setItem(PFX+k, JSON.stringify(v)); }catch(e){} }
+function sdel(k){ try{ localStorage.removeItem(PFX+k); }catch(e){} }
 function obj(v){ return v && typeof v === 'object' ? v : {}; }
 
 var $ = function(id){ return document.getElementById(id); };
@@ -525,6 +584,7 @@ var setg = { sound: sget('sound', true) !== false, rain: sget('rain', true) !== 
 var stats = obj(sget('stats', {})); ['moves','clears','undos','hints','solutions'].forEach(function(k){ if (typeof stats[k] !== 'number') stats[k] = 0; });
 var ach = obj(sget('ach', {})), daily = obj(sget('daily', {})), introSeen = obj(sget('intro', {}));
 var hintsUsedLv = obj(sget('hintsUsed', {}));
+var resumes = obj(sget('resume', {}));    // level key ('12' or 'd2026-11-8') -> unfinished game {code, hist, moves, ...}
 
 var mqLight = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
 var isLight = !!(mqLight && mqLight.matches);
@@ -608,7 +668,7 @@ function carColor(B, i){
 function toHex(c){ if (c[0] === '#') return c; var m = c.match(/\d+/g); return '#' + m.slice(0,3).map(function(v){ return ('0'+(+v).toString(16)).slice(-2); }).join(''); }
 
 /* ---------------- level state ---------------- */
-var cur = { n: 1, daily: false, B: null, m: 0, sol: '', diff: 0, solKeys: null };
+var cur = { n: 1, daily: false, demo: false, B: null, m: 0, sol: '', diff: 0, solKeys: null, code: '', oneway: false, solSeen: false, win: null };
 var S = null, dp = null, hist = [], moves = 0, undoUsed = false, hintsLeft = 3, hintUsedThis = false;
 var status = 'title'; // title|select|play|exiting|won|replay|demo
 var drag = null, sel = -1, snaps = {}, hint = null, exitA = null, replay = null;
@@ -618,17 +678,47 @@ var ox = 0, oy = 0, cs = 40, fm = 12;
 function lvInfo(n){ var e = LEVELS[n-1]; return { code: e[0], m: e[1], sol: e[2], R: e[3], diff: e[4] }; }
 function dayIndex(){ var d = new Date(); return Math.floor((d.getTime() - d.getTimezoneOffset()*60000) / 86400000); }
 function dayStr(){ var d = new Date(); return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate(); }
-function dailyInfo(){ var e = DAILY[dayIndex() % DAILY.length]; return { code: e[0], m: e[1], sol: e[2], R: e[3], diff: e[4] }; }
+function dayStrOf(t){ var d = new Date(t); return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate(); }
+// difficulty index on the same 1-100 scale as the levels (anchored to level 1 and level 100)
+var DN = null;
+function normDiff(B, m, R){
+  if (!DN) { var a = LEVELS[0], b = LEVELS[NL-1]; DN = [rawDifficulty(parseBoard(a[0]), a[1], a[3]), rawDifficulty(parseBoard(b[0]), b[1], b[3])]; }
+  return Math.max(1, Math.min(100, Math.round((1 + 99 * (rawDifficulty(B, m, R) - DN[0]) / (DN[1] - DN[0])) * 10) / 10));
+}
+// Daily challenge: base boards = 40 daily-pool boards + levels 41-70 (all 6x6, no one-way); the base cycles through all 70
+// (29 is coprime with 70), and a date-seeded pick among the deepest states of its component makes each day's board new.
+var DPOOL = DAILY.map(function(e){ return e[0]; }).concat(LEVELS.slice(40, 70).map(function(e){ return e[0]; }));
+function dailyFor(di){
+  var r = null; try { r = dailyVariant(DPOOL[((di % DPOOL.length) * 29) % DPOOL.length], di * 2654435761, 60000); } catch(e){ r = null; }
+  if (!r) { var e = DAILY[di % DAILY.length]; return { code: e[0], m: e[1], sol: e[2], R: e[3], diff: e[4] }; }
+  return { code: r.code, m: r.m, sol: r.sol, R: r.R, diff: normDiff(parseBoard(r.code), r.m, r.R) };
+}
+function dailyInfo(){
+  var ds = dayStr(), c = obj(sget('dailyGen', null));
+  if (c.v === 1 && c.day === ds && typeof c.code === 'string' && typeof c.sol === 'string') return { code: c.code, m: c.m, sol: c.sol, R: c.R, diff: c.diff };
+  var info = dailyFor(dayIndex());
+  sset('dailyGen', { v: 1, day: ds, code: info.code, m: info.m, sol: info.sol, R: info.R, diff: info.diff });
+  return info;
+}
+function dailyStreak(){ // consecutive days up to today (or up to yesterday while today is still open)
+  var t = Date.now(), n = 0;
+  if (!daily[dayStrOf(t)]) t -= 86400000;
+  while (daily[dayStrOf(t)] && n < 3660) { n++; t -= 86400000; }
+  return n;
+}
 function isDone(n){ return prog[n] != null; }
 function unlocked(n){ return unlockAll || n === 1 || isDone(n-1) || isDone(n); }
 function firstOpen(){ for (var n=1;n<=NL;n++) if (!isDone(n)) return n; return NL; }
 function lampsFor(d){ return Math.max(1, Math.min(5, 1 + Math.floor((d - 1) / 20))); }
 function lampsHtml(d){ var k = lampsFor(d), h = ''; for (var i=0;i<5;i++) h += '<i' + (i<k?' class="on"':'') + '></i>'; return h; }
 function starsFor(mv, m){ return mv <= m ? 3 : (mv <= m + 4 ? 2 : 1); }
+function aided(){ return hintUsedThis || cur.solSeen; }
+function starsWith(mv, m){ var st = starsFor(mv, m); return aided() ? Math.min(2, st) : st; }
 function fmtD(d){ return (Math.round(d*10)/10).toFixed(1); }
 
 function loadBoard(info){
-  cur.B = parseBoard(info.code); cur.m = info.m; cur.sol = info.sol; cur.diff = info.diff;
+  cur.B = parseBoard(info.code); cur.m = info.m; cur.sol = info.sol; cur.diff = info.diff; cur.code = info.code;
+  cur.oneway = cur.B.cars.some(function(k){ return k.ow; }); deadCache = new Map(); cacheKey = '';
   // keys of states along embedded optimal solution -> fast hints
   var s = cur.B.start.slice(), path = decodeSol(info.sol); cur.solKeys = new Map(); cur.solPath = path;
   for (var k=0;k<path.length;k++){ cur.solKeys.set(keyOf(s), k); s[path[k][0]] = path[k][1]; }
@@ -637,6 +727,48 @@ function loadBoard(info){
 function resetState(){
   S = cur.B.start.slice(); dp = new Float32Array(S.length); for (var i=0;i<S.length;i++) dp[i] = S[i];
   hist = []; moves = 0; undoUsed = false; drag = null; sel = -1; snaps = {}; hint = null; exitA = null; trail = []; particles.length = 0; flash = 0;
+  disarmRestart(); clearTimeout(deadT); $('bUndo').classList.remove('glow');
+}
+/* ---------------- unfinished game (saved after every move, restored when the level is opened again) ---------------- */
+function resKey(){ return cur.daily ? 'd' + dayStr() : String(cur.n); }
+function saveResume(){
+  if (!cur.B || cur.demo || (status !== 'play' && status !== 'paused')) return;
+  var k = resKey();
+  if (moves > 0 || hintUsedThis || cur.solSeen) {
+    resumes[k] = { v: 1, code: cur.code, hist: hist.map(function(h){ return [h.i, h.from, h.to]; }), moves: moves, undo: undoUsed, hint: hintUsedThis, sol: cur.solSeen, t: Date.now() };
+    var ks = Object.keys(resumes).sort(function(a, b){ return (resumes[b].t || 0) - (resumes[a].t || 0); });
+    ks.slice(20).forEach(function(x){ delete resumes[x]; }); // keep the 20 most recent
+  } else delete resumes[k];
+  sset('resume', resumes);
+}
+function dropResume(){ if (resumes[resKey()]) { delete resumes[resKey()]; sset('resume', resumes); } }
+function restoreResume(){ // returns true when an unfinished game was put back on the board
+  var r = resumes[resKey()];
+  if (!r || r.code !== cur.code || !Array.isArray(r.hist)) return false;
+  var s = cur.B.start.slice(), h = [];
+  for (var j=0;j<r.hist.length;j++){
+    var e = r.hist[j], i = e && e[0], rg;
+    if (!(i >= 0 && i < s.length) || s[i] !== e[1]) return false;
+    rg = rangeOf(cur.B, s, gridOf(cur.B, s), i);
+    if (e[2] < rg[0] || e[2] > rg[1] || e[2] === e[1]) return false;
+    s[i] = e[2]; h.push({ i: i, from: e[1], to: e[2] });
+  }
+  if (isWin(cur.B, s)) return false;
+  S = s; for (var q=0;q<S.length;q++) dp[q] = S[q];
+  hist = h; moves = Math.max(h.length, +r.moves || 0); undoUsed = !!r.undo; hintUsedThis = !!r.hint; cur.solSeen = !!r.sol;
+  return true;
+}
+function latestResume(){ // most recent unfinished game that can still be continued
+  var best = null, bk = null;
+  for (var k in resumes){ var r = resumes[k]; if (!r || !(r.moves > 0)) continue;
+    if (k[0] === 'd') { if (k !== 'd' + dayStr()) continue; } else if (!(+k >= 1 && +k <= NL) || LEVELS[+k-1][0] !== r.code || !unlocked(+k)) continue;
+    if (!best || (r.t || 0) > (best.t || 0)) { best = r; bk = k; } }
+  return bk ? { k: bk, r: best } : null;
+}
+function updateTitle(){
+  var L = latestResume();
+  $('tPlay').textContent = L ? (L.k[0] === 'd' ? '繼續每日挑戰（' + L.r.moves + ' 步）' : '繼續第 ' + L.k + ' 關（' + L.r.moves + ' 步）') : '開始遊戲';
+  $('tDaily').textContent = daily[dayStr()] ? '每日挑戰 ✓ 已完成' : '每日挑戰';
 }
 
 var MECH = [
@@ -650,18 +782,21 @@ var MECH = [
 function mechFor(n){ var m = null; for (var i=0;i<MECH.length;i++) if (MECH[i].lv <= n) m = MECH[i]; return m; }
 
 function startLevel(n, isDaily){
-  cur.n = n; cur.daily = !!isDaily;
+  cur.n = n; cur.daily = !!isDaily; cur.demo = false; cur.solSeen = false; cur.win = null;
   loadBoard(isDaily ? dailyInfo() : lvInfo(n));
   var hk = isDaily ? 'd' + dayStr() : n;
   hintsLeft = Math.max(0, 3 - (hintsUsedLv[hk] || 0)); hintUsedThis = false;
   status = 'play'; replay = null;
-  showOnly(null); $('hud').classList.remove('hidden'); $('bottom').classList.remove('hidden'); $('replayBar').classList.add('hidden');
+  var resumed = restoreResume();
+  showOnly(null); setPlayUi(true); $('replayBar').classList.add('hidden');
   layout(); updateHud();
   audio(); startRain();
   var m = null; if (!isDaily) for (var i=0;i<MECH.length;i++) if (MECH[i].lv === n) m = MECH[i];
   if (m && !introSeen[m.key]) { introSeen[m.key] = 1; sset('intro', introSeen); showIntro(m); }
-  else toast(isDaily ? '每日挑戰・最少 ' + cur.m + ' 步' : '第 ' + n + ' 關・最少 ' + cur.m + ' 步');
+  else toast((isDaily ? '每日挑戰' : '第 ' + n + ' 關') + (resumed ? '・接續上次的 ' + moves + ' 步' : '・最少 ' + cur.m + ' 步'));
+  if (resumed) checkDead();
 }
+function setPlayUi(on){ $('hud').classList.toggle('hidden', !on); $('bottom').classList.toggle('hidden', !on); document.body.classList.toggle('inplay', on); }
 function updateHud(){
   $('hLevel').textContent = cur.daily ? '每日挑戰' : '第 ' + cur.n + ' 關';
   $('hDiffN').textContent = fmtD(cur.diff);
@@ -674,30 +809,46 @@ function updateHud(){
 }
 
 /* ---------------- layout & static layer ---------------- */
-var layer = document.createElement('canvas'), lctx = layer.getContext('2d'), lx = 0, ly = 0;
+var layer = document.createElement('canvas'), lctx = layer.getContext('2d'), lx = 0, ly = 0, LG = 17;
+var bgc = document.createElement('canvas'), bctx = bgc.getContext('2d');        // screen background (haze), redrawn on resize/theme
+var carc = document.createElement('canvas'), cctx = carc.getContext('2d');      // cars that are not moving, redrawn only when they change
 var puddles = [];
 function layout(){
   DPR = Math.min(2, window.devicePixelRatio || 1);
   VW = window.innerWidth; VH = window.innerHeight;
   cv.width = Math.round(VW*DPR); cv.height = Math.round(VH*DPR);
   var land = VW > VH && VH <= 520;
-  var hud = $('hud'), bot = $('bottom');
-  var top = 66, bottom = VH - 118, left = 6, right = VW - 6;
-  if (!hud.classList.contains('hidden')) top = hud.getBoundingClientRect().bottom + 6;
-  if (!bot.classList.contains('hidden')) {
-    var br = bot.getBoundingClientRect();
-    if (land) { right = br.left - 6; bottom = VH - 8; } else bottom = br.top - 4;
-  } else if (land) { bottom = VH - 8; }
-  if (status === 'title' || status === 'demo') { top = VH * 0.27; bottom = VH - 262; if (land) { top = 14; bottom = VH - 14; left = VW * 0.52; } }
+  var hud = $('hud'), bot = $('bottom'), rb = $('replayBar');
+  var top = 66, bottom = VH - 118, left = 4, right = VW - 4;
+  // landscape: HUD is a left column, buttons a right column, so the board gets the full height
+  if (!hud.classList.contains('hidden')) { var hr = hud.getBoundingClientRect(); if (land) { left = hr.right + 6; top = 8; } else top = hr.bottom + 6; }
+  if (land) bottom = VH - 8;
+  if (!bot.classList.contains('hidden')) { var br = bot.getBoundingClientRect(); if (land) right = br.left - 6; else bottom = br.top - 4; }
+  if (!rb.classList.contains('hidden')) { var rbr = rb.getBoundingClientRect(); if (land) right = Math.min(right, rbr.left - 6); else bottom = Math.min(bottom, rbr.top - 6); }
+  if (status === 'title' || status === 'demo') { top = VH * 0.27; bottom = VH - 262; left = 4; right = VW - 4; if (land) { top = 14; bottom = VH - 14; left = VW * 0.52; } }
   var W = cur.B ? cur.B.W : 6;
-  var size = Math.max(120, Math.min(VW * 0.94, right - left, bottom - top, 640));
-  fm = size * 0.05; cs = (size - 2*fm) / W;
-  var cx = (left + right) / 2;
+  // LG = gutter right of the frame for the vertical 出口 label
+  var size = Math.max(120, Math.min(right - left - LG, bottom - top, 640));
+  fm = size * 0.04; cs = (size - 2*fm) / W;
+  var cx = (left + right - LG) / 2;
   ox = cx - size/2 + fm; oy = top + Math.max(0, (bottom - top - size) / 2) + fm;
   buildLayer();
 }
 function rr(c, x, y, w, h, r){ r = Math.min(r, w/2, h/2); c.beginPath(); c.moveTo(x+r, y); c.arcTo(x+w, y, x+w, y+h, r); c.arcTo(x+w, y+h, x, y+h, r); c.arcTo(x, y+h, x, y, r); c.arcTo(x, y, x+w, y, r); c.closePath(); }
+function buildBg(){
+  var T = TH(), c = bctx;
+  bgc.width = Math.max(1, Math.round(VW*DPR)); bgc.height = Math.max(1, Math.round(VH*DPR));
+  c.setTransform(DPR,0,0,DPR,0,0);
+  c.fillStyle = T.outer; c.fillRect(0, 0, VW, VH);
+  var g1 = c.createRadialGradient(VW*0.15, 0, 0, VW*0.15, 0, VH*0.6);
+  g1.addColorStop(0, T.dark ? 'rgba(247,37,133,.16)' : 'rgba(123,97,255,.10)'); g1.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g1; c.fillRect(0, 0, VW, VH);
+  var g2 = c.createRadialGradient(VW*0.9, VH, 0, VW*0.9, VH, VH*0.7);
+  g2.addColorStop(0, 'rgba(41,231,205,.12)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g2; c.fillRect(0, 0, VW, VH);
+}
 function buildLayer(){
+  buildBg(); cacheKey = '';
   if (!cur.B) return;
   var B = cur.B, T = TH(), W = B.W, bw = W*cs, pad = fm + 16;
   lx = ox - pad; ly = oy - pad;
@@ -810,7 +961,9 @@ function carFace(B, i){ // angle the car's front points to
   return k.h ? (fwd ? 0 : Math.PI) : (fwd ? Math.PI/2 : -Math.PI/2);
 }
 function carRect(B, i, p){ var k = B.cars[i]; return k.h ? { x: ox + p*cs, y: oy + k.f*cs, w: k.len*cs, h: cs } : { x: ox + k.f*cs, y: oy + p*cs, w: cs, h: k.len*cs }; }
+var paintN = 0;
 function paintCar(c, B, i, p, o){
+  paintN++;
   var k = B.cars[i], R = carRect(B, i, p), pad = cs*0.09;
   var L = k.len*cs - 2*pad, Wd = cs - 2*pad;
   o = o || {}; o.truck = k.len === 3; o.oneway = !!k.ow; o.stripes = i === 0;
@@ -830,25 +983,62 @@ function commitMove(i, from, to, viaReplay){
   // tire smoke at the leading end
   var ex = k.h ? (dir > 0 ? R.x + R.w : R.x) : R.x + R.w/2, ey = k.h ? R.y + R.h/2 : (dir > 0 ? R.y + R.h : R.y);
   for (var q=0;q<6;q++) particles.push({ x: ex, y: ey, vx: (Math.random()-0.5)*40 - (k.h ? dir*20 : 0), vy: (Math.random()-0.5)*40 - (!k.h ? dir*20 : 0), life: 0.35, max: 0.35, r: 2 + Math.random()*3, col: 'smoke' });
-  updateHud();
-  if (i === 0 && isWin(cur.B, S)) { status = status === 'replay' || status === 'demo' ? status : 'exiting'; exitA = { wait: snaps[0] ? snaps[0].dur : 0, x: to, v: 3, started: false, t: 0 }; }
+  updateHud(); disarmRestart();
+  if (i === 0 && isWin(cur.B, S)) {
+    var real = status === 'play';
+    if (real) { status = 'exiting'; recordWin(); } // results are saved right away, not after the exit animation
+    exitA = { wait: snaps[0] ? snaps[0].dur : 0, x: to, v: 3, started: false, t: 0 };
+    return;
+  }
+  if (status === 'play' && !viaReplay) { saveResume(); checkDead(); }
 }
 function bump(i, dir){
   SFX.bump(); vib(15); shake = 0.18;
   bumpFx = { i: i, dir: dir, t: 0.18 };
 }
+function cancelDrag(){ // put a car that is still under a finger back where it started (before undo / restart / hint / pause)
+  if (!drag) return; var d = drag; drag = null; snapTo(d.i, dp[d.i], d.start, 0.12);
+}
 function undo(){
   if (status !== 'play') return;
-  audio();
+  audio(); cancelDrag(); disarmRestart();
   if (!hist.length) { bump(-1, 0); toast('沒有可以悔的步了'); return; }
   var h = hist.pop(); snapTo(h.i, dp[h.i], h.from, 0.16); S[h.i] = h.from; undoUsed = true; hint = null;
   stats.undos++; sset('stats', stats); SFX.undo(); vib(5); updateHud();
+  saveResume(); checkDead();
 }
 function restart(){
   if (status !== 'play' && status !== 'won') return;
   audio(); SFX.click(); var keep = moves; resetState(); status = 'play'; showOnly(null);
-  $('hud').classList.remove('hidden'); $('bottom').classList.remove('hidden');
-  updateHud(); if (keep) toast('重新開始');
+  setPlayUi(true);
+  updateHud(); saveResume(); if (keep) toast('重新開始');
+}
+// "重來" on the bottom bar: with moves on the board the first press only arms it (2 s), the second one restarts
+var restartArm = 0, restartArmT = 0;
+function disarmRestart(){ restartArm = 0; clearTimeout(restartArmT); var b = document.getElementById('bRestart'); if (b) b.classList.remove('armed'); }
+function restartTap(){
+  if (status !== 'play') return;
+  cancelDrag();
+  if (moves > 0 && !restartArm) {
+    audio(); SFX.click(); restartArm = 1; $('bRestart').classList.add('armed');
+    toast('再按一次「重來」會清掉這局的 ' + moves + ' 步');
+    clearTimeout(restartArmT); restartArmT = setTimeout(disarmRestart, 2500); return;
+  }
+  disarmRestart(); restart();
+}
+// one-way cars can make the position unsolvable: check after each move (BFS in a timeout, cached per position)
+var deadCache = new Map(), deadT = 0, cacheKey = '';
+function checkDead(){
+  clearTimeout(deadT); $('bUndo').classList.remove('glow');
+  if (!cur.oneway || status !== 'play') return;
+  var key = keyOf(S), n = cur.n, dly = cur.daily;
+  if (cur.solKeys.get(key) != null) return;
+  deadT = setTimeout(function(){
+    if (status !== 'play' || cur.n !== n || cur.daily !== dly || keyOf(S) !== key) return;
+    var dead = deadCache.get(key);
+    if (dead === undefined) { var r = solve(cur.B, S, 400000); dead = r === null; deadCache.set(key, dead); }
+    if (dead) { toast('已經無解（單向車不能倒車），請按「悔棋」'); $('bUndo').classList.add('glow'); }
+  }, 30);
 }
 function tryTapMove(i, cell){
   var k = cur.B.cars[i], g = gridOf(cur.B, S), r = rangeOf(cur.B, S, g, i);
@@ -878,7 +1068,7 @@ function nextMove(){
 }
 function doHint(){
   if (status !== 'play' || hintBusy) return;
-  audio();
+  audio(); cancelDrag(); disarmRestart();
   if (hintsLeft <= 0) { toast('本關提示已用完，可在暫停選單「看解答」'); bump(-1, 0); return; }
   if (cur.solKeys.get(keyOf(S)) == null) { hintBusy = true; toast('思考中…'); setTimeout(function(){ hintBusy = false; giveHint(nextMove()); }, 40); }
   else giveHint(nextMove());
@@ -888,67 +1078,77 @@ function giveHint(r){
   if (status !== 'play') return;
   if (r.dead) { toast('目前已經無解（單向車無法倒車），請悔棋或重來'); bump(-1, 0); return; }
   if (r.timeout) { toast('這個局面太複雜，先悔棋幾步再試試'); return; }
-  hintsLeft--; hintUsedThis = true; stats.hints++; sset('stats', stats);
+  hintsLeft--; hintUsedThis = true; stats.hints++; sset('stats', stats); saveResume();
   var hk = cur.daily ? 'd' + dayStr() : cur.n; hintsUsedLv[hk] = 3 - hintsLeft; sset('hintsUsed', hintsUsedLv);
   hint = { i: r.move[0], to: r.move[1], t: 0 }; sel = r.move[0];
   SFX.hint(); vib(8); updateHud();
   toast('提示：把發光的車移到虛線位置（還需 ' + r.left + ' 步）');
 }
 function startReplay(){
+  cur.solSeen = true; saveResume();
   resetState(); updateHud();
   status = 'replay'; replay = { k: 0, timer: 0.8, path: decodeSol(cur.sol) };
-  showOnly(null); $('hud').classList.remove('hidden'); $('bottom').classList.add('hidden'); $('replayBar').classList.remove('hidden');
+  showOnly(null); setPlayUi(true); $('bottom').classList.add('hidden'); $('replayBar').classList.remove('hidden');
   layout();
   stats.solutions++; sset('stats', stats);
   toast('解答示範：共 ' + replay.path.length + ' 步');
 }
-function stopReplay(){ $('replayBar').classList.add('hidden'); resetState(); status = 'play'; replay = null; $('bottom').classList.remove('hidden'); layout(); updateHud(); }
+function stopReplay(){ $('replayBar').classList.add('hidden'); resetState(); status = 'play'; replay = null; setPlayUi(true); layout(); updateHud(); }
 
 /* ---------------- win ---------------- */
 function finishWin(){
-  if (status === 'demo') { startDemo(); return; }
+  if (cur.demo) { if (status === 'demo') startDemo(); return; } // the title demo never counts as a clear
   if (status === 'replay') {
     status = 'won'; $('replayBar').classList.add('hidden');
     $('wTitle').textContent = '解答示範結束'; $('wStars').innerHTML = '';
     $('wMoves').textContent = cur.solPath.length; $('wOpt').textContent = cur.m; $('wBest').textContent = cur.daily ? (daily[dayStr()] || '-') : (prog[cur.n] || '-');
-    $('wMsg').textContent = '換你自己挑戰看看吧！看解答不計入進度。';
+    $('wMsg').textContent = '換你自己挑戰看看吧！看過解答這一局最高 ★★。';
     $('wNext').textContent = '自己挑戰'; $('wNext').dataset.act = 'retry'; $('wShare').classList.add('hidden'); $('wRetry').classList.add('hidden');
     showOnly('win'); return;
   }
+  if (status !== 'exiting' || !cur.win) return;
   status = 'won';
-  var st = starsFor(moves, cur.m), msg = '', isNewBest = false;
-  stats.clears++;
-  if (cur.daily) {
-    var ds = dayStr(); if (!daily[ds] || moves < daily[ds]) { daily[ds] = moves; isNewBest = true; } sset('daily', daily);
-    $('wBest').textContent = daily[ds];
-  } else {
-    if (prog[cur.n] == null || moves < prog[cur.n]) { prog[cur.n] = moves; isNewBest = true; }
-    if (!starsS[cur.n] || st > starsS[cur.n]) starsS[cur.n] = st;
-    sset('progress', prog); sset('stars', starsS);
-    $('wBest').textContent = prog[cur.n];
-  }
-  sset('stats', stats);
+  var w = cur.win, st = w.st, msg = '';
+  $('wBest').textContent = w.best;
   var html = ''; for (var i=0;i<3;i++) html += i < st ? '<span class="on" style="animation-delay:' + (0.15 + i*0.18) + 's">★</span>' : '<span>★</span>';
   $('wStars').innerHTML = html;
   $('wTitle').textContent = st === 3 ? '完美脫困！' : (st === 2 ? '漂亮出場！' : '成功脫困！');
-  $('wMoves').textContent = moves; $('wOpt').textContent = cur.m;
-  if (st === 3) msg = moves === cur.m ? '和最佳解一樣的步數，神級駕駛！' : '三星達成！';
-  else msg = '再少 ' + (st === 2 ? moves - cur.m : moves - cur.m - 4) + ' 步就能拿到更多星星。';
-  if (isNewBest && !cur.daily && prog[cur.n] !== moves) msg += '';
+  $('wMoves').textContent = w.moves; $('wOpt').textContent = cur.m;
+  var why = (cur.solSeen ? '看過解答' : '用了提示') + '，這一局最高 ★★；不靠提示重玩才能拿三星。';
+  if (w.aided) msg = (w.raw === 1 ? '再少 ' + (w.moves - cur.m - 4) + ' 步就能拿到 ★★。' : '') + why;
+  else if (st === 3) msg = w.moves === cur.m ? '和最佳解一樣的步數，神級駕駛！' : '三星達成！';
+  else msg = '再少 ' + (st === 2 ? w.moves - cur.m : w.moves - cur.m - 4) + ' 步就能拿到更多星星。';
+  if (cur.daily) msg += '　每日挑戰連續 ' + dailyStreak() + ' 天！';
   $('wMsg').textContent = msg;
   $('wShare').classList.remove('hidden'); $('wRetry').classList.remove('hidden');
   if (cur.daily) { $('wNext').textContent = '回到選單'; $('wNext').dataset.act = 'menu'; }
   else if (cur.n < NL) { $('wNext').textContent = '下一關'; $('wNext').dataset.act = 'next'; }
   else { $('wNext').textContent = '全部通關！回到選單'; $('wNext').dataset.act = 'menu'; }
-  checkAch(); confetti();
+  confetti();
   SFX.win(); vib([10, 40, 20]);
-  setTimeout(function(){ if (status === 'won') showOnly('win'); }, 250);
+  setTimeout(function(){ if (status === 'won' && cur.win === w) showOnly('win'); }, 250);
+}
+// called the moment the red car reaches the exit: progress, stars, stats and achievements are saved before any animation
+function recordWin(){
+  var raw = starsFor(moves, cur.m), st = starsWith(moves, cur.m), best;
+  stats.clears++;
+  if (cur.daily) {
+    var ds = dayStr(); if (!daily[ds] || moves < daily[ds]) daily[ds] = moves; sset('daily', daily); best = daily[ds];
+  } else {
+    if (prog[cur.n] == null || moves < prog[cur.n]) prog[cur.n] = moves;
+    if (!starsS[cur.n] || st > starsS[cur.n]) starsS[cur.n] = st;
+    sset('progress', prog); sset('stars', starsS); best = prog[cur.n];
+  }
+  sset('stats', stats);
+  dropResume();
+  cur.win = { st: st, raw: raw, aided: aided(), moves: moves, best: best };
+  checkAch();
 }
 var ACH = [
   { k:'first',   ic:'🚗', name:'第一次出場', desc:'通過第 1 關', test:function(){ return isDone(1); } },
   { k:'perfect', ic:'★', name:'完美駕駛', desc:'累積 10 關三星', test:function(){ var c=0; for (var n in starsS) if (starsS[n] === 3) c++; return c >= 10; } },
-  { k:'noundo',  ic:'⚡', name:'一氣呵成', desc:'第 20 關以後，不悔棋過關', test:function(){ return status === 'won' && !cur.daily && cur.n >= 20 && !undoUsed; } },
-  { k:'nohint',  ic:'💡', name:'獨立思考', desc:'第 50 關以後，不用提示過關', test:function(){ return status === 'won' && !cur.daily && cur.n >= 50 && !hintUsedThis; } },
+  { k:'noundo',  ic:'⚡', name:'一氣呵成', desc:'第 20 關以後，不悔棋過關', test:function(){ return (status === 'won' || status === 'exiting') && !cur.daily && cur.n >= 20 && !undoUsed; } },
+  { k:'nohint',  ic:'💡', name:'獨立思考', desc:'第 50 關以後，不用提示過關', test:function(){ return (status === 'won' || status === 'exiting') && !cur.daily && cur.n >= 50 && !hintUsedThis; } },
   { k:'truck',   ic:'🚚', name:'卡車克星', desc:'通過第 40 關', test:function(){ return isDone(40); } },
   { k:'oneway',  ic:'➜', name:'單向通行', desc:'通過所有單向車關卡（81–100）', test:function(){ for (var n=81;n<=100;n++) if (!isDone(n)) return false; return true; } },
   { k:'daily',   ic:'📅', name:'每日報到', desc:'完成一次每日挑戰', test:function(){ for (var d in daily) return true; return false; } },
@@ -963,7 +1163,7 @@ function checkAch(){
 /* ---------------- demo (title background) ---------------- */
 function startDemo(){
   var n = Math.min(NL, Math.max(12, firstOpen()));
-  cur.n = n; cur.daily = false; loadBoard(lvInfo(n));
+  cur.n = n; cur.daily = false; cur.demo = true; cur.win = null; loadBoard(lvInfo(n));
   status = 'demo'; replay = { k: 0, timer: 1.2, path: cur.solPath.slice() };
   layout();
 }
@@ -975,7 +1175,8 @@ function cellAt(px, py){
 }
 function settle(i){ if (snaps[i]) { dp[i] = S[i]; delete snaps[i]; } }
 cv.addEventListener('pointerdown', function(e){
-  if (status !== 'play' || drag) return;
+  if (status !== 'play') return;
+  if (drag) { if (drag.pid === e.pointerId) return; endDrag(null, true); if (status !== 'play') return; } // a second finger: settle the first car, then handle this one
   audio(); startRain();
   var c = cellAt(e.clientX, e.clientY);
   if (!c) { sel = -1; return; }
@@ -1004,12 +1205,12 @@ cv.addEventListener('pointermove', function(e){
   if (side) pos += (raw - pos) * 0.08;
   dp[drag.i] = pos;
 });
-function endDrag(e){
-  if (!drag || (e && e.pointerId !== drag.pid)) return;
+function endDrag(e, force){
+  if (!drag || (!force && (!e || e.pointerId !== drag.pid))) return;
   var d = drag; drag = null;
   var i = d.i, pos = dp[i], delta = pos - d.start, to = d.start;
-  if (!d.moved) { // tap: toggle selection
-    snapTo(i, pos, d.start, 0.1); if (d.wasSel) sel = -1; return;
+  if (!d.moved) { // tap: toggle selection (a car only held while another finger comes down stays selected)
+    snapTo(i, pos, d.start, 0.1); if (d.wasSel && !force) sel = -1; return;
   }
   if (Math.abs(delta) >= 0.4) to = d.start + Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta)));
   to = Math.max(d.range[0], Math.min(d.range[1], to));
@@ -1028,7 +1229,7 @@ window.addEventListener('keydown', function(e){
   else if (k === 'ArrowUp') { e.preventDefault(); keyMove(0, -1); }
   else if (k === 'ArrowDown') { e.preventDefault(); keyMove(0, 1); }
   else if (k === 'z' || k === 'Z') undo();
-  else if (k === 'r' || k === 'R') restart();
+  else if (k === 'r' || k === 'R') restartTap();
   else if (k === 'h' || k === 'H') doHint();
   else if (k === 'Escape' || k === 'p' || k === 'P') pauseGame();
 });
@@ -1059,7 +1260,8 @@ function frame(t){
   if (!running) return;
   var dt = Math.min(0.05, (t - last) / 1000 || 0.016); last = t; timeAcc += dt;
   // fps watchdog for rain (spec: auto-off below 45fps)
-  if (setg.rainfx && !autoOff && (status === 'play')) { fpsAcc += dt; fpsN++; if (fpsAcc > 3) { if (fpsN / fpsAcc < 45) { autoOff = true; toast('畫面不夠流暢，已自動關閉雨滴特效'); } fpsAcc = 0; fpsN = 0; } }
+  // (static layers are cached, so this only trips on genuinely slow devices: two 4 s windows in a row under 40 fps)
+  if (setg.rainfx && !autoOff && (status === 'play')) { fpsAcc += dt; fpsN++; if (fpsAcc > 4) { if (fpsN / fpsAcc < 40) { if (++fpsT >= 2) { autoOff = true; toast('畫面不夠流暢，已自動關閉雨滴特效'); } } else fpsT = 0; fpsAcc = 0; fpsN = 0; } }
   update(dt); draw();
   rafId = requestAnimationFrame(frame);
 }
@@ -1101,17 +1303,38 @@ function exitSparks(){
   var cols = NEON.concat(['#ff3b5c', '#ffffff']);
   for (var i=0;i<46;i++){ var a = (Math.random() - 0.5) * 2.4, sp = 120 + Math.random()*380; particles.push({ x: x, y: y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, g: 260, life: 0.6 + Math.random()*0.6, max: 1.2, r: 1.5 + Math.random()*2.5, col: cols[i % cols.length] }); }
 }
+function selRing(B, c, T){
+  var SR = carRect(B, c, dp[c]); ctx.save(); ctx.strokeStyle = T.dark ? '#ffffff' : '#1f2340'; ctx.globalAlpha = 0.55 + 0.3*Math.sin(timeAcc*5); ctx.lineWidth = 2;
+  rr(ctx, SR.x + cs*0.04, SR.y + cs*0.04, SR.w - cs*0.08, SR.h - cs*0.08, cs*0.24); ctx.stroke(); ctx.restore();
+}
+// ground FX: headlight cones + neon reflections (clipped to the lot)
+function groundFx(c, B, T, want){
+  var W = B.W, n = B.cars.length, any = false;
+  for (var i=0;i<n;i++){
+    if (!want(i)) continue;
+    var p = dp[i]; if (i === 0 && exitA && exitA.started && p > W) continue;
+    if (!any) { any = true; c.save(); c.beginPath(); c.rect(ox, oy, W*cs, W*cs); c.clip(); }
+    var R = carRect(B, i, p), col = toHex(carColor(B, i));
+    var rg = c.createLinearGradient(0, R.y + R.h*0.5, 0, R.y + R.h + cs*0.45);
+    rg.addColorStop(0, rgba(col, T.dark ? 0.15 : 0.1)); rg.addColorStop(1, rgba(col, 0));
+    c.fillStyle = rg; c.fillRect(R.x + cs*0.12, R.y + R.h*0.5, R.w - cs*0.24, R.h*0.5 + cs*0.45);
+    if (T.dark) {
+      var ang = carFace(B, i), fx = Math.cos(ang), fy = Math.sin(ang);
+      var cx = R.x + R.w/2 + fx*(R.w/2 - cs*0.1), cy = R.y + R.h/2 + fy*(R.h/2 - cs*0.1);
+      var cg = c.createRadialGradient(cx, cy, 0, cx, cy, cs*0.9);
+      cg.addColorStop(0, 'rgba(255,244,200,.16)'); cg.addColorStop(1, 'rgba(255,244,200,0)');
+      c.fillStyle = cg; c.beginPath(); c.moveTo(cx - fy*cs*0.3, cy + fx*cs*0.3);
+      c.lineTo(cx + fx*cs*0.9 - fy*cs*0.5, cy + fy*cs*0.9 + fx*cs*0.5); c.lineTo(cx + fx*cs*0.9 + fy*cs*0.5, cy + fy*cs*0.9 - fx*cs*0.5);
+      c.lineTo(cx + fy*cs*0.3, cy - fx*cs*0.3); c.closePath(); c.fill();
+    }
+  }
+  if (any) c.restore();
+}
 function draw(){
   var T = TH();
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  ctx.fillStyle = T.outer; ctx.fillRect(0, 0, VW, VH);
-  // neon city haze
-  var g1 = ctx.createRadialGradient(VW*0.15, 0, 0, VW*0.15, 0, VH*0.6);
-  g1.addColorStop(0, T.dark ? 'rgba(247,37,133,.16)' : 'rgba(123,97,255,.10)'); g1.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g1; ctx.fillRect(0, 0, VW, VH);
-  var g2 = ctx.createRadialGradient(VW*0.9, VH, 0, VW*0.9, VH, VH*0.7);
-  g2.addColorStop(0, T.dark ? 'rgba(41,231,205,.12)' : 'rgba(41,231,205,.12)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g2; ctx.fillRect(0, 0, VW, VH);
+  if (bgc.width !== Math.max(1, Math.round(VW*DPR)) || bgc.height !== Math.max(1, Math.round(VH*DPR))) buildBg();
+  ctx.drawImage(bgc, 0, 0, VW, VH); // neon city haze (cached)
   if (!cur.B) return;
   var B = cur.B, W = B.W, n = B.cars.length;
   ctx.save();
@@ -1123,34 +1346,31 @@ function draw(){
   ctx.save(); ctx.strokeStyle = T.red; ctx.lineWidth = Math.max(2, cs*0.07); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (T.dark) { ctx.shadowColor = T.red; ctx.shadowBlur = 10; }
   for (var a=0;a<3;a++){
-    var ph = ((timeAcc*1.6 + a/3) % 1), ax = ex + fm*0.2 + ph*fm*0.9 + 2, al = Math.sin(ph*Math.PI);
+    var ph = ((timeAcc*1.6 + a/3) % 1), ax = ex + fm*0.2 + ph*fm*0.7 + 2, al = Math.sin(ph*Math.PI);
     ctx.globalAlpha = al; ctx.beginPath(); ctx.moveTo(ax - cs*0.08, ey + cs*0.36); ctx.lineTo(ax + cs*0.04, ey + cs*0.5); ctx.lineTo(ax - cs*0.08, ey + cs*0.64); ctx.stroke();
   }
   ctx.restore();
-  // EXIT label
-  ctx.save(); ctx.fillStyle = T.red; ctx.font = '800 ' + Math.max(11, Math.round(cs*0.22)) + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  if (T.dark) { ctx.shadowColor = T.red; ctx.shadowBlur = 8; }
-  var lblX = Math.min(VW - 18, ex + fm*0.55);
-  ctx.translate(lblX, ey - 4); ctx.fillText('出口', 0, 0); ctx.restore();
-  // ground FX: headlight cones + neon reflections (clipped to the lot)
-  ctx.save(); ctx.beginPath(); ctx.rect(ox, oy, W*cs, W*cs); ctx.clip();
-  for (var i=0;i<n;i++){
-    var p = dp[i]; if (i === 0 && exitA && exitA.started && p > W) continue;
-    var R = carRect(B, i, p), col = toHex(carColor(B, i));
-    var rg = ctx.createLinearGradient(0, R.y + R.h*0.5, 0, R.y + R.h + cs*0.45);
-    rg.addColorStop(0, rgba(col, T.dark ? 0.15 : 0.1)); rg.addColorStop(1, rgba(col, 0));
-    ctx.fillStyle = rg; ctx.fillRect(R.x + cs*0.12, R.y + R.h*0.5, R.w - cs*0.24, R.h*0.5 + cs*0.45);
-    if (T.dark) {
-      var ang = carFace(B, i), fx = Math.cos(ang), fy = Math.sin(ang);
-      var cx = R.x + R.w/2 + fx*(R.w/2 - cs*0.1), cy = R.y + R.h/2 + fy*(R.h/2 - cs*0.1);
-      var cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cs*0.9);
-      cg.addColorStop(0, 'rgba(255,244,200,.16)'); cg.addColorStop(1, 'rgba(255,244,200,0)');
-      ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(cx - fy*cs*0.3, cy + fx*cs*0.3);
-      ctx.lineTo(cx + fx*cs*0.9 - fy*cs*0.5, cy + fy*cs*0.9 + fx*cs*0.5); ctx.lineTo(cx + fx*cs*0.9 + fy*cs*0.5, cy + fy*cs*0.9 - fx*cs*0.5);
-      ctx.lineTo(cx + fy*cs*0.3, cy - fx*cs*0.3); ctx.closePath(); ctx.fill();
-    }
+  // EXIT label: stacked vertically in the gutter right of the frame, beside the exit opening
+  var lf = Math.min(13, Math.max(11, Math.round(cs*0.22)));
+  ctx.save(); ctx.fillStyle = T.red; ctx.font = '800 ' + lf + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (T.dark) { ctx.shadowColor = T.red; ctx.shadowBlur = 6; }
+  var lblX = ex + fm + LG/2 + 1, lblY = ey + cs/2;
+  ctx.fillText('出', lblX, lblY - lf*0.6); ctx.fillText('口', lblX, lblY + lf*0.6); ctx.restore();
+  // cars that are not moving come from a cache canvas (with their ground FX); moving ones are painted every frame
+  var dyn = {}, dk;
+  for (dk in snaps) dyn[dk] = 1;
+  if (drag) dyn[drag.i] = 1; if (hint) dyn[hint.i] = 1; if (bumpFx && bumpFx.i >= 0) dyn[bumpFx.i] = 1; if (exitA) dyn[0] = 1;
+  var key = (isLight ? 'L' : 'D') + VW + 'x' + VH + ',' + ox + ',' + oy + ',' + cs, i;
+  for (i=0;i<n;i++) key += dyn[i] ? ',-' : ',' + dp[i];
+  if (key !== cacheKey) {
+    cacheKey = key;
+    if (carc.width !== cv.width || carc.height !== cv.height) { carc.width = cv.width; carc.height = cv.height; }
+    cctx.setTransform(1,0,0,1,0,0); cctx.clearRect(0, 0, carc.width, carc.height); cctx.setTransform(DPR,0,0,DPR,0,0);
+    groundFx(cctx, B, T, function(j){ return !dyn[j]; });
+    for (i=0;i<n;i++) if (!dyn[i]) paintCar(cctx, B, i, dp[i], {});
   }
-  ctx.restore();
+  groundFx(ctx, B, T, function(j){ return !!dyn[j]; });
+  ctx.drawImage(carc, 0, 0, VW, VH);
   // hint ghost
   if (hint) {
     var hp = 0.55 + 0.45*Math.sin(hint.t*6), GR = carRect(B, hint.i, hint.to), pd = cs*0.08;
@@ -1169,20 +1389,18 @@ function draw(){
     for (var t=0;t<trail.length;t++) paintCar(ctx, B, 0, trail[t].x, { alpha: trail[t].life / 0.28 * 0.35, lite: true });
     ctx.restore();
   }
-  // cars
+  // moving cars + selection ring
   var dragI = drag ? drag.i : -1;
   for (var c=0;c<n;c++){
     if (c === dragI) continue;
+    if (!dyn[c]) { if (c === sel && status === 'play') selRing(B, c, T); continue; }
     var o = {};
     if (hint && hint.i === c) o.glow = 14 + 10*Math.sin(hint.t*6);
     if (c === 0 && exitA && exitA.started) o.glow = 22;
     var pp = dp[c];
     if (bumpFx && bumpFx.i === c) pp += bumpFx.dir * 0.04 * Math.sin(bumpFx.t * 60);
     paintCar(ctx, B, c, pp, o);
-    if (c === sel && status === 'play' && !(hint && hint.i === c)) {
-      var SR = carRect(B, c, dp[c]); ctx.save(); ctx.strokeStyle = T.dark ? '#ffffff' : '#1f2340'; ctx.globalAlpha = 0.55 + 0.3*Math.sin(timeAcc*5); ctx.lineWidth = 2;
-      rr(ctx, SR.x + cs*0.04, SR.y + cs*0.04, SR.w - cs*0.08, SR.h - cs*0.08, cs*0.24); ctx.stroke(); ctx.restore();
-    }
+    if (c === sel && status === 'play' && !(hint && hint.i === c)) selRing(B, c, T);
   }
   if (dragI >= 0) paintCar(ctx, B, dragI, dp[dragI], { glow: 22, scale: 1.04 });
   // exit flash
@@ -1209,14 +1427,49 @@ function draw(){
   }
 }
 
+/* ---------------- buttons fire on pointerup ----------------
+   Every button acts when the same pointer (tracked per pointerId) is pressed and released on it, so a tap still works
+   while another finger rests on the screen (no click is synthesized then) and slow taps work too. The browser's own
+   click that follows is swallowed; keyboard clicks (detail 0) and scripted clicks still go through. */
+var btnTaps = {}, lastBtnUp = -1e9;
+document.addEventListener('pointerdown', function(e){
+  if (e.button > 0) return;
+  var b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (b) btnTaps[e.pointerId] = { el: b, x: e.clientX, y: e.clientY };
+}, true);
+document.addEventListener('pointermove', function(e){
+  var t = btnTaps[e.pointerId];
+  if (t && t.el.classList.contains('lt') && Math.abs(e.clientY - t.y) + Math.abs(e.clientX - t.x) > 14) delete btnTaps[e.pointerId]; // scrolling the level grid
+}, true);
+document.addEventListener('pointercancel', function(e){ delete btnTaps[e.pointerId]; }, true);
+document.addEventListener('pointerup', function(e){
+  var t = btnTaps[e.pointerId]; if (!t) return;
+  delete btnTaps[e.pointerId]; lastBtnUp = performance.now();
+  var u = document.elementFromPoint(e.clientX, e.clientY), b = u && u.closest ? u.closest('button') : null;
+  if (b !== t.el) { // the button may have shifted a little under the finger (card pop-in): accept a release close to it
+    var r = t.el.getBoundingClientRect(), sl = 12;
+    if (!t.el.isConnected || !r.width || e.clientX < r.left - sl || e.clientX > r.right + sl || e.clientY < r.top - sl || e.clientY > r.bottom + sl) return;
+    if (b && b !== t.el) return; // released on another button
+    b = t.el;
+  }
+  if (b.disabled || !b.isConnected) return;
+  b.click();
+}, true);
+document.addEventListener('click', function(e){
+  if (!e.isTrusted || e.detail === 0) return;
+  if (performance.now() - lastBtnUp < 1500) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+
 /* ---------------- UI ---------------- */
 var OVS = ['title', 'select', 'pause', 'win', 'help', 'intro', 'settings', 'stats'];
 function showOnly(id){ OVS.forEach(function(o){ $(o).classList.toggle('hidden', o !== id); }); }
 var toastT = 0;
 function toast(msg){ var t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = '1'; clearTimeout(toastT); toastT = setTimeout(function(){ t.style.opacity = '0'; toastT = setTimeout(function(){ t.classList.add('hidden'); }, 400); }, 2200); }
 function goTitle(){
-  status = 'title'; showOnly('title'); $('hud').classList.add('hidden'); $('bottom').classList.add('hidden'); $('replayBar').classList.add('hidden');
-  startDemo();
+  if (status === 'play' || status === 'paused') saveResume();
+  disarmRestart(); clearTimeout(deadT); drag = null;
+  status = 'title'; showOnly('title'); setPlayUi(false); $('replayBar').classList.add('hidden');
+  updateTitle(); startDemo();
 }
 var SECT = ['新手停車場', '卡車登場', '雙卡車塞車', '卡車大塞車', '障礙柱', '柱林迷陣', '深夜尖峰', '7×7 大停車場', '單向車', '終極停車場'];
 function buildGrid(){
@@ -1241,7 +1494,7 @@ $('grid').addEventListener('click', function(e){
   SFX.click(); startLevel(n);
 });
 $('unlockSw').addEventListener('click', function(){ audio(); SFX.click(); unlockAll = !unlockAll; sset('unlockAll', unlockAll); buildGrid(); });
-function openSelect(){ showOnly('select'); status = 'select'; buildGrid(); var c = document.querySelector('.lt.cur'); if (c) c.scrollIntoView({ block: 'center' }); }
+function openSelect(){ if (cur.demo) { exitA = null; replay = null; trail = []; } showOnly('select'); status = 'select'; buildGrid(); var c = document.querySelector('.lt.cur'); if (c) c.scrollIntoView({ block: 'center' }); }
 function mechCanvas(key){
   var c = document.createElement('canvas'), s = 64, d = 2; c.width = s*d; c.height = s*d;
   var x = c.getContext('2d'), T = TH(); x.scale(d, d);
@@ -1266,7 +1519,7 @@ function showHelp(){
   showOnly('help');
 }
 var helpReturn = null, setReturn = null;
-function pauseGame(){ if (status !== 'play') return; status = 'paused'; drag = null; $('pInfo').textContent = (cur.daily ? '每日挑戰' : '第 ' + cur.n + ' 關') + '・目前 ' + moves + ' 步・最少 ' + cur.m + ' 步'; showOnly('pause'); stopRain(); }
+function pauseGame(){ if (status !== 'play') return; cancelDrag(); disarmRestart(); clearTimeout(deadT); status = 'paused'; saveResume(); $('pInfo').textContent = (cur.daily ? '每日挑戰' : '第 ' + cur.n + ' 關') + '・目前 ' + moves + ' 步・最少 ' + cur.m + ' 步'; showOnly('pause'); stopRain(); }
 function resume(){ showOnly(null); status = 'play'; audio(); startRain(); }
 function syncSwitches(){ ['sound','rain','rainfx','vib'].forEach(function(k){ var id = { sound:'sSound', rain:'sRain', rainfx:'sRainFx', vib:'sVib' }[k]; $(id).setAttribute('aria-checked', setg[k] ? 'true' : 'false'); }); setMuteIcon(); }
 [['sSound','sound'],['sRain','rain'],['sRainFx','rainfx'],['sVib','vib']].forEach(function(p){
@@ -1278,12 +1531,15 @@ function openStats(){
   var c3 = 0, sm = 0, sb = 0, dn = 0, dd = 0;
   for (var n=1;n<=NL;n++) if (isDone(n)) { dn++; sm += LEVELS[n-1][1]; sb += prog[n]; if (starsS[n] === 3) c3++; }
   for (var d in daily) dd++;
-  $('statKv').innerHTML = '<span>已通過關卡</span><b>' + dn + ' / ' + NL + '</b><span>三星關卡</span><b>' + c3 + '</b><span>累計移動步數</span><b>' + stats.moves + '</b><span>最佳步數比率</span><b>' + (sb ? Math.round(sm / sb * 100) + '%' : '—') + '</b><span>悔棋次數</span><b>' + stats.undos + '</b><span>使用提示</span><b>' + stats.hints + '</b><span>每日挑戰完成</span><b>' + dd + ' 天</b>';
+  var wk = '', WD = '日一二三四五六', wl = '', nwk = 0;
+  for (var b=6;b>=0;b--){ var tt = Date.now() - b*86400000, on = !!daily[dayStrOf(tt)]; if (on) nwk++; wk += '<i class="' + (on ? 'on' : '') + '">' + (on ? '✓' : '') + '</i>'; wl += WD[new Date(tt).getDay()]; }
+  $('statKv').innerHTML = '<span>已通過關卡</span><b>' + dn + ' / ' + NL + '</b><span>三星關卡</span><b>' + c3 + '</b><span>累計移動步數</span><b>' + stats.moves + '</b><span>最佳步數比率</span><b>' + (sb ? Math.round(sm / sb * 100) + '%' : '—') + '</b><span>悔棋次數</span><b>' + stats.undos + '</b><span>使用提示</span><b>' + stats.hints + '</b><span>每日挑戰完成</span><b>' + dd + ' 天</b><span>每日連續天數</span><b>' + dailyStreak() + ' 天</b><span>最近 7 天（' + wl + '）</span><b class="wk" aria-label="最近 7 天完成 ' + nwk + ' 天">' + wk + '</b>';
   $('achList').innerHTML = ACH.map(function(a){ return '<div class="ach' + (ach[a.k] ? ' got' : '') + '"><span class="ic">' + (ach[a.k] ? a.ic : '?') + '</span><div><b>' + a.name + '</b><small>' + a.desc + '</small></div></div>'; }).join('');
   showOnly('stats');
 }
 function share(){
-  var st = starsFor(moves, cur.m), txt = '霓虹夜停 ' + (cur.daily ? '每日挑戰 ' + dayStr() : '第 ' + cur.n + ' 關') + ' ' + moves + ' 步 ' + '★★★'.slice(0, st) + (moves <= cur.m ? '（最佳解）' : '');
+  var w = cur.win || { st: starsWith(moves, cur.m), moves: moves, aided: aided() }, st = w.st;
+  var txt = '霓虹夜停 ' + (cur.daily ? '每日挑戰 ' + dayStr() : '第 ' + cur.n + ' 關') + ' ' + w.moves + ' 步 ' + '★★★'.slice(0, st) + (w.moves <= cur.m && !w.aided ? '（最佳解）' : '') + (w.aided ? '（有提示）' : '');
   function done(){ toast('已複製：' + txt); }
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, function(){ toast(txt); });
@@ -1292,7 +1548,7 @@ function share(){
   } catch(e){ toast(txt); }
 }
 
-$('tPlay').addEventListener('click', function(){ audio(); SFX.click(); startLevel(firstOpen()); });
+$('tPlay').addEventListener('click', function(){ audio(); SFX.click(); var L = latestResume(); if (L && L.k[0] === 'd') startLevel(0, true); else startLevel(L ? +L.k : firstOpen()); });
 $('tDaily').addEventListener('click', function(){ audio(); SFX.click(); startLevel(0, true); });
 $('tSelect').addEventListener('click', function(){ audio(); SFX.click(); openSelect(); });
 $('tHelp').addEventListener('click', function(){ audio(); SFX.click(); helpReturn = 'title'; showHelp(); });
@@ -1301,9 +1557,9 @@ $('tSet').addEventListener('click', function(){ audio(); SFX.click(); openSettin
 $('statOk').addEventListener('click', function(){ SFX.click(); showOnly('title'); });
 $('sBack').addEventListener('click', function(){ SFX.click(); goTitle(); });
 $('bPause').addEventListener('click', function(){ audio(); SFX.click(); if (status === 'replay') { stopReplay(); } pauseGame(); });
-$('bMute').addEventListener('click', function(){ audio(); setg.sound = !setg.sound; sset('sound', setg.sound); setMuteIcon(); if (setg.sound) { SFX.click(); startRain(); } else stopRain(); });
+$('bMute').addEventListener('click', function(){ audio(); setg.sound = !setg.sound; sset('sound', setg.sound); syncSwitches(); if (setg.sound) { SFX.click(); startRain(); } else stopRain(); });
 $('bUndo').addEventListener('click', undo);
-$('bRestart').addEventListener('click', restart);
+$('bRestart').addEventListener('click', restartTap);
 $('bHint').addEventListener('click', doHint);
 $('bStopReplay').addEventListener('click', function(){ SFX.click(); stopReplay(); });
 $('pResume').addEventListener('click', function(){ SFX.click(); resume(); });
@@ -1323,21 +1579,26 @@ $('wSelect').addEventListener('click', function(){ SFX.click(); openSelect(); })
 $('wShare').addEventListener('click', function(){ SFX.click(); share(); });
 
 window.addEventListener('resize', function(){ layout(); });
+window.addEventListener('pagehide', function(){ saveResume(); });
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden) { running = false; cancelAnimationFrame(rafId); stopRain(); if (AC) { try{ AC.suspend(); }catch(e){} } if (status === 'play') pauseGame(); }
+  if (document.hidden) { saveResume(); running = false; cancelAnimationFrame(rafId); stopRain(); if (AC) { try{ AC.suspend(); }catch(e){} } if (status === 'play') pauseGame(); }
   else { if (!running) { running = true; last = performance.now(); cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame); } }
 });
 
 // automation hook for the verifier (read-only snapshot + geometry)
 window.__game = {
   state: function(){ return { status: status, level: cur.n, moves: moves, s: S ? Array.prototype.slice.call(S) : [], animating: animating() || status === 'exiting', W: cur.B ? cur.B.W : 0 }; },
-  geom: function(){ return { ox: ox, oy: oy, cs: cs }; },
+  geom: function(){ return { ox: ox, oy: oy, cs: cs, fm: fm, lg: LG, vw: VW, vh: VH }; },
+  paints: function(){ return paintN; },
   cars: function(){ return cur.B.cars.map(function(k){ return { len: k.len, h: k.h, f: k.f, ow: k.ow }; }); },
-  sol: function(){ return cur.sol; }
+  sol: function(){ return cur.sol; },
+  info: function(){ return { daily: cur.daily, demo: cur.demo, code: cur.code, m: cur.m, oneway: cur.oneway, win: cur.win, sel: sel, drag: drag ? drag.i : -1, hintsLeft: hintsLeft }; }
 };
 
 syncSwitches();
 goTitle();
+// precompute today's daily board while the title is showing
+setTimeout(function(){ try { dailyInfo(); } catch(e){} }, 1200);
 layout();
 rafId = requestAnimationFrame(function(t){ last = t; frame(t); });
 })();
