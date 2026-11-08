@@ -135,7 +135,7 @@ const FIXED = new Date('2026-10-13T21:30:00+08:00');
   await page.click('#cfmYes');
   ok(await page.evaluate(() => !__mj.data.entries['2026-10-10']), 'entry deleted after confirm');
   // PIN lock
-  await page.click('#openSet'); await page.fill('#pinIn', '1234'); await page.click('#pinSet');
+  await page.click('#openSet'); await page.fill('#pinIn', '1234'); await page.fill('#pinIn2', '1234'); await page.click('#pinSet');
   await page.click('#setDlg [data-close]');
   await page.reload();
   ok(await page.isVisible('#lock'), 'lock screen after reload with PIN');
