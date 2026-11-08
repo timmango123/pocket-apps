@@ -164,7 +164,7 @@ const K = 'pattern-maker:v1:';
     ok(await page.evaluate(async () => { const c = await window.__pm.makePNG(); return c.width === 300 && c.height === 200; }) && await page.isHidden('#pngErr'), 'custom PNG 300×200 accepted, message cleared');
 
     // rings: line wider than ring spacing → inner rings drawn as discs, warning shown
-    await page.evaluate(() => { const s = window.__pm.S; s.type = 'rings'; s.params.rings = { size: 200, n: 12, width: 20 }; s.angle = 0; s.scale = 100; window.__pm.S = s; }); await page.waitForFunction(() => !document.getElementById('pWarn').hidden);
+    await page.evaluate(() => { const s = window.__pm.S; s.type = 'rings'; s.params.rings = { size: 200, n: 12, width: 20 }; s.angle = 0; s.scale = 100; window.__pm.S = s; }); await page.waitForFunction(() => { const w = document.getElementById('pWarn'); return !w.hidden && /圈距/.test(w.textContent); });
     const rg = await page.evaluate(() => { const g = window.__pm.gen('rings', { size: 200, n: 12, width: 20 }, '#000'); return { neg: /r='-/.test(g.body), disc: (g.body.match(/fill='#000'/g) || []).length }; });
     ok(!rg.neg && rg.disc >= 1 && /圈距/.test(await page.textContent('#pWarn')), 'rings: no negative radius, inner ring is a disc, spacing warning: ' + JSON.stringify(rg));
 
