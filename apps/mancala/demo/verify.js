@@ -12,11 +12,12 @@ const MC = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\/
 
 function playMatch(lvA, lvB, aFirst, rule = 'kalah') { // A = side 0
   const g = MC.newGame({ rule, seeds: 4 }); g.side = aFirst ? 0 : 1;
-  const times = { [lvA]: [], [lvB]: [] };
+  const times = { [String(lvA.name || lvA)]: [], [lvB]: [] };
   while (!g.over) {
     const lv = g.side === 0 ? lvA : lvB, hist = g.hist.length <= 1 ? g.hist.map(h => h.p).join('') : null;
-    const r = MC.think({ rule, b: Array.from(g.b), side: g.side, level: lv, seeds: 4, hist });
-    if (!r.forced && !r.book) times[lv].push(r.ms);
+    const r = typeof lv === 'object' ? MC.think(Object.assign({ rule, b: Array.from(g.b), side: g.side, seeds: 4, hist: null }, lv)) // a skill-tier bot
+      : MC.think({ rule, b: Array.from(g.b), side: g.side, level: lv, seeds: 4, hist });
+    if (!r.forced && !r.book) times[String(lv.name || lv)].push(r.ms);
     MC.play(g, r.pit);
   }
   const s = MC.score(g);
@@ -41,7 +42,7 @@ function series(lvA, lvB, n, firstMode, rule = 'kalah', threads = 4) { // firstM
       wk.on('exit', () => {
         if (++doneW < threads) return;
         const avg = res.margins.reduce((x, y) => x + y, 0) / n;
-        console.log(`  ${rule === 'oware' ? 'Oware ' : ''}${MC.LEVELS[lvA - 1].name}(L${lvA}) vs ${MC.LEVELS[lvB - 1].name}(L${lvB}) [${firstMode === 'a' ? `L${lvA} moves first` : 'first move alternates'}]: ${res.a} 勝 ${res.b} 負 ${res.d} 和, avg margin ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}  (${n} games, ${((Date.now() - t0) / 1000).toFixed(0)} s)`);
+        console.log(`  ${rule === 'oware' ? 'Oware ' : ''}${typeof lvA === 'object' ? lvA.name : `${MC.LEVELS[lvA - 1].name}(L${lvA})`} vs ${MC.LEVELS[lvB - 1].name}(L${lvB}) [${firstMode === 'a' ? `L${lvA} moves first` : 'first move alternates'}]: ${res.a} 勝 ${res.b} 負 ${res.d} 和, avg margin ${avg >= 0 ? '+' : ''}${avg.toFixed(1)}  (${n} games, ${((Date.now() - t0) / 1000).toFixed(0)} s)`);
         resolve(res);
       });
     }
@@ -119,8 +120,13 @@ async function browserGame() {
     if (!has('--skip-l2')) await series(2, 1, 40, 'alt');
     await series(3, 2, 40, 'alt'); await series(4, 3, 20, 'alt'); await series(5, 4, 8, 'alt');
     await series(5, 2, 8, 'alt', 'oware');
+    // skill tiers (qa/skill-tiers/SPEC.md): the "skilled" bot (4-sowing search, 2% slips) should beat 長老(L3) about half the time or more
+    // and 部落智者(L4) roughly 20-35% (release review 2026-11: no wall between L3 and L4)
+    const SK = { name: 'skilled-tier bot', depth: 4, ms: 300, err: 0.02 };
+    const s3 = await series(SK, 3, 40, 'alt'), s4 = await series(SK, 4, 40, 'alt');
+    okAll = okAll && s3.a / 40 >= 0.45 && s4.a / 40 >= 0.15 && s4.a / 40 <= 0.4;
     console.log('Think time per move (ms) — mean / max / budget (book and forced moves excluded):');
-    for (const lv of Object.keys(allTimes).sort()) { const a = allTimes[lv], m = a.reduce((x, y) => x + y, 0) / a.length; console.log(`  L${lv} ${MC.LEVELS[lv - 1].name}: ${m.toFixed(0)} / ${Math.max(...a)} / ${MC.LEVELS[lv - 1].ms}  (${a.length} moves)`); }
+    for (const lv of Object.keys(allTimes).filter(k => MC.LEVELS[k - 1]).sort()) { const a = allTimes[lv], m = a.reduce((x, y) => x + y, 0) / a.length; console.log(`  L${lv} ${MC.LEVELS[lv - 1].name}: ${m.toFixed(0)} / ${Math.max(...a)} / ${MC.LEVELS[lv - 1].ms}  (${a.length} moves)`); }
   }
   if (!has('--no-browser')) okAll = (await browserGame()) && okAll;
   console.log(okAll ? 'ALL OK' : 'SOME CHECKS FAILED');
