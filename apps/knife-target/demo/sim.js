@@ -32,7 +32,7 @@ function play(L, seed, bot) {
     }
     if (r.state === 'win') return { ok: true, t: wall };
     if (r.state === 'fail') { if (process.env.DBG) console.log('fail L'+L, 'wall', wall.toFixed(2), 'simT', r.motion.t.toFixed(2), 'w', r.motion.omega.toFixed(2), 'left', r.left, 'knives', r.knives.map(k=>k.a.toFixed(2)).join(','), JSON.stringify(r.motion.seg), (r.motion.t-r.motion.segStart).toFixed(2), JSON.stringify(bot.learned())); return { ok: false, t: wall, left: r.left }; }
-    bot.observe({ t: wall, theta: r.motion.theta, omega: r.motion.omega, knives: r.knives.map(k => k.a), canThrow: r.canThrow(), state: r.state, throwT });
+    bot.observe({ t: wall, theta: r.motion.theta, omega: r.motion.omega, knives: r.knives.map(k => k.a), canThrow: r.canThrow() && !r.flying.length, state: r.state, throwT });
     if (bot.decide(wall)) pending.push(wall + 0.012 + rnd() * 0.025);
   }
   if (process.env.DBG) { const a=r.knives.map(k=>k.a).sort((x,y)=>x-y); const gaps=a.map((v,i)=>((i+1<a.length?a[i+1]:a[0]+K.TAU)-v).toFixed(2)); console.log('timeout L'+L,'left',r.left,'gaps',gaps.join(' '),JSON.stringify(bot.learned())); }
