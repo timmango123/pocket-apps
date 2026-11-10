@@ -10,6 +10,11 @@ const SRC = path.resolve(__dirname, '..', 'index.html');
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Wait on a condition instead of a fixed sleep (CI machines are often loaded): resolves true once
+// pred(arg) is truthy in the page, false on timeout so the following ok() reports the real state.
+const until = (p, pred, arg, timeout = 8000) => p.waitForFunction(pred, arg, { polling: 30, timeout }).then(() => true, () => false);
+// Wait until the eased ring radius has settled (two samples 120 ms apart agree).
+const settleR = async p => { let a = -1; for (let i = 0; i < 60; i++) { const b = await p.evaluate(() => window.__fp.R); if (Math.abs(b - a) < 0.05) return b; a = b; await sleep(120); } return a; };
 (async () => {
   const b = await chromium.launch();
   const mk = async (o = {}) => {
@@ -20,12 +25,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     p.on('pageerror', e => errors.push(String(e)));
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: o.mtp || 10 });
-    await p.goto('file://' + SRC); await p.waitForTimeout(250);
+    // fake clock, paused from the start: page time moves only on p.clock.runFor()
+    if (o.clock) { await p.clock.install({ time: 1e12 }); await p.clock.pauseAt(1e12 + 1000); }
+    await p.goto('file://' + SRC + (o.query || '')); await p.waitForFunction(() => window.__fp);
     const r = await p.locator('#stage').boundingBox();
     const pts = list => list.map(([id, x, y]) => ({ id, x: r.x + x, y: r.y + y, radiusX: 8, radiusY: 8 }));
     const touch = (type, list) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts(list || []) });
     const st = () => p.evaluate(() => ({ phase: window.__fp.phase, n: window.__fp.touches.size, late: [...window.__fp.touches.values()].filter(t => t.late).length }));
-    return { ctx, p, cdp, r, touch, st, errors };
+    const phase = (ph, timeout) => until(p, ph => window.__fp.phase === ph, ph, timeout);
+    return { ctx, p, cdp, r, touch, st, errors, phase };
   };
   ok(!/\.shadowBlur\s*=/.test(fs.readFileSync(SRC, 'utf8')), 'no per-frame shadowBlur glow (perf)');
 
@@ -35,82 +43,84 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(await p.evaluate(() => navigator.maxTouchPoints) === 5, 'device reports 5 touch points');
     const pts = Array.from({ length: 8 }, (_, i) => ({ x: r.x + r.width * (0.15 + 0.1 * i), y: r.y + r.height * (0.3 + 0.05 * (i % 3)), id: i + 1, radiusX: 8, radiusY: 8 }));
     for (let n = 1; n <= 8; n++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts.slice(0, n) });
-    await p.waitForTimeout(100);
+    await until(p, () => window.__fp.touches.size === 8, null, 3000);
     ok(await p.evaluate(() => window.__fp.touches.size) === 8, '8 fingers all counted');
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await p.waitForTimeout(100);
+    await until(p, () => window.__fp.touches.size === 0, null, 3000);
     ok(await p.evaluate(() => window.__fp.touches.size) === 0, 'all released');
     await ctx.close();
   }
 
   // --- 2. defaults, progress during stable, re-roll (veto fix), result pill, idle loop + wake lock
+  // This section checks timings (1 s stable, 500 ms linger, ...), so it runs on Playwright's fake clock:
+  // time only moves on run(ms), which fires the page's timers and rAF frames in order. Real sleeps here
+  // flaked on loaded CI machines (late frames pushed the app past the phase a check expected).
   {
     const init = () => { window.__wl = { req: 0, rel: 0 }; Object.defineProperty(navigator, 'wakeLock', { value: { request: async () => { window.__wl.req++; const l = new EventTarget(); l.release = async () => { window.__wl.rel++; l.dispatchEvent(new Event('release')); }; return l; } } }); };
-    const { ctx, p, touch, st, errors, r } = await mk({ init });
+    const { ctx, p, touch, st, errors, r } = await mk({ init, clock: true });
+    const run = ms => p.clock.runFor(ms);
     const S = await p.evaluate(() => window.__fp.S);
     ok(S.stableSec === 1 && S.countdownSec === 2, `default timing 1 s stable + 2 s countdown (${S.stableSec}/${S.countdownSec})`);
-    await sleep(200);
+    await run(200);
     ok(await p.evaluate(() => window.__fp.looping) === false, 'idle: rAF loop stopped with no fingers');
     const A = [1, 80, 200], B = [2, 290, 260], C = [3, 180, 480];
     await touch('touchStart', [A]); await touch('touchStart', [A, B]); await touch('touchStart', [A, B, C]);
-    const t0 = Date.now();
-    await sleep(500);
+    const t0 = await p.evaluate(() => performance.now());
+    await run(500);
     const pr = await p.evaluate(() => [window.__fp.phase, window.__fp.progress]);
     ok(pr[0] === 'stable' && pr[1] > 0.08, `progress ring moves during stable (${pr})`);
-    while ((await st()).phase !== 'result' && Date.now() - t0 < 6000) await sleep(50);
-    const dt = Date.now() - t0;
+    for (let i = 0; i < 120 && (await st()).phase !== 'result'; i++) await run(50);
+    const dt = Math.round(await p.evaluate(t0 => window.__fp.result ? window.__fp.result.at - t0 : Infinity, t0));
     ok(dt < 3600, `result after ${dt} ms with defaults`);
     ok(await p.evaluate(() => window.__wl.req) >= 1, 'wake lock requested while fingers down');
     // reviewer's reroll.js: A lifts and comes back, then B and C lift and come back (never zero fingers)
-    await touch('touchEnd', [A]); await sleep(300);               // A lifts (listed points are released)
-    await touch('touchStart', [B, C, A]); await sleep(200);       // A back (late)
+    await touch('touchEnd', [A]); await run(300);                 // A lifts (listed points are released)
+    await touch('touchStart', [B, C, A]); await run(200);         // A back (late)
     let s1 = await st();
     ok(s1.late === 1 && s1.phase === 'result', 'A put back during result is late, result kept');
-    await touch('touchEnd', [B, C]); await sleep(300);            // B, C lift
+    await touch('touchEnd', [B, C]); await run(300);              // B, C lift
     s1 = await st();
     ok(s1.phase === 'wait' && s1.late === 0 && s1.n === 1, `all participants lifted -> new round with A (${JSON.stringify(s1)})`);
     await touch('touchStart', [A, B]); await touch('touchStart', [A, B, C]);
-    await sleep(3500);
+    await run(3500);
     s1 = await st();
     const ch = await p.evaluate(() => [...window.__fp.touches.values()].filter(t => t.chosen).length);
     ok(s1.phase === 'result' && s1.late === 0 && ch === 1, `staggered re-place gives a new result (${JSON.stringify(s1)}, chosen ${ch})`);
     // all lift and re-place within 500 ms -> new round (not late)
-    await touch('touchEnd', []); await sleep(150);
+    await touch('touchEnd', []); await run(150);
     ok((await st()).phase === 'result', 'result lingers right after everyone lifts');
     await touch('touchStart', [A]); await touch('touchStart', [A, B]); await touch('touchStart', [A, B, C]);
-    await sleep(100);
+    await run(100);
     s1 = await st();
     ok(s1.phase === 'stable' && s1.late === 0, `quick re-place within 500 ms starts a new round (${JSON.stringify(s1)})`);
-    await sleep(3400);
+    await run(3400);
     ok((await st()).phase === 'result', 'quick re-place round reaches a result');
     // result pill: solid background, moves away from a finger at the top
     const pill = await p.evaluate(() => getComputedStyle(document.querySelector('#msg')).backgroundColor);
     ok(/rgb\(255, 255, 255\)/.test(pill), `result text sits on a solid pill (${pill})`);
-    await touch('touchEnd', []); await sleep(700);
+    await touch('touchEnd', []); await run(700);
     await touch('touchStart', [[1, r.width / 2, 40]]); await touch('touchStart', [[1, r.width / 2, 40], [2, 100, 300]]);
-    await sleep(3500);
+    await run(3500);
     const pill2 = await p.evaluate(() => { const m = document.querySelector('#msg').getBoundingClientRect(); const s = document.querySelector('#stage').getBoundingClientRect(); return { top: m.top - s.top, R: window.__fp.R }; });
     ok(pill2.top > 40 + pill2.R + 20, `pill moved clear of a finger at the top (${JSON.stringify(pill2)})`);
-    await touch('touchEnd', []); await sleep(700);
+    await touch('touchEnd', []); await run(700);
     ok(await p.evaluate(() => window.__fp.phase === 'wait' && !window.__fp.looping), 'loop stops again after reset');
     ok(await p.evaluate(() => window.__wl.rel >= 1 && !window.__fp.wake), 'wake lock released when nobody is touching');
     ok(errors.length === 0, 'no console errors (flow) ' + errors.join(' | '));
     await ctx.close();
   }
-
   // --- 3. ring size: 4 fingers in a row across a 360 px phone don't overlap
   {
-    const { ctx, p, touch, r } = await mk({ viewport: { width: 360, height: 640 } });
+    const { ctx, p, touch, r, phase } = await mk({ viewport: { width: 360, height: 640 } });
     const xs = [0.15, 0.383, 0.617, 0.85].map(f => f * r.width), y = r.height / 2;
     const pts = xs.map((x, i) => [i + 1, x, y]);
     for (let i = 1; i <= 4; i++) await touch('touchStart', pts.slice(0, i));
-    await sleep(600);
-    const R = await p.evaluate(() => window.__fp.R), lw = Math.max(6, Math.round(R * 0.22));
+    const R = await settleR(p), lw = Math.max(6, Math.round(R * 0.22));
     const outer = R + Math.min(3, R * 0.07) + lw / 2 + 5 + 1.5, gap = xs[1] - xs[0];
     ok(2 * outer <= gap + 0.5, `4 rings across 360 px: outer radius ${outer.toFixed(1)}, spacing ${gap.toFixed(1)}`);
-    await touch('touchEnd', []); await sleep(700);
+    await touch('touchEnd', []); await phase('wait', 3000);
     await touch('touchStart', [[1, 80, 200]]); await touch('touchStart', [[1, 80, 200], [2, 260, 360]]);
-    await sleep(600);
+    await settleR(p);
     ok(await p.evaluate(() => window.__fp.R) > 40, 'far-apart fingers keep the big ring');
     await touch('touchEnd', []); await ctx.close();
   }
@@ -147,16 +157,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // --- 6. saved settings: out-of-range values are clamped; valid old data still loads
   {
-    const bad = () => { if (!sessionStorage.getItem('x')) { sessionStorage.setItem('x', 1); localStorage.setItem('finger-pick:v1:settings', JSON.stringify({ mode: 'zzz', k: 99, countdownSec: -5, stableSec: 'a', sound: 'yes' })); localStorage.setItem('finger-pick:v1:theme', '"neon"'); } };
-    const { ctx, p, errors } = await mk({ init: bad });
+    // Seed localStorage from an init script keyed on the URL, so it is in place before the app reads it.
+    // (A sessionStorage "first load" guard, or a localStorage write from evaluate() just before a reload,
+    // is not reliably visible to the next document under load: the reload then saw the corrupt data again.)
+    const seed = () => {
+      const k = 'finger-pick:v1:';
+      if (location.search === '?seed=bad') { localStorage.setItem(k + 'settings', JSON.stringify({ mode: 'zzz', k: 99, countdownSec: -5, stableSec: 'a', sound: 'yes' })); localStorage.setItem(k + 'theme', '"neon"'); }
+      if (location.search === '?seed=old') localStorage.setItem(k + 'settings', JSON.stringify({ mode: 'teams', k: 3, countdownSec: 4, stableSec: 2, sound: true, vibrate: false }));
+    };
+    const { ctx, p, errors } = await mk({ init: seed, query: '?seed=bad' });
     const S = await p.evaluate(() => [window.__fp.S, document.documentElement.dataset.theme || 'auto', document.querySelector('#k-val').textContent]);
     ok(S[0].mode === 'pick1' && S[0].k === 9 && S[0].countdownSec === 1 && S[0].stableSec === 1 && S[0].sound === true && S[1] === 'auto', `corrupt settings sanitised ${JSON.stringify(S)}`);
     const t = await p.evaluate(() => [window.__fp.sanitize({ mode: 'teams', k: 9 }).k, window.__fp.sanitize({ mode: 'order', k: 3, countdownSec: 3, stableSec: 2, sound: false, vibrate: false })]);
     ok(t[0] === 5 && t[1].mode === 'order' && t[1].k === 3 && t[1].countdownSec === 3 && t[1].stableSec === 2 && t[1].sound === false, `teams k clamps to 5; old valid settings kept ${JSON.stringify(t)}`);
-    await p.evaluate(() => localStorage.setItem('finger-pick:v1:settings', JSON.stringify({ mode: 'teams', k: 3, countdownSec: 4, stableSec: 2, sound: true, vibrate: false })));
-    await p.reload(); await sleep(200);
+    await p.goto('file://' + SRC + '?seed=old'); await p.waitForFunction(() => window.__fp);
     const S2 = await p.evaluate(() => window.__fp.S);
-    ok(S2.mode === 'teams' && S2.k === 3 && S2.countdownSec === 4 && S2.vibrate === false, 'existing saved settings load unchanged');
+    ok(S2.mode === 'teams' && S2.k === 3 && S2.countdownSec === 4 && S2.stableSec === 2 && S2.sound === true && S2.vibrate === false, `existing saved settings load unchanged ${JSON.stringify(S2)}`);
     ok(errors.length === 0, 'no console errors (storage) ' + errors.join(' | '));
     await ctx.close();
   }

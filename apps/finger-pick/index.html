@@ -372,7 +372,9 @@ function frame(now) {
   const still = reduceMotion.matches;
   // during a result keep the sizes the result was drawn with; otherwise ease towards the target
   if (phase !== 'result') { const tr = targetR(); R = still || !touches.size ? tr : R + (tr - R) * 0.25; }
-  const rt = result ? Math.min(1, (now - result.at) / (still ? 1 : 450)) : 0;
+  // rAF's timestamp is the frame start, which can be earlier than result.at (performance.now() inside
+  // finish()) when frames run late; clamp so the easing never goes negative (negative ring radius)
+  const rt = result ? Math.max(0, Math.min(1, (now - result.at) / (still ? 1 : 450))) : 0;
   // background tint toward the chosen colour (single pick)
   if (phase === 'result' && S.mode === 'pick1') {
     const win = [...touches.values()].find(t => t.chosen);
@@ -385,7 +387,7 @@ function frame(now) {
   }
   // one progress line for stable + countdown, so the ring starts moving as soon as enough fingers are down
   const total = (S.stableSec + S.countdownSec) * 1000;
-  const prog = lastProg = phase === 'stable' || phase === 'countdown' ? Math.min(1, (now - tStart) / total) : 0;
+  const prog = lastProg = phase === 'stable' || phase === 'countdown' ? Math.max(0, Math.min(1, (now - tStart) / total)) : 0;
   const lw = Math.max(6, Math.round(R * 0.22));
   for (const t of touches.values()) {
     let col = pal[t.c], alpha = 1, scale = 1, label = '';
@@ -396,7 +398,7 @@ function frame(now) {
     }
     if (t.late) { alpha = 0.3; }
     const pulse = still ? 0 : Math.sin((now - t.born) / 260) * Math.min(3, R * 0.07);
-    const r = (R + pulse) * scale;
+    const r = Math.max(1, (R + pulse) * scale);
     ctx.save(); ctx.globalAlpha = alpha;
     if (phase === 'result' && t.chosen && !t.late) {
       const gr = r * 1.9; ctx.globalAlpha = alpha * rt; ctx.drawImage(glowSprite(col), t.x - gr, t.y - gr, gr * 2, gr * 2); ctx.globalAlpha = alpha;
