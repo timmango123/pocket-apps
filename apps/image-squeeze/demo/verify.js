@@ -110,8 +110,10 @@ async function waitReady(page, n) {
   console.log(r3);
   assert(r3.some(r => r.st === 'warn' && /無法達到/.test(r.note)) || r3.every(r => r.o <= 5120), '5KB target: flagged or achieved');
   // settings persisted
-  await page.reload(); await page.waitForTimeout(500);
+  await page.evaluate(() => window.__sq.flush()); await page.reload(); await page.waitForFunction(() => window.__sq && window.__sq.items.length > 0, null, { timeout: 30000 });
   assert(await page.isChecked('#targetOn') && (await page.inputValue('#targetKB')) === '5', 'settings persisted after reload');
+  await page.waitForFunction(() => window.__sq.items.length === 2 && window.__sq.items.every(i => i.outBlob), null, { timeout: 30000 });
+  assert(await page.evaluate(() => window.__sq.items.map(i => i.name).join() === 'noise-photo.jpg,alpha.png' && !window.__sq.items.some(i => i.sample)), 'own images and outputs restored after reload (no samples)');
   await page.fill('#targetKB', '300'); await page.press('#targetKB', 'Tab'); await page.uncheck('#targetOn');
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && innerWidth === 390), 'no horizontal scroll 390');
   await ctx.close();
