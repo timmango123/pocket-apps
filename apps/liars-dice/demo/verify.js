@@ -6,8 +6,8 @@
 // 2) Chromium: a bot plays one complete game in the real page against three 一般 computers using real touch input
 //    (CDP Input.dispatchTouchEvent) at human pace (>=150 ms between actions): it peeks under its cup by holding it,
 //    taps faces / +/- / 喊, holds 開！ for 0.6 s, taps 下一輪, and ends on the result screen. Recorded to demo/game-4x.mp4.
-// The recorded game uses seed 20261020 (dice and AI choices are seeded, so the run is reproducible); it was picked from
-// seeds 20261014-20261023, of which the advice-following bot wins 4/10 against three 一般 computers.
+// The recorded game uses seed 20261020 (dice and AI choices are seeded, so the run is reproducible). At the end it also
+// checks that the finished match was recorded in the stats and no unfinished save (liarsdice:match) is left.
 // Usage: node verify.js [--sim-only] [--bot-only] [--games N] [--seed S]
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const APP = path.resolve(__dirname, '..', 'index.html'), OUT = __dirname;
@@ -131,6 +131,9 @@ async function bot() {
   }
   await sleep(2600);
   const fin = await st();
+  // the finished match is recorded once and no unfinished save is left behind
+  const store = await page.evaluate(() => ({ match: localStorage.getItem('liarsdice:match'), games: JSON.parse(localStorage.getItem('liarsdice:stats') || '{}').games }));
+  if (store.match || store.games !== 1) errors.push('end of match not recorded cleanly: ' + JSON.stringify(store));
   const endText = (await page.textContent('#ovEnd')).replace(/\s+/g, ' ').trim();
   await page.screenshot({ path: path.join(OUT, 'game-result.png') });
   const thinkMs = await page.evaluate(() => window.__ld.thinkMs.slice()), usedWorker = await page.evaluate(() => window.__ld.worker());

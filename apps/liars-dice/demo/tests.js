@@ -155,5 +155,178 @@ eq(LD.rollHand(5, LD.rng(123)), LD.rollHand(5, LD.rng(123)), 'same seed same dic
   t.sort((a, b) => a - b);
   console.log(`  AI think time (Node, all levels): median ${t[t.length >> 1].toFixed(2)} ms, p99 ${t[Math.floor(t.length * 0.99)].toFixed(2)} ms, max ${t[t.length - 1].toFixed(1)} ms (first call builds tables)`);
 }
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ---- 10. saved RNG state continues the same sequence (saved matches) ----
+{ const a = LD.rng(4242); for (let i = 0; i < 7; i++) a(); const b = LD.rng(a.state()); eq([a(), a(), a()], [b(), b(), b()], 'rng(state) continues the sequence'); }
+
+// ---- 11. difficulty: 新手 is beatable by a simple player, 一般 slips, 高手 does not ----
+{
+  const fresh = () => ({ bids: 0, bluffs: 0, cs: 0, cn: 0, rs: 0, rn: 0 });
+  // seat 0: 1-step greedy player from its own dice (the skill-tier "普通" policy without its random moves)
+  function greedy(g) {
+    const l = LD.last(g); if (l && LD.probFor(g, 0, l, l.wild) < 0.4) return { act: 'call' };
+    const cs = LD.candidates(LD.viewFor(g, 0), 0); if (!cs.length) return { act: 'call' };
+    let best = null, bp = -1; for (const c of cs) { const p = LD.probFor(g, 0, c, LD.wildNow(g) && c.f !== 1); if (p > bp + 1e-9) { bp = p; best = c; } }
+    if (l && 1 - LD.probFor(g, 0, l, l.wild) > bp) return { act: 'call' };
+    return { act: 'bid', q: best.q, f: best.f };
+  }
+  function winRate(lvl, N) {
+    let w = 0;
+    for (let i = 0; i < N; i++) {
+      const seed = 9100 + i * 37, rr = LD.rng(seed ^ 0x9e3779b9), g = LD.newGame({ n: 4, mode: 'lives', special: true, start: 'players', seed, first: Math.floor(rr() * 4) });
+      while (g.phase !== 'over' && !g.P[0].out) {
+        LD.startRound(g);
+        for (let k = 0; k < 300; k++) {
+          const p = g.turn, a = p === 0 ? greedy(g) : LD.think(LD.viewFor(g, p, { lvl, pers: LD.PERS[p % 3], seed: (rr() * 4294967295) >>> 0 }));
+          if (a.act === 'call' && LD.canCall(g)) break;
+          let b = { q: a.q, f: a.f }; if (a.act === 'call' || !LD.legal(g, b)) { b = LD.candidates(LD.viewFor(g, p), 0)[0]; if (!b) break; }
+          LD.doBid(g, b);
+        }
+        LD.doCall(g); LD.settle(g);
+      }
+      if (!g.P[0].out && g.winner === 0) w++;
+    }
+    return w / N;
+  }
+  const wn = winRate(0, 150), wl = winRate(1, 150);
+  console.log(`  greedy player vs 3 新手 ${(wn * 100).toFixed(1)}%, vs 3 一般 ${(wl * 100).toFixed(1)}% (fair share 25%)`);
+  ok(wn >= 0.3, '新手 table is winnable for a simple greedy player (>=30%, got ' + wn + ')');
+  ok(wl < wn, '一般 is harder than 新手');
+}
+
+// ---- 12. the real page: saved match, abandon, two-finger taps, confirms, layout fixes ----
+(async () => {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('  (playwright not found: page tests skipped)'); return; }
+  const URL = 'http://ld.test/', T0 = Date.now();
+  const browser = await chromium.launch();
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function open(o = {}) {
+    const ctx = await browser.newContext({ viewport: o.vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: o.scheme || 'dark' });
+    await ctx.addInitScript(st => { try { if (!sessionStorage.getItem('init')) { sessionStorage.setItem('init', '1'); localStorage.clear(); for (const k in st) localStorage.setItem('liarsdice:' + k, JSON.stringify(st[k])); } } catch (e) {} },
+      Object.assign({ settings: { ais: 3, lvl: 1, mode: 'lives', special: true, start: 'players', peek: 'hold', hint: true, sound: false, vib: false } }, o.store || {}));
+    await ctx.route('**/*', r => r.request().url().split('#')[0] === URL ? r.fulfill({ status: 200, contentType: 'text/html', body: html }) : r.abort());
+    const page = await ctx.newPage(), errors = [];
+    page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    await page.goto(URL + (o.hash || ''));
+    const cdp = await ctx.newCDPSession(page);
+    const st = () => page.evaluate(() => window.__ld.state());
+    const until = async (fn, what, ms = 25000) => { const t = Date.now(); for (;;) { const s = await st(); if (fn(s)) return s; if (Date.now() - t > ms) throw new Error('timeout waiting for ' + what + ' ' + JSON.stringify(s).slice(0, 200)); await sleep(40); } };
+    const center = async sel => { await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {}); const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(sel + ' not visible'); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const tap = async (sel, id = 7) => { const c = typeof sel === 'string' ? await center(sel) : sel; await touch('touchStart', [{ x: c.x, y: c.y, id }]); await touch('touchEnd', []); };
+    return { ctx, page, errors, st, until, center, touch, tap };
+  }
+  const myTurnWithBid = async P => { for (let i = 0; i < 6; i++) { const s = await P.until(s => s.myTurn || s.phase === 'result', 'my turn'); if (s.phase === 'result') { await P.tap('#bNext'); continue; } if (s.last) return s; await P.tap('#bBid'); await P.until(s => !s.myTurn, 'bid sent'); } throw new Error('no turn with a bid to answer'); };
+  try {
+    // a) a match is saved as it is played and survives a reload; the menu offers 繼續對局
+    {
+      const P = await open({ hash: '#seed=1004' });
+      await P.tap('#sPlay');
+      let s = await P.until(s => s.myTurn, 'first turn');
+      ok(s.saved, 'match saved once the first round is dealt');
+      const hand = s.hand, round = s.round;
+      await P.tap('#qp'); await P.tap('#bBid');
+      s = await P.until(s => !s.myTurn && s.bids > 0, 'bid applied');
+      const bids = await P.page.evaluate(() => JSON.parse(localStorage.getItem('liarsdice:match')).g.bids.length);
+      ok(bids >= 1, 'bid stored in liarsdice:match right away (' + bids + ')');
+      await P.page.reload(); await P.page.waitForFunction(() => window.__ld);
+      ok(await P.page.isVisible('#sCont'), 'reload shows 繼續對局 on the menu');
+      await P.tap('#sCont');
+      s = await P.until(s => s.round != null, 'resumed');
+      eq([s.round, s.hand], [round, hand], 'resumed match keeps the round and my dice');
+      ok(s.bids >= bids, 'resumed match keeps the bids');
+      // reload while the cups are being opened: the call is applied on resume, not lost
+      s = await myTurnWithBid(P);
+      const lives0 = s.lives.reduce((a, b) => a + b, 0), cb = await P.center('#bCall');
+      await P.touch('touchStart', [{ x: cb.x, y: cb.y, id: 3 }]);
+      await P.until(s => s.phase === 'reveal', 'call made', 8000); await P.touch('touchEnd', []);
+      ok(await P.page.evaluate(() => JSON.parse(localStorage.getItem('liarsdice:match')).g.phase === 'reveal'), 'call stored before the reveal animation');
+      await P.page.reload(); await P.page.waitForFunction(() => window.__ld);
+      await P.tap('#sCont');
+      s = await P.until(s => s.phase === 'result' || s.overVisible || s.phase === 'over', 'resumed reveal judged');
+      ok(s.lives.reduce((a, b) => a + b, 0) === lives0 - 1, 'reload during the reveal still costs the loser a life');
+      // abandoning asks first and counts as a loss
+      await P.tap('#bMenu'); await P.tap('#mNew');
+      ok(await P.page.isVisible('#ovAsk'), '重新開局 during a match asks for confirmation');
+      await P.tap('#askNo');
+      ok(!(await P.page.isVisible('#ovAsk')) && (await P.st()).round === s.round, 'cancel keeps the match');
+      await P.tap('#bMenu'); await P.tap('#mNew'); await P.tap('#askOk');
+      await P.until(s => s.round >= 1, 'new match');
+      const games = await P.page.evaluate(() => JSON.parse(localStorage.getItem('liarsdice:stats')).games);
+      ok(games === 1, 'abandoned match recorded as a played game (' + games + ')');
+      ok(!P.errors.length, 'no page errors (saved match) ' + P.errors.join(' | '));
+      await P.ctx.close();
+    }
+    // b) second finger taps while the first holds the cup (hold-to-peek); single taps are not doubled; shake can be skipped
+    {
+      const P = await open({ hash: '#seed=2024' });
+      await P.tap('#sPlay');
+      let s = await P.until(s => s.phase === 'shake', 'shake');
+      let tries = 0;
+      while (true) { // tap the table during the shake; retry a round if the machine was too slow to land the tap in time
+        await P.tap({ x: 195, y: 330 });
+        s = await P.until(s => s.phase !== 'shake', 'shake over');
+        if (s.shakeEndBy === 'tap' || ++tries >= 3) break;
+        await P.page.evaluate(() => window.__ld.newMatch('normal', 77)); await P.until(s => s.phase === 'shake', 'shake');
+      }
+      ok(s.shakeEndBy === 'tap', 'tap on the table skips the shake');
+      s = await P.until(s => s.myTurn, 'my turn');
+      const qp = await P.center('#qp'), f6 = await P.center('.fb[data-f="6"]'), cup = s.cup;
+      await P.touch('touchStart', [{ x: cup.x, y: cup.y, id: 1 }]);
+      await P.until(s => s.ownLift > 0.5, 'peek');
+      let q = (await P.st()).sel.q;
+      for (let i = 0; i < 3; i++) { await P.touch('touchStart', [{ x: cup.x, y: cup.y, id: 1 }, { x: qp.x, y: qp.y, id: 2 }]); await P.touch('touchEnd', [{ x: qp.x, y: qp.y, id: 2 }]); }
+      s = await P.st(); eq(s.sel.q, Math.min(s.total, q + 3), 'second finger on ＋ counts every tap while the cup is held');
+      ok(s.ownLift > 0.5, 'cup stays open while the other finger taps');
+      await P.touch('touchStart', [{ x: cup.x, y: cup.y, id: 1 }, { x: f6.x, y: f6.y, id: 2 }]); await P.touch('touchEnd', [{ x: f6.x, y: f6.y, id: 2 }]);
+      eq((await P.st()).sel.f, 6, 'second finger picks a face');
+      await P.touch('touchEnd', [{ x: cup.x, y: cup.y, id: 1 }]);
+      await P.until(s => s.ownLift < 0.5, 'cup closes when the holding finger lifts');
+      q = (await P.st()).sel.q;
+      await P.tap('#qm'); await P.until(s => s.sel.q !== q, 'minus'); await sleep(150);
+      eq((await P.st()).sel.q, q - 1, 'one tap on − moves exactly one step (no pointerup + click double)');
+      ok(!P.errors.length, 'no page errors (touch) ' + P.errors.join(' | '));
+      await P.ctx.close();
+    }
+    // c) confirms for 重設統計 / 清除, 44px setting buttons, daily replay is practice, coach key row, history strip at 360px
+    {
+      const today = (d => d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2))(new Date());
+      const stats = { games: 3, wins: 1, lvl: [[0, 0], [3, 1], [0, 0]], calls: 2, callsWon: 1, chal: 0, caught: 0, rounds: 9, ach: { day: 1 }, daily: { [today]: 2 } };
+      const P = await open({ vp: { width: 360, height: 640 }, scheme: 'light', store: { stats, model: { bids: 12, bluffs: 3, cs: 1, cn: 2, rs: 1, rn: 2 } } });
+      await P.tap('#sStats'); await P.tap('#statReset');
+      ok(await P.page.isVisible('#ovAsk'), '重設統計 asks first');
+      await P.tap('#askNo');
+      ok(await P.page.evaluate(() => JSON.parse(localStorage.getItem('liarsdice:stats')).games) === 3, 'cancel keeps stats');
+      await P.tap('#statOk'); await P.tap('#sSet');
+      const hs = await P.page.evaluate(() => [...document.querySelectorAll('#ovSet .seg button')].map(b => b.getBoundingClientRect().height));
+      ok(Math.min(...hs) >= 44, 'setting buttons at least 44px tall (' + Math.min(...hs) + ')');
+      await P.tap('#clrModel');
+      ok(await P.page.isVisible('#ovAsk'), '清除 asks first');
+      await P.tap('#askOk');
+      ok(await P.page.evaluate(() => JSON.parse(localStorage.getItem('liarsdice:model')).bids) === 0, 'confirmed 清除 resets the model');
+      await P.tap('#setOk');
+      await P.tap('#sDaily');
+      let s = await P.until(s => s.round >= 1, 'daily started');
+      ok(s.practice, 'second daily game of the day is practice');
+      await P.page.evaluate(() => { const G = window.__ld.debug.G(); G.P.forEach((p, i) => { if (i) { p.out = true; p.lives = 0; } }); G.winner = 0; G.phase = 'over'; window.__ld.debug.recordEnd(); });
+      eq(await P.page.evaluate(k => JSON.parse(localStorage.getItem('liarsdice:stats')).daily[k], today), 2, 'practice daily does not change today\'s score');
+      // history strip: after many bids the leftmost visible chip is whole (not under the fade)
+      const P2 = await open({ vp: { width: 360, height: 640 }, hash: '#seed=31' });
+      await P2.tap('#sPlay'); await P2.until(s => s.myTurn || (s.bids > 0), 'started');
+      const hv = await P2.page.evaluate(() => { const H = document.getElementById('hist'); for (let i = 0; i < 9; i++) window.__ld.debug.addHist({ p: i % 4, q: 10 + i, f: 1 + (i % 6) }); const r = H.getBoundingClientRect(); const vis = [...H.querySelectorAll('.chip')].map(c => c.getBoundingClientRect()).filter(c => c.right > r.left + 0.5 && c.left < r.right - 0.5); return { first: vis[0].left - r.left, last: r.right - vis[vis.length - 1].right }; });
+      ok(hv.first >= 5.5 && hv.last >= 0, 'history chips clear of the left fade and fully shown (' + JSON.stringify(hv) + ')');
+      // coach: the called bid is the first, highlighted row
+      s = await myTurnWithBid(P2);
+      const cb = await P2.center('#bCall'); await P2.touch('touchStart', [{ x: cb.x, y: cb.y, id: 3 }]); await P2.until(s => s.phase === 'reveal', 'call', 8000); await P2.touch('touchEnd', []);
+      await P2.until(s => s.phase === 'result', 'result', 20000);
+      const co = await P2.page.evaluate(() => { const c = document.getElementById('coach'), k = c.querySelector('.crow.key'), r = c.getBoundingClientRect(), kr = k && k.getBoundingClientRect(); return { key: !!k, second: c.children[1] === k, inView: kr && kr.bottom <= r.bottom + 1, q: k && +k.querySelector('b').textContent }; });
+      ok(co.key && co.second && co.inView && co.q === s.last.q, 'coach shows the called bid first, highlighted and visible ' + JSON.stringify(co));
+      ok(!P.errors.length && !P2.errors.length, 'no page errors (menus) ' + P.errors.concat(P2.errors).join(' | '));
+      await P.ctx.close(); await P2.ctx.close();
+    }
+  } catch (e) { fail++; console.log('FAIL page tests: ' + e.message + ' ' + (e.stack || '').split('\n').slice(1, 3).join(' ')); }
+  await browser.close();
+  console.log(`  page tests ${((Date.now() - T0) / 1000).toFixed(1)} s`);
+})().then(() => {
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+});
