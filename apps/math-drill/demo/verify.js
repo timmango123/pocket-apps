@@ -20,6 +20,8 @@ async function answer(page, val) {
   await page.tap('#key-ok');
 }
 const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), null, { timeout: 4000 });
+// 結果頁剛出現時會擋掉放開手指後的 ghost click，等擋的時間過了再點
+const waitResult = async page => { await page.waitForSelector('#s-result:not([hidden])'); await page.waitForFunction(() => !ghostArm && performance.now() > ghostUntil + 30); };
 (async () => {
   const browser = await chromium.launch();
   const mob = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
@@ -83,7 +85,7 @@ const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), 
     await waitNext(page);
   }
   ok(seen.size === 20, '固定 20 題內同題不重複（九九題庫 36 題足夠）');
-  await page.waitForSelector('#s-result:not([hidden])');
+  await waitResult(page);
   ok((await page.textContent('#res-main')).startsWith('17') && (await page.textContent('#res-acc')) === '85%', `結果：17/20、正確率 85%（2 錯 + 1 跳過）`);
   ok(await page.locator('#wrong-body tr').count() === 3 && (await page.textContent('#wrong-body')).includes('跳過'), '錯題列表 3 筆（含跳過）');
   await page.screenshot({ path: path.join(OUT, '390x844-result.png') });
@@ -92,7 +94,7 @@ const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), 
   await page.tap('#btn-wrong');
   ok(await page.evaluate(() => Q.total) === 3, '只練錯題：3 題');
   for (let i = 0; i < 3; i++) { await answer(page, await page.evaluate(() => Q.cur.ans)); await waitNext(page); }
-  await page.waitForSelector('#s-result:not([hidden])');
+  await waitResult(page);
   ok((await page.textContent('#res-acc')) === '100%' && await page.isHidden('#wrong-card'), '錯題全答對 → 100%');
 
   // 5. 限時模式 + 暫停 + 切頁自動暫停
@@ -101,7 +103,7 @@ const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), 
   await page.tap('#btn-start');
   for (let i = 0; i < 4; i++) { await answer(page, await page.evaluate(() => Q.cur.ans)); await waitNext(page); }
   await answer(page, (await page.evaluate(() => Q.cur.ans)) + 1); await waitNext(page);
-  ok(await page.evaluate(() => Q.items.length === 5 && $('fix').textContent === ''), '限時模式答錯直接下一題（不停 1 秒）');
+  ok(await page.evaluate(() => Q.items.length === 5 && $('fix').textContent === ''), '限時模式答錯顯示答案 0.6 秒後下一題（不停 1 秒）');
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
   const t1 = await page.evaluate(() => now()); await page.waitForTimeout(600); const t2 = await page.evaluate(() => now());
   ok(await page.evaluate(() => Q.paused) && t1 === t2 && await page.isVisible('#paused'), '切到背景自動暫停，計時停止且題目被遮住');
@@ -109,36 +111,37 @@ const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), 
   await page.screenshot({ path: path.join(OUT, '390x844-paused.png') });
   await page.tap('#btn-resume');
   await page.evaluate(() => { Q.elapsed += 61000; });
-  await page.waitForSelector('#s-result:not([hidden])', { timeout: 3000 });
+  await page.waitForSelector('#s-result:not([hidden])', { timeout: 3000 }); await waitResult(page);
   ok((await page.textContent('#res-main')).startsWith('4'), '60 秒到 → 分數 = 答對 4 題');
 
   // 6. 統計
   await page.tap('#btn-to-stats');
-  const st = await page.evaluate(() => ({ pts: document.querySelector('#chart-acc .ln').getAttribute('points').split(' ').length, colored: document.querySelectorAll('#heat button[data-acc]').length, today: $('today-count').textContent }));
+  const st = await page.evaluate(() => ({ pts: document.querySelector('#chart-acc .ln').getAttribute('points').split(' ').length, colored: document.querySelectorAll('#heat .hc[data-acc]').length, today: $('today-count').textContent }));
   ok(st.pts === 3, `正確率折線 3 點（3 次測驗）`);
   ok(st.colored > 10, `熱力格已上色 ${st.colored} 格`);
   ok(st.today.startsWith('今天 28 /'), `每日題數：${st.today}`);
-  await page.tap('#heat button[data-acc] >> nth=0');
-  ok(/練習 \d+ 次/.test(await page.textContent('#heat-info')), '點格子顯示次數與平均秒數：' + await page.textContent('#heat-info'));
+  await page.tap('#heat-row-7');
+  ok(/練習 \d+ 次/.test(await page.textContent('#heat-info')), '點一列顯示次數與平均秒數：' + await page.textContent('#heat-info'));
   await page.screenshot({ path: path.join(OUT, '390x844-stats.png'), fullPage: true });
 
   // 7. 多使用者互不干擾 + 重新整理保留
   await page.tap('#btn-back');
-  await page.tap('#btn-user-add'); await page.fill('#user-name', '小華'); await page.tap('#btn-user-save');
+  await page.tap('#btn-user-menu'); await page.tap('#btn-user-add'); await page.fill('#user-name', '小華'); await page.tap('#btn-user-save');
   ok(await page.evaluate(() => store.get(uk('sessions'), []).length) === 0 && (await page.textContent('#rec-last')) === '—', '新使用者「小華」沒有紀錄');
   await page.selectOption('#user', { label: '小朋友' });
   ok(await page.evaluate(() => store.get(uk('sessions'), []).length) === 3, '切回「小朋友」仍有 3 次紀錄');
   // 弱點加強（已有足夠紀錄）
   await page.check('#mode-weak'); await page.tap('#btn-start');
   ok(await page.evaluate(() => Q.source === 'weak' && Q.total === 20), '弱點加強：紀錄足夠時以權重抽題');
-  await page.tap('#btn-end'); await page.waitForSelector('#s-result:not([hidden])');
+  await page.tap('#btn-end'); await waitResult(page);
   await page.reload(); await page.waitForTimeout(200);
-  ok(await page.evaluate(() => users.length === 2 && store.get(uk('sessions'), []).length === 3), '重新整理後使用者與紀錄保留');
+  ok(await page.evaluate(() => users.length === 2 && store.get(uk('sessions'), []).length === 3 && !$('s-result').hidden), '重新整理後使用者、紀錄與結果頁都保留');
+  await page.tap('#btn-home');
   await page.selectOption('#user', { label: '小華' });
   await page.check('#mode-weak'); await page.tap('#btn-start');
-  ok(await page.evaluate(() => Q.source === 'normal') && (await page.textContent('#toast')).includes('至少 10 筆'), '小華紀錄不足 → 提示並改用一般出題');
-  await page.tap('#btn-end'); await page.waitForSelector('#s-result:not([hidden])'); await page.tap('#btn-home');
-  await page.tap('#btn-user-del'); ok(await page.isVisible('#user-del-confirm'), '刪除使用者需確認'); await page.tap('#btn-user-del-yes');
+  ok(await page.evaluate(() => Q.source === 'normal' && Q.mode === 'fixed') && (await page.textContent('#toast')).includes('至少 10 筆'), '小華紀錄不足 → 提示並改用一般出題（記為固定 20 題）');
+  await page.tap('#btn-end'); await waitResult(page); await page.tap('#btn-home');
+  await page.tap('#btn-user-menu'); await page.tap('#btn-user-del'); ok(await page.isVisible('#user-del-confirm'), '刪除使用者需確認'); await page.tap('#btn-user-del-yes');
   ok(await page.evaluate(() => users.length) === 1, '刪除後剩 1 位');
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '390 無水平捲動');
   ok(errors.length === 0, 'console/pageerror 無錯誤 ' + errors.join(' | '));
@@ -164,7 +167,7 @@ const waitNext = page => page.waitForFunction(() => Q && (Q.done || !Q.locked), 
     await p.screenshot({ path: path.join(OUT, name.replace('.png', '-quiz.png')) });
     if (name.includes('dark')) {
       for (let i = 0; i < 6; i++) { await p.evaluate(() => { Q.input = String(Q.items.length % 3 ? Q.cur.ans : Q.cur.ans + 1); press('OK'); }); await p.waitForFunction(() => Q.done || !Q.locked, null, { timeout: 3000 }); }
-      await p.evaluate(() => finish()); await p.click('#btn-to-stats');
+      await p.evaluate(() => finish()); await p.waitForFunction(() => performance.now() > ghostUntil + 30); await p.click('#btn-to-stats');
       await p.screenshot({ path: path.join(OUT, '390x844-dark-stats.png'), fullPage: true });
     }
     ok(e.length === 0, `${name} 無錯誤 ${e}`);
