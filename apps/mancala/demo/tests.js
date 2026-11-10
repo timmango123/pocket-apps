@@ -193,5 +193,159 @@ function mm(B, side, d, rule, ec) {
 }
 console.log('perft (each sowing is a ply), Kalah(6,4):', [1,2,3,4,5,6,7,8].map(d => MC.perft('kalah', 4, d)).join(', '));
 console.log('perft Oware:', [1,2,3,4,5,6,7].map(d => MC.perft('oware', 4, d)).join(', '));
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exitCode = fail ? 1 : 0;
+// ================= release-review fixes (2026-11) =================
+{ // difficulty ladder: L3 and L4 sit between the skilled-tier search (depth 4) and 祖靈 without a wall
+  const L = MC.LEVELS;
+  ok(L[2].depth === 5 && L[2].err === 0.10 && L[3].depth === 8 && L[3].err === 0.05, 'levels: 長老 depth 5 / 10% slips, 部落智者 depth 8 / 5% slips (skilled tier ~67% / ~26% in tiers-sim)');
+  ok(L.every((l, i) => !i || (l.depth >= L[i - 1].depth && l.err <= L[i - 1].err)), 'levels get strictly no weaker step by step');
+}
+{ // light theme: store score / name text contrast against the store groove (lightest gradient stop) >= 4.5:1
+  const lum = h => { const c = h.match(/\w\w/g).map(x => parseInt(x, 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const m = html.match(/a: '#e2b674'[^}]*label: '(#[0-9a-f]{6})'/), lab = m && m[1], groove = '#965f2d'; // rgba(150,95,45)
+  const cr = lab ? (lum(lab) + 0.05) / (lum(groove) + 0.05) : 0;
+  ok(cr >= 4.5, `light store label ${lab} on ${groove}: contrast ${cr.toFixed(2)}:1`);
+}
+
+async function browserTests() {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('  (playwright not found: page tests skipped)'); return; }
+  const ORIGIN = 'https://mancala.test/';
+  const browser = await chromium.launch();
+  const errors = [];
+  async function open(vp = { width: 390, height: 844 }, init) {
+    const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+    await ctx.route('**/*', r => r.request().url() === ORIGIN ? r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }) : r.abort());
+    if (init) await ctx.addInitScript(init.fn, init.arg);
+    const page = await ctx.newPage();
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+    page.on('dialog', d => d.accept());
+    const cdp = await ctx.newCDPSession(page);
+    const tap = async (x, y) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+    const tapPit = async (side, p) => { const [x, y] = await page.evaluate(([s, q]) => __game.pitToClient(s, q), [side, p]); await tap(x, y); };
+    await page.goto(ORIGIN); await page.waitForFunction(() => window.__game);
+    return { ctx, page, tap, tapPit };
+  }
+  const G = page => page.evaluate(() => __game.state());
+  const ready = page => page.waitForFunction(() => { const s = __game.state(); return s.over || (s.inputOK && !s.busy && !s.thinking); }, null, { timeout: 60000 });
+  // a saved game (old localStorage format, key mancala.game v1) for side 0 to move
+  const saveOf = (o) => Object.assign({ v: 1, rule: 'kalah', seeds: 4, ec: false, side: 0, over: false, stall: 0, plies: 0, hist: [], mode: 'ai', level: 1, human: 0, first: 0, snaps: [], chain: 0, maxChain: 0, maxCap: 0, hints: 0, undos: 0, recorded: false }, o);
+  const seed = (store) => ({ fn: (st) => { if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1'); for (const k in st) localStorage.setItem('mancala.' + k, JSON.stringify(st[k])); }, arg: store });
+  const SET = { speed: 'normal', mode: '2p', sound: false, vib: false };
+  try {
+    { // [1] a reload during the sowing animation keeps the move just played
+      const { ctx, page, tapPit } = await open(undefined, seed({ settings: SET }));
+      await page.click('#mStart'); await ready(page);
+      await tapPit(0, 0);
+      const mid = await page.evaluate(() => ({ busy: __game.state().busy, saved: JSON.parse(localStorage.getItem('mancala.game')).hist.length }));
+      ok(mid.saved === 1, `move is saved before the animation ends (busy=${mid.busy}, saved hist ${mid.saved})`);
+      await page.reload(); await ready(page);
+      const s = await G(page);
+      ok(s.hist.length === 1 && s.side === 1 && s.b[0] === 0 && s.b[1] === 5, `after a mid-animation reload the move is still there (hist ${s.hist.length}, side ${s.side})`);
+      // [5] rotation updates the "tap the left column / bottom row" hint
+      const before = await page.evaluate(() => __game.status());
+      await page.setViewportSize({ width: 844, height: 390 });
+      await page.waitForFunction(() => !__game.state().vertical);
+      const after = await page.evaluate(() => __game.status());
+      ok(/右欄/.test(before) && /上排/.test(after), `status follows rotation: "${before}" -> "${after}"`);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForFunction(() => __game.state().vertical);
+      ok(/右欄/.test(await page.evaluate(() => __game.status())), 'status back to the column wording after rotating back');
+      // [detail] starting a new game over an unfinished one asks first
+      await page.click('#bMenu'); await page.click('#mStart');
+      ok(await page.isVisible('#ovConfirm') && (await G(page)).hist.length === 1, 'new game over an unfinished game asks for confirmation');
+      await page.click('#cfNo');
+      ok(!(await page.isVisible('#ovConfirm')) && (await G(page)).hist.length === 1, 'cancel keeps the unfinished game');
+      await page.click('#mStart'); await page.click('#cfYes'); await ready(page);
+      ok((await G(page)).hist.length === 0, 'confirm starts the new game');
+      await ctx.close();
+    }
+    { // [1] the finishing move records the result before its animation: reload mid-animation keeps it
+      const st = { settings: Object.assign({}, SET, { mode: 'ai', level: 1 }), game: saveOf({ b: [0,0,0,0,0,1,20, 1,2,3,0,0,1,20] }) };
+      const { ctx, page, tapPit } = await open(undefined, seed(st));
+      await ready(page); await tapPit(0, 5);
+      await page.waitForFunction(() => __game.state().over);
+      const rec = await page.evaluate(() => JSON.parse(localStorage.getItem('mancala.stats')).games);
+      await page.reload(); await page.waitForFunction(() => window.__game);
+      const st2 = await page.evaluate(() => __game.stats());
+      ok(rec === 1 && st2.games === 1 && st2.lv.k1[1] === 1, `result recorded at once and kept after reload (${rec}, ${JSON.stringify(st2.lv)})`);
+      await ctx.close();
+    }
+    { // [3] wins after undo / hint are assisted wins: no level win, no badge; [4] unassisted wins earn level badges
+      const winPos = [0,0,0,0,0,1,30, 1,1,1,0,0,0,14];
+      const old = { lv: { k2: [3, 1, 0] }, p2: 0, games: 4, marginSum: 12, maxCap: 6, maxChain: 2, ach: { chain5: 1 } }; // stats saved by the previous version
+      const { ctx, page, tapPit } = await open(undefined, seed({ settings: Object.assign({}, SET, { mode: 'ai', level: 1 }), stats: old, game: saveOf({ b: winPos, undos: 2 }) }));
+      let s0 = await page.evaluate(() => __game.stats());
+      ok(s0.lv.k2[0] === 3 && s0.ach.lv2 === 1 && s0.ach.chain5 === 1 && s0.aw && !s0.ach.lv1, 'old stats load unchanged and earn the badge for levels already beaten');
+      await ready(page); await tapPit(0, 5);
+      await page.waitForSelector('#ovResult:not([hidden])');
+      let s = await page.evaluate(() => __game.stats());
+      ok(s.aw.k1 === 1 && !(s.lv.k1 && s.lv.k1[0]) && !s.ach.lv1 && s.streak === 0, `assisted win counted apart (${JSON.stringify({ aw: s.aw, lv: s.lv.k1, ach: s.ach })})`);
+      ok(/輔助勝/.test(await page.textContent('#rNote')), 'result sheet says the win is an assisted win');
+      await page.click('#rBoard'); await page.click('#bStats');
+      ok(/\+1 輔助/.test(await page.textContent('#stBody')) && /擊敗 1 撒豆子/.test(await page.textContent('#stAch')), 'stats table shows the assisted win and the badge list');
+      await page.click('#ovStats [data-close]');
+      await page.evaluate(() => { localStorage.setItem('mancala.game', JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('mancala.game')), { b: [0,0,0,0,0,1,30, 1,1,1,0,0,0,14], over: false, undos: 0, hints: 0, recorded: false, lastRec: null, shown: false, hist: [], snaps: [] }))); });
+      await page.reload(); await ready(page); await tapPit(0, 5);
+      await page.waitForSelector('#ovResult:not([hidden])');
+      s = await page.evaluate(() => __game.stats());
+      ok(s.lv.k1[0] === 1 && s.ach.lv1 === 1 && s.streak === 1, `unassisted win counts and earns the level-1 badge (${JSON.stringify(s.lv.k1)})`);
+      ok(/徽章/.test(await page.textContent('#rAch')) && /下一個目標/.test(await page.textContent('#rNote')), 'result sheet shows the new badge and the next goal');
+      await page.click('#rBoard'); await page.click('#tUndo'); await ready(page);
+      s = await page.evaluate(() => __game.stats());
+      ok(s.lv.k1[0] === 0 && s.streak === 0 && s.games === 4 + 1, `undoing the finished game takes the win back (${JSON.stringify(s.lv.k1)}, games ${s.games})`);
+      await ctx.close();
+    }
+    { // [detail] review a finished game move by move
+      const g = MC.newGame({ rule: 'kalah', seeds: 3 }); let r = 5; const rr = () => (r = (r * 16807) % 2147483647) / 2147483647;
+      for (;;) { const m = MC.moves('kalah', g.b, g.side), t = MC.newGame({ rule: 'kalah', seeds: 3 }); t.b = Int8Array.from(g.b); t.side = g.side;
+        const end = m.find(p => MC.simulate(t, p).over); if (end != null && g.side === 0) break; MC.play(g, m[Math.floor(rr() * m.length)]); if (g.over) throw new Error('no end'); }
+      const endPit = MC.moves('kalah', g.b, 0).find(p => MC.simulate(g, p).over);
+      const save = saveOf({ seeds: 3, mode: '2p', b: Array.from(g.b), side: 0, plies: g.plies, hist: g.hist.map(h => h.p) });
+      const { ctx, page, tapPit } = await open(undefined, seed({ settings: Object.assign({}, SET, { speed: 'instant' }), game: save }));
+      await ready(page); await tapPit(0, endPit);
+      await page.waitForSelector('#ovResult:not([hidden])');
+      const fin = (await G(page)).b;
+      await page.click('#rReview');
+      let v = await page.evaluate(() => __game.review());
+      ok(v && v.k === 0 && v.n === g.hist.length + 1 && v.board.join() === Array.from(MC.newBoard('kalah', 3)).join() && await page.isVisible('#rvBar') && !(await page.isVisible('nav.tools:not(#rvBar)')), `review starts at the opening (${v && v.n} moves)`);
+      await page.click('#rvNext'); await page.click('#rvNext');
+      const g2 = MC.newGame({ rule: 'kalah', seeds: 3 }); MC.play(g2, g.hist[0].p); MC.play(g2, g.hist[1].p);
+      v = await page.evaluate(() => __game.review());
+      ok(v.k === 2 && v.board.join() === Array.from(g2.b).join() && /回顧 2／/.test(await page.evaluate(() => __game.status())), 'next steps through the moves');
+      await page.click('#rvPrev'); v = await page.evaluate(() => __game.review()); ok(v.k === 1, 'previous goes back');
+      for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+      v = await page.evaluate(() => __game.review()); ok(v.k === 4, 'arrow keys step too');
+      await page.click('#rvExit');
+      ok(!(await page.evaluate(() => __game.review())) && (await G(page)).b.join() === fin.join() && await page.isVisible('nav.tools:not(#rvBar)'), 'leaving the review restores the final board and tool bar');
+      await ctx.close();
+    }
+    { // [7] lobby iPhone-SE frame 375x500: the board switches to columns with >= 44px pit spacing and fills the stage; nearest pit wins a tap
+      const { ctx, page } = await open({ width: 375, height: 500 }, seed({ settings: Object.assign({}, SET, { beginner: true }) }));
+      await page.click('#mStart'); await ready(page);
+      const q = await page.evaluate(() => __game.geo());
+      ok(q.vertical && q.pitch >= 44 && q.bh >= q.H * 0.7, `375x500: pitch ${q.pitch.toFixed(1)}px, board ${(q.bh / q.H * 100).toFixed(0)}% of stage height`);
+      const a = await page.evaluate(() => __game.pitToClient(0, 0)), b = await page.evaluate(() => __game.pitToClient(0, 1));
+      const cdp = await ctx.newCDPSession(page), x = a[0] + (b[0] - a[0]) * 0.62, y = a[1] + (b[1] - a[1]) * 0.62;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForFunction(() => __game.state().previewOn != null);
+      ok((await G(page)).previewOn === 1, 'a tap between two pits selects the nearer one');
+      await ctx.close();
+    }
+    { // [detail] 360x640 menu fits; first-move warning; rules mention Oware's end rules
+      const { ctx, page } = await open({ width: 360, height: 640 });
+      await page.waitForSelector('#ovMenu:not([hidden])');
+      const bot = await page.evaluate(() => document.getElementById('mStart').getBoundingClientRect().bottom);
+      ok(bot <= 640, `360x640 menu: 開始新局 fully on screen (bottom ${Math.round(bot)})`);
+      await page.click('#cMode .chip[data-v="ai"]'); await page.click('#cLevel .chip[data-v="4"]'); await page.click('#cFirst .chip[data-v="ai"]');
+      ok(/先手占優/.test(await page.textContent('#toast')), 'choosing 電腦先 against level 4/5 warns about the first-move advantage');
+      const rules = await page.textContent('#ovRule');
+      ok(/100 手/.test(rules) && /24 : 24/.test(rules) && /先手/.test(rules), 'rules page lists the 100-move and 24:24 rules and the first-move advantage');
+      await ctx.close();
+    }
+  } finally { await browser.close(); }
+  ok(errors.length === 0, `no page or console errors (${errors.slice(0, 3).join(' | ')})`);
+}
+browserTests().catch(e => { fail++; console.log('FAIL browser tests threw:', e && e.stack || e); }).finally(() => {
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exitCode = fail ? 1 : 0;
+});
