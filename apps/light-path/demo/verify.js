@@ -7,6 +7,7 @@ const src = fs.readFileSync(HTML, 'utf8');
 const core = src.slice(src.indexOf('// ===CORE-START==='), src.indexOf('// ===CORE-END==='));
 const C = new Function(core + '\nreturn LPCore;')();
 const LEVELS = JSON.parse(src.match(/var LEVELS = (\[\[.*?\]\]);/)[1]);
+const OPT = JSON.parse(src.match(/var OPT = (\[\[.*?\]\]);/)[1]); // stored shortest solutions used by the hint button
 const args = process.argv.slice(2);
 const solverOnly = args.includes('--solver-only');
 const demoLevels = args.filter(a => /^\d+$/.test(a)).map(Number);
@@ -18,7 +19,10 @@ function solveLevel(L) {
   const ok = s.cost >= 0 && !s.aborted && C.isWin(lv, C.trace(lv, s.ori, false)) && !C.isWin(lv, C.trace(lv, lv.scr, false));
   const taps = [];
   for (const i of lv.rot) if (s.ori[i] !== lv.scr[i]) taps.push(i);
-  return { L, lv, par, min: s.cost, ok: ok && s.cost === par && taps.length === par, taps, nodes: s.nodes };
+  // the stored OPT solution must also win in exactly par taps
+  const o = new Uint8Array(lv.scr); for (const i of OPT[L - 1]) o[i] ^= 1;
+  const optOk = OPT[L - 1].length === par && OPT[L - 1].every(i => lv.rot.includes(i)) && C.isWin(lv, C.trace(lv, o, false));
+  return { L, lv, par, min: s.cost, ok: ok && optOk && s.cost === par && taps.length === par, taps, nodes: s.nodes };
 }
 
 (async () => {
@@ -31,7 +35,7 @@ function solveLevel(L) {
       if ([1, 25, 50, 75, 100].includes(L)) console.log(`L${L}: ${r.lv.W}x${r.lv.H}, min taps (par) = ${r.min}, solver nodes ${r.nodes}`);
     }
     console.log('par curve:', rep.join(','));
-    console.log(all ? 'ALL 100 LEVELS SOLVABLE, par verified minimal' : 'SOME LEVELS FAILED', `(${Date.now() - t0} ms)`);
+    console.log(all ? 'ALL 100 LEVELS SOLVABLE, par verified minimal, OPT hint solutions verified' : 'SOME LEVELS FAILED', `(${Date.now() - t0} ms)`);
     if (solverOnly) return;
   }
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');

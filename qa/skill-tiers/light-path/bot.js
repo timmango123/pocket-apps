@@ -100,7 +100,7 @@ async function playAttempt(P, L) {
     await H.sleep(1300);
   }
   const resultShown = won ? await page.evaluate(() => document.getElementById('result').classList.contains('show')) : false;
-  const stars = won ? (st.moves <= par ? 3 : st.moves <= par + Math.max(2, Math.ceil(par * 0.5)) ? 2 : 1) : 0;
+  const stars = won ? (st.moves <= par ? 3 : st.moves <= par * 2 ? 2 : 1) : 0; // same rule as starsFor() in the game
   return { cleared: won, moves: st.moves, par, taps, misTaps, undos, ms: Date.now() - t0, stars, resultShown };
 }
 
