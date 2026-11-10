@@ -50,6 +50,7 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     assert(await page.locator('#pop').isVisible(), 'candidate menu opens');
     await page.screenshot({ path: OUT + '/390x844-popover.png' });
     const cands = await page.locator('#popCands button b').allTextContents(); console.log('   樂 candidates:', cands.join(' '));
+    await page.waitForTimeout(300); // taps on the menu within 220 ms of opening are ignored on purpose
     await page.locator('#popCands button', { hasText: 'ㄩㄝˋ' }).first().click(); await page.waitForTimeout(150);
     assert((await page.evaluate(() => __ph.plainOut())).includes('樂(ㄩㄝˋ)。'), 'override applied (快樂 -> 樂 ㄩㄝˋ)');
     await page.reload(); await page.waitForTimeout(400);
@@ -90,7 +91,7 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     const t0 = Date.now(); await page.fill('#input', '我們去銀行，再走一段路回家。'.repeat(450)); await page.waitForTimeout(1500);
     const cnt = await page.locator('#pv .t').count(); assert(cnt === 12 * 450, `6300-char input rendered in chunks (${cnt} annotated han chars, ${Date.now() - t0} ms)`);
     await page.fill('#input', ''); await page.waitForTimeout(300);
-    assert((await page.locator('#inInfo').textContent()).startsWith('範例'), 'empty input shows sample');
+    assert(await page.locator('#pv .empty').isVisible() && await page.locator('#copyText').isDisabled(), 'empty input shows empty-state hint, outputs disabled');
     await ctx.close();
     // downloads capability stub
     { const { ctx, page } = await mk({ viewport: { width: 390, height: 844 }, ...mobile });
