@@ -22,7 +22,9 @@ function solveAll() {
     const seq = [];
     if (r) { const t = s.slice(); for (let i = 0; i < B.n; i++) for (let k = 0; k < r.x[i]; k++) { C.press(B, t, i); seq.push(i); } if (!C.solved(B, t)) good = false; }
     const D = C.diffCoef(B, rec[7]);
-    if (prevD) { minRise = Math.min(minRise, D / prevD - 1); if (D < prevD * 1.02 - 1e-9) good = false; }
+    const BREATHER = n >= 5 && n <= 25; // L5-L24 follow a gentler curve with breather levels (gen.js CURVE)
+    if (prevD && !BREATHER) { minRise = Math.min(minRise, D / prevD - 1); if (D < prevD * 1.02 - 1e-9) good = false; }
+    if (BREATHER && n > 5 && rec[7] > LEVELS[n - 2][7] + 2) good = false; // no jump of more than 2 moves
     if (!good) { ok = false; console.log('LEVEL', n, 'PROBLEM', r && r.moves, 'embedded', rec[7]); }
     res.push({ n, B, rec, opt: r ? r.moves : null, nullity: r ? r.nullity : null, seq, D });
     prevD = D;
@@ -30,7 +32,7 @@ function solveAll() {
   const first = f => { const x = res.find(f); return x ? x.n : null; };
   const mech = { '5x5': first(x => x.B.w * x.B.h >= 25), '6x6': first(x => x.B.w >= 6 && x.B.h >= 6), 'three-color': first(x => x.B.p === 3), 'X/long range': first(x => x.B.nonstd && x.B.shape === 'sq' && !x.B.mixed), 'hex+irregular 2-color': first(x => x.B.shape === 'hex'), 'hex 3-color': first(x => x.B.shape === 'hex' && x.B.p === 3), 'mixed ranges': first(x => x.B.mixed) };
   console.log('All', LEVELS.length, 'levels solvable by the GF(p) solver, true minimum == embedded minimum, solution verified:', ok);
-  console.log('Difficulty coefficient strictly increasing every level; smallest rise +' + (minRise * 100).toFixed(1) + '%, L1', res[0].D.toFixed(1), '-> L100', res[99].D.toFixed(1));
+  console.log('Difficulty coefficient rises >= 2% every level outside the L5-L24 breather curve; smallest rise +' + (minRise * 100).toFixed(1) + '%, L1', res[0].D.toFixed(1), '-> L100', res[99].D.toFixed(1));
   console.log('Mechanics first appear at:', JSON.stringify(mech));
   console.log('Max null-space dimension:', Math.max(...res.map(x => x.nullity)));
   for (const n of [1, 10, 11, 25, 26, 40, 41, 50, 55, 56, 70, 71, 75, 85, 86, 95, 96, 99, 100]) {
