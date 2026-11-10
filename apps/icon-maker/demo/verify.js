@@ -34,6 +34,13 @@ const py = (code, file) => execFileSync('python3', ['-I', '-c', code, file]).toS
   await page.fill('#txt', '👨‍👩‍👧AB'); assert((await page.inputValue('#txt')) === '👨‍👩‍👧AB', 'family emoji counted as 1 grapheme (3 total kept)');
   await page.fill('#txt', '👨‍👩‍👧ABC'); assert((await page.inputValue('#txt')) === '👨‍👩‍👧AB', 'ZWJ emoji + 3 letters truncated to 3 graphemes');
   await page.fill('#txt', '工具');
+  // release fixes 2026-11-02 (full regression set in demo/tests.js)
+  { const cdp = await ctx.newCDPSession(page); await page.fill('#txt', '記帳'); await page.focus('#txt');
+    for (const s of ['ㄅ', 'ㄅㄣ', 'ㄅㄣˇ']) await cdp.send('Input.imeSetComposition', { text: s, selectionStart: s.length, selectionEnd: s.length });
+    await cdp.send('Input.insertText', { text: '本' }); await page.waitForFunction(() => window.__im.S.text === '記帳本', null, { timeout: 5000 });
+    assert((await page.inputValue('#txt')) === '記帳本', 'IME composition of a 3rd char is not cut (記帳本)'); await cdp.detach(); }
+  assert(await page.evaluate(() => { const b = document.querySelector('#zipBtn2').getBoundingClientRect(); return b.bottom <= innerHeight; }), 'ZIP button next to the preview');
+  await page.fill('#txt', '工具');
   // emoji tab search
   await page.click('#tabEmoji'); await page.fill('#emojiQ', '貓');
   const found = await page.$$eval('#emojis button', bs => bs.map(b => b.dataset.e));
