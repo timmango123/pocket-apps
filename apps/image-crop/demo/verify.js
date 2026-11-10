@@ -60,6 +60,8 @@ const mockDl = () => { window.__saved = []; window.claude = { use: async n => n 
 
   // reset + flip horizontal: left side becomes blue
   await page.click('#resetBtn'); await page.waitForTimeout(100);
+  assert(await page.evaluate(() => __ic.set.ratioId === '4:5' && __ic.S.k === 0) && await page.isVisible('.toast button'), 'reset keeps the 4:5 ratio, clears rotation, offers 復原');
+  await page.click('#ratio-free'); await page.click('#resetBtn'); await page.waitForTimeout(100);
   await page.click('#flipH'); r = await doExport();
   assert(r.w === 4000 && r.left[2] > 180 && r.left[0] < 60 && r.right[0] > 180, 'flip H: left edge blue, right edge red');
   await page.click('#flipV'); r = await doExport();
@@ -137,7 +139,7 @@ const mockDl = () => { window.__saved = []; window.claude = { use: async n => n 
     if (name === '390x844-dark') {
       await p.focus('#dial'); for (let i = 0; i < 4; i++) await p.keyboard.press('ArrowLeft');
       await p.click('#doneBtn'); await p.click('#exGo'); await p.waitForSelector('#outImg:not([hidden])');
-      assert(await p.isVisible('#outHint'), 'no downloads -> image shown for long-press save');
+      assert(await p.isVisible('#outHint') && await p.isVisible('#dlLink'), 'no downloads -> image shown with a 下載 link and long-press hint');
       await p.screenshot({ path: path.join(OUT, '390x844-dark-export.png') }); await p.click('#exClose');
     }
     await p.screenshot({ path: path.join(OUT, name + '.png') });
