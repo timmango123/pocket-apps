@@ -1,10 +1,11 @@
 // Verification for 點格棋 (dots-and-boxes).
 // (1) Node match series between AI levels using the game's own core (CORE-START/CORE-END in index.html),
 //     strongest (教授) vs weakest (小學生) plus a ladder; reports scores and think times.
-// (2) Edge hot-zone check at 360x780: every edge midpoint hits its edge, every dot and box centre hits nothing.
+// (2) Edge hot-zone check at 360x780 and 375x500 (lobby): every edge midpoint hits its edge, 0.4 along + 0.3 cell off still hits,
+//     taps with 7px gaussian finger error hit the intended line >= 90%, every dot and box centre hits nothing.
 // (3) A bot (core level 5) plays one complete game against the page's own Web Worker AI in Chromium using real
 //     CDP touch input at human pace, recorded as demo/game.mp4 (+ sped-up copy) and demo/game-result.png.
-// Usage: node verify.js [--no-series] [--no-browser] [--games N]
+// Usage: node verify.js [--no-series] [--no-browser] [--hotspots-only] [--games N]
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const APP = path.resolve(__dirname, '..', 'index.html'), OUT = __dirname;
 const html = fs.readFileSync(APP, 'utf8');
@@ -26,28 +27,34 @@ function series(la, lb, n, size) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function hotspotCheck(chromium) {
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
-  const page = await ctx.newPage(); await page.goto('file://' + APP); await sleep(500);
   const out = [];
+  for (const vp of [{ width: 360, height: 780 }, { width: 375, height: 500 }]) {
+  const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage(); await page.goto('file://' + APP); await sleep(500);
   for (const size of ['4x4', '6x6', '5x7']) {
     await page.tap('#cMode .chip[data-v="2p"]'); await page.tap(`#cSize .chip[data-v="${size}"]`); await page.locator('#mStart').scrollIntoViewIfNeeded(); await page.tap('#mStart'); await sleep(300);
     const r = await page.evaluate(() => {
-      const s = __game.state(), G = DOTS.geo(s.C, s.R); let mid = 0, off = 0, dots = 0, centres = 0;
+      const s = __game.state(), G = DOTS.geo(s.C, s.R), cell = __game.cell(); let mid = 0, off = 0, wide = 0, dots = 0, centres = 0, hit = 0, n = 0, rs = 99;
+      const rnd = () => { rs = (rs * 1103515245 + 12345) & 0x7fffffff; return rs / 0x7fffffff; }, gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
       for (let e = 0; e < G.NE; e++) {
         const [x, y] = __game.edgeToClient(e); if (__game.hitClient(x, y) === e) mid++;
         const [a, b, c, d] = DOTS.edgeDots(G, e), [x1, y1] = __game.dotToClient(a, b), [x2, y2] = __game.dotToClient(c, d);
         const hz = b === d, px = x1 + (x2 - x1) * 0.25 + (hz ? 0 : 4), py = y1 + (y2 - y1) * 0.25 + (hz ? 4 : 0); // 1/4 along, 4px off the line (rhombus tapers toward the dots)
         if (__game.hitClient(px, py) === e) off++;
+        if (__game.hitClient(x1 + (x2 - x1) * 0.4 + (hz ? 0 : 0.3 * cell), y1 + (y2 - y1) * 0.4 + (hz ? 0.3 * cell : 0)) === e) wide++;
+        for (let k = 0; k < 40; k++) { n++; if (__game.hitClient(x + 7 * gauss(), y + 7 * gauss()) === e) hit++; }
       }
       for (let y = 0; y <= s.R; y++) for (let x = 0; x <= s.C; x++) { const [px, py] = __game.dotToClient(x, y); if (__game.hitClient(px, py) === -1 && __game.hitClient(px + 4, py + 4) === -1) dots++; }
       for (let y = 0; y < s.R; y++) for (let x = 0; x < s.C; x++) { const [px, py] = __game.dotToClient(x + 0.5, y + 0.5); if (__game.hitClient(px, py) === -1) centres++; }
-      return { NE: G.NE, mid, off, dots, nd: (s.C + 1) * (s.R + 1), centres, nb: s.C * s.R, cell: __game.cell() };
+      return { NE: G.NE, mid, off, wide, rate: hit / n, dots, nd: (s.C + 1) * (s.R + 1), centres, nb: s.C * s.R, cell };
     });
-    out.push(r); console.log(`  360x780 ${size} (cell ${r.cell.toFixed(0)}px): edge midpoints ${r.mid}/${r.NE}, 1/4-along+4px-off ${r.off}/${r.NE}, dots (incl. 4px off) dead ${r.dots}/${r.nd}, box centres dead ${r.centres}/${r.nb}`);
+    out.push(r); console.log(`  ${vp.width}x${vp.height} ${size} (cell ${r.cell.toFixed(0)}px): edge midpoints ${r.mid}/${r.NE}, 1/4-along+4px-off ${r.off}/${r.NE}, 0.4-along+0.3-cell-off ${r.wide}/${r.NE}, 7px-error taps ${(r.rate * 100).toFixed(1)}%, dots (incl. 4px off) dead ${r.dots}/${r.nd}, box centres dead ${r.centres}/${r.nb}`);
     await page.tap('#bMenu'); await sleep(200);
   }
+  await ctx.close();
+  }
   await browser.close();
-  return out.every(r => r.mid === r.NE && r.off === r.NE && r.dots === r.nd && r.centres === r.nb);
+  return out.every(r => r.mid === r.NE && r.off === r.NE && r.wide === r.NE && r.rate >= 0.9 && r.dots === r.nd && r.centres === r.nb);
 }
 async function browserGame(chromium) {
   const browser = await chromium.launch();
@@ -110,7 +117,7 @@ async function browserGame(chromium) {
   if (!has('--no-browser')) {
     const { chromium } = require('/opt/node22/lib/node_modules/playwright');
     console.log('Edge hot zones:'); okAll = (await hotspotCheck(chromium)) && okAll;
-    okAll = (await browserGame(chromium)) && okAll;
+    if (!has('--hotspots-only')) okAll = (await browserGame(chromium)) && okAll;
   }
   console.log(okAll ? 'VERIFY OK' : 'VERIFY FAILED');
   process.exitCode = okAll ? 0 : 1;
