@@ -155,5 +155,188 @@ console.log(`level 5 @16 empties: ${Math.round(r16.ms)}ms, exact=${!!r16.exact},
 const an = C.analyze(C.sides(mid), 1000);
 ok(an.scores.length === C.legalOf(mid).length && an.scores.every((x, i) => i === 0 || an.scores[i - 1].v >= x.v), 'hint analysis scores every move, sorted');
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// 12. Difficulty ladder (release review): L3 must not be a wall for a 2-ply player, L4 must be beatable by a deep searcher.
+ok(C.LEVELS[3].depth === 2 && C.LEVELS[3].err >= 0.3 && C.LEVELS[4].depth === 5 && C.LEVELS[4].err >= 0.08, 'L3/L4 tuned (see qa/skill-tiers/othello)', C.LEVELS.slice(3, 5));
+
+// test games for the browser checks: a finished game in which black wins (optionally from a handicap start)
+function finishedGame(seed, start, wantWinner) {
+  for (let k = 0; k < 400; k++) {
+    const R = C.seededRng(seed + k); let pp = start(), mv = [];
+    while (!C.isOver(pp)) { if (!C.legalOf(pp).length) pp = C.passPos(pp); const L = C.legalOf(pp); const m = L[Math.floor(R() * L.length)]; mv.push(m); pp = C.playPos(pp, m); }
+    const fc = C.finalCounts(pp); if (wantWinner == null || (wantWinner === 0 ? fc[0] > fc[1] : fc[1] > fc[0])) return { moves: mv, start: start() };
+  }
+}
+const handStart = () => { const q = C.initialPos(); C.setSq(q, 0, 0); return q; };
+const GAMES = { blackWin: finishedGame(500, C.initialPos, 0), handWin: finishedGame(900, handStart, 0), any: finishedGame(77, C.initialPos, null) };
+ok(GAMES.blackWin && GAMES.handWin && GAMES.any, 'test games generated');
+
+// 13. Browser regressions with real CDP touch (one Chromium; waits on conditions, never on wall-clock deltas)
+(async () => {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { try { ({ chromium } = require('playwright')); } catch (e2) { console.log('playwright missing: browser checks skipped'); } }
+  if (chromium) await browserChecks(chromium).catch(e => ok(false, 'browser checks crashed', String(e && e.stack || e)));
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})();
+
+async function browserChecks(chromium) {
+  const ORIGIN = 'https://othello.test', T0 = Date.now();
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const errors = [];
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function ctxOpen(vp, scheme) {
+    const ctx = await browser.newContext({ viewport: vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: scheme || 'dark' });
+    await ctx.route('**/*', r => { const u = r.request().url(); if (u.startsWith(ORIGIN)) return r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }); if (u.startsWith('blob:') || u.startsWith('data:')) return r.continue(); errors.push('external request ' + u); return r.abort(); });
+    await ctx.addInitScript(() => { window.__clk = 0; document.addEventListener('click', e => { if (e.target.closest && e.target.closest('button')) window.__clk++; }); });
+    const page = await ctx.newPage();
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+    const cdp = await ctx.newCDPSession(page);
+    const T = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+    // tap modes: plain, held 0.6 s / 1 s, and with another finger already resting on the status line (touchEnd lists only finger 2)
+    const tap = async (x, y, mode) => {
+      if (mode === '2finger') {
+        const s = await page.evaluate(() => { const r = document.getElementById('stText').getBoundingClientRect(); return { x: Math.max(4, r.left + 4), y: r.top + r.height / 2 }; });
+        await T('touchStart', [{ x: s.x, y: s.y, id: 1 }]);
+        await T('touchStart', [{ x: s.x, y: s.y, id: 1 }, { x, y, id: 2 }]);
+        await sleep(40); await T('touchEnd', [{ x, y, id: 2 }]); await T('touchEnd', [{ x: s.x, y: s.y, id: 1 }]);
+        return;
+      }
+      await T('touchStart', [{ x, y, id: 1 }]);
+      if (mode === 'hold600') await sleep(600); else if (mode === 'hold1000') await sleep(1000);
+      await T('touchEnd', [{ x, y, id: 1 }]);
+    };
+    const box = sel => page.evaluate(sel => new Promise((res, rej) => { let last = '', same = 0, n = 0; const el = document.querySelector(sel); if (!el) return rej(new Error('no ' + sel));
+      const f = () => { const r = el.getBoundingClientRect(), k = [r.x, r.y, r.width, r.height].map(v => v.toFixed(1)).join(); const moving = [el.closest('.card'), el.closest('.ov')].some(x => x && x.getAnimations().some(an => an.playState === 'running' || an.playState === 'pending'));
+        if (k === last && r.width && !moving) same++; else same = 0; last = k;
+        if (same >= 2 || ++n > 600) { const q = el.getBoundingClientRect(); res({ x: q.x + q.width / 2, y: q.y + q.height / 2, top: q.top, bottom: q.bottom }); } else requestAnimationFrame(f); }; f(); }), sel);
+    const tapEl = async (sel, mode) => { const b = await box(sel); await tap(b.x, b.y, mode); };
+    const until = (fn, arg, timeout = 20000) => page.waitForFunction(fn, arg, { timeout, polling: 20 });
+    const sqXY = (sq, fx = 0.5, fy = 0.5) => page.evaluate(([sq, fx, fy]) => { const g = __oth.geom(), k = g.w / g.S; return { x: g.x + (g.M + ((sq & 7) + fx) * g.CELL) * k, y: g.y + (g.M + ((sq >> 3) + fy) * g.CELL) * k }; }, [sq, fx, fy]);
+    const legal = () => page.evaluate(() => legalOf(__oth.P));
+    const nMoves = () => page.evaluate(() => __oth.G ? __oth.G.moves.length : -1);
+    const visible = id => page.evaluate(id => !document.getElementById(id).classList.contains('hidden'), id);
+    await page.goto(ORIGIN + '/', { waitUntil: 'load' });
+    return { ctx, page, T, tap, tapEl, box, until, sqXY, legal, nMoves, visible };
+  }
+  async function start(h, o) {
+    if (!(await h.visible('ovSetup'))) { await h.tapEl('#tNew'); await h.until(() => !document.getElementById('ovSetup').classList.contains('hidden')); }
+    for (const [b, v] of [['sgMode', o.mode]].concat(o.mode === 'ai' ? [['sgLevel', String(o.level || 1)], ['sgColor', '0'], ['sgHand', '0']] : []).concat([['sgOpen', 'std']]))
+      if (!(await h.page.getAttribute(`#${b} button[data-v="${v}"]`, 'class') || '').includes('on')) await h.tapEl(`#${b} button[data-v="${v}"]`);
+    await h.tapEl('#sStart'); await h.until(() => __oth.phase === 'play' && __oth.canInput());
+  }
+  const save = o => Object.assign({ mode: '2p', level: 1, human: 0, hand: 0, open: 'std', moves: [], pre: 0, hints: 0, undos: 0, day: 0 }, o);
+  const seed = async (h, sv, stats) => { await h.page.evaluate(([sv, stats]) => { localStorage.clear(); localStorage.setItem('othello.game', JSON.stringify(sv)); if (stats) localStorage.setItem('othello.stats', JSON.stringify(stats)); }, [sv, stats || null]); await h.page.reload({ waitUntil: 'load' }); };
+  const stats = h => h.page.evaluate(() => JSON.parse(localStorage.getItem('othello.stats') || '{}'));
+
+  // [嚴重／2] taps during the flip animation are not dropped: 2-player, 12 taps at 8/s on the side to move's legal square
+  {
+    const h = await ctxOpen();
+    await start(h, { mode: '2p' });
+    const n0 = await h.nMoves(); let sent = 0;
+    for (let i = 0; i < 12; i++) { const L = await h.legal(); if (!L.length) break; const p = await h.sqXY(L[i % L.length]); const t = Date.now(); await h.tap(p.x, p.y); sent++; const rest = 125 - (Date.now() - t); if (rest > 0) await sleep(rest); }
+    await h.until(n => __oth.G.moves.length >= n, n0 + sent, 5000).catch(() => {});
+    ok((await h.nMoves()) - n0 === sent, '2p: every tap at 8/s during flip animations is a move', { sent, got: (await h.nMoves()) - n0 });
+    // vs the computer: a tap right after the computer's disc lands (its flips still animating) is taken
+    await h.tapEl('#bNew'); await h.until(() => !document.getElementById('ovSetup').classList.contains('hidden'));
+    await start(h, { mode: 'ai', level: 1 });
+    let taken = 0, tries = 0;
+    for (let i = 0; i < 4; i++) {
+      const L = await h.legal(); if (!L.length || (await h.page.evaluate(() => __oth.phase)) !== 'play') break;
+      const n = await h.nMoves(); let p = await h.sqXY(L[0]); await h.tap(p.x, p.y);
+      await h.until(n => __oth.G.moves.length >= n + 2 && __oth.canInput() || __oth.phase !== 'play', n, 15000);
+      if ((await h.page.evaluate(() => __oth.phase)) !== 'play') break;
+      const anim = await h.page.evaluate(() => __oth.animating());
+      const L2 = await h.legal(); p = await h.sqXY(L2[0]); const n2 = await h.nMoves(); await h.tap(p.x, p.y);
+      tries++; if ((await h.nMoves()) === n2 + 1) taken++;
+      if (!anim) console.log('  note: computer flips had already finished before the tap');
+      await h.until(n => __oth.canInput() || __oth.G.moves.length > n + 1 || __oth.phase !== 'play', n2, 15000);
+      await h.until(() => __oth.canInput() || __oth.phase !== 'play', null, 15000);
+    }
+    ok(tries >= 3 && taken === tries, 'vs AI: a tap right after the computer moves is taken', { tries, taken });
+    // [小／2] a tap just inside a neighbouring illegal square snaps to the legal one; a far illegal tap explains why
+    await h.tapEl('#bNew'); await h.until(() => !document.getElementById('ovSetup').classList.contains('hidden'));
+    await start(h, { mode: '2p' });
+    let p = await h.sqXY(18, 0.9, 0.5); // c3, right next to the legal d3
+    await h.tap(p.x, p.y);
+    ok((await h.page.evaluate(() => __oth.G.moves.slice())).join() === '19', 'tap near the edge of a legal square snaps onto it (c3 edge -> d3)', await h.page.evaluate(() => __oth.G.moves.slice()));
+    p = await h.sqXY(56); await h.tap(p.x, p.y);
+    ok((await h.nMoves()) === 1 && /夾不到/.test(await h.page.textContent('#toast')) && await h.visible('toast'), 'illegal empty square: no move, toast says why');
+    await h.ctx.close();
+  }
+  // [嚴重／2] buttons fire once on pointerup in every tap mode, including with another finger already down
+  {
+    const h = await ctxOpen();
+    const rows = [];
+    for (const mode of ['tap', 'hold600', 'hold1000', '2finger']) {
+      const s0 = await h.page.evaluate(() => JSON.parse(localStorage.getItem('othello.settings') || '{"sound":true}').sound !== false);
+      await h.page.evaluate(() => { window.__clk = 0; }); await h.tapEl('#tRules', mode);
+      const rulesOpen = await h.visible('ovRules'); await h.tapEl('#ovRules .btn[data-close]', mode); await sleep(60);
+      const rulesClosed = !(await h.visible('ovRules')), c1 = await h.page.evaluate(() => window.__clk);
+      await h.page.evaluate(() => { window.__clk = 0; }); await h.tapEl('#tSet', mode); await h.tapEl('#swList .sw[data-k="sound"]', mode); await sleep(60);
+      const s1 = await h.page.evaluate(() => JSON.parse(localStorage.getItem('othello.settings') || '{}').sound !== false);
+      await h.tapEl('#setDone', mode); await sleep(60); const c2 = await h.page.evaluate(() => window.__clk), setClosed = !(await h.visible('ovSettings'));
+      rows.push({ mode, ok: rulesOpen && rulesClosed && c1 === 2 && s1 === !s0 && c2 === 3 && setClosed, rulesOpen, rulesClosed, c1, toggled: s1 !== s0, c2, setClosed });
+    }
+    ok(rows.every(r => r.ok), 'buttons: single, held 0.6 s / 1 s and two-finger taps each fire exactly once', rows.filter(r => !r.ok));
+    // the setup flow with two-finger taps: 新對局 -> level 1 -> 開始對局
+    await h.tapEl('#tNew', '2finger'); await h.until(() => !document.getElementById('ovSetup').classList.contains('hidden'));
+    await h.tapEl('#sgLevel button[data-v="3"]', '2finger');
+    await h.tapEl('#sStart', '2finger');
+    await h.until(() => __oth.phase === 'play', null, 5000).catch(() => {});
+    ok((await h.page.evaluate(() => __oth.phase === 'play' && __oth.G.level === 3)), 'two-finger taps run the whole new-game flow');
+    await h.ctx.close();
+  }
+  // [中／1] closing the page after the last move: stats are already written; 查看上局結果 shows the result
+  {
+    const h = await ctxOpen();
+    const g = GAMES.any, last = g.moves[g.moves.length - 1];
+    await seed(h, save({ moves: g.moves.slice(0, -1), start: g.start }));
+    ok(await h.page.textContent('#tCont') === '繼續對局', 'unfinished save offers 繼續對局');
+    await h.tapEl('#tCont'); await h.until(() => __oth.phase === 'play' && __oth.canInput());
+    const p = await h.sqXY(last); await h.tap(p.x, p.y);
+    ok((await h.page.evaluate(() => __oth.G.moves.length)) === g.moves.length && (await stats(h)).pvp === 1, 'stats written on the last move, before the count animation', await stats(h));
+    await h.page.reload({ waitUntil: 'load' });
+    ok((await stats(h)).pvp === 1 && await h.visible('tCont') && await h.page.textContent('#tCont') === '查看上局結果', 'after reload during the count: stats kept, title offers 查看上局結果');
+    await h.tapEl('#tCont'); await h.until(() => !document.getElementById('ovResult').classList.contains('hidden'));
+    const t = await h.page.evaluate(() => ({ cls: document.getElementById('rTitle').className, txt: document.getElementById('rTitle').textContent }));
+    ok((await stats(h)).pvp === 1 && (t.txt === '和局' || /win/.test(t.cls)), 'result shown once, not double counted; 2p winner title uses the win colour', t);
+    await h.page.reload({ waitUntil: 'load' });
+    ok(!(await h.visible('tCont')), 'after the result has been shown the save is cleared');
+    // [中／3] assisted win (hints/undos) is 輔助勝: no win, no achievements. Old saves of finished games are recorded on load.
+    await seed(h, save({ mode: 'ai', level: 2, hints: 1, moves: GAMES.blackWin.moves, start: GAMES.blackWin.start }));
+    await h.tapEl('#tCont'); await h.until(() => !document.getElementById('ovResult').classList.contains('hidden'));
+    let st = await stats(h);
+    ok(st.lv[2] && st.lv[2].p === 1 && st.lv[2].w === 0 && st.lv[2].a === 1 && !Object.keys(st.ach).length && await h.page.textContent('#rTitle') === '輔助勝' && /輔助勝/.test(await h.page.textContent('#rSub')), 'hinted win -> 輔助勝, not a win, no achievement', st);
+    // [小／3] handicap games go to their own table and unlock nothing
+    await seed(h, save({ mode: 'ai', level: 2, hand: 1, moves: GAMES.handWin.moves, start: GAMES.handWin.start }));
+    await h.tapEl('#tCont'); await h.until(() => !document.getElementById('ovResult').classList.contains('hidden'));
+    st = await stats(h);
+    ok(st.hc && st.hc[2].w === 1 && !(st.lv[2]) && !Object.keys(st.ach).length, 'handicap win recorded separately, no achievement', st);
+    // a clean win still counts and unlocks 初勝
+    await seed(h, save({ mode: 'ai', level: 2, moves: GAMES.blackWin.moves, start: GAMES.blackWin.start }));
+    await h.tapEl('#tCont'); await h.until(() => !document.getElementById('ovResult').classList.contains('hidden'));
+    st = await stats(h);
+    ok(st.lv[2].w === 1 && st.ach.first === 1 && await h.page.textContent('#rTitle') === '勝利！', 'clean win counts and unlocks 初勝', st);
+    // [細節] daily streak: three days in a row ending today
+    const today = await h.page.evaluate(() => { const d = new Date(), k = x => x.getFullYear() * 10000 + (x.getMonth() + 1) * 100 + x.getDate(), a = []; for (let i = 0; i < 3; i++) { const e = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i); a.push(k(e)); } return a; });
+    await h.page.evaluate(days => { const s = JSON.parse(localStorage.getItem('othello.stats')); days.forEach(k => { s.daily[k] = { r: 'w', s: '40-24' }; }); localStorage.setItem('othello.stats', JSON.stringify(s)); }, today);
+    await h.page.reload({ waitUntil: 'load' }); await h.tapEl('#tStats'); await h.until(() => !document.getElementById('ovStats').classList.contains('hidden'));
+    ok(/連續 3 天/.test(await h.page.textContent('#st2p')), 'stats show the daily streak', await h.page.textContent('#st2p'));
+    await h.ctx.close();
+  }
+  // [小／7] 開始對局 visible without scrolling on short screens (lobby 375x500, landscape)
+  {
+    const rows = [];
+    for (const vp of [[375, 500], [844, 390], [640, 360], [360, 640]]) {
+      const h = await ctxOpen({ width: vp[0], height: vp[1] }, 'light');
+      await h.tapEl('#tNew'); await h.until(() => !document.getElementById('ovSetup').classList.contains('hidden'));
+      const b = await h.box('#sStart'), m = await h.page.evaluate(() => ({ H: innerHeight, sc: document.getElementById('ovSetup').scrollTop, ov: document.documentElement.scrollWidth > innerWidth }));
+      rows.push({ vp: vp.join('x'), ok: b.bottom <= m.H && b.top >= 0 && m.sc === 0 && !m.ov, bottom: Math.round(b.bottom), H: m.H });
+      await h.ctx.close();
+    }
+    ok(rows.every(r => r.ok), '開始對局 visible without scrolling at 375x500, 844x390, 640x360, 360x640', rows);
+  }
+  ok(!errors.length, 'no page/console errors or external requests in the browser checks', errors.slice(0, 5));
+  console.log(`browser checks: ${Math.round((Date.now() - T0) / 1000)}s`);
+  await browser.close();
+}
