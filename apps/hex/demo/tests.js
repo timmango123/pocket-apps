@@ -240,5 +240,171 @@ for (const N of [7, 11, 13, 14]) {
   console.log(`move counts ${N}x${N}: ply1 ${p1}, ply2 with swap ${p2} (= N^4), without swap ${p2off} (= N^2(N^2-1))`);
 }
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exitCode = fail ? 1 : 0;
+/* ---- difficulty settings: 工蜂 sits between 蜜蜂 and 守衛 (retuned 2026-11 after the release review) ---- */
+{
+  const L = H.LEVELS;
+  ok(L[1].sims < L[2].sims && L[0].sims < L[1].sims && !L[1].bridge && L[1].err > L[2].err && L[2].err > L[3].err, 'level strength increases step by step (sims, bridge playouts, error rate)');
+}
+
+/* ---- browser checks (real CDP touch) for the release-review findings ---- */
+async function browserTests() {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('playwright missing: browser checks skipped'); return; }
+  const html = fs.readFileSync(file, 'utf8'), ORIGIN = 'https://hex.test/';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const until = async (fn, ms = 20000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await fn()) return true; await sleep(40); } return false; };
+  const browser = await chromium.launch();
+  async function open(w, h, store) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await ctx.route('**/*', r => r.request().url() === ORIGIN ? r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }) : r.abort());
+    if (store) await ctx.addInitScript(st => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.clear(); Object.keys(st).forEach(k => localStorage.setItem(k, JSON.stringify(st[k]))); } }, store);
+    const page = await ctx.newPage(), errors = [];
+    page.on('pageerror', e => errors.push('pageerror ' + e.message));
+    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    const cdp = await ctx.newCDPSession(page);
+    await page.goto(ORIGIN); await page.waitForFunction(() => window.__hex);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    let id = 1;
+    const tap = async (x, y) => { const i = id++; await T('touchStart', [{ x, y, id: i }]); await sleep(30); await T('touchEnd', []); await sleep(40); };
+    const tapEl = async sel => { const l = page.locator(sel).first(); await l.scrollIntoViewIfNeeded().catch(() => {}); const b = await l.boundingBox(); await tap(b.x + b.width / 2, b.y + b.height / 2); };
+    const st = () => page.evaluate(() => window.__hex.state());
+    const pt = i => page.evaluate(i => window.__hex.cellClient(i), i);
+    const ls = k => page.evaluate(k => JSON.parse(localStorage.getItem('hex.' + k) || 'null'), k);
+    return { ctx, page, errors, T, tap, tapEl, st, pt, ls };
+  }
+  const startFromMenu = async (o, seg) => {
+    if (!(await o.page.isVisible('#menu'))) { await o.tapEl('#bMenu'); await until(() => o.page.isVisible('#menu')); }
+    for (const [k, v] of Object.entries(seg)) await o.tapEl(`#${k} [data-v="${v}"]`);
+    await o.tapEl('#bStart');
+  };
+  const settings = (o) => Object.assign({ mode: 'pvp', level: 0, color: 'red', size: 11, swap: false, confirm: false, resign: true, dist: true, coord: false, sound: true, theme: 'auto' }, o);
+  try {
+    // fresh start: default level is 蜜蜂, texts talk about coloured edges, not up/down
+    {
+      const o = await open(390, 844);
+      const r = await o.page.evaluate(() => ({ lv: document.querySelector('#sgLevel .on').dataset.v, sub: document.querySelector('#menu .sub').textContent }));
+      ok(r.lv === '0' && !/上下|左右/.test(r.sub), 'first visit: 蜜蜂 preselected, menu text names the coloured edges (' + r.sub + ')');
+      ok(/工蜂/.test(await o.page.textContent('#dailyTxt')), 'daily opening is always against 工蜂');
+      await o.tapEl('#sgLevel [data-v="3"]'); await o.tapEl('#bDaily');
+      ok(await until(async () => (await o.st()).phase === 'play'), 'daily started');
+      ok((await o.st()).level === 1, 'daily level stays 工蜂 when 女王 is selected');
+      await o.ctx.close();
+    }
+    // reload while the computer thinks, never touch the page: no "Blocked call to navigator.vibrate"
+    {
+      const N = 11, moves = [5 * N + 5, 3 * N + 3, 2 * N + 7];
+      const o = await open(390, 844, { 'hex.settings': settings({ mode: 'ai', level: 1 }), 'hex.game': { o: { size: N, swap: false }, moves, mode: 'ai', ai: 2, level: 1, daily: null, minMoves: 0 } });
+      ok(await until(async () => (await o.st()).moves.length === moves.length + 1), 'resumed game: the computer moves after a reload without any tap');
+      await sleep(300);
+      ok(!o.errors.length, 'no console errors when the computer moves before the first tap (' + o.errors.join(' | ') + ')');
+      await o.ctx.close();
+    }
+    // two overlapping finger taps are two taps; a real pinch zooms and places nothing
+    {
+      const o = await open(390, 844, { 'hex.settings': settings({}) });
+      await startFromMenu(o, {}); await until(async () => (await o.st()).phase === 'play');
+      let placed = 0;
+      for (let k = 0; k < 4; k++) {
+        const m1 = 12 + k * 2, m2 = 100 - k * 3, p1 = await o.pt(m1), p2 = await o.pt(m2), n0 = (await o.st()).moves.length;
+        await o.T('touchStart', [{ x: p1[0], y: p1[1], id: 101 }]); await sleep(40);
+        await o.T('touchStart', [{ x: p1[0], y: p1[1], id: 101 }, { x: p2[0], y: p2[1], id: 102 }]); await sleep(40);
+        await o.T('touchEnd', [{ x: p2[0], y: p2[1], id: 102 }]); await sleep(40);
+        await o.T('touchEnd', []); await sleep(60);
+        const s = await o.st(); placed += s.moves.length - n0;
+        ok(s.moves.slice(n0).sort((x, y) => x - y).join() === [m1, m2].sort((x, y) => x - y).join(), 'overlapping taps (A down, B down, one up, other up) place both stones (' + s.moves.slice(n0) + ')');
+      }
+      ok(placed === 8, 'overlapped two-finger taps: 8 sent, ' + placed + ' placed');
+      const c = [195, 400], n0 = (await o.st()).moves.length;
+      await o.T('touchStart', [{ x: c[0] - 30, y: c[1], id: 201 }, { x: c[0] + 30, y: c[1], id: 202 }]);
+      for (let i = 1; i <= 6; i++) { await o.T('touchMove', [{ x: c[0] - 30 - i * 12, y: c[1], id: 201 }, { x: c[0] + 30 + i * 12, y: c[1], id: 202 }]); await sleep(20); }
+      await o.T('touchEnd', []); await sleep(60);
+      const z = await o.page.evaluate(() => document.getElementById('zoomR').hidden ? 1 : parseFloat(document.getElementById('zoomR').textContent));
+      ok(z > 1.5 && (await o.st()).moves.length === n0, 'spreading two fingers zooms (' + z + '×) and places no stone');
+      await o.ctx.close();
+    }
+    // small cells: the first touch zooms in around the finger, a forgiving second tap confirms, the view zooms back out
+    {
+      const o = await open(375, 500, { 'hex.settings': settings({ confirm: true }) });
+      await startFromMenu(o, {}); await until(async () => (await o.st()).phase === 'play');
+      const a = await o.pt(60), b = await o.pt(61), pitch0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      await o.tap(a[0], a[1]);
+      const s1 = await o.st(), a2 = await o.pt(60), b2 = await o.pt(61), pitch1 = Math.hypot(a2[0] - b2[0], a2[1] - b2[1]);
+      ok(pitch0 < 22 && pitch1 >= 30 && s1.preview === 60 && Math.hypot(a2[0] - a[0], a2[1] - a[1]) < 2, `small cells (${pitch0.toFixed(1)} px) zoom to ${pitch1.toFixed(1)} px on the first tap, cell stays under the finger`);
+      // second tap 0.55 pitch towards the neighbour (just past the cell edge): still confirms the preview
+      await o.tap(a2[0] + (b2[0] - a2[0]) * 0.55, a2[1] + (b2[1] - a2[1]) * 0.55);
+      const s2 = await o.st(), a3 = await o.pt(60), b3 = await o.pt(61);
+      ok(s2.moves.join() === '60', 'a confirming tap slightly outside the previewed cell places it (' + s2.moves + ')');
+      ok(Math.abs(Math.hypot(a3[0] - b3[0], a3[1] - b3[1]) - pitch0) < 0.5, 'view zooms back out after the stone is placed');
+      // a tap clearly on another empty cell moves the preview instead
+      const c1 = await o.pt(30); await o.tap(c1[0], c1[1]); const c2 = await o.pt(32); await o.tap(c2[0], c2[1]);
+      ok((await o.st()).preview === 32 && (await o.st()).moves.length === 1, 'a tap clearly on another empty cell moves the preview');
+      await o.ctx.close();
+    }
+    // undo / hint counts survive a reload; wins with undo unlock nothing; clean wins unlock and suggest the next level
+    {
+      const N = 7, mv = []; for (let r = 0; r < 6; r++) { mv.push(r * N); mv.push(r * N + 6); }
+      const game = extra => Object.assign({ o: { size: N, swap: false }, moves: mv, mode: 'ai', ai: 2, level: 0, daily: null, minMoves: 0 }, extra);
+      const o = await open(390, 844, { 'hex.settings': settings({ mode: 'ai' }), 'hex.game': game({ undos: 1, hints: 2 }) });
+      await until(async () => (await o.st()).phase === 'play');
+      const w = await o.pt(6 * N); await o.tap(w[0], w[1]);
+      ok(await until(() => o.page.isVisible('#result'), 15000), 'winning move shows the result');
+      const sub = await o.page.textContent('#rSub'), stats = await o.ls('stats');
+      ok(/悔棋 1 次/.test(sub) && /提示 2 次/.test(sub), 'result shows undo and hint counts restored from the saved game (' + sub + ')');
+      ok(stats && Object.keys(stats.ach).length === 0 && stats.lv[0].w === 1, 'a win with undo counts as a win but unlocks no achievement');
+      // the finished game is still there after a reload
+      const rec = await o.page.evaluate(() => window.__hex.state().moves.length);
+      await o.page.reload(); await o.page.waitForFunction(() => window.__hex);
+      const s = await o.st();
+      ok(s.phase === 'over' && s.moves.length === rec && s.winner === 1, 'after a reload the finished game is restored (phase ' + s.phase + ', ' + s.moves.length + ' moves)');
+      await o.tapEl('#bRec'); ok(/^7: a1 g1/.test(await o.page.inputValue('#recText')), 'record of the last game is available after the reload');
+      await o.ctx.close();
+      const o2 = await open(390, 844, { 'hex.settings': settings({ mode: 'ai' }), 'hex.game': game({}) });
+      await until(async () => (await o2.st()).phase === 'play');
+      const w2 = await o2.pt(6 * N); await o2.tap(w2[0], w2[1]);
+      await until(() => o2.page.isVisible('#result'), 15000);
+      ok((await o2.ls('stats')).ach.first > 0 && await o2.page.isVisible('#rSug') && /工蜂/.test(await o2.page.textContent('#rNext')), 'clean win unlocks 初次連通 and offers the next level');
+      const geo = await o2.page.evaluate(() => { const t = document.getElementById('rTitle'), r = document.createRange(); r.selectNodeContents(t); const a = r.getBoundingClientRect(), c = t.closest('.card').getBoundingClientRect(); return [a.left + a.width / 2, c.left + c.width / 2]; });
+      ok(Math.abs(geo[0] - geo[1]) < 4, 'result title is centred on the card (' + geo.map(Math.round) + ')');
+      await o2.tapEl('#rNext'); await until(async () => (await o2.st()).phase === 'play');
+      ok((await o2.st()).level === 1, 'next-level button starts a game against 工蜂');
+      await o2.ctx.close();
+    }
+    // leaving a game half-way asks first and counts as a loss; two losses in a row suggest an easier level
+    {
+      const st0 = { sz: {}, lv: [0, 1, 2, 3, 4].map(() => ({ p: 0, w: 0 })), pvp: 0, ach: {}, daily: {}, streak: { cur: [0, 0, 0, 0, 0], best: [0, 0, 0, 0, 0], loss: [0, 1, 0, 0, 0] } };
+      const o = await open(390, 844, { 'hex.settings': settings({ mode: 'ai', level: 1, color: 'blue', size: 7 }), 'hex.stats': st0 });
+      await o.tapEl('#bStart');
+      ok(await until(async () => { const s = await o.st(); return s.phase === 'play' && s.turn === 2 && s.moves.length >= 1; }), 'computer opened as red');
+      await o.page.waitForFunction(() => !document.getElementById('bSwap').disabled || true);
+      const free = []; const s = await o.st(); for (let i = 0; i < 49; i++) if (!s.moves.includes(i)) free.push(i);
+      const p = await o.pt(free[20]); await o.tap(p[0], p[1]);
+      await until(async () => (await o.st()).moves.length >= 2);
+      await o.tapEl('#bMenu'); await o.tapEl('#bStart');
+      ok(await o.page.isVisible('#confirm') && /落敗/.test(await o.page.textContent('#cfText')), 'starting a new game mid-game asks first');
+      await o.tapEl('#cfNo'); ok((await o.st()).phase === 'play' && (await o.ls('game')) !== null, 'cancel keeps the game');
+      await o.tapEl('#bStart'); await o.tapEl('#cfYes');
+      await until(async () => (await o.st()).moves.length <= 1);
+      const sts = await o.ls('stats');
+      ok(sts.lv[1].p === 1 && sts.lv[1].w === 0 && sts.streak.loss[1] === 2, 'the abandoned game is recorded as a loss (' + JSON.stringify(sts.lv[1]) + ')');
+      await until(async () => { const q = await o.st(); return q.turn === 2 && !q.thinking; });
+      await o.tapEl('#bResign'); await o.tapEl('#cfYes');
+      await until(() => o.page.isVisible('#result'), 8000);
+      ok(await o.page.isVisible('#rSug') && /蜜蜂/.test(await o.page.textContent('#rNext')), 'after repeated losses the result suggests 蜜蜂');
+      await o.ctx.close();
+    }
+    // toasts sit at the top of the board, not over its centre
+    {
+      const o = await open(360, 640, { 'hex.settings': settings({}) });
+      await startFromMenu(o, {}); await sleep(100);
+      const r = await o.page.evaluate(() => { const t = document.getElementById('toast').getBoundingClientRect(), m = document.getElementById('main').getBoundingClientRect(); return [t.bottom, m.top + m.height / 2]; });
+      ok(r[0] < r[1] - 100, 'toast stays near the top edge of the board (' + r.map(Math.round) + ')');
+      ok(!o.errors.length, 'no console errors (' + o.errors.join(' | ') + ')');
+      await o.ctx.close();
+    }
+  } finally { await browser.close(); }
+}
+
+(async () => {
+  if (!process.argv.includes('--no-browser')) await browserTests();
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exitCode = fail ? 1 : 0;
+})();
