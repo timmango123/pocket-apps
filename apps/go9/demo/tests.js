@@ -169,4 +169,206 @@ console.log('scoring: ' + sc + ' / ' + cases.length * 2 + ' hand-counted results
 { const g = play(new GO.Game({ handicap: 3 }), 'E5 D4 pass F6'); const t = GO.toSGF(g, 'W+R'); const h = GO.fromSGF(t);
   ok(h.moves.join() === g.moves.join() && h.handicap === 3 && h.komi === g.komi && h.b.key() === g.b.key(), 'SGF export/import round trip'); }
 console.log('rule tests:', pass, 'passed,', fail, 'failed');
-process.exitCode = fail ? 1 : 0;
+
+/* ---- engine: early stop keeps the chosen move; progress callback reports the candidate ---- */
+{
+  const g = play(new GO.Game({ size: 9 }), 'E5 C3 G7');
+  let progs = 0, last = null;
+  GO.setSeed(5); GO.resetTree();
+  const r = GO.search(g, GO.LEVELS[3], { time: 1200, prog: p => { progs++; last = p; } });
+  ok(progs > 0 && last && last.f > 0 && last.f <= 1 && last.m > 0, 'search reports progress with a candidate move (' + progs + ' updates)');
+  ok(r.move === r.all[0].m, 'early-stopped search still returns the most visited move');
+}
+
+/* ---- browser checks for the release-review fixes (real CDP touch, fake https origin, no network) ---- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function browserTests() {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const html = fs.readFileSync(file, 'utf8'), ORIGIN = 'https://go9.test';
+  const browser = await chromium.launch();
+  try { return await browserBody(browser); } finally { await browser.close().catch(() => {}); }
+}
+async function browserBody(browser) {
+  const html = fs.readFileSync(file, 'utf8'), ORIGIN = 'https://go9.test';
+  const T0 = Date.now(); let bp = 0, bf = 0;
+  const bok = (c, m) => { if (c) bp++; else { bf++; console.log('FAIL', m); } };
+  async function open(vp, init, raw) {
+    const ctx = await browser.newContext({ viewport: vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    const errors = [], external = [];
+    await ctx.route('**/*', r => { const u = r.request().url(); if (u === ORIGIN + '/') return r.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }); if (u.startsWith('blob:') || u.startsWith('data:')) return r.continue(); external.push(u); return r.abort(); });
+    if (init) await ctx.addInitScript(init);
+    const page = await ctx.newPage();
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    page.on('console', m => { if (m.type() === 'error' || (m.type() === 'warning' && /vibrate|Blocked|AudioContext/i.test(m.text()))) errors.push('console: ' + m.text()); });
+    page.on('worker', w => w.on('console', m => { if (m.type() === 'error') errors.push('worker: ' + m.text()); }));
+    await page.goto(ORIGIN + '/'); if (!raw) await page.waitForFunction(() => window.__go9);
+    const cdp = await ctx.newCDPSession(page);
+    let tid = 1;
+    const s = { ctx, page, cdp, errors, external };
+    s.touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    s.tap = async (x, y) => { const id = tid++; await s.touch('touchStart', [{ x, y, id }]); await sleep(40); await s.touch('touchEnd', []); };
+    s.tapEl = async sel => { const b = await page.locator(sel).first().boundingBox(); await s.tap(b.x + b.width / 2, b.y + b.height / 2); };
+    s.st = () => page.evaluate(() => window.__go9.state());
+    s.pt = (x, y) => page.evaluate(([x, y]) => window.__go9.ptClient(x, y), [x, y]);
+    s.cell = () => page.evaluate(() => { const a = window.__go9.ptClient(0, 0), b = window.__go9.ptClient(1, 0); return b[0] - a[0]; });
+    s.wait = (fn, arg, ms) => page.waitForFunction(fn, arg, { timeout: ms || 20000, polling: 50 });
+    s.seed = (k, v) => page.evaluate(([k, v]) => localStorage.setItem('go9.' + k, JSON.stringify(v)), [k, v]);
+    return s;
+  }
+  const W = 11; const pt = (x, y) => (y + 1) * W + x + 1;     // 9x9 board point index
+  /* black wall on column E, white wall on column F: both alive, black wins 45 : 43.5 (Chinese) */
+  const walls = []; for (let y = 0; y < 9; y++) walls.push(pt(4, y), pt(5, y)); walls.push(0, 0);
+  const O9 = { size: 9, rules: 'cn', handicap: 0, komi: 7.5 };
+  const scoringSave = extra => Object.assign({ o: O9, moves: walls, mode: 'ai', ai: 2, level: 1, daily: null, wr: [0.5], low: 0, bigCap: 0, scoring: true }, extra || {});
+
+  /* 1. vibrate before any user tap: the computer moves right after a reload that resumed its turn -> no console error */
+  { const s = await open(null, `if (!localStorage.getItem('go9.game')) localStorage.setItem('go9.game', JSON.stringify({ o: ${JSON.stringify(O9)}, moves: [${pt(4, 4)}], mode: 'ai', ai: 2, level: 0, daily: null, wr: [0.5], low: 0, bigCap: 0, scoring: false }));`, true);
+    /* poll through raw CDP without a user gesture (Playwright's evaluate would count as one and hide the bug) */
+    const t1 = Date.now(); let n = 0, act = null;
+    while (Date.now() - t1 < 20000) {
+      const r = await s.cdp.send('Runtime.evaluate', { expression: 'JSON.stringify([window.__go9 ? window.__go9.state().moves.length : 0, navigator.userActivation.hasBeenActive])', userGesture: false, returnByValue: true });
+      [n, act] = JSON.parse(r.result.value); if (n >= 2) break; await sleep(100);
+    }
+    await sleep(300);
+    bok(n >= 2 && act === false, 'computer moved after the resume reload with no user activation (moves ' + n + ', active ' + act + ')');
+    bok(!s.errors.length, 'no console error when the computer moves (with vibrate) before the first tap: ' + s.errors.join(' | '));
+    await s.ctx.close(); }
+
+  /* 2. two overlapping fingers (A down, B down, A up, B up) both count, in single-tap mode */
+  { const s = await open();
+    await s.seed('settings', { mode: 'pvp', confirm: false }); await s.page.reload(); await s.page.waitForFunction(() => window.__go9);
+    await s.tapEl('#bStart'); await s.wait(() => window.__go9.state().phase === 'play');
+    let placed = 0;
+    for (let k = 0; k < 4; k++) {
+      const a = await s.pt(1 + k, 2), b = await s.pt(1 + k, 6), n0 = (await s.st()).moves.length;
+      await s.touch('touchStart', [{ x: a[0], y: a[1], id: 100 + k * 2 }]); await sleep(30);
+      await s.touch('touchStart', [{ x: a[0], y: a[1], id: 100 + k * 2 }, { x: b[0], y: b[1], id: 101 + k * 2 }]); await sleep(30);
+      await s.touch('touchEnd', [{ x: b[0], y: b[1], id: 101 + k * 2 }]); await sleep(30);
+      await s.touch('touchEnd', []);
+      await s.wait(n => window.__go9.state().moves.length >= n + 2, n0, 5000).catch(() => {});
+      placed += (await s.st()).moves.length - n0;
+    }
+    bok(placed === 8, 'two-finger overlap: 8 touches -> ' + placed + ' stones (expected 8)');
+
+    /* 3. forgiving confirm: preview, then a second tap 0.6 grid steps away still places the previewed stone; 落子 button; slide adjusts */
+    await s.page.evaluate(() => { localStorage.setItem('go9.settings', JSON.stringify({ mode: 'pvp', confirm: true })); localStorage.removeItem('go9.game'); localStorage.removeItem('go9.tips'); });
+    await s.page.reload(); await s.page.waitForFunction(() => window.__go9);
+    await s.tapEl('#bStart'); await s.wait(() => window.__go9.state().phase === 'play');
+    const c = await s.cell(), p1 = await s.pt(4, 4);
+    await s.tap(p1[0], p1[1]); await s.wait(() => window.__go9.state().preview > 0);
+    bok(await s.page.evaluate(() => document.getElementById('toast').classList.contains('show') && /再點一次/.test(document.getElementById('toast').textContent)), 'first preview shows the "tap again" tip');
+    bok(await s.page.evaluate(() => !document.getElementById('bPlace').hidden && document.getElementById('bResign').hidden), '落子 button replaces 認輸 while a preview stone waits');
+    await s.tap(p1[0] + c * 0.45, p1[1] + c * 0.4);
+    await s.wait(() => window.__go9.state().moves.length === 1, null, 5000).catch(() => {});
+    let st = await s.st();
+    bok(st.moves.length === 1 && st.moves[0] === pt(4, 4), 'second tap 0.6 steps off the preview places it (moves ' + st.moves + ')');
+    bok(await s.page.evaluate(() => document.getElementById('bPlace').hidden && !document.getElementById('bResign').hidden), '認輸 is back after placing');
+    const p2 = await s.pt(2, 2); await s.tap(p2[0], p2[1]); await s.wait(() => window.__go9.state().preview > 0);
+    await s.tapEl('#bPlace'); await s.wait(() => window.__go9.state().moves.length === 2, null, 5000).catch(() => {});
+    st = await s.st(); bok(st.moves[1] === pt(2, 2), '落子 button places the preview stone');
+    /* slide: touch at C7, drag to D7 -> preview follows, lift does not place */
+    const a = await s.pt(2, 6), b = await s.pt(3, 6);
+    await s.touch('touchStart', [{ x: a[0], y: a[1], id: 900 }]);
+    for (let i = 1; i <= 6; i++) { await s.touch('touchMove', [{ x: a[0] + (b[0] - a[0]) * i / 6, y: a[1], id: 900 }]); await sleep(20); }
+    await s.touch('touchEnd', []); await sleep(100);
+    st = await s.st(); bok(st.preview === pt(3, 6) && st.moves.length === 2, 'sliding a finger moves the preview without placing (preview ' + st.preview + ')');
+    /* far second tap moves the preview instead of placing */
+    const f = await s.pt(7, 7); await s.tap(f[0], f[1]); await sleep(100);
+    st = await s.st(); bok(st.preview === pt(7, 7) && st.moves.length === 2, 'a tap far from the preview moves it');
+    /* reviewer case: preview B2, then tap B1 9 px short towards B2 -> preview moves to B1, nothing is placed */
+    for (const off of [8, 9, 10]) {
+      const b2 = await s.pt(1, 7), b1 = await s.pt(1, 8), n0 = (await s.st()).moves.length;
+      await s.tap(b2[0], b2[1]); await s.wait(q => window.__go9.state().preview === q, pt(1, 7), 5000).catch(() => {});
+      await s.tap(b1[0], b1[1] - off); await sleep(120);
+      st = await s.st();
+      bok(st.preview === pt(1, 8) && st.moves.length === n0, 'adjacent tap ' + off + 'px short of B1 moves the preview to B1 (preview ' + st.preview + ', moves ' + (st.moves.length - n0) + ')');
+    }
+    /* a tap just off the board edge next to the preview (no playable point hit) still confirms it */
+    { const n0 = (await s.st()).moves.length, b1 = await s.pt(1, 8);
+      await s.tap(b1[0], b1[1] + c * 0.62); await s.wait(n => window.__go9.state().moves.length === n + 1, n0, 5000).catch(() => {});
+      st = await s.st(); bok(st.moves.length === n0 + 1 && st.moves[n0] === pt(1, 8), 'a tap off the edge 0.62 steps from the preview places it'); }
+
+    /* 11. starting a new game while one is in progress asks first */
+    const nKeep = (await s.st()).moves.length;
+    await s.tapEl('#bMenu'); await s.wait(() => !document.getElementById('menu').hidden);
+    await s.tapEl('#bStart'); await sleep(150);
+    bok(await s.page.evaluate(() => !document.getElementById('confirm').hidden && /放棄/.test(document.getElementById('cfTitle').textContent)), 'new game during a game asks for confirmation');
+    await s.tapEl('#cfNo'); await sleep(150);
+    st = await s.st(); bok(st.moves.length === nKeep && st.phase === 'play', 'cancel keeps the game in progress');
+    bok(!s.errors.length, 'no errors in touch tests: ' + s.errors.join(' | '));
+    await s.ctx.close(); }
+
+  /* 4/8/14. scoring vs computer: marking a living computer group dead -> computer disagrees; bar shows the count; toast off the board */
+  { const s = await open(null, `if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.setItem('go9.game', ${JSON.stringify(JSON.stringify(scoringSave()))}); }`);
+    await s.wait(() => window.__go9.state().phase === 'scoring' && /黑 \d/.test(document.getElementById('scLive').textContent));
+    const bar = await s.page.evaluate(() => [document.getElementById('wrB').textContent, document.getElementById('wrW').textContent]);
+    bok(/^黑 45$/.test(bar[0]) && /^白 43\.5$/.test(bar[1]), 'during scoring the bar shows the count, not 50% (' + bar + ')');
+    const w = await s.pt(5, 4); await s.tap(w[0], w[1]); await sleep(150);
+    bok(await s.page.evaluate(() => document.getElementById('toast').classList.contains('edge') || !document.getElementById('toast').classList.contains('show')), 'scoring toasts are shown off the board');
+    await s.tapEl('#bConfirm'); await sleep(150);
+    bok(await s.page.evaluate(() => !document.getElementById('confirm').hidden && /不同意/.test(document.getElementById('cfTitle').textContent)), 'computer disagrees when its living group is marked dead');
+    await s.tapEl('#cfYes');
+    await s.wait(() => window.__go9.state().phase === 'over');
+    let st = await s.st();
+    bok(st.result.winner === 1 && Math.abs(st.result.diff - 1.5) < 1e-9, 'counted with the computer judgement: black +1.5 (' + st.result.diff + ')');
+    bok(st.wr[st.moves.length] === 1, 'win-rate chart ends at the result (1.0), not 0.5');
+    /* 10. reload keeps the finished game: result, then review */
+    await s.page.reload(); await s.page.waitForFunction(() => window.__go9);
+    st = await s.st();
+    bok(st.phase === 'over' && st.resultVisible && st.result && st.result.winner === 1 && st.moves.length === walls.length, 'after reload the result is still shown (' + st.phase + ')');
+    await s.tapEl('#rReview'); await sleep(100);
+    bok((await s.st()).phase === 'review', 'review works after reload');
+    bok(!s.errors.length && !s.external.length, 'no errors / network in scoring tests: ' + s.errors.concat(s.external).join(' | '));
+    await s.ctx.close(); }
+
+  /* 5. a win with undo/hint is recorded but not counted for wins or achievements */
+  { const s = await open(null, `if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); localStorage.setItem('go9.game', ${JSON.stringify(JSON.stringify(scoringSave({ undos: 1 })))}); }`);
+    await s.wait(() => window.__go9.state().phase === 'scoring' && /黑 \d/.test(document.getElementById('scLive').textContent));
+    await s.tapEl('#bConfirm');
+    await s.wait(() => window.__go9.state().resultVisible);
+    const r = await s.page.evaluate(() => ({ st: JSON.parse(localStorage.getItem('go9.stats')), ach: JSON.parse(localStorage.getItem('go9.ach') || '{}'), row: (document.getElementById('rAssist') || {}).textContent }));
+    bok(r.st.lv[1].p === 1 && r.st.lv[1].w === 0 && r.st.lv[1].wa === 1 && !r.ach.first, 'assisted win: played 1, wins 0, assisted 1, no achievement');
+    bok(/1 次/.test(r.row || '') && /不計/.test(r.row || ''), 'result shows undo/hint counts (' + r.row + ')');
+    await s.ctx.close(); }
+
+  /* 6. losing streak -> handicap suggestion with a one-tap restart */
+  { const s = await open();
+    await s.seed('stats', { lv: [0, 1, 2, 3, 4].map(i => ({ p: 2, w: 0, m: 0, mc: 0, ls: i === 1 ? 1 : 0 })), pvp: 0, daily: {}, streak: 0 });
+    await s.seed('settings', { mode: 'ai', level: 1, color: 'black', handicap: 0 });
+    await s.page.reload(); await s.page.waitForFunction(() => window.__go9);
+    await s.tapEl('#bStart'); await s.wait(() => window.__go9.state().phase === 'play');
+    await s.tapEl('#bResign'); await sleep(150); await s.tapEl('#cfYes');
+    await s.wait(() => window.__go9.state().resultVisible);
+    const sg = await s.page.evaluate(() => [document.getElementById('rSugg').textContent, !document.getElementById('rEasier').hidden]);
+    bok(/讓 2 子/.test(sg[0]) && sg[1], 'two losses in a row suggest a handicap (' + sg[0] + ')');
+    await s.tapEl('#rEasier'); await s.wait(() => window.__go9.state().phase === 'play' || window.__go9.state().phase === 'think');
+    bok((await s.st()).opts.handicap === 2, 'suggested restart uses 2 handicap stones');
+    await s.ctx.close(); }
+
+  /* 7. menu: 開始對局 visible without scrolling at 360x640 on first open */
+  { const s = await open({ width: 360, height: 640 });
+    const r = await s.page.evaluate(() => { const b = document.getElementById('bStart').getBoundingClientRect(); return [b.bottom, innerHeight]; });
+    bok(r[0] <= r[1] - 8, '開始對局 visible without scrolling at 360x640 (bottom ' + Math.round(r[0]) + ' of ' + r[1] + ')');
+    bok(await s.page.evaluate(() => getComputedStyle(document.getElementById('bar')).backgroundColor.indexOf('rgba') < 0), 'player bar is opaque (maple branch not showing through)');
+    await s.ctx.close(); }
+
+  /* 9. computer thinking shows progress (percentage + candidate) */
+  { const s = await open();
+    await s.seed('settings', { mode: 'ai', level: 2, color: 'white', handicap: 0, size: 13 });
+    await s.page.reload(); await s.page.waitForFunction(() => window.__go9);
+    await s.tapEl('#bStart');
+    await s.wait(() => { const st = window.__go9.state(); return st.phase === 'think' && st.prog && st.prog.m > 0; }, null, 30000);
+    bok(/\d+%/.test(await s.page.textContent('#sbB')), 'thinking label shows progress percentage');
+    await s.wait(() => window.__go9.state().moves.length >= 1, null, 30000);
+    bok(!s.errors.length, 'no errors in thinking test: ' + s.errors.join(' | '));
+    await s.ctx.close(); }
+
+  console.log('browser checks:', bp, 'passed,', bf, 'failed (' + ((Date.now() - T0) / 1000).toFixed(1) + ' s)');
+  return bf;
+}
+(async () => {
+  let bf = 0;
+  try { bf = await browserTests(); } catch (e) { bf = 1; console.log('FAIL browser tests:', e.message); }
+  console.log('go9 tests:', pass, 'rule +', 'browser done,', fail + bf, 'failed');
+  process.exitCode = fail || bf ? 1 : 0;
+})();
