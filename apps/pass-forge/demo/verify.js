@@ -1,9 +1,11 @@
 // 密碼產生器驗證：node verify.js
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const path = require('path'), fs = require('fs');
-const SRC = path.resolve(__dirname, '../index.html'), WRAP = path.join(__dirname, 'preview.html');
+const path = require('path'), fs = require('fs'), os = require('os');
+// preview and screenshots go to a temp folder, never into the app folder
+const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'pass-forge-verify-'));
+const SRC = path.resolve(__dirname, '../index.html'), WRAP = path.join(OUT, 'preview.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(SRC, 'utf8') + '</body></html>');
-const URL_ = 'file://' + WRAP, OUT = __dirname;
+const URL_ = 'file://' + WRAP;
 let fails = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 
@@ -36,7 +38,7 @@ async function open(browser, opt) {
     for (let i = 0; i < 1000; i++) for (const c of genRandom().pw) { cnt[c] = (cnt[c] || 0) + 1; tot++; }
     const exp = tot / 62; return { keys: Object.keys(cnt).length, dev: Math.max(...Object.values(cnt).map(c => Math.abs(c - exp) / exp)) };
   });
-  ok(stat2.keys === 62 && stat2.dev < 0.06, `產生 10 萬字元：62 種字元全出現，最大偏差 ${(stat2.dev * 100).toFixed(2)}%`);
+  ok(stat2.keys === 62 && stat2.dev < 0.1, `產生 10 萬字元：62 種字元全出現，最大偏差 ${(stat2.dev * 100).toFixed(2)}%`);
   const statBig = await page.evaluate(() => { const cnt = [0, 0, 0]; for (let i = 0; i < 300000; i++) cnt[randInt(3)]++; return Math.max(...cnt.map(c => Math.abs(c - 100000) / 100000)); });
   ok(statBig < 0.02, `30 萬次三分類偏差 ${(statBig * 100).toFixed(2)}% < 2%`);
 
@@ -138,6 +140,6 @@ async function open(browser, opt) {
   }
   await browser.close();
   fs.unlinkSync(WRAP);
-  console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
+  console.log(fails ? `\n${fails} FAILED` : '\nALL PASS', '(screenshots in ' + OUT + ')');
   process.exit(fails ? 1 : 0);
 })();

@@ -120,7 +120,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .tips { margin: 10px 0 0; padding-left: 20px; font-size: 13px; }
 
 .toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--toast-bg); color: var(--toast-ink); border-radius: 6px; padding: 6px 6px 6px 14px; display: flex; align-items: center; gap: 8px; font-size: 14px; max-width: calc(100% - 32px); box-shadow: 0 4px 18px rgba(0,0,0,.25); z-index: 10; }
-.toast button { min-height: 40px; border: 0; background: transparent; color: inherit; text-decoration: underline; font-weight: 700; cursor: pointer; padding: 0 10px; }
+.toast button { min-height: 44px; min-width: 44px; border: 0; background: transparent; color: inherit; text-decoration: underline; font-weight: 700; cursor: pointer; padding: 0 10px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 @media (hover: hover) {
   .round:hover { background: var(--surface-2); } .round.primary:hover { background: var(--ink); opacity: .88; }
@@ -276,42 +276,51 @@ let opts = { ...DEFAULTS };
 try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s && typeof s === 'object') for (const k in DEFAULTS) if (typeof s[k] === typeof DEFAULTS[k]) opts[k] = s[k]; } catch {}
 function save() { try { localStorage.setItem(STORE, JSON.stringify(opts)); } catch {} }
 
-function uniqChars(s) { return [...new Set([...s])].join(''); }
+// 字元一律以「看得到的一個字」為單位（表情符號、膚色、組合字不會被拆成半個），字元集大小也用這個單位計算
+const SEG = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('zh-Hant', { granularity: 'grapheme' }) : null;
+function chars(s) { return SEG ? [...SEG.segment(s)].map(x => x.segment) : [...s]; }
+function uniqList(s) { return [...new Set(chars(s.replace(/\s/g, '')))]; }
+function uniqChars(s) { return uniqList(s).join(''); }
+// 回傳 [{ k, s: 字元陣列 }]；symGone = 開了符號但自訂符號全部被濾掉
 function classSets() {
-  const sym = opts.symset.trim() ? uniqChars(opts.symset.replace(/\s/g, '')) : SETS.sym;
+  const custom = opts.symset.trim() ? uniqList(opts.symset) : null;
   const out = [];
   for (const k of ['upper', 'lower', 'digit', 'sym']) {
     if (!opts[k]) continue;
-    let s = k === 'sym' ? sym : SETS[k];
-    if (opts.ambig) s = [...s].filter(c => !AMBIG.includes(c)).join('');
-    if (s) out.push({ k, s });
+    let s = k === 'sym' ? (custom || [...SETS.sym]) : [...SETS[k]];
+    if (opts.ambig) s = s.filter(c => !AMBIG.includes(c));
+    out.push({ k, s });
   }
   // 自訂符號若與其他類重疊，從符號類移除，避免字元集重複計數
-  const seen = new Set(); for (const c of out) { c.s = [...c.s].filter(ch => !seen.has(ch)).join(''); for (const ch of c.s) seen.add(ch); }
-  return out.filter(c => c.s);
+  const seen = new Set(); for (const c of out) { c.s = c.s.filter(ch => !seen.has(ch)); for (const ch of c.s) seen.add(ch); }
+  const res = out.filter(c => c.s.length);
+  res.symGone = !!(opts.sym && custom && !res.some(c => c.k === 'sym'));
+  return res;
 }
 
 /* ---------- 產生 ---------- */
 function genRandom() {
   const sets = classSets();
-  if (!sets.length) return { error: '至少選一種字元' };
-  const pool = sets.map(c => c.s).join('');
-  let len = opts.len, note = '';
-  if (opts.unique && len > pool.length) { note = `字元集只有 ${pool.length} 個字元，「不重複」時長度已自動降為 ${pool.length}。`; len = pool.length; }
-  if (opts.each && len < sets.length) { note = `長度少於勾選的類型數（${sets.length}），無法每類至少一個，已改為一般隨機。`; }
-  const chars = [];
+  const gone = '自訂符號都與已選的字母、數字重疊，或屬於易混淆字元，';
+  if (!sets.length) return { error: sets.symGone ? gone + '請改用其他符號或多選一種字元' : '至少選一種字元' };
+  const pool = sets.flatMap(c => c.s);
+  let len = opts.len, note = sets.symGone ? gone + '目前沒有使用符號。' : '';
+  if (opts.unique && len > pool.length) { note += `字元集只有 ${pool.length} 個字元，「不重複」時長度已自動降為 ${pool.length}。`; len = pool.length; }
+  if (opts.each && len < sets.length) { note += `長度少於勾選的類型數（${sets.length}），無法每類至少一個，已改為一般隨機。`; }
   const used = new Set();
   const pick = s => {
-    const avail = opts.unique ? [...s].filter(c => !used.has(c)) : s;
+    const avail = opts.unique ? s.filter(c => !used.has(c)) : s;
+    if (!avail.length) return null;
     const c = avail[randInt(avail.length)]; used.add(c); return c;
   };
-  if (opts.each && len >= sets.length) for (const c of sets) chars.push(pick(c.s));
-  while (chars.length < len) chars.push(pick(pool));
-  shuffle(chars);
+  const out = [];
+  if (opts.each && len >= sets.length) for (const c of sets) { const ch = pick(c.s); if (ch != null) out.push(ch); }
+  while (out.length < len) { const ch = pick(pool); if (ch == null) break; out.push(ch); }
+  shuffle(out);
   const n = pool.length;
   let bits = 0;
   if (opts.unique) for (let i = 0; i < len; i++) bits += Math.log2(n - i); else bits = len * Math.log2(n);
-  return { pw: chars.join(''), bits, note, approx: opts.each && sets.length > 1, pool: n, len };
+  return { pw: out.join(''), bits, note, approx: opts.each && sets.length > 1, pool: n, len };
 }
 function genPhrase() {
   const list = opts.list === 'py' ? PINYIN : EFF;
@@ -338,9 +347,11 @@ function fmtTime(sec) {
   if (sec < 1) return '不到 1 秒';
   const u = [[60, '秒'], [60, '分鐘'], [24, '小時'], [365.25, '天'], [100, '年']];
   let v = sec;
-  for (const [d, name] of u) { if (v < d) return fmtNum(v) + ' ' + name; v /= d; }
+  // 先照顯示的位數進位再比較，59.96 秒顯示「1 分鐘」而不是「60 秒」；滿 365 天就算 1 年
+  for (const [d, name] of u) { if (roundShown(v) < Math.floor(d)) return fmtNum(v) + ' ' + name; v /= d; }
   return fmtNum(v) + ' 世紀';
 }
+function roundShown(v) { return v < 10 ? Math.round(v * 10) / 10 : Math.round(v); }
 function fmtNum(v) { return v < 10 ? (Math.round(v * 10) / 10).toString() : Math.round(v).toLocaleString('zh-TW'); }
 function crackTimes(bits) { return RATES.map(([label, r]) => [label, fmtTime(Math.pow(2, bits) / 2 / r)]); }
 
@@ -358,7 +369,7 @@ function paintMeter(bits, note) {
 /* ---------- 顯示 ---------- */
 function colorize(pw, sepChars) {
   let h = '';
-  for (const ch of pw) {
+  for (const ch of chars(pw)) {
     const cls = /[A-Z]/.test(ch) ? 'u' : /[a-z]/.test(ch) ? 'l' : /[0-9]/.test(ch) ? 'd' : (sepChars && sepChars.includes(ch)) ? 'sep' : 's';
     const t = ch === ' ' ? '&nbsp;' : ch.replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
     h += `<span class="${cls}">${t}</span>`;
@@ -366,9 +377,14 @@ function colorize(pw, sepChars) {
   return h;
 }
 let current = '';
+// 本次歷史：{ pw, phrase }。調整設定（拖滑桿、切開關、改符號）時只替換最上面那一組「還沒定案」的，
+// 按重新產生、下拉、切分頁、複製才會讓它定案，所以中間值不會把之前產生的密碼擠掉。
 const history = [];
-function regen() {
-  const r = generate();
+let headDraft = false;
+// commit: true = 使用者明確要一組新密碼（按鈕、下拉、切分頁）；false = 設定改變後的即時預覽
+function regen(commit = true) {
+  let r;
+  try { r = generate(); } catch (err) { r = { error: '無法用目前的設定產生密碼，請調整設定' }; }
   const pwEl = $('pw');
   if (r.error) {
     current = ''; pwEl.className = 'pw empty'; pwEl.textContent = r.error;
@@ -384,9 +400,14 @@ function regen() {
     ? `詞組熵 = ${opts.words} 詞 × log₂(${r.list.toLocaleString()})${opts.sep === 'digit' ? ' ＋ 分隔數字' : ''}${opts.adddigit ? ' ＋ 附加數字' : ''}。首字母大寫不增加熵。`
     : `熵 = 長度 × log₂(字元集 ${r.pool} 個)${r.approx ? '；「每類至少一個」造成的微小下降已忽略，為近似值' : ''}。`;
   paintMeter(r.bits, note);
-  history.unshift(r.pw); if (history.length > 10) history.pop();
+  const item = { pw: r.pw, phrase: opts.tab === 'phrase' };
+  if (!commit && headDraft && history.length) history[0] = item;
+  else { history.unshift(item); if (history.length > 10) history.pop(); }
+  headDraft = !commit;
   renderHistory();
 }
+// 設定改變：重新預覽，但不新增歷史
+const preview = () => regen(false);
 function showMsg(t) { const m = $('random-msg'); m.hidden = !t || opts.tab !== 'random'; m.textContent = t; }
 function listItem(pw, i, sep) {
   const li = document.createElement('li');
@@ -400,15 +421,17 @@ function listItem(pw, i, sep) {
 function renderHistory() {
   const ul = $('history'); ul.innerHTML = '';
   if (!history.length) { ul.innerHTML = '<li class="empty-line">尚未產生</li>'; return; }
-  history.forEach((pw, i) => ul.appendChild(listItem(pw, i, '-._ ')));
+  history.forEach((h, i) => ul.appendChild(listItem(h.pw, i, h.phrase ? '-._ ' : '')));
 }
 let batchItems = [];
 function runBatch() {
-  const n = Math.max(1, Math.min(50, parseInt($('batch-n').value, 10) || 1));
+  const raw = $('batch-n').value.trim(), num = raw === '' ? NaN : Number(raw);
+  const n = isFinite(num) ? Math.max(1, Math.min(50, Math.round(num))) : opts.batch;
+  if (raw !== String(n)) toast(isFinite(num) ? `數量已調整為 ${n}（可產生 1–50 組）` : `數量要填 1–50 的整數，已用 ${n} 組`, null, null, 3000);
   $('batch-n').value = n; opts.batch = n; save();
   batchItems = [];
   for (let i = 0; i < n; i++) { const r = generate(); if (r.error) return; batchItems.push(r.pw); }
-  const ul = $('batch-list'); ul.innerHTML = ''; ul.hidden = false; $('btn-batch-copy').hidden = false;
+  const ul = $('batch-list'); ul.innerHTML = ''; headDraft = false; ul.hidden = false; $('btn-batch-copy').hidden = false;
   batchItems.forEach((pw, i) => ul.appendChild(listItem(pw, i, opts.tab === 'phrase' ? '-._ ' : '')));
 }
 
@@ -438,6 +461,11 @@ async function clearClip() {
 
 /* ---------- 強度檢查（簡化 zxcvbn） ---------- */
 const COMMON_RANK = new Map(); COMMON.forEach((w, i) => { if (!COMMON_RANK.has(w)) COMMON_RANK.set(w, i + 1); });
+// 華語使用者常見的密碼與數字（我愛你、一生一世、520…）：英文外洩清單裡沒有，排在前面
+['woaini1314', '5201314', 'woaini', '1314520', 'aini1314', '5211314', 'woaini520', '520520', 'qq123456', 'a123456', '1314', '520', 'aini', 'woaini123',
+ 'iloveyou1314', '1314521', '52013145201314', '7758521', '7758258', '584520', 'abc123456', 'aa123456', 'a123456789', 'a12345678', 'woaiwojia', 'woaiwoziji',
+ 'zhang123', 'wang123', 'li123456', 'qwe123456', '1qaz2wsx', '123456aa', 'dearbook', 'xiaoming', 'nihao', 'nihao123', 'iloveu', '88888888', '666666',
+ '168168', '518518', '147258369', '123321', '123123123', '123456789a'].forEach((w, i) => { const r = 20 + i * 15, o = COMMON_RANK.get(w); if (!o || r < o) COMMON_RANK.set(w, r); });
 const WORD_RANK = new Map(); ENGLISH.forEach((w, i) => { if (w.length >= 3 && !WORD_RANK.has(w)) WORD_RANK.set(w, i + 1); });
 EFF.forEach((w, i) => { if (!WORD_RANK.has(w)) WORD_RANK.set(w, 6000 + i); });
 PINYIN.forEach((w, i) => { if (!WORD_RANK.has(w)) WORD_RANK.set(w, 3000 + i); });
@@ -459,6 +487,7 @@ function deleet(s) {
   if (subs) { out.add(a); out.add(b); }
   return { variants: [...out], subs };
 }
+const DICTS = [[COMMON_RANK, '常見密碼'], [WORD_RANK, '常用單字']];
 function findMatches(pw) {
   const n = pw.length, lower = pw.toLowerCase(), M = [];
   // 字典（含 leet、反轉）
@@ -466,12 +495,13 @@ function findMatches(pw) {
     const raw = pw.slice(i, j + 1), low = lower.slice(i, j + 1);
     const { variants, subs } = deleet(low);
     for (const v of variants) {
-      for (const [dict, label] of [[COMMON_RANK, '常見密碼'], [WORD_RANK, '常用單字']]) {
-        for (const [w, rev] of [[v, false], [[...v].reverse().join(''), true]]) {
+      const vr = [...v].reverse().join('');
+      for (const [dict, label] of DICTS) {
+        for (const [w, rev] of [[v, false], [vr, true]]) {
           const r = dict.get(w); if (!r) continue;
           if (label === '常用單字' && w.length < 4 && i + w.length !== n && i !== 0) continue;
           const lf = v === low ? 1 : Math.max(2, Math.pow(2, Math.min(subs, 4)));
-          M.push({ i, j, guesses: r * capsFactor(raw) * lf * (rev ? 2 : 1), label: label + (v !== low ? '（leet 替換）' : '') + (rev ? '（反轉）' : ''), token: raw, extra: `第 ${r.toLocaleString()} 名` });
+          M.push({ i, j, guesses: r * capsFactor(raw) * lf * (rev ? 2 : 1), label: label + (v !== low ? '（leet 替換）' : '') + (rev ? '（反轉）' : ''), token: raw, rank: r });
         }
       }
     }
@@ -491,12 +521,16 @@ function findMatches(pw) {
   // 鍵盤路徑
   for (let i = 0; i < n - 2; i++) for (let j = i + 2; j < n; j++) {
     const s = lower.slice(i, j + 1), r = [...s].reverse().join('');
-    if (ROWS.some(row => row.includes(s) || row.includes(r))) M.push({ i, j, guesses: 40 * s.length * (ROWS.some(row => row.includes(s)) ? 1 : 2) * capsFactor(pw.slice(i, j + 1)), label: '鍵盤路徑', token: pw.slice(i, j + 1) });
+    if (!ROWS.some(row => row.includes(s) || row.includes(r))) break; // 更長的也不可能在同一排
+    M.push({ i, j, guesses: 40 * s.length * (ROWS.some(row => row.includes(s)) ? 1 : 2) * capsFactor(pw.slice(i, j + 1)), label: '鍵盤路徑', token: pw.slice(i, j + 1) });
   }
   // 重複
   for (let i = 0; i < n; i++) for (let L = 1; L <= Math.floor((n - i) / 2); L++) {
-    const unit = pw.slice(i, i + L); let k = i + L, cnt = 1;
-    while (pw.slice(k, k + L) === unit) { k += L; cnt++; }
+    if (pw[i] !== pw[i + L]) continue;
+    const unit = pw.slice(i, i + L);
+    if (L > 1 && (unit + unit).indexOf(unit, 1) < L) continue; // 「abab」本身就是 ab 的重複，由 L=2 那次處理
+    let k = i + L, cnt = 1;
+    while (k + L <= n && pw.startsWith(unit, k)) { k += L; cnt++; }
     if (cnt >= 2 && (L > 1 || cnt >= 3)) {
       const ug = L === 1 ? (/\d/.test(unit) ? 10 : /[a-z]/i.test(unit) ? 26 : 33) : unitGuesses(unit);
       M.push({ i, j: i + L * cnt - 1, guesses: ug * cnt, label: '重複', token: pw.slice(i, i + L * cnt) });
@@ -538,36 +572,48 @@ function bestGuesses(pw) {
   const n = pw.length; if (!n) return { guesses: 1, seq: [] };
   const M = findMatches(pw);
   const card = bruteCard(pw);
-  // DP：best[k][j] = 用 k 段覆蓋 pw[0..j] 的最小猜測數的 log2
-  const lg = Math.log2;
-  const best = Array.from({ length: n }, () => new Map());
+  // DP：mt[j] / bf[j] = Map(k → 用 k 段覆蓋 pw[0..j]、最後一段是比對 / 隨機字元時，猜測數 log2 的最小值)
+  // 隨機字元段只能接在比對段後面（或從頭開始），所以只需要從「有比對結尾」的位置往後接，避免 O(n³)
+  const lg = Math.log2, lc = lg(card);
+  const mt = Array.from({ length: n }, () => new Map()), bf = Array.from({ length: n }, () => new Map());
   const byEnd = Array.from({ length: n }, () => []);
   for (const m of M) byEnd[m.j].push(m);
+  // 段數多、猜測數又不比較少的狀態永遠不會是最佳解（段數越多懲罰越大），刪掉
+  const prune = map => { let lo = Infinity; for (const k of [...map.keys()].sort((a, b) => a - b)) { const v = map.get(k).v; if (v >= lo) map.delete(k); else lo = v; } };
+  const put = (map, k, v, m, prev) => { const o = map.get(k); if (!o || v < o.v) map.set(k, { v, m, prev }); };
+  const starts = [0]; // 隨機字元段可以開始的位置
   for (let j = 0; j < n; j++) {
-    const cands = byEnd[j].slice();
-    for (let i = 0; i <= j; i++) cands.push({ i, j, guesses: Math.pow(card, j - i + 1), label: '隨機字元', token: pw.slice(i, j + 1), brute: true });
-    for (const m of cands) {
+    for (const m of byEnd[j]) {
       const lgm = lg(Math.max(m.guesses, 1));
-      if (m.i === 0) { const prev = best[j].get(1); if (!prev || lgm < prev.v) best[j].set(1, { v: lgm, m, prev: null }); continue; }
-      for (const [k, p] of best[m.i - 1]) {
-        if (m.brute && p.m.brute) continue;
-        const v = p.v + lgm, kk = k + 1, prev = best[j].get(kk);
-        if (!prev || v < prev.v) best[j].set(kk, { v, m, prev: p });
-      }
+      if (m.i === 0) { put(mt[j], 1, lgm, m, null); continue; }
+      for (const map of [mt[m.i - 1], bf[m.i - 1]]) for (const [k, p] of map) put(mt[j], k + 1, p.v + lgm, m, p);
     }
+    for (const i of starts) {
+      const lgm = (j - i + 1) * lc; // 段的內容到最後才補上，避免產生大量暫存物件
+      if (i === 0) put(bf[j], 1, lgm, i, null);
+      else for (const [k, p] of mt[i - 1]) put(bf[j], k + 1, p.v + lgm, i, p);
+    }
+    prune(mt[j]); prune(bf[j]);
+    if (mt[j].size) starts.push(j + 1);
   }
   let bestV = Infinity, bestNode = null;
-  for (const [k, p] of best[n - 1]) { let f = 0; for (let i = 2; i <= k; i++) f += lg(i); const v = p.v + f; if (v < bestV) { bestV = v; bestNode = p; } }
-  const seq = []; for (let p = bestNode; p; p = p.prev) seq.unshift(p.m);
+  for (const map of [mt[n - 1], bf[n - 1]]) for (const [k, p] of map) { let f = 0; for (let i = 2; i <= k; i++) f += lg(i); const v = p.v + f; if (v < bestV) { bestV = v; bestNode = p; } }
+  const seq = [];
+  for (let p = bestNode, end = n - 1; p; p = p.prev) {
+    const m = typeof p.m === 'number' ? { i: p.m, j: end, guesses: Math.pow(card, end - p.m + 1), label: '隨機字元', token: pw.slice(p.m, end + 1), brute: true } : p.m;
+    seq.unshift(m); end = m.i - 1;
+  }
   return { bits: bestV, guesses: Math.pow(2, bestV), seq };
 }
-function checkStrength(pw) {
-  if (!pw) return null;
+const CHECK_MAX = 128; // 更長的只分析前 128 字（估計值是下限），避免貼上長字串時卡住
+function checkStrength(full) {
+  if (!full) return null;
+  const cut = chars(full).length > CHECK_MAX, pw = cut ? chars(full).slice(0, CHECK_MAX).join('') : full;
   const r = bestGuesses(pw);
   let bits = r.bits;
-  const whole = COMMON_RANK.get(pw.toLowerCase());
+  const whole = cut ? 0 : COMMON_RANK.get(pw.toLowerCase());
   if (whole) bits = Math.min(bits, Math.log2(whole) + 1);
-  return { bits: Math.max(0, bits), seq: r.seq, common: whole };
+  return { bits: Math.max(0, bits), seq: r.seq, common: whole, cut };
 }
 function renderCheck() {
   const pw = $('check-input').value;
@@ -575,10 +621,10 @@ function renderCheck() {
   if (!pw) { paintMeter(null, '請輸入密碼。檢查只在這台裝置上計算，不會儲存或傳送。'); bd.hidden = true; tips.hidden = true; return; }
   const r = checkStrength(pw);
   const g = gradeOf(r.bits);
-  paintMeter(r.bits, r.common ? `這是常見密碼清單的第 ${r.common.toLocaleString()} 名，攻擊者會最先嘗試。` : '依「最容易被猜中的拆法」估算猜測次數，比單純計算字元種類保守。');
+  paintMeter(r.bits, r.common ? `這是常見密碼清單的第 ${r.common.toLocaleString()} 名，攻擊者會最先嘗試。` : r.cut ? `超過 ${CHECK_MAX} 個字元，只分析前 ${CHECK_MAX} 個；實際強度至少如此。` : '依「最容易被猜中的拆法」估算猜測次數，比單純計算字元種類保守。');
   if (r.common) { $('grade').textContent = '很弱'; $('grade').style.color = 'var(--s1)'; [...document.querySelectorAll('.bars span')].forEach((s, i) => s.style.background = i === 0 ? 'var(--s1)' : ''); }
   bd.hidden = false;
-  bd.innerHTML = r.seq.map(m => `<li><span>${m.label}</span><code>${esc(m.token)}</code><span class="g">${m.extra ? m.extra + '・' : ''}${Math.round(Math.log2(Math.max(m.guesses, 1)))} 位元</span></li>`).join('');
+  bd.innerHTML = r.seq.map(m => `<li><span>${m.label}</span><code>${esc(m.token)}</code><span class="g">${m.rank ? `第 ${m.rank.toLocaleString()} 名・` : ''}${Math.round(Math.log2(Math.max(m.guesses, 1)))} 位元</span></li>`).join('');
   const t = [];
   if (pw.length < 12) t.push('長度至少 12 個字元，越長越好。');
   if (r.seq.some(m => /常見密碼|常用單字/.test(m.label))) t.push('避免完整的常見字或常見密碼；leet 替換（a→@、o→0）幾乎沒有幫助。');
@@ -620,45 +666,93 @@ document.querySelector('.tabs').addEventListener('keydown', e => {
 });
 function bindRange(rangeId, numId, key, min, max) {
   const apply = (v, commit) => {
-    v = parseInt(v, 10); if (isNaN(v)) return;
+    v = String(v).trim() === '' ? NaN : Math.round(Number(v));
+    if (!isFinite(v)) { if (commit) $(numId).value = opts[key]; return; } // 清空或亂打後離開：還原成目前的值
     if (commit) v = Math.max(min, Math.min(max, v));
     if (v < min || v > max) return;
-    opts[key] = v; $(rangeId).value = v; if (commit || document.activeElement !== $(numId)) $(numId).value = v;
-    save(); regen();
+    if (commit) $(numId).value = v;
+    if (v === opts[key]) return;
+    opts[key] = v; $(rangeId).value = v; if (document.activeElement !== $(numId)) $(numId).value = v;
+    save(); preview();
   };
   $(rangeId).addEventListener('input', e => apply(e.target.value, true));
   $(numId).addEventListener('input', e => apply(e.target.value, false));
   $(numId).addEventListener('change', e => apply(e.target.value, true));
+  $(numId).addEventListener('blur', e => apply(e.target.value, true));
 }
 bindRange('len-range', 'len-num', 'len', 4, 128);
 bindRange('words-range', 'words-num', 'words', 3, 12);
-for (const k of ['upper', 'lower', 'digit', 'sym', 'ambig', 'each', 'unique']) $('opt-' + k).addEventListener('change', e => { opts[k] = e.target.checked; save(); regen(); });
-$('opt-cap').addEventListener('change', e => { opts.cap = e.target.checked; save(); regen(); });
-$('opt-adddigit').addEventListener('change', e => { opts.adddigit = e.target.checked; save(); regen(); });
-$('opt-symset').addEventListener('input', e => { opts.symset = e.target.value; save(); syncUI(); regen(); });
-$('sep-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; opts.sep = b.dataset.v; save(); syncUI(); regen(); });
-$('list-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; opts.list = b.dataset.v; save(); syncUI(); regen(); });
-$('btn-regen').addEventListener('click', regen);
-$('btn-copy').addEventListener('click', () => copyText(current));
-$('pw').addEventListener('click', () => copyText(current));
-$('pw').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyText(current); } });
+for (const k of ['upper', 'lower', 'digit', 'sym', 'ambig', 'each', 'unique']) $('opt-' + k).addEventListener('change', e => { opts[k] = e.target.checked; save(); preview(); });
+$('opt-cap').addEventListener('change', e => { opts.cap = e.target.checked; save(); preview(); });
+$('opt-adddigit').addEventListener('change', e => { opts.adddigit = e.target.checked; save(); preview(); });
+$('opt-symset').addEventListener('input', e => { opts.symset = e.target.value; save(); syncUI(); preview(); });
+$('sep-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; opts.sep = b.dataset.v; save(); syncUI(); preview(); });
+$('list-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; opts.list = b.dataset.v; save(); syncUI(); preview(); });
+$('btn-regen').addEventListener('click', () => regen());
+const copyCurrent = () => { if (current && history[0] && history[0].pw === current) headDraft = false; copyText(current); };
+$('btn-copy').addEventListener('click', copyCurrent);
+$('pw').addEventListener('click', copyCurrent);
+$('pw').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyCurrent(); } });
 $('btn-batch').addEventListener('click', runBatch);
 $('btn-batch-copy').addEventListener('click', () => copyText(batchItems.join('\n')));
-$('check-input').addEventListener('input', renderCheck);
+// 每個畫面最多算一次：連續輸入或貼上時不會堆積計算
+let checkRaf = 0;
+$('check-input').addEventListener('input', () => { if (!checkRaf) checkRaf = requestAnimationFrame(() => { checkRaf = 0; renderCheck(); }); });
 $('btn-show').addEventListener('click', () => {
   const inp = $('check-input'), show = inp.type === 'password';
   inp.type = show ? 'text' : 'password'; $('btn-show').textContent = show ? '隱藏' : '顯示'; $('btn-show').setAttribute('aria-pressed', String(show));
 });
-// 在結果區往下拉重新產生
+// 在結果區往下拉重新產生：只在頁面已經在最上面、單指往下拉、而且拉的過程頁面沒有捲動時才算
+// （頁面往下捲之後從結果卡往下拖是在捲回上面，不是下拉）
 (() => {
-  let y0 = null;
-  const el = $('gen-view');
-  el.addEventListener('touchstart', e => { y0 = e.touches[0].clientY; }, { passive: true });
-  el.addEventListener('touchmove', e => { if (y0 != null && e.touches[0].clientY - y0 > 70) { y0 = null; regen(); toast('已重新產生'); } }, { passive: true });
-  el.addEventListener('touchend', () => { y0 = null; });
+  let pull = null;
+  const el = $('gen-view'), top = () => (document.scrollingElement || document.documentElement).scrollTop <= 0;
+  el.addEventListener('touchstart', e => { pull = e.touches.length === 1 && top() ? { id: e.touches[0].identifier, y: e.touches[0].clientY, x: e.touches[0].clientX } : null; }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (!pull) return;
+    const t = [...e.touches].find(t => t.identifier === pull.id);
+    if (!t || e.touches.length > 1 || !top()) { pull = null; return; }
+    const dy = t.clientY - pull.y;
+    if (dy > 70 && dy > Math.abs(t.clientX - pull.x) * 1.5) { pull = null; regen(); toast('已重新產生'); }
+  }, { passive: true });
+  el.addEventListener('touchend', () => { pull = null; });
+  el.addEventListener('touchcancel', () => { pull = null; });
+})();
+
+// 點按：按鈕、分頁、開關、分隔符、清單的複製都在 pointerup 觸發（同一隻手指、在同一個控制項上放開、移動 < 10px），
+// 不等瀏覽器的 click：另一隻手指還按在畫面上時，瀏覽器不會送 click。之後瀏覽器若仍送出這次點按的 click 會被吃掉，所以只動作一次。
+(() => {
+  const TAP = 'button, [role="button"], label.toggle';
+  const FOCUS = 'input.num, input.text-in';
+  const taps = new Map(); let eats = [], firing = false;
+  const now = e => e.timeStamp || performance.now();
+  document.addEventListener('pointerdown', e => {
+    if (e.button > 0 || !(e.target instanceof Element)) return;
+    const el = e.target.closest(FOCUS) || e.target.closest(TAP);
+    if (!el || el.disabled) return;
+    taps.set(e.pointerId, { el, x: e.clientX, y: e.clientY });
+  }, true);
+  document.addEventListener('pointermove', e => { const t = taps.get(e.pointerId); if (t && Math.hypot(e.clientX - t.x, e.clientY - t.y) >= 10) taps.delete(e.pointerId); }, true);
+  document.addEventListener('pointercancel', e => { taps.delete(e.pointerId); }, true);
+  document.addEventListener('pointerup', e => {
+    const t = taps.get(e.pointerId); if (!t) return; taps.delete(e.pointerId);
+    if (Math.hypot(e.clientX - t.x, e.clientY - t.y) >= 10) return;
+    const over = document.elementFromPoint(e.clientX, e.clientY);
+    if (!over || !t.el.contains(over) || !t.el.isConnected || t.el.disabled) return;
+    if (t.el.matches(FOCUS)) { if (document.activeElement !== t.el) t.el.focus(); return; }
+    eats.push({ id: e.pointerId, x: e.clientX, y: e.clientY, t: now(e) });
+    firing = true; try { t.el.click(); } finally { firing = false; }
+  }, true);
+  document.addEventListener('click', e => {
+    if (firing || !eats.length || !e.isTrusted || e.detail === 0) return; // 鍵盤（Enter／空白鍵）的 click 不吃
+    const t = now(e); eats = eats.filter(k => t - k.t < 700 && t - k.t > -50);
+    const pid = typeof e.pointerId === 'number' && e.pointerId > 0 ? e.pointerId : null;
+    const i = eats.findIndex(k => pid != null ? k.id === pid : Math.hypot(e.clientX - k.x, e.clientY - k.y) < 30);
+    if (i >= 0) { eats.splice(i, 1); e.preventDefault(); e.stopPropagation(); }
+  }, true);
 })();
 
 syncUI();
-if (opts.tab === 'check') { renderCheck(); } else regen();
+try { if (opts.tab === 'check') { renderCheck(); } else regen(); } catch (err) { $('pw').className = 'pw empty'; $('pw').textContent = '無法用儲存的設定產生密碼，請調整設定'; }
 renderHistory();
 </script>
