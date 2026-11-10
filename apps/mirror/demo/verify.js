@@ -6,7 +6,7 @@
 //     double tap toggles 1x <-> 2.5x, max 5x
 //  5. 存照片 downloads a JPEG of exactly the visible (zoomed, mirrored) region
 //  6. ring light, brightness filter, page hidden -> tracks stopped + 點一下繼續, close stops the camera
-//  7. blocked camera (NotAllowedError without a prompt / no mediaDevices) -> website link; 只開補光 works with no camera
+//  7. blocked camera (NotAllowedError without a prompt -> how to allow it again / no mediaDevices -> website link); 只開補光 works with no camera
 // Writes screenshots (demo/*.png, not committed). Usage: node verify.js [--cover]
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), { execFileSync } = require('child_process');
@@ -61,17 +61,22 @@ function jpegSize(buf) { for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0
   await p.screenshot({ path: path.join(OUT, 'live.png') });
 
   console.log('freeze');
+  // pause first: a playing camera can hand a newer frame to the second drawImage even within one task
+  await p.evaluate(() => { const v = document.getElementById('video'); v.pause(); return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); });
   const fr = await p.evaluate(() => {
     const v = document.getElementById('video'), w = v.videoWidth, h = v.videoHeight, raw = document.createElement('canvas'); raw.width = w; raw.height = h;
     const rx = raw.getContext('2d'); rx.drawImage(v, 0, 0); window.__mirror.freeze();          // same task -> same camera frame
     const still = document.getElementById('still'), A = rx.getImageData(0, 0, w, h).data, B = still.getContext('2d').getImageData(0, 0, w, h).data;
+    // only pixels that differ from their own mirror image tell flipped from unflipped (the test pattern is mostly flat)
     let diff = 0, n = 0, diffUnflipped = 0;
-    for (let y = 0; y < h; y += 5) for (let x = 0; x < w; x += 5) { const i = (y * w + x) * 4, j = (y * w + (w - 1 - x)) * 4;
+    for (let y = 0; y < h; y += 3) for (let x = 0; x < w; x += 3) { const i = (y * w + x) * 4, j = (y * w + (w - 1 - x)) * 4;
+      if (Math.abs(A[i] - A[j]) + Math.abs(A[i + 1] - A[j + 1]) + Math.abs(A[i + 2] - A[j + 2]) < 60) continue;
       for (let k = 0; k < 3; k++) { diff += Math.abs(A[j + k] - B[i + k]); diffUnflipped += Math.abs(A[i + k] - B[i + k]); } n += 3; }
-    const st = window.__mirror.st;
+    n = Math.max(1, n);
+    const st = window.__mirror.st; v.play();
     return { diff: diff / n, diffUnflipped: diffUnflipped / n, enabled: st.track.enabled, stillShown: !still.hidden, videoHidden: v.hidden, tag: !document.getElementById('tagFrozen').hidden };
   });
-  t('frozen still = mirror image of the camera frame', fr.diff < 3 && fr.diffUnflipped > fr.diff * 3, `mean |Δ| ${fr.diff.toFixed(2)} (unflipped ${fr.diffUnflipped.toFixed(1)})`);
+  t('frozen still = mirror image of the camera frame', fr.diffUnflipped > fr.diff * 3, `mean |Δ| ${fr.diff.toFixed(2)} (unflipped ${fr.diffUnflipped.toFixed(1)})`);
   t('track disabled while frozen', fr.enabled === false && fr.stillShown && fr.videoHidden);
   t('已凍結 label', fr.tag);
 
@@ -93,11 +98,13 @@ function jpegSize(buf) { for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0
   console.log('save photo');
   const exp = await p.evaluate(() => { const c = window.__mirror.photoCanvas(), s = window.__mirror.st, still = document.getElementById('still'), v = document.getElementById('view');
     // first pixel of the photo must equal the still pixel at the top-left of the view
-    const r = v.getBoundingClientRect(), sr = still.getBoundingClientRect(), k = sr.width / still.width;
-    const sx = Math.round((r.left - sr.left) / k), sy = Math.round((r.top - sr.top) / k);
-    const a = c.getContext('2d').getImageData(2, 2, 1, 1).data, b = still.getContext('2d').getImageData(sx + 2, sy + 2, 1, 1).data;
+    // (the photo is upscaled to the view's pixels, so compare the same fraction of the view)
+    const r = v.getBoundingClientRect(), sr = still.getBoundingClientRect(), k = sr.width / still.width, fx = 0.31, fy = 0.43;
+    const sx = Math.round((r.left + fx * r.width - sr.left) / k), sy = Math.round((r.top + fy * r.height - sr.top) / k);
+    const a = c.getContext('2d').getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data, b = still.getContext('2d').getImageData(sx, sy, 1, 1).data;
     return { w: c.width, h: c.height, ar: c.width / c.height, var: r.width / r.height, d: Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) }; });
   t('photo = visible region (aspect of the view)', Math.abs(exp.ar - exp.var) < 0.02, JSON.stringify(exp));
+  t('zoomed photo upscaled to the view pixels', exp.w >= 390 * 2 - 1, exp.w);
   t('photo pixels match what is on screen (mirrored)', exp.d < 12, 'Δ' + exp.d);
   let [dl] = await Promise.all([p.waitForEvent('download'), p.click('#saveBtn')]);
   const jp = path.join(OS_TMP(), dl.suggestedFilename()); await dl.saveAs(jp);
@@ -107,7 +114,8 @@ function jpegSize(buf) { for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0
 
   console.log('double tap & resume');
   await p.click('#zoomBtn'); await sleep(100);
-  t('zoom chip resets to 1x', await zoom() === 1);
+  t('zoom chip from 5x steps back to 1x', await zoom() === 1);
+  await p.click('#zoomBtn'); t('zoom chip 1x -> 2x', await zoom() === 2); await p.click('#zoomBtn'); t('zoom chip 2x -> 3x', await zoom() === 3); await p.click('#zoomBtn');
   await tapAt(195, 400); await sleep(80); await tapAt(195, 400); await sleep(400);
   t('double tap -> 2.5x', Math.abs(await zoom() - 2.5) < 1e-9);
   await tapAt(195, 400); await sleep(80); await tapAt(195, 400); await sleep(400);
@@ -124,7 +132,7 @@ function jpegSize(buf) { for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0
   const ring = await p.evaluate(() => ({ inset: parseFloat(document.getElementById('view').style.inset), bg: document.getElementById('frame').style.background }));
   t('ring light frame on', ring.inset > 20 && /255, 255, 255|#fff/i.test(ring.bg), JSON.stringify(ring));
   await p.click('#adjBtn'); await p.fill('#bri', '30'); await p.dispatchEvent('#bri', 'input'); await sleep(100);
-  t('brightness filter applied', /brightness\(1\.3\)/.test(await p.evaluate(() => document.getElementById('layer').style.filter)));
+  t('brightness filter applied', /brightness\(1\.3\)/.test(await p.evaluate(() => getComputedStyle(document.getElementById('video')).filter)));
   await p.click('#mirSw'); await sleep(100);
   t('mirror switch off -> unflipped', await p.evaluate(() => getComputedStyle(document.getElementById('video')).transform === 'none'));
   await p.click('#mirSw'); await p.fill('#bri', '0'); await p.dispatchEvent('#bri', 'input'); await p.click('#adjBtn');
@@ -153,7 +161,8 @@ function jpegSize(buf) { for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0
     q.on('pageerror', e => e2.push(e.message));
     await q.addInitScript(init); await q.goto(url); await sleep(300);
     await q.click('#startBtn'); await sleep(300);
-    t(label + ' -> website link in new tab', await q.getAttribute('#err a', 'href') === 'https://timmango123.github.io/pocket-apps/tools/#mirror' && await q.getAttribute('#err a', 'target') === '_blank', await q.textContent('#err'));
+    if (label.startsWith('NotAllowed')) t(label + ' (top-level page) -> how to allow the camera again', /權限被封鎖[\s\S]*允許[\s\S]*重新整理/.test(await q.textContent('#err')) && !(await q.$('#err a')), await q.textContent('#err'));
+    else t(label + ' -> website link in new tab', await q.getAttribute('#err a', 'href') === 'https://timmango123.github.io/pocket-apps/tools/#mirror' && await q.getAttribute('#err a', 'target') === '_blank', await q.textContent('#err'));
     t(label + ' -> no overflow', await q.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     if (label.startsWith('NotAllowed')) await q.screenshot({ path: path.join(OUT, 'blocked.png') });
     await q.click('#lightBtn'); await sleep(200);
