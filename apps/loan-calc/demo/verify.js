@@ -58,12 +58,16 @@ const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fai
   assert(r.pay[12] > r.pay[0] && r.last.balance === 0, '分段利率：第 13 期起月付由 ' + r.pay[0] + ' 調整為 ' + r.pay[12]);
   const red = await C({ prepays: [{ n: 60, wan: '200' }] }), sh = await C({ prepays: [{ n: 60, wan: '200' }], preMode: 'shorten' });
   assert(red.n === 360 && red.pay[60] < red.pay[59] && sh.n < 360 && sh.pay[60] === sh.pay[59] && sh.last.balance === 0, `提前還 200 萬：降月付 ${red.pay[60]}／縮短為 ${sh.n} 期`);
+  const d4 = await C({ prepays: [{ n: 60, wan: '200' }], preMode: 'shorten', segments: [{ from: 120, rate: '2.1' }] });
+  assert(d4.n === 277 && d4.ti === 2268699 && d4.last.balance === 0 && d4.pay[119] > d4.pay[118], `縮短後再升息保留縮短的到期日：${d4.n} 期、總利息 ${d4.ti}（應 277、2,268,699）`);
+  const d7 = await C({ method: 'principal', prepays: [{ n: 60, wan: '300' }], preMode: 'shorten', segments: [{ from: 100, rate: '2.5' }] });
+  assert(d7.n === 252 && d7.ti === 1912173 && d7.last.balance === 0, `本金平均縮短後再升息：${d7.n} 期、總利息 ${d7.ti}（應 252、1,912,173）`);
   for (const [k, v] of [['amount', '0'], ['amount', '100001'], ['rate', '31'], ['years', '41']]) {
     await p.fill('#' + k, v); assert((await p.textContent('#err')).length > 0, `${k}=${v} 顯示錯誤`);
   }
   await p.fill('#amount', '1000'); await p.fill('#rate', '2'); await p.fill('#years', '40');
   await p.click('#view-month');
-  const t0 = Date.now(); await p.fill('#years', '40'); const rows = await p.locator('#tbody tr').count();
+  const t0 = Date.now(); await p.fill('#years', '40'); await p.waitForFunction(() => document.querySelectorAll('#tbody tr').length === 480); const rows = await p.locator('#tbody tr').count();
   assert(rows === 480, '40 年按月攤還表 480 列（' + (Date.now() - t0) + 'ms）');
   const lastRow = await p.textContent('#tbody tr:last-child td:last-child');
   assert(lastRow === '0', '攤還表最後一列剩餘本金 0');
