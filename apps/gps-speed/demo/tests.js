@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const src = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
-const C = new Function(src + '\nreturn {R_EARTH,MAX_ACC,STILL,haversine,UNITS,nextUnit,speedIn,fmtSpeed,fmtDist,fmtDur,fmtPace,signalLevel,median,newTrip,startClock,stopClock,elapsedMs,breakSeg,addFix,tripStats,segStats,projector,fitView,niceScale,simplify,buildGpx,gpxFileName,parseGpx,pack,unpack};')();
+const C = new Function(src + '\nreturn {R_EARTH,MAX_ACC,STILL,haversine,UNITS,nextUnit,speedIn,fmtSpeed,fmtDist,fmtDur,fmtPace,signalLevel,median,newTrip,startClock,stopClock,elapsedMs,breakSeg,addFix,tripStats,segStats,projector,fitView,niceScale,simplify,buildGpx,gpxFileName,parseGpx,pack,unpack,estSpeed,buildGpxAll,parseGpxTracks,cleanTracks,hasTime};')();
 let pass = 0, fail = 0;
 function t(name, cond, extra) { if (cond) pass++; else { fail++; console.log('FAIL', name, extra !== undefined ? '→ ' + JSON.stringify(extra) : ''); } }
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
@@ -183,6 +183,85 @@ for (const withSpeed of [true, false]) {
   t('匯入軌跡的統計：段間不連線', near(st.dist, 40, 0.1) && near(st.elapsed, 11, 0.01) && near(st.moving, 11, 0.01) && near(st.max, 5, 0.01), st);
   const pk = C.unpack(C.pack({ lat: 25.123456789, lon: 121.987654321, ele: 12.345, t: T0, acc: 4.6, spd: 3.14159 }));
   t('儲存格式 pack/unpack', pk.lat === 25.123457 && pk.lon === 121.987654 && pk.ele === 12.3 && pk.acc === 5 && pk.spd === 3.14 && pk.t === T0, pk);
+}
+
+// ==== 2026-11 審查修正的回歸測試 ====
+// GPS 雜訊模型（同審查的 sweep.js）：AR(0.9)，每軸穩態標準差 = 精度 / 6
+function noisyWalk(mps, acc, secs, dev, sd, stopAfter) {
+  let s = sd * 7919; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  const g = () => { let u = 0, v = 0; while (!u) u = r(); while (!v) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const T = C.newTrip(); C.startClock(T, T0); let n = 0, e = 0, x = 0;
+  for (let i = 0; i <= secs; i++) {
+    n = n * 0.9 + g() * acc / 6 * 0.436; e = e * 0.9 + g() * acc / 6 * 0.436;
+    const v = stopAfter != null && i > stopAfter ? 0 : mps; if (i) x += v;
+    const p = offset(LAT0, LON0, x + n, e);
+    C.addFix(T, { lat: p.lat, lon: p.lon, acc, spd: dev ? Math.max(0, v + g() * 0.15) : null, t: T0 + i * 1000 });
+  }
+  return { T, st: C.tripStats(T, T0 + secs * 1000), x };
+}
+// 沒有 coords.speed、精度 15／20 m 走路 1.4 m/s：以前移動時間只剩 39%／5%、平均速度變成 2.5–25 倍
+for (const acc of [15, 20]) for (const sd of [1, 2, 3]) {
+  const { st, x } = noisyWalk(1.4, acc, 600, false, sd);
+  t(`無裝置速度、精度 ${acc} m 走路（種子 ${sd}）：移動時間 ≥ 90%`, st.moving >= 540, st.moving);
+  t(`無裝置速度、精度 ${acc} m 走路（種子 ${sd}）：平均速度誤差 < 15%`, Math.abs(st.avg / 1.4 - 1) < 0.15, st.avg);
+  t(`無裝置速度、精度 ${acc} m 走路（種子 ${sd}）：距離誤差 < 10%`, Math.abs(st.dist / x - 1) < 0.1, st.dist);
+}
+{
+  const T = C.newTrip(); const ok = []; for (let i = 0; i <= 30; i++) { const p = offset(LAT0, LON0, 1.4 * i, 0); C.addFix(T, { lat: p.lat, lon: p.lon, acc: 20, spd: null, t: T0 + i * 1000 }); ok.push(T.speed); }
+  t('無裝置速度、精度 20 m、1.4 m/s：即時速度不再一直是 0.0', C.fmtSpeed(T.speed, 'kmh') !== '0.0' && near(T.speed, 1.4, 0.2), T.speed);
+}
+{
+  // 走 300 秒後停下 300 秒（無裝置速度、精度 15 m）：停下後很快歸零，不會一直沿用前面的移動
+  const { st, T } = noisyWalk(1.4, 15, 600, false, 4, 300);
+  t('走 5 分鐘後停 5 分鐘：移動時間約 300 秒（270–330）', st.moving > 270 && st.moving < 330, st.moving);
+  t('停下後速度顯示 0', C.fmtSpeed(T.speed, 'kmh') === '0.0', T.speed);
+}
+{
+  // estSpeed 直接測：10 秒窗口不夠時拉長到 20、30 秒
+  const win = []; for (let i = 0; i <= 30; i++) win.push({ ...offset(LAT0, LON0, 0.8 * i, 0), t: T0 + i * 1000 });
+  const p = { ...offset(LAT0, LON0, 0.8 * 31, 0), t: T0 + 31000 };
+  t('estSpeed：0.8 m/s、精度 20 m 用 30 秒窗口算出 0.8', near(C.estSpeed(win, p, 20), 0.8, 0.05), C.estSpeed(win, p, 20));
+  const still = win.map(q => ({ ...q, lat: LAT0, lon: LON0 }));
+  t('estSpeed：完全靜止 = 0', C.estSpeed(still, { lat: LAT0, lon: LON0, t: T0 + 31000 }, 5) === 0);
+}
+// 有裝置速度、精度 15–20 m 走路：以前距離多算 4–6%（橫向雜訊被累加）
+for (const acc of [15, 20]) for (const sd of [1, 2]) {
+  const { st, x } = noisyWalk(1.4, acc, 600, true, sd);
+  t(`有裝置速度、精度 ${acc} m 走路（種子 ${sd}）：距離誤差 < 3.5%`, Math.abs(st.dist / x - 1) < 0.035, (st.dist / x - 1) * 100);
+}
+// fmtDist：四捨五入到 1000 m 就改公里
+t('fmtDist 999.4 m → 999 m', JSON.stringify(C.fmtDist(999.4, 'kmh')) === '{"v":"999","u":"m"}', C.fmtDist(999.4, 'kmh'));
+t('fmtDist 999.6 m → 1.00 km（不是「1000 m」）', JSON.stringify(C.fmtDist(999.6, 'kmh')) === '{"v":"1.00","u":"km"}', C.fmtDist(999.6, 'kmh'));
+t('fmtDist 1000 m → 1.00 km', C.fmtDist(1000, 'kmh').v === '1.00');
+// GPX：座標範圍、CDATA 名稱、沒有時間的點不輸出 1970 年
+{
+  const bad = '<gpx><trk><name><![CDATA[早晨通勤]]></name><trkseg><trkpt lat="200" lon="121"/><trkpt lat="25" lon="121"/><trkpt lat="25.001" lon="181"/><trkpt lat="-91" lon="0"/><trkpt lat="25.001" lon="121"/></trkseg></trk></gpx>';
+  const g = C.parseGpx(bad);
+  t('GPX：|lat|>90 或 |lon|>180 的點丟掉', g.segs.length === 1 && g.segs[0].length === 2 && g.segs[0].every(p => Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180), g.segs);
+  t('GPX：名稱去掉 CDATA 標記', g.name === '早晨通勤', g.name);
+  t('GPX：lat=200 不再算出上萬公里', C.segStats(g.segs).dist < 200, C.segStats(g.segs).dist);
+  const x = C.buildGpx({ segs: [[{ lat: 25, lon: 121, ele: null, t: null }, { lat: 25.001, lon: 121, ele: null, t: null }]], name: 'n' });
+  t('GPX 匯出：沒有時間的點不輸出 <time>（不會變成 1970 年）', !x.includes('<time>') && !x.includes('1970'));
+  t('hasTime：沒有時間的紀錄', !C.hasTime({ segs: [[[25, 121, null, null, null, null]]] }) && C.hasTime({ segs: [[[25, 121, null, T0, 5, 1]]] }));
+}
+// 匯出全部（多個 <trk>）→ 匯入拆回多筆
+{
+  const a = { name: 'A', segs: [[{ lat: 25, lon: 121, ele: 1, t: T0 }, { lat: 25.001, lon: 121, ele: 2, t: T0 + 5000 }]] };
+  const b = { name: 'B & C', segs: [[{ lat: 24, lon: 120, ele: null, t: T0 + 1e6 }, { lat: 24.002, lon: 120, ele: null, t: T0 + 1e6 + 9000 }], [{ lat: 24.01, lon: 120, ele: null, t: T0 + 2e6 }]] };
+  const all = C.buildGpxAll([a, b], T0);
+  t('匯出全部：每筆一個 <trk>', (all.match(/<trk>/g) || []).length === 2 && all.startsWith('<?xml'));
+  const back = C.parseGpxTracks(all);
+  t('匯出全部 → 匯入：拆回 2 筆，名稱、段數、點數都對', back.length === 2 && back[0].name === 'A' && back[1].name === 'B & C' && back[0].segs.length === 1 && back[1].segs.length === 2 && back[1].segs[0].length === 2, back.map(g => [g.name, g.segs.length]));
+  t('單一 <trk> 的檔案仍是一筆', C.parseGpxTracks(C.buildGpx({ ...a, startedAt: T0 })).length === 1);
+}
+// 本機紀錄壞資料：不讓紀錄頁丟 page error
+{
+  const good = { id: 'rA', startedAt: T0, src: 'gps', segs: [[[25, 121, null, T0, 5, 1]]], gaps: [], stats: { dist: 10, elapsed: 5, moving: 5, avg: 2, max: 2 } };
+  const out = C.cleanTracks([null, 5, {}, { id: 'x', stats: null, segs: [] }, { id: 'y', stats: {}, segs: 'zz' }, good, { ...good }, { segs: [null, [[1, 2], 'q', [NaN, 1]]], stats: { dist: 'abc' } }]);
+  t('cleanTracks：丟掉 null／缺 stats／segs 不是陣列的項目', out.length === 3, out.length);
+  t('cleanTracks：重複 id 改成不重複', new Set(out.map(r => r.id)).size === out.length, out.map(r => r.id));
+  t('cleanTracks：壞點丟掉、統計補 0', out[2].segs.length === 1 && out[2].segs[0].length === 1 && out[2].stats.dist === 0 && out[2].startedAt === null, out[2]);
+  t('cleanTracks：不是陣列時回傳空陣列', C.cleanTracks({ a: 1 }).length === 0 && C.cleanTracks(null).length === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
