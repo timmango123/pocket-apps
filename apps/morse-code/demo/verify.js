@@ -69,10 +69,13 @@ const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log(
     assert(box.width >= 120, 'key >= 120px');
     const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
     const tap = async (ms) => { await page.mouse.move(cx, cy); await page.mouse.down(); await page.waitForTimeout(ms); await page.mouse.up(); await page.waitForTimeout(70); };
-    for (const ms of [60, 60, 60]) await tap(ms); await page.waitForTimeout(400);
-    for (const ms of [260, 260, 260]) await tap(ms); await page.waitForTimeout(500);
+    await tap(60); await page.waitForFunction(() => document.getElementById('keyText').textContent.length > 0, null, { timeout: 5000 });
+    assert(await page.locator('#keyText').textContent() === 'E', 'keyer: short press decodes E');
+    // . and - keys (focus still on a button after the tab tap) with a human letter gap
+    for (const k of '...') await page.keyboard.press(k); await page.waitForFunction(() => /S/.test(document.getElementById('keyText').textContent), null, { timeout: 5000 }); for (const k of '---') await page.keyboard.press(k);
+    await page.waitForFunction(() => /O/.test(document.getElementById('keyText').textContent), null, { timeout: 5000 });
     const kt = await page.locator('#keyText').textContent();
-    assert(/^S ?O/.test(kt), 'keyer decodes S O: ' + JSON.stringify(kt));
+    assert(/^E ?S ?O/.test(kt) && !/SOS/.test(kt), 'keyer decodes typed S O: ' + JSON.stringify(kt));
     await page.screenshot({ path: OUT + '/390x844-key.png' });
     await page.locator('#mCopy').click();
     await page.locator('#kochPlay').click(); await page.waitForTimeout(100);
