@@ -126,14 +126,32 @@ h3{font-size:15px;margin:12px 0 4px}
 #dpad button:active,#dpad button.hit{transform:translateY(3px);box-shadow:0 1px 0 var(--line)}
 #dpad svg{width:28px;height:28px;stroke:var(--ink);fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
 #dU{left:68px;top:0}#dL{left:0;top:72px}#dD{left:68px;top:72px}#dR{left:136px;top:72px}
+/* short screens: a tighter 52 px pad so the board keeps more room */
+@media (orientation:portrait) and (max-height:700px), (max-height:420px){
+  #dpad{width:168px;height:110px}
+  #dpad button{width:52px;height:52px;border-radius:15px}
+  #dU{left:58px;top:0}#dL{left:0;top:58px}#dD{left:58px;top:58px}#dR{left:116px;top:58px}
+}
 @media (orientation:landscape) and (max-height:600px){
   #dpad{left:auto;right:calc(var(--sar) + 14px);bottom:calc(var(--sab) + 14px);transform:none}
+  /* landscape: the HUD becomes a column on the left so the board can use the full height */
+  .hud{right:auto;width:calc(var(--sal) + 142px);max-width:none;margin:0;flex-wrap:wrap;align-items:flex-start;padding:calc(var(--sat) + 10px) 0 0 calc(var(--sal) + 10px)}
+  #bPause{order:1}#bMute{order:2}
+  .hmid{order:3;flex:0 0 100%;height:auto;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:8px 10px 14px;gap:6px}
+  .hc{align-items:flex-start}.score{text-align:left}
+  .toast{left:calc(50% + 76px);max-width:calc(100vw - 180px)}
   .ttl{margin-top:2vh}.ttl h1{font-size:38px}
   .card{padding:14px 18px}.card h2{font-size:21px;margin-bottom:4px}.btn{min-height:46px;margin-top:8px}
   .stars{font-size:34px}
   .ov{align-items:flex-start}
 }
 @media (max-height:600px){ .ov{align-items:flex-start} }
+@media (max-height:420px){
+  .scroll{max-height:calc(100vh - 150px) !important}
+  .card.split{width:min(620px,100%);display:flex;gap:18px;align-items:center;text-align:center}
+  .card.split > div{flex:1;min-width:0}
+  .card.split .btn:first-child{margin-top:0}
+}
 </style>
 <style id="mobile-shim">
 /* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
@@ -217,23 +235,25 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <button class="btn sec" id="pSelect">回到選單</button>
 </div></div>
 
-<div class="ov hidden" id="win"><div class="card">
+<div class="ov hidden" id="win"><div class="card split"><div>
   <h2 id="wTitle">過河成功！</h2>
   <div class="stars" id="wStars"></div>
   <div class="res"><div>分數<b id="wScore">0</b></div><div>失命<b id="wDeaths">0</b></div><div>蒼蠅<b id="wFlies">0</b></div></div>
   <p id="wMsg"></p>
+  </div><div>
   <button class="btn warm" id="wNext">下一關</button>
   <div class="row2"><button class="btn sec" id="wRetry">再玩一次</button><button class="btn sec" id="wSelect">關卡選擇</button></div>
   <button class="btn sec" id="wReplay">看最佳過河重播</button>
-</div></div>
+</div></div></div>
 
-<div class="ov hidden" id="fail"><div class="card">
+<div class="ov hidden" id="fail"><div class="card split"><div>
   <h2>沒有命了…</h2>
   <p id="fMsg">小青蛙需要休息一下。</p>
   <div class="res"><div>分數<b id="fScore">0</b></div><div>已回窩<b id="fNests">0</b></div></div>
+  </div><div>
   <button class="btn warm" id="fRetry">再挑戰一次</button>
   <button class="btn sec" id="fSelect">關卡選擇</button>
-</div></div>
+</div></div></div>
 
 <div class="ov hidden" id="intro"><div class="card">
   <h2 id="iTitle">新機關</h2>
@@ -252,6 +272,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div class="scroll" style="max-height:min(62vh,480px)">
     <div class="setrow"><div>虛擬方向鍵<small>畫面下方顯示 4 個方向鍵</small></div><button class="sw" id="sDpad" role="switch" aria-checked="false" aria-label="虛擬方向鍵"><span class="trk"></span></button></div>
     <div class="setrow"><div>輔助模式<small>車流與河流速度 −20%</small></div><button class="sw" id="sAssist" role="switch" aria-checked="false" aria-label="輔助模式"><span class="trk"></span></button></div>
+    <div class="setrow"><div>隨機變化<small>每次開始換一種車流與漂流物排列（保證過得去）</small></div><button class="sw" id="sVary" role="switch" aria-checked="false" aria-label="隨機變化"><span class="trk"></span></button></div>
     <div class="setrow"><div>音效</div><button class="sw" id="sSound" role="switch" aria-checked="true" aria-label="音效"><span class="trk"></span></button></div>
     <div class="setrow"><div>震動</div><button class="sw" id="sVib" role="switch" aria-checked="true" aria-label="震動"><span class="trk"></span></button></div>
     <h3>青蛙造型</h3>
@@ -284,17 +305,23 @@ var MECH = [
   { lv: 85, id: 'close', name: '窩口輪流關閉', tip: '荷葉窩會輪流閉合，等荷花打開再跳進去。' }
 ];
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// Frogs to bring home: one more every ten levels (1 -> 5). The first levels with a new count get a breather
+// (slower, sparser lanes) so the extra frog is not a wall; D counts the extra frogs so it still rises every level.
+function needOf(n) { return n <= 10 ? 1 : n <= 20 ? 2 : n <= 30 ? 3 : n <= 40 ? 4 : 5; }
+var EASE = [0.74, 0.82, 0.89, 0.95, 1];
 function params(n) {
-  var v = 1.2 * Math.pow(1.014, n - 1);
+  var need = needOf(n), nb = 0;
+  if (need === 1) nb = EASE.length - 1; else while (nb < EASE.length - 1 && needOf(n - nb - 1) === need) nb++;
+  var ease = EASE[nb];
+  var v = 1.2 * Math.pow(1.014, n - 1) * ease;
   var C = Math.min(6, 3 + Math.floor(n / 20));
   var R = Math.max(2, Math.min(6, 3 + Math.floor((n - 5) / 20)));
-  var dens = 0.25 + 0.30 * (n - 1) / 99;
+  var dens = (0.25 + 0.30 * (n - 1) / 99) * ease;
   var logLen = Math.max(2, 4 - Math.floor(n / 30));
   var T = 60 * Math.pow(0.993, n - 1);
   var mech = MECH.filter(function (m) { return n >= m.lv; }).map(function (m) { return m.id; });
-  var need = n <= 10 ? 1 : n <= 30 ? 3 : 5;
   var cov = 0.62 - 0.2 * (n - 1) / 99;
-  var D = Math.round(v * 6 + C * 4 + R * 4 + dens * 30 + mech.length * 3 + (60 - T) * 2.5);
+  var D = Math.round(v * 6 + C * 4 + R * 4 + dens * 30 + mech.length * 3 + (60 - T) * 2.5 + (need - 1) * 6);
   return { n: n, v: v, C: C, R: R, dens: dens, logLen: logLen, T: T, mech: mech, need: need, cov: cov, D: D };
 }
 function partition(rng, k, total) { // k non-negative parts summing to total
@@ -573,13 +600,19 @@ function getLevel(n) { return genLevel(n, SALTS[n] || 0); }
 var ID = 'frogx.';
 function sget(k, d) { try { var v = localStorage.getItem(ID + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
 function sset(k, v) { try { localStorage.setItem(ID + k, JSON.stringify(v)); } catch (e) {} }
-var progress = sget('progress', 0) | 0;
-var starsMap = sget('stars', {}) || {};
+// Saved data is type-checked on load: a damaged or hand-edited value falls back to its default field by field.
+function isObj(v) { return v != null && typeof v === 'object' && !Array.isArray(v); }
+function sobj(k) { var v = sget(k, {}); return isObj(v) ? v : {}; }
+function typed(def, v) { var o = {}; v = isObj(v) ? v : {}; for (var k in def) o[k] = typeof v[k] === typeof def[k] && (typeof def[k] !== 'number' || isFinite(v[k])) && (!isObj(def[k]) || isObj(v[k])) ? v[k] : def[k]; for (k in v) if (!(k in def)) o[k] = v[k]; return o; }
+var progress = clampInt(sget('progress', 0), 0, 100);
+function clampInt(v, a, b) { v = Math.floor(+v); return isFinite(v) ? Math.max(a, Math.min(b, v)) : a; }
+var starsMap = sobj('stars');
 var unlockAll = !!sget('unlockAll', false);
-var settings = Object.assign({ dpad: false, assist: false, sound: true, vib: true, skin: 0 }, sget('settings', {}) || {});
-var stats = Object.assign({ jumps: 0, drowns: 0, crashes: 0, flies: 0, clears: 0, perfect: {}, daily: 0 }, sget('stats', {}) || {});
-var achDone = sget('ach', {}) || {};
-var dailyRec = sget('daily', {}) || {};
+var settings = typed({ dpad: false, assist: false, sound: true, vib: true, skin: 0, vary: false }, sget('settings', {}));
+if (!(settings.skin >= 0 && settings.skin <= 2)) settings.skin = 0; settings.skin |= 0;
+var stats = typed({ jumps: 0, drowns: 0, crashes: 0, flies: 0, clears: 0, perfect: {}, daily: 0 }, sget('stats', {}));
+var achDone = sobj('ach');
+var dailyRec = sobj('daily');
 function saveSettings() { sset('settings', settings); }
 function saveStats() { sset('stats', stats); }
 
@@ -591,6 +624,7 @@ var bg = document.createElement('canvas'), bgx = bg.getContext('2d');
 var mask = document.createElement('canvas'), mx = mask.getContext('2d');
 var darkMQ = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
 var DARK = !!(darkMQ && darkMQ.matches);
+var LANDQ = window.matchMedia ? matchMedia('(orientation:landscape) and (max-height:600px)') : null;
 function rr(c, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
@@ -835,17 +869,19 @@ function layout() {
   W = window.innerWidth; H = window.innerHeight; DPR = Math.min(2, window.devicePixelRatio || 1);
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
   bg.width = cv.width; bg.height = cv.height; mask.width = Math.ceil(W * MS); mask.height = Math.ceil(H * MS);
-  var land = W > H * 1.15;
-  var hb = $('hud').getBoundingClientRect();
-  HUDB = (hb.height > 0 ? hb.bottom : 66) + 6;
-  var dp = settings.dpad && G.mode === 'play';
-  BOT = (dp && !land) ? 162 : 10; SIDE = (dp && land) ? 230 : 0;
+  var land = LANDQ ? LANDQ.matches : W > H * 1.15; // same query as the CSS that moves the HUD left and the pad right
+  var hb = $('hud').getBoundingClientRect(), hudOn = hb.height > 0;
+  var sat = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+  var LEFT = land && hudOn ? hb.right + 8 : 0;
+  HUDB = land ? sat + 10 : (hudOn ? hb.bottom : 66) + 6;
+  var dp = settings.dpad && G.mode === 'play', pad = $('dpad');
+  BOT = (dp && !land) ? (pad.offsetHeight || 140) + 22 : 10; SIDE = (dp && land) ? (pad.offsetWidth || 200) + 30 : 0;
   var sab = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0;
   BOT += sab;
-  var availW = W - 16 - SIDE, availH = H - HUDB - BOT;
+  var availW = W - 16 - SIDE - LEFT, availH = H - HUDB - BOT;
   S = Math.max(14, Math.min(availW / COLS, availH / ROWS));
   if (G.mode === 'title') S = Math.max(S, Math.min(W / COLS, H / ROWS * 1.05));
-  OX = Math.round((W - SIDE - S * COLS) / 2);
+  OX = Math.round(LEFT + (W - LEFT - SIDE - S * COLS) / 2);
   OY = G.mode === 'title' ? Math.round((H - S * ROWS) / 2) : Math.round(HUDB + (availH - S * ROWS) / 2);
   buildBg();
 }
@@ -950,9 +986,10 @@ function buildBg() {
       for (i = 0; i < 5; i++) { var tx2 = pcx + (i - 2) * S * 0.5 + rng() * S * 0.2, ty2 = pcy + (rng() - 0.5) * S * 0.5; c.beginPath(); c.ellipse(tx2, ty2, S * 0.09, S * 0.07, 0, 0, 6.283); c.fill(); c.beginPath(); c.moveTo(tx2 + S * 0.07, ty2); c.quadraticCurveTo(tx2 + S * 0.18, ty2 - S * 0.06, tx2 + S * 0.25, ty2 + S * 0.02); c.lineWidth = Math.max(1, S * 0.035); c.strokeStyle = '#2f3a36'; c.stroke(); }
     }
   }
-  // board frame shading outside play area
-  c.fillStyle = DARK ? 'rgba(0,0,0,0.38)' : 'rgba(30,60,30,0.16)';
-  c.fillRect(0, 0, OX, H); c.fillRect(OX + S * COLS, 0, W - OX - S * COLS, H);
+  // outside the board the lanes fade into a soft verge, so cars and logs don't look cut off mid-lane
+  var RX = OX + S * COLS, fw = S * 1.6, gl = c.createLinearGradient(OX, 0, OX - fw, 0), gr = c.createLinearGradient(RX, 0, RX + fw, 0);
+  [gl, gr].forEach(function (g) { g.addColorStop(0, PAL.sky + '00'); g.addColorStop(0.35, PAL.sky + '80'); g.addColorStop(1, PAL.sky + 'e8'); });
+  c.fillStyle = gl; c.fillRect(0, 0, OX, H); c.fillStyle = gr; c.fillRect(RX, 0, W - RX, H);
   c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(OX - 1, rowY(0), 1, S * ROWS); c.fillRect(OX + S * COLS, rowY(0), 1, S * ROWS);
 }
 
@@ -987,7 +1024,7 @@ function drawParts(c) {
 }
 
 // ================= game state =================
-var G = { mode: 'title', L: null, n: 1, t: 0, F: null, lives: 3, filled: [0, 0, 0, 0, 0], score: 0, deaths: 0, flies: 0, trip: 60, status: 'idle', buf: -1, best: 14, dieT: 0, cause: '', face: 0, shake: 0, winT: 0, paused: false, daily: null };
+var G = { mode: 'title', L: null, n: 1, t: 0, F: null, lives: 3, filled: [0, 0, 0, 0, 0], score: 0, deaths: 0, flies: 0, trip: 60, status: 'idle', buf: [], best: 14, dieT: 0, cause: '', face: 0, shake: 0, winT: 0, paused: false, daily: null };
 var rain = [];
 function worldScale() { return G.replaying ? G.repWs : settings.assist ? 0.8 : 1; }
 function flyAt(L, t) {
@@ -997,63 +1034,98 @@ function flyAt(L, t) {
   return G.filled[k] ? -1 : k;
 }
 function startLevel(n, opts) {
-  opts = opts || {}; fullLog = []; trace = []; replayQ = []; inQ = [];
-  G.replaying = !!opts.replay; G.repWs = opts.replay ? opts.replay.ws || 1 : 1;
+  opts = opts || {}; fullLog = []; trace = []; replayQ = []; inQ = []; G.run = (G.run || 0) + 1;
+  G.replaying = !!opts.replay; G.repWs = opts.replay ? opts.replay.ws || 1 : 1; G.repV = opts.replay ? opts.replay.v || 0 : 0;
   G.mode = 'play'; G.daily = opts.daily || null;
-  G.n = n; G.L = opts.L || getLevel(n);
+  G.n = n;
+  G.L = opts.L || (opts.replay ? genLevel(n, opts.replay.salt != null ? opts.replay.salt : SALTS[n] || 0) : settings.vary ? variedLevel(n) : getLevel(n));
   G.t = 3 + (hash(n) % 1000) / 100; G.lives = 3; G.filled = [0, 0, 0, 0, 0]; G.score = 0; G.deaths = 0; G.flies = 0;
-  G.status = 'play'; G.paused = false; parts = []; G.winT = 0;
+  G.status = 'play'; G.paused = false; parts = []; G.winT = 0; G.pre = -1;
   spawnFrog();
   hideAll(); $('hud').classList.remove('hidden'); updDpad();
   layout(); updHud();
   var m = MECH.filter(function (q) { return q.lv === n; })[0];
   if (G.replaying) { toast('重播最佳過河', 1600); return; }
-  if (!G.daily && (m || n === 1)) showIntro(n, m);
+  if (!G.daily && (m || n === 1) && !seenIntro[n]) { seenIntro[n] = 1; showIntro(n, m); } // once per visit, not on every retry
   else if (!G.daily && TUT[n]) toast(TUT[n], 3200);
   if (G.daily) toast('每日關卡：今天的河流只有一條路線組合，祝好運！', 2600);
+}
+var seenIntro = {};
+// 「隨機變化」 setting: a fresh river/traffic layout on every start, used only if the core planner finds every nest
+// reachable from two start phases with a 300 ms safety window (the same test verify.js runs on the fixed levels).
+function variedLevel(n) {
+  var t0 = 3 + (hash(n) % 1000) / 100;
+  for (var k = 0; k < 6; k++) {
+    var salt = 1 + Math.floor(Math.random() * 999999), cand = genLevel(n, salt), ok = true;
+    for (var ph = 0; ph < 2 && ok; ph++) ok = plan(cand, newFrog(), t0 + ph * 4.1, { margin: 0.15, horizon: cand.T }).arrive.every(function (a) { return a >= 0; });
+    if (ok) return cand;
+  }
+  return getLevel(n);
 }
 var TUT = {
   2: '卡車很長，要等它整台過去再跳。第二條河有浮葉可以踩。',
   3: '公車也是大傢伙！河面的浮葉、木頭都能站。',
   4: '烏龜群會載你過河，站穩了跟著漂。',
   5: '綜合練習！跳到木頭上時會隨水漂，別被帶出畫面。',
-  11: '從這關開始要送 3 隻小青蛙回窩！',
-  31: '從這關開始要填滿全部 5 個荷葉窩！'
+  11: '從這關開始要送 2 隻小青蛙回窩！車流先放慢一點。',
+  21: '從這關開始要送 3 隻小青蛙回窩！',
+  31: '從這關開始要送 4 隻小青蛙回窩！',
+  41: '從這關開始要填滿全部 5 個荷葉窩！'
 };
 function playReplay(n, rec) {
   startLevel(n, { replay: rec });
   hideAll(); G.paused = false; last = performance.now();
   replayQ = rec.log.map(function (q) { return { t: q[0], d: q[1] }; });
 }
-function spawnFrog() { G.F = newFrog(); G.restSince = G.t; inQ = []; G.trip = G.L.T; G.best = ROWS - 1; G.buf = -1; G.face = 0; }
+function spawnFrog() { G.F = newFrog(); G.restSince = G.t; inQ = []; G.trip = G.L.T; G.best = ROWS - 1; G.buf = []; G.face = 0; }
+// Inputs made while the frog is in the air are queued (up to BUFMAX) and run one by one as it lands, so fast
+// alternating taps are never lost or merged. Replays saved before the queue existed (no rec.v) keep the old 1-slot rule.
+// Mashing guard: a queued tap that has waited over STALE s of game time is dropped when it was part of mashing,
+// i.e. at least MASH taps (its own included) were pressed in the 0.5 s up to it (by the events' own timestamps,
+// a rate of 12+/s, well above the 8.3 hops/s the frog can do), so the frog stops soon after the player does.
+// Taps at a steady pace are never dropped, even when a slow frame delivers several at once. A dropped (or
+// over-cap) tap is marked in fullLog and left out of saved replays, so replays (which never drop) stay exact.
+var STALE = 0.3, MASH = 6, BUFMAX = 8, tapHist = [];
+function bufPush(d, e, mash) {
+  if (G.replaying && !G.repV) { G.buf = [{ d: d }]; return; }
+  if (G.buf.length < BUFMAX) G.buf.push({ d: d, t: G.t, m: mash, e: e }); else if (e) e.push(0);
+}
+function stale(qb) { return !G.replaying && qb.m && qb.e && G.t - qb.t > STALE * worldScale() + 1e-9; }
+function logOf() { return fullLog.filter(function (e) { return e.length === 2; }); }
 var inLog = [], inCount = 0;
 // Input latency compensation: an input is applied at the world time its event actually happened (event.timeStamp),
 // not when a busy main thread got around to handling it. If that moment is already simulated and the frog has
 // been resting since, the frog is rolled back (only its drift) and re-simulated from there.
 function input(d, ev) {
   if (G.replaying) return;
-  if (G.mode !== 'play' || G.paused || G.status !== 'play') { inCount++; inLog.push([+G.t.toFixed(3), d, G.status]); return; }
+  if (G.mode !== 'play' || G.paused || (G.status !== 'play' && G.status !== 'respawn')) { inCount++; inLog.push([+G.t.toFixed(3), d, G.status]); return; }
   var ws = worldScale(), tE = G.t;
   if (ev && ev.timeStamp > 0) tE = G.t + (ev.timeStamp - last) / 1000 * ws;
   tE = Math.max(tE, G.t - 0.25 * ws);
-  if (tE >= G.t) { inQ.push({ t: tE, d: d }); inQ.sort(function (a, b) { return a.t - b.t; }); return; }
+  var w = ev && ev.timeStamp > 0 ? ev.timeStamp : performance.now();
+  if (tE >= G.t) { inQ.push({ t: tE, d: d, w: w }); inQ.sort(function (a, b) { return a.t - b.t; }); return; }
   var F = G.F;
-  if (F.jt < 0 && !inQ.length && G.restSince != null && tE >= G.restSince) {
+  if (G.status === 'play' && F.jt < 0 && !inQ.length && G.restSince != null && tE >= G.restSince) {
     var tNow = G.t;
     F.x -= drift(G.L, F.row, tE, tNow);
     G.trip += (tNow - tE) / ws; G.t = tE;
-    applyInput(d);
+    applyInput(d, w);
     simTo(tNow);
     return;
   }
-  applyInput(d);
+  applyInput(d, w);
 }
 var fullLog = [], trace = [];
-function applyInput(d) {
-  if (G.mode === 'play' && !G.paused && G.status === 'play') fullLog.push([G.t, d]);
+// a hop pressed in the last 0.3 s before the next frog appears (after a nest) is kept and done as it appears
+function preSpawn() { return G.status === 'respawn' && G.respawnAt - G.t <= 0.3 * worldScale() + 1e-9; }
+function applyInput(d, w) {
+  var live = G.mode === 'play' && !G.paused, e = null, mash = false;
+  if (w != null) { tapHist.push(w); if (tapHist.length > 12) tapHist.shift(); mash = tapHist.filter(function (h) { return h > w - 500 && h <= w; }).length >= MASH; }
+  if (live && (G.status === 'play' || preSpawn())) fullLog.push(e = [G.t, d]);
   inCount++; inLog.push([+G.t.toFixed(3), d, G.status, G.F ? G.F.jt : null]); if (inLog.length > 50) inLog.shift();
-  if (G.mode !== 'play' || G.paused || G.status !== 'play') return;
-  if (G.F.jt >= 0) { G.buf = d; return; }
+  if (live && preSpawn()) { G.pre = d; return; }
+  if (!live || G.status !== 'play') return;
+  if (G.F.jt >= 0) { bufPush(d, e, mash); return; }
   doJump(d);
 }
 function doJump(d) {
@@ -1071,7 +1143,7 @@ function doJump(d) {
 function die(cause) {
   if (G.status !== 'play') return;
   trace.push([G.t, 'die', cause, G.F.row, G.F.x]);
-  G.status = 'dying'; G.dieT = 0; G.respawnAt = G.t + 1.0 * worldScale(); G.cause = cause; G.lives--; G.deaths++; G.buf = -1;
+  G.status = 'dying'; G.dieT = 0; G.respawnAt = G.t + 1.0 * worldScale(); G.cause = cause; G.lives--; G.deaths++; G.buf = []; G.pre = -1;
   var F = G.F;
   vib(70);
   var sx = G.replaying ? {} : stats;
@@ -1105,8 +1177,9 @@ function winLevel() {
   var st = G.deaths === 0 ? 3 : G.deaths === 1 ? 2 : 1;
   G.score += 1000 + G.lives * 300;
   G.stars = st;
-  setTimeout(function () { SFX.win(); }, 300);
-  for (var i = 0; i < 4; i++) setTimeout(function () { burst(1 + Math.random() * 8, 2 + Math.random() * 6, 26, ['#f48fb1', '#ffd54a', '#7fd3ff', '#9be27a', '#ffffff'], 6, 1.6, 'conf', 0.09); }, 200 + i * 260);
+  var run = G.run;
+  setTimeout(function () { if (G.run === run) SFX.win(); }, 300);
+  for (var i = 0; i < 4; i++) setTimeout(function () { if (G.run === run) burst(1 + Math.random() * 8, 2 + Math.random() * 6, 26, ['#f48fb1', '#ffd54a', '#7fd3ff', '#9be27a', '#ffffff'], 6, 1.6, 'conf', 0.09); }, 200 + i * 260);
   if (G.replaying) return;
   if (G.daily) {
     var key = G.daily;
@@ -1117,7 +1190,7 @@ function winLevel() {
     var n = G.n;
     if (n > progress) { progress = n; sset('progress', progress); }
     if ((starsMap[n] || 0) < st) { starsMap[n] = st; sset('stars', starsMap); }
-    var best = sget('best', {}) || {}; if ((best[n] || 0) < G.score) { best[n] = G.score; sset('best', best); sset('rep.' + n, { ws: worldScale(), score: G.score, log: fullLog }); }
+    var best = sget('best', {}) || {}; if ((best[n] || 0) < G.score) { best[n] = G.score; sset('best', best); sset('rep.' + n, { v: 2, ws: worldScale(), score: G.score, log: logOf(), salt: G.L.salt }); }
     if (G.deaths === 0) stats.perfect[n] = 1;
   }
   stats.clears++; saveStats(); checkAch();
@@ -1136,7 +1209,7 @@ function update(dt) {
 // Advance the world (and frog) to world time tEnd in sub-steps of at most 1/60 s, applying queued inputs at their exact times.
 var inQ = [], replayQ = [];
 function nextQ() { return inQ.length && (!replayQ.length || inQ[0].t <= replayQ[0].t) ? inQ : replayQ.length ? replayQ : null; }
-function flushQ() { var q; while ((q = nextQ()) && q[0].t <= G.t + 1e-9) applyInput(q.shift().d); }
+function flushQ() { var q, i; while ((q = nextQ()) && q[0].t <= G.t + 1e-9) { i = q.shift(); applyInput(i.d, i.w); } }
 function simTo(tEnd) {
   var ws = worldScale(), guard = 0, q;
   while (G.t < tEnd - 1e-9 && guard++ < 400) {
@@ -1145,6 +1218,8 @@ function simTo(tEnd) {
     // end sub-steps exactly on timed events so replays of an input log are exact
     if ((G.status === 'dying' || G.status === 'respawn') && G.respawnAt < G.t + hW) hW = Math.max(0, G.respawnAt - G.t);
     if (G.status === 'play' && G.trip * ws < hW) hW = Math.max(0, G.trip * ws);
+    // and exactly on a landing, so a queued hop starts on time (a hop lasts 0.12 s, not 8 frames = 0.133 s)
+    if (G.status === 'play' && G.F.jt >= 0 && !(G.replaying && !G.repV)) { var rem = (JUMP - G.F.jt) * ws; if (rem > 1e-9 && rem < hW) hW = rem; }
     if (hW > 1e-9) stepOnce(hW, hW / ws);
     else { statusTick(); if (G.status === 'play' && G.trip <= 1e-9) { G.trip = 0; die('time'); } }
     flushQ();
@@ -1162,7 +1237,8 @@ function stepOnce(hW, h) {
       G.restSince = G.t; trace.push([G.t, F.row, F.x]);
       if (F.row < G.best) { G.score += 10 * (G.best - F.row); G.best = F.row; }
       if (L.rows[F.row].t === 'river') ring(F.x, F.row + 0.15, 'rgba(255,255,255,0.7)', 0.4, 0.35);
-      if (G.buf >= 0) { var b = G.buf; G.buf = -1; doJump(b); }
+      // queued taps run in order; stale mashed ones are skipped (see bufPush)
+      while (G.buf.length && F.jt < 0) { var qb = G.buf.shift(); if (!stale(qb)) doJump(qb.d); else { qb.e.push(0); G.dropped = (G.dropped || 0) + 1; } }
     }
     G.trip -= h;
     if (G.trip <= 1e-9) { G.trip = 0; die('time'); }
@@ -1176,7 +1252,11 @@ function stepOnce(hW, h) {
 function statusTick() {
   if ((G.status === 'dying' || G.status === 'respawn') && G.t >= G.respawnAt - 1e-9) {
     if (G.status === 'dying' && G.lives <= 0) { G.status = 'over'; showFail(); }
-    else { spawnFrog(); G.status = 'play'; }
+    else {
+      var nest = G.status === 'respawn', q = inQ;
+      spawnFrog(); G.status = 'play';
+      if (nest) { inQ = q; if (G.pre >= 0) { var d = G.pre; G.pre = -1; doJump(d); } }
+    }
   }
 }
 var hornT = 0;
@@ -1372,7 +1452,7 @@ function show(id) { $(id).classList.remove('hidden'); }
 var toastT = null;
 function toast(msg, ms) { var t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); t.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(function () { t.style.opacity = 0; setTimeout(function () { t.classList.add('hidden'); }, 400); }, ms || 1800); }
 function goTitle() {
-  hideAll(); $('hud').classList.add('hidden'); G.mode = 'title'; G.daily = null; updDpad();
+  hideAll(); $('hud').classList.add('hidden'); G.mode = 'title'; G.daily = null; G.run = (G.run || 0) + 1; updDpad();
   G.L = getLevel(36); G.F = null; parts = []; G.filled = [0, 1, 0, 0, 1];
   $('tPlay').textContent = progress >= 1 ? (progress >= 100 ? '再玩第 100 關' : '繼續第 ' + (progress + 1) + ' 關') : '開始遊戲';
   var dk = todayKey(); $('tDaily').textContent = dailyRec[dk] ? '每日 ' + '★'.repeat(dailyRec[dk].stars) : '每日關卡';
@@ -1394,7 +1474,7 @@ function buildGrid() {
   $('unlockSw').setAttribute('aria-checked', unlockAll ? 'true' : 'false');
 }
 function showSelect() {
-  hideAll(); show('select'); buildGrid();
+  hideAll(); show('select'); buildGrid(); G.run = (G.run || 0) + 1;
   var cur = document.querySelector('.lt.cur'); if (cur) cur.scrollIntoView({ block: 'center' });
 }
 function mechIcon(cnv, id) {
@@ -1448,12 +1528,12 @@ function showFail() {
   show('fail');
 }
 function helpHtml() {
-  return '<p><b>目標：</b>把小青蛙一格一格送過馬路與河流，跳進最上面的荷葉窩。第 1～10 關要 1 隻、11～30 關要 3 隻、31 關起要填滿 5 個窩。</p>' +
-    '<p><b>操作：</b>輕點畫面＝往上跳；在任何地方滑動＝往該方向跳。跳躍中的輸入會在落地時立刻執行，連跳很順。可在設定開啟虛擬方向鍵。鍵盤可用方向鍵／WASD，P 暫停。</p>' +
+  return '<p><b>目標：</b>把小青蛙一格一格送過馬路與河流，跳進最上面的荷葉窩。第 1～10 關要 1 隻，之後每 10 關多 1 隻（11 關 2 隻、21 關 3 隻、31 關 4 隻），41 關起要填滿 5 個窩；剛多 1 隻的前幾關車流會放慢一些。</p>' +
+    '<p><b>操作：</b>輕點畫面＝往上跳（按多久都算，放開時起跳）；在任何地方滑動＝往該方向跳；兩隻手指交替點也可以。跳躍中的每一下都會排隊，落地時依序執行，連跳很順。可在設定開啟虛擬方向鍵。鍵盤可用方向鍵／WASD，P 暫停。</p>' +
     '<p><b>危險：</b>被車撞、掉進河裡、被漂流物帶出畫面、時間到，都會失去 1 條命（每關 3 命）。</p>' +
     '<p><b>河流：</b>站在木頭、浮葉、烏龜背上會跟著漂。潛水龜閃爍後會下沉；鱷魚的頭會咬人。</p>' +
-    '<p><b>計分：</b>往前跳 +10、回窩 +50 加上剩餘秒數 ×10；窩裡有蒼蠅時進窩再 +200。0 次失命 3 星、1 次 2 星。</p>' +
-    '<p><b>難度：</b>每關都比前一關更難（車速、密度、車道數、時限、新機制），關卡選擇與上方顯示難度數值。</p>';
+    '<p><b>計分：</b>往前跳 +10、回窩 +50 加上剩餘秒數 ×10；窩裡有蒼蠅時進窩再 +200；過關再加 1000 ＋ 剩餘命 ×300。0 次失命 3 星、1 次 2 星。</p>' +
+    '<p><b>難度：</b>每關的難度數值都比前一關高（車速、密度、車道數、時限、要送回的青蛙數、新機制），關卡選擇與上方都會顯示。</p>';
 }
 var ACH = [
   { id: 'first', name: '初次過河', desc: '通過第 1 關', ok: function () { return progress >= 1; } },
@@ -1485,7 +1565,7 @@ function buildSkins() {
 }
 function syncSwitches() {
   $('sDpad').setAttribute('aria-checked', settings.dpad); $('sAssist').setAttribute('aria-checked', settings.assist);
-  $('sSound').setAttribute('aria-checked', settings.sound); $('sVib').setAttribute('aria-checked', settings.vib);
+  $('sSound').setAttribute('aria-checked', settings.sound); $('sVary').setAttribute('aria-checked', settings.vary); $('sVib').setAttribute('aria-checked', settings.vib);
 }
 var setReturn = null;
 function showSettings(ret) { setReturn = ret; syncSwitches(); buildSkins(); show('settings'); }
@@ -1506,28 +1586,29 @@ function startDaily() {
 }
 
 // ================= input wiring =================
-var ptr = null;
+// Every finger is tracked on its own (two thumbs can overlap): a move of more than 24 px is a swipe in that
+// direction, a release without such a move is a tap (= hop up), however long the finger was held.
+var ptrs = {};
 cv.addEventListener('pointerdown', function (e) {
   audio();
   if (G.mode !== 'play') return;
-  ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, ts: e.timeStamp, fired: false };
+  ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, fired: false };
 });
+function swipeDir(dx, dy) { return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0); }
 cv.addEventListener('pointermove', function (e) {
-  if (!ptr || ptr.id !== e.pointerId || ptr.fired) return;
-  var dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
-  if (Math.hypot(dx, dy) > 24) { ptr.fired = true; input(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0), e); }
+  var p = ptrs[e.pointerId]; if (!p || p.fired) return;
+  var dx = e.clientX - p.x, dy = e.clientY - p.y;
+  if (Math.hypot(dx, dy) > 24) { p.fired = true; input(swipeDir(dx, dy), e); }
 });
 function ptrEnd(e) {
-  if (!ptr || ptr.id !== e.pointerId) return;
-  var dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
-  if (!ptr.fired) {
-    if (Math.hypot(dx, dy) > 24) input(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0), e); // quick flick whose moves were coalesced
-    else if (e.timeStamp - ptr.ts < 200) input(0, e);
-  }
-  ptr = null;
+  var p = ptrs[e.pointerId]; if (!p) return;
+  delete ptrs[e.pointerId];
+  if (p.fired) return;
+  var dx = e.clientX - p.x, dy = e.clientY - p.y;
+  input(Math.hypot(dx, dy) > 24 ? swipeDir(dx, dy) : 0, e); // a quick flick whose moves were coalesced still counts as a swipe
 }
 cv.addEventListener('pointerup', ptrEnd);
-cv.addEventListener('pointercancel', function () { ptr = null; });
+cv.addEventListener('pointercancel', function (e) { delete ptrs[e.pointerId]; });
 [['dU', 0], ['dR', 1], ['dD', 2], ['dL', 3]].forEach(function (q) {
   $(q[0]).addEventListener('pointerdown', function (e) { e.preventDefault(); audio(); input(q[1], e); });
 });
@@ -1575,6 +1656,7 @@ on('setOk', function () { $('settings').classList.add('hidden'); updDpad(); layo
 function sw(id, key, after) { on(id, function () { settings[key] = !settings[key]; saveSettings(); syncSwitches(); if (after) after(); }); }
 sw('sDpad', 'dpad', function () { updDpad(); layout(); });
 sw('sAssist', 'assist');
+sw('sVary', 'vary');
 sw('sSound', 'sound', setMuteIcon);
 sw('sVib', 'vib');
 $('skins').addEventListener('click', function (e) {
@@ -1583,15 +1665,17 @@ $('skins').addEventListener('click', function (e) {
   settings.skin = i; saveSettings(); buildSkins(); SFX.click();
 });
 window.addEventListener('resize', function () { layout(); });
+if (LANDQ && LANDQ.addEventListener) LANDQ.addEventListener('change', function () { layout(); });
 if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener('change', function (e) { DARK = e.matches; setPal(); buildBg(); });
 
 // ================= main loop =================
-var last = performance.now();
+var last = performance.now(), selEl = $('select');
 function frame(now) {
   var dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
   if (G.mode === 'menu') { G.t += dt; }
   else update(dt);
-  render();
+  if (!selEl.classList.contains('hidden')) G.drawn = 0; // the level list is opaque and full screen: don't redraw the board under it
+  else { render(); G.drawn = (G.drawn || 0) + 1; }
   requestAnimationFrame(frame);
 }
 setMuteIcon();
@@ -1600,10 +1684,10 @@ requestAnimationFrame(frame);
 
 window.__game = {
   state: function () { var F = G.F || {}; return { cause: G.cause, mode: G.mode, status: G.status, paused: G.paused, t: G.t, row: F.row, x: F.x, jt: F.jt, filled: G.filled.slice(), need: G.L ? G.L.need : 0, lives: G.lives, deaths: G.deaths, score: G.score, n: G.n, trip: G.trip, ws: worldScale() }; },
-  fullLog: function () { return fullLog.slice(); },
+  fullLog: logOf,
   trace: function () { return trace.slice(); },
   // deterministic re-run of a recorded input log (used to film a verified bot run without slowing that run down)
-  replay: function (n, log) { playReplay(n, { ws: 1, log: log }); },
+  replay: function (n, log, salt) { playReplay(n, { v: 2, ws: 1, log: log, salt: salt || 0 }); },
   inputs: function () { return { count: inCount, log: inLog.slice(-8), t: G.t, status: G.status, frameWall: performance.timeOrigin + last, ws: G.mode === 'play' ? worldScale() : 1 }; },
   level: function () { return { n: G.n, salt: G.L ? G.L.salt : 0, D: G.L ? G.L.D : 0 }; },
   start: startLevel

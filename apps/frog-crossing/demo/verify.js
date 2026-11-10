@@ -144,7 +144,7 @@ async function playLevel(browser, n) {
   await page.screenshot({ path: path.join(OUT, 'level-' + n + '-result.png') });
   const secs = (Date.now() - t0) / 1000;
   await ctx.close();
-  return { n, D: L.D, cleared: st.status === 'won' && winVisible, deaths: st.deaths, causes: deathLog, filled: st.filled, nests: st.filled.reduce((a, b) => a + b, 0), score: st.score, inputs, taps, swipes, minGap, secs: secs.toFixed(1), errors, maxPlan, late, rushes, log, trace };
+  return { n, salt: lv.salt, D: L.D, cleared: st.status === 'won' && winVisible, deaths: st.deaths, causes: deathLog, filled: st.filled, nests: st.filled.reduce((a, b) => a + b, 0), score: st.score, inputs, taps, swipes, minGap, secs: secs.toFixed(1), errors, maxPlan, late, rushes, log, trace };
 }
 
 // Film the run: the page re-plays the exact input log of the live run (each input at the world time it registered),
@@ -161,7 +161,7 @@ async function filmReplay(browser, n, live) {
   await sleep(500);
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 75, maxWidth: 390, maxHeight: 844, everyNthFrame: 1 });
   await sleep(1200);
-  await page.evaluate(([n, log]) => window.__game.replay(n, log), [n, live.log]);
+  await page.evaluate(([n, log, salt]) => window.__game.replay(n, log, salt), [n, live.log, live.salt]);
   let st;
   for (let k = 0; k < 4000; k++) { st = await page.evaluate(() => window.__game.state()); if (st.status === 'won' || st.status === 'over') break; await sleep(100); }
   await sleep(2800);
