@@ -17,7 +17,7 @@ for (let t = 1; t <= 6; t++) cases.push([t, false, null], [t, true, null]);
 cases.push([7, true, null], [7, false, null]);
 cases.push([3, false, 'mul'], [5, false, 'mul'], [4, false, 'div'], [5, false, 'div']);
 for (const [tier, neg0, kind] of cases) {
-  const neg = neg0 || tier >= 6; // tier 6 only exists at score >= 6000 where negatives are on
+  const neg = neg0 || tier >= 7; // hard mode always has negatives; tier 6 starts at 6000 but negatives only from 9000, so it must also work without
   for (let i = 0; i < 10000; i++) {
     const p = C.genProblem(tier, r, neg, kind);
     for (const n of [4, 6]) {
