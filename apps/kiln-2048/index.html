@@ -24,9 +24,6 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 })();
 </script>
 <title>窯變 2048</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap">
 <style>
 /* Layout: one-screen app. Header (theme name + scores), mode grid, action row, square board, tier ladder, theme picker. */
 :root {
@@ -38,7 +35,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   --panel: #d6d8d1;
   --accent: #9a3b2a;      /* copper-red */
   --veil: rgba(228,230,225,.88);
-  --num: "Bricolage Grotesque", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  --num: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; /* system fonts only: works offline, no network */
   --cjk: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
   --gap: clamp(6px, 2vmin, 12px);
   --r: clamp(6px, 1.6vmin, 10px);
@@ -84,28 +81,46 @@ body {
   background: var(--bg); color: var(--ink); font-family: var(--cjk);
   overscroll-behavior: none; -webkit-tap-highlight-color: transparent; transition: background-color .3s, color .3s;
 }
+/* The board sits in .stage, a flex item that shrinks to whatever height is left (container query units size the
+   square board), so every control stays on the first screen at lobby sizes too. */
 .app {
-  box-sizing: border-box; min-height: 100%; display: flex; flex-direction: column; align-items: center;
+  box-sizing: border-box; height: 100%; height: 100dvh; display: flex; flex-direction: column; align-items: center;
   justify-content: center; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); user-select: none; -webkit-user-select: none;
 }
-.wrap { width: min(100%, 460px, calc(100dvh - 400px)); min-width: min(280px, 100%); display: flex; flex-direction: column; gap: clamp(8px, 1.6vh, 14px); }
-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-h1 { margin: 0; font-size: clamp(28px, 7vw, 38px); font-weight: 800; letter-spacing: .04em; line-height: 1; text-wrap: balance; }
-h1 small { display: block; font-family: var(--num); font-size: .38em; font-weight: 500; letter-spacing: .28em; color: var(--muted); margin-top: 6px; }
+.wrap { width: min(100%, 460px); max-height: 100%; display: flex; flex-direction: column; gap: clamp(8px, 1.6vh, 14px); }
+.stage { flex: 0 1 auto; width: 100%; aspect-ratio: 1; min-height: 180px; container-type: size; display: flex; align-items: center; justify-content: center; }
+/* header grid: the title takes what the scores and mute button leave, and its text scales to that width (cqw),
+   so long theme names and 6-digit scores never overlap */
+header { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; }
+h1 { margin: 0; container-type: inline-size; font-size: clamp(28px, 7vw, 38px); font-weight: 800; letter-spacing: .04em; line-height: 1; white-space: nowrap; min-width: 0; }
+#skinName { display: block; font-size: min(1em, 30cqw); }
+.title { all: unset; box-sizing: border-box; display: block; min-height: 44px; cursor: pointer; border-radius: var(--r); -webkit-tap-highlight-color: transparent; }
+.title:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.title:active { opacity: .7; }
+h1 small { display: block; font-family: var(--num); font-size: min(.38em, 8.6cqw); font-weight: 500; letter-spacing: .28em; color: var(--muted); margin-top: 6px; }
+h1 .title-mode { display: none; width: max-content; max-width: 100%; box-sizing: border-box; margin-top: 5px; padding: 3px 9px; border-radius: 999px; font-size: clamp(10px, 9cqw, 13px);
+  letter-spacing: .06em; font-family: var(--cjk); font-weight: 700; color: var(--accent); background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .scores { display: flex; gap: 6px; }
-.score { background: var(--shelf); color: #f3eee6; border-radius: var(--r); padding: 6px 12px 7px; min-width: 62px; text-align: center; position: relative; }
+.icon { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; flex: none; background: var(--panel); color: var(--ink); }
+.icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon .off, .icon[aria-pressed="true"] .on { display: none; }
+.icon[aria-pressed="true"] .off { display: inline; }
+.score { background: var(--shelf); color: #f3eee6; border-radius: var(--r); padding: 6px 8px 7px; min-width: 54px; box-sizing: border-box; text-align: center; position: relative; }
 .score span { display: block; font-size: 11px; letter-spacing: .14em; opacity: .75; }
 .score b { font-family: var(--num); font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.score[data-len="5"] b { font-size: 17px; }
+.score[data-len="6"] b { font-size: 15px; }
+.score[data-len="7"] b { font-size: 13px; }
 .plus { position: absolute; left: 0; right: 0; top: 20px; font-family: var(--num); font-weight: 800; color: var(--accent); pointer-events: none; animation: rise .7s ease-out forwards; }
 @keyframes rise { to { transform: translateY(-28px); opacity: 0; } }
 .bar { display: flex; align-items: center; gap: 8px; }
 .bar button { min-height: 44px; }
-.bar p { margin: 0 auto 0 0; font-size: 13px; color: var(--muted); line-height: 1.4; min-width: 0; }
+.bar p { margin: 0 auto 0 0; font-size: 13px; color: var(--muted); line-height: 1.4; min-width: 0; text-wrap: balance; }
 .bar p b { color: var(--ink); white-space: nowrap; }
 .bar p b.warn { color: var(--accent); }
 .modes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
-.modes button { padding: 6px 2px; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: .04em; background: var(--panel); color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
-.modes button small { font-family: var(--num); font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 500; letter-spacing: .04em; opacity: .85; }
+.modes button { min-height: 44px; padding: 5px 1px; min-width: 0; font-size: clamp(11px, 3.4vw, 13px); font-weight: 600; letter-spacing: 0; background: var(--panel); color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1.2; }
+.modes button small { font-family: var(--num); font-size: clamp(10px, 3vw, 11px); max-width: 100%; font-weight: 500; letter-spacing: 0; opacity: .85; }
 .modes button[aria-selected="true"] { background: var(--accent); color: var(--bg); }
 button {
   font: inherit; font-size: 14px; font-weight: 700; border: 0; cursor: pointer; border-radius: var(--r);
@@ -117,9 +132,9 @@ button:active { transform: scale(.95); }
 button:disabled { opacity: .35; cursor: default; }
 button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .board {
-  position: relative; width: 100%; aspect-ratio: 1; max-width: 100%; background: var(--shelf);
+  position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1; flex: none; background: var(--shelf);
   border-radius: calc(var(--r) * 1.5); touch-action: none; box-shadow: inset 0 -4px 0 rgba(0,0,0,.18);
-  font-size: calc(clamp(11px, 3.4vw, 17px) * 4 / var(--n, 4));
+  font-size: calc(clamp(10px, 3.7cqmin, 17px) * 4 / var(--n, 4));
 }
 .slots { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n, 4), 1fr); gap: var(--gap); padding: var(--gap); }
 .slots i { background: var(--slot); border-radius: var(--r); opacity: .55; }
@@ -136,7 +151,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   position: relative; overflow: hidden;
 }
 .face b { font-family: var(--num); font-weight: 800; line-height: 1; font-size: var(--fs, 2.4em); font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
-.face em { font-style: normal; font-size: .62em; letter-spacing: .14em; opacity: .8; margin-top: .3em; white-space: nowrap; position: relative; z-index: 1; }
+.face em { font-style: normal; font-size: max(10px, .62em); letter-spacing: .14em; opacity: .8; margin-top: .3em; white-space: nowrap; position: relative; z-index: 1; }
 .blind .tile:not(.stone) .face b, .blind .tile:not(.stone) .face em { visibility: hidden; }
 .stone .face {
   background: repeating-linear-gradient(135deg, rgba(0,0,0,.12) 0 6px, transparent 6px 12px), #5d5852;
@@ -168,17 +183,53 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .overlay h2 { margin: 0; font-size: clamp(26px, 7vw, 34px); letter-spacing: .1em; }
 .overlay p { margin: 0; color: var(--muted); font-size: 14px; max-width: 26ch; line-height: 1.5; }
 .overlay div { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.overlay button { min-height: 44px; min-width: 64px; }
+.overlay .cele { color: var(--accent); font-weight: 700; }
 @keyframes fade { from { opacity: 0; } }
 .ladder { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
 .ladder span { aspect-ratio: 1; border-radius: 4px; background: var(--tb); opacity: .3; box-shadow: inset 0 0 0 1px var(--muted); transition: opacity .3s; }
+.ladder span.ever { opacity: .55; box-shadow: inset 0 0 0 2px var(--ink); }
 .ladder span.on { opacity: 1; }
 .ladder-cap { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--muted); letter-spacing: .1em; margin-top: 5px; }
+.ladder-cap .cap-hint { margin: 0 auto; color: var(--accent); font-size: 12px; font-weight: 700; }
+.ladder-cap.hinting span:not(.cap-hint) { display: none; }
 .skins { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
-.skins button { min-height: 40px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 2px; min-width: 0; font-size: 12px; font-weight: 600; background: var(--panel); color: var(--ink); letter-spacing: .04em; }
+.skins button { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 2px; min-width: 0; font-size: 12px; font-weight: 600; background: var(--panel); color: var(--ink); letter-spacing: .04em; }
 .skins button i { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--a) 0 33%, var(--b) 0 66%, var(--c2) 0); flex: none; }
 .skins button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
 .hint { font-size: 12px; color: var(--muted); text-align: center; margin: 0; }
-@media (max-height: 640px) { .hint { display: none; } }
+/* mode & theme sheet (opened from the title; the only way to them on short screens) */
+.sheet { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; animation: fade .2s ease-out; }
+.sheet-card { box-sizing: border-box; width: min(100%, 480px); max-height: 100%; overflow-y: auto; background: var(--bg); color: var(--ink);
+  border-radius: 16px 16px 0 0; padding: 14px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 10px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sheet-head button { min-height: 44px; }
+.sheet-head h2 { margin: 0; font-size: 18px; letter-spacing: .1em; }
+.stat { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.stat b { color: var(--ink); }
+/* short portrait screens (lobby iframes, small phones): modes and themes live in the sheet */
+@media (orientation: portrait) and (max-height: 699px), (orientation: landscape) and (max-height: 560px) and (max-width: 759px) {
+  .wrap > .modes, .wrap > .skins, .wrap > .hint { display: none; }
+  h1 .title-sub { display: none; }
+  h1 .title-mode { display: block; }
+}
+/* narrow landscape: title on its own row, scores and mute below it */
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 759px) {
+  header { grid-template-columns: minmax(0, 1fr) auto; }
+  h1 { grid-column: 1 / -1; }
+  .scores { justify-self: start; }
+}
+/* phone landscape: controls on the left, the board as tall as the screen on the right */
+@media (orientation: landscape) and (max-height: 560px) {
+  .wrap { width: 100%; display: grid; grid-template-columns: minmax(0, 440px) auto; justify-content: center; align-content: center; column-gap: 20px; row-gap: 8px; }
+  .wrap > .hint { display: none; }
+  h1 { font-size: clamp(24px, 7vh, 34px); }
+  .stage { grid-column: 2; grid-row: 1 / span 7; align-self: center; aspect-ratio: auto; min-height: 0;
+    --side: min(calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))), 55vw);
+    width: var(--side); height: var(--side); }
+  .sheet { align-items: center; }
+  .sheet-card { border-radius: 16px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .tile { transition: none; } .tile.new .face, .tile.pop .face, .overlay, .plus { animation: none; }
   body { transition: none; }
@@ -188,11 +239,12 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 <main class="app">
   <div class="wrap">
     <header>
-      <h1 id="skinName">窯變<small id="skinSub">KILN · 2048</small></h1>
+      <h1><button class="title" id="menu" type="button" aria-haspopup="dialog" aria-label="換模式與主題"><span id="skinName">窯變</span><small class="title-sub" id="skinSub">KILN · 2048</small><small class="title-mode" id="modeSub">經典 ▾</small></button></h1>
       <div class="scores">
         <div class="score" id="scoreBox"><span>分數</span><b id="score">0</b></div>
         <div class="score"><span id="bestLabel">最佳</span><b id="best">0</b></div>
       </div>
+      <button class="icon" id="mute" type="button" aria-label="靜音" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="on" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="off" d="M17 9l5 6M22 9l-5 6"/></svg></button>
     </header>
     <nav class="modes" id="modes" role="tablist" aria-label="遊戲模式"></nav>
     <div class="bar">
@@ -200,17 +252,27 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
       <button class="ghost" id="undo" type="button">回爐 3</button>
       <button id="newGame" type="button">新局</button>
     </div>
-    <div class="board" id="board" aria-label="遊戲盤面，用方向鍵或滑動操作" role="application" tabindex="0">
-      <div class="slots" aria-hidden="true"></div>
+    <div class="stage">
+      <div class="board" id="board" aria-label="遊戲盤面，用方向鍵或滑動操作" role="application" tabindex="0">
+        <div class="slots" aria-hidden="true"></div>
+      </div>
     </div>
     <div>
       <div class="ladder" id="ladder" aria-hidden="true"></div>
-      <div class="ladder-cap"><span id="capLow"></span><span id="topGlaze"></span><span id="capHigh"></span></div>
+      <div class="ladder-cap" id="capRow"><span id="capLow"></span><span id="topGlaze"></span><span id="capHigh"></span><span class="cap-hint" id="boardHint" hidden>↔ 滑動盤面，合併相同方塊</span></div>
     </div>
     <div class="skins" id="skins" aria-label="主題"></div>
     <p class="hint">手機滑動，電腦用方向鍵或 WASD，Z 鍵退一步</p>
   </div>
 </main>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="sheet-card">
+    <div class="sheet-head"><h2 id="sheetTitle">模式與主題</h2><button class="ghost" id="sheetClose" type="button">關閉</button></div>
+    <div id="sheetModes"></div>
+    <p class="stat" id="statLine"></p>
+    <div id="sheetSkins"></div>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -239,9 +301,9 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   };
   const MODES = [
     { id: "classic", name: "經典", tag: "4×4", n: 4, target: 2048 },
-    { id: "small", name: "小窯", tag: "3×3", n: 3, target: 256 },
+    { id: "small", name: "小窯", tag: "3×3", n: 3, target: 128 },
     { id: "large", name: "大窯", tag: "5×5", n: 5, target: 4096 },
-    { id: "timed", name: "急火", tag: "限時 2 分", n: 4, time: 120 },
+    { id: "timed", name: "急火", tag: "2 分鐘", n: 4, time: 120 },
     { id: "steps", name: "限步", tag: "100 步", n: 4, steps: 100 },
     { id: "daily", name: "每日一窯", tag: "今日盤面", n: 4, daily: true },
     { id: "stones", name: "石陣", tag: "石塊擋路", n: 5, stones: 3, target: 2048 },
@@ -261,13 +323,52 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
   let skin = SKINS.kiln;
   const tier = v => skin.tiers[Math.min(Math.max(Math.log2(v || 2), 1), 12) - 1];
-  const tierName = v => tier(v)[0];
+  // past 4096 the ladder ends: name the top tier with a multiplier (曜變×2, 曜變×4 …)
+  const tierName = v => (v > 4096 ? skin.tiers[11][0] + "×" + v / 4096 : tier(v)[0]);
 
   let mode, N, grid, stones = [], score, best, undosLeft, history, won, keepGoing, over, timeLeft, stepsLeft, started, seed, nextId = 1;
+  let official = true, rec = false, confirming = false, newTier = 0;
   let cleanup = [];
   const canUndoMode = () => !mode.time && !mode.steps && !mode.daily;
   const today = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
   const bestKey = () => "kiln2048-best-" + mode.id + (mode.daily ? "-" + today() : "");
+  // 每日一窯: only the first game of the day counts as today's score; replays are practice and never change it
+  const playedKey = () => "kiln2048-daily-played-" + today();
+  const dailyTopKey = () => "kiln2048-daily-top-" + today();
+  const counts = () => !mode.daily || official;
+
+  // long-term record per mode: games played and the highest tile ever reached
+  let stats = {};
+  try { stats = JSON.parse(store.get("kiln2048-stats") || "{}") || {}; } catch {}
+  const statOf = id => (stats[id] = Object.assign({ games: 0, top: 0 }, stats[id]));
+  const saveStats = () => store.set("kiln2048-stats", JSON.stringify(stats));
+
+  // sound (Web Audio, synthesised) + short vibration; one mute switch for both, remembered
+  let muted = store.get("kiln2048-mute") === "1", actx = null;
+  const activated = () => { const a = navigator.userActivation; return !a || a.hasBeenActive; };
+  function audio() {
+    if (muted || !activated()) return null;
+    if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; try { actx = new AC(); } catch { return null; } }
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+    return actx;
+  }
+  function tone(freq, dur, type = "triangle", vol = 0.07, delay = 0) {
+    const a = audio(); if (!a) return;
+    try {
+      const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + 0.03);
+    } catch {}
+  }
+  function buzz(p) { if (muted || !activated() || document.hidden) return; try { navigator.vibrate && navigator.vibrate(p); } catch {} }
+  const sfx = {
+    slide() { tone(170, 0.06, "sine", 0.035); },
+    merge(v) { const k = Math.log2(v); const f = 220 * 2 ** ((k - 1) * 2 / 12); tone(f, 0.16, "triangle", 0.08); tone(f * 2, 0.09, "sine", 0.025); buzz(8); },
+    win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, "triangle", 0.08, i * 0.09)); buzz([20, 40, 20]); },
+    over() { tone(392, 0.2, "triangle", 0.07); tone(262, 0.35, "triangle", 0.07, 0.16); buzz(40); },
+    undo() { tone(330, 0.07, "sine", 0.05); tone(247, 0.1, "sine", 0.05, 0.06); },
+  };
 
   // seeded random for 每日一窯 so everyone gets the same spawns on the same day
   function rand() {
@@ -283,7 +384,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     const b = document.createElement("button");
     b.type = "button"; b.setAttribute("role", "tab"); b.dataset.mode = m.id;
     b.innerHTML = `${m.name}<small>${m.tag}</small>`;
-    b.addEventListener("click", () => switchMode(m.id));
+    b.addEventListener("click", () => { switchMode(m.id); closeSheet(); });
     modesEl.appendChild(b);
   });
   Object.entries(SKINS).forEach(([id, s]) => {
@@ -300,7 +401,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     skin = SKINS[key];
     document.documentElement.dataset.skin = key;
     store.set("kiln2048-skin", key);
-    $("skinName").firstChild.textContent = skin.name;
+    $("skinName").textContent = skin.name;
     $("skinSub").textContent = skin.sub;
     [...skinsEl.querySelectorAll("button")].forEach(b => b.setAttribute("aria-pressed", b.dataset.skin === key));
     [...ladder.children].forEach((s, i) => { s.style.setProperty("--tb", skin.tiers[i][1]); s.title = skin.tiers[i][0] + " " + 2 ** (i + 1); });
@@ -318,7 +419,8 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     for (let i = 0; i < N * N; i++) slots.appendChild(document.createElement("i"));
     [...modesEl.children].forEach(b => b.setAttribute("aria-selected", b.dataset.mode === mode.id));
     best = +store.get(bestKey()) || 0;
-    $("bestLabel").textContent = mode.daily ? "今日最佳" : "最佳";
+    $("bestLabel").textContent = mode.daily ? "今日成績" : "最佳";
+    $("modeSub").textContent = mode.name + " ▾";
     undoBtn.hidden = !canUndoMode();
     store.set("kiln2048-mode", mode.id);
   }
@@ -334,7 +436,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     return t;
   }
   function paint(t) {
-    const [name, bg, fg, fx] = tier(t.v);
+    const [, bg, fg, fx] = tier(t.v), name = tierName(t.v);
     t.el.style.setProperty("--tb", bg);
     t.el.style.setProperty("--tf", fg);
     t.el.className = t.el.className.replace(/\bfx-\w+/g, "").trim();
@@ -361,6 +463,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   function flush() { cleanup.forEach(f => f()); cleanup = []; }
   function clearBoard() {
     flush();
+    confirming = false;
     board.querySelectorAll(".tile, .overlay").forEach(n => n.remove());
     grid = Array.from({ length: N }, () => Array(N).fill(null));
   }
@@ -390,8 +493,9 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     placeStones();
     clearBoard();
     drawStones();
-    score = 0; undosLeft = UNDOS; history = []; won = false; keepGoing = false; over = false;
+    score = 0; undosLeft = UNDOS; history = []; won = false; keepGoing = false; over = false; rec = false; confirming = false; newTier = 0;
     timeLeft = mode.time || 0; stepsLeft = mode.steps || 0; started = false;
+    official = !mode.daily || !store.get(playedKey());
     spawn(); spawn();
     render();
     persist();
@@ -407,8 +511,9 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     } else if (mode.steps) {
       goalEl.innerHTML = `剩 <b class="${stepsLeft <= 10 ? "warn" : ""}">${stepsLeft} 步</b>，用完前拿最高分。`;
     } else if (mode.daily) {
-      const d = String(today());
-      goalEl.innerHTML = `<b>${+d.slice(4, 6)}/${+d.slice(6)}</b> 的盤面人人相同，比比看誰分數高。`;
+      goalEl.innerHTML = official
+        ? `<b>${dayLabel()}</b> 的盤面人人相同，第一局就是今日成績。`
+        : `練習局：今日成績 <b>${best} 分</b>已記下，重玩不計分。`;
     } else if (won && keepGoing) {
       goalEl.innerHTML = `已合成 ${tgt}，繼續往上。`;
     } else if (mode.blind) {
@@ -422,15 +527,21 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     }
   }
 
+  const dayLabel = () => { const d = String(today()); return +d.slice(4, 6) + "/" + +d.slice(6); };
   function render(gain) {
     scoreEl.textContent = score;
-    if (score > best) { best = score; store.set(bestKey(), best); }
+    const top = topValue();
+    if (score > best && counts()) { best = score; rec = true; store.set(bestKey(), best); }
+    if (mode.daily && official && top > (+store.get(dailyTopKey()) || 0)) store.set(dailyTopKey(), top);
+    const st = statOf(mode.id);
+    if (top > st.top) { if (started && st.top) newTier = top; st.top = top; saveStats(); }
     bestEl.textContent = best;
     undoBtn.textContent = skin.undo + " " + undosLeft;
     undoBtn.disabled = !undosLeft || !history.length;
-    const top = topValue();
-    [...ladder.children].forEach((s, i) => s.classList.toggle("on", 2 ** (i + 1) <= top));
-    $("topGlaze").textContent = "目前最高：" + tierName(top);
+    [...ladder.children].forEach((s, i) => { s.classList.toggle("on", 2 ** (i + 1) <= top); s.classList.toggle("ever", 2 ** (i + 1) <= st.top); });
+    $("topGlaze").textContent = "最高：" + tierName(top) + (st.top > top ? " · 紀錄：" + tierName(st.top) : "");
+    $("boardHint").hidden = started; $("capRow").classList.toggle("hinting", !started);
+    scoreEl.parentNode.dataset.len = String(score).length; bestEl.parentNode.dataset.len = String(best).length;
     renderGoal();
     if (gain) {
       const p = document.createElement("div");
@@ -442,7 +553,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
   const DIRS = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] };
   function move(dir) {
-    if (over || (won && !keepGoing)) return;
+    if (over || (won && !keepGoing) || confirming || !sheet.hidden) return;
     flush();
     const [dr, dc] = DIRS[dir];
     const before = { cells: snapshot(), score, won, keepGoing };
@@ -480,7 +591,11 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     }
     if (!moved) { board.animate?.([{ transform: "translateX(0)" }, { transform: `translate(${dc * 4}px, ${dr * 4}px)` }, { transform: "translateX(0)" }], { duration: 140 }); return; }
     if (canUndoMode()) history = [before]; // single-step undo
-    if (!started) { started = true; lastTick = performance.now(); }
+    if (!started) {
+      started = true; lastTick = performance.now();
+      statOf(mode.id).games++; saveStats();
+      if (mode.daily && official) store.set(playedKey(), "1");
+    }
     if (mode.steps) stepsLeft--;
     grid = next; score += gain;
     let done = false;
@@ -495,12 +610,14 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     setTimeout(() => { finish(); cleanup = cleanup.filter(f => f !== finish); }, 115);
     for (let k = 0; k < (mode.spawn || 1); k++) spawn();
     render(gain);
-    if (mode.target && !won && merges.some(([k]) => k.v >= mode.target)) { won = true; showOverlay("win"); } // card shown at once (it fades in) so no swipe is silently swallowed
-    else if (mode.steps && stepsLeft <= 0) end("steps", 420);
-    else if (!canMove()) end("over", 420);
+    if (merges.length) sfx.merge(Math.max(...merges.map(([k]) => k.v))); else sfx.slide();
+    if (mode.target && !won && merges.some(([k]) => k.v >= mode.target)) { won = true; sfx.win(); showOverlay("win"); } // card shown at once (it fades in) so no swipe is silently swallowed
+    else if (mode.steps && stepsLeft <= 0) end("steps", 250);
+    else if (!canMove()) end("over", 250);
+    persist(); // every move is saved at once, so a killed tab comes back to the latest board
   }
 
-  function end(kind, delay) { over = true; persist(); setTimeout(() => showOverlay(kind), delay); }
+  function end(kind, delay) { over = true; persist(); setTimeout(() => { if (over) { sfx.over(); showOverlay(kind); } }, delay); }
 
   function canMove() {
     if (empties().length) return true;
@@ -520,27 +637,48 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     if ("won" in h) { won = h.won; keepGoing = h.keepGoing; } // undoing the winning merge un-wins it
     load(h.cells); score = h.score;
     render();
+    sfx.undo();
+    persist();
   }
 
+  const shareText = () => `窯變 2048・每日一窯 ${dayLabel()}：${+store.get(bestKey()) || 0} 分，最高「${tierName(+store.get(dailyTopKey()) || 2)}」`;
+  function copy(text, btn) {
+    const done = ok => { btn.textContent = ok ? "已複製" : "複製失敗"; };
+    const fallback = () => {
+      try { const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+        document.body.appendChild(ta); ta.select(); const ok = document.execCommand("copy"); ta.remove(); done(ok); } catch { done(false); }
+    };
+    try { if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => done(true), fallback); else fallback(); } catch { fallback(); }
+  }
   function showOverlay(kind) {
     board.querySelector(".overlay")?.remove();
+    confirming = kind === "confirm";
     const o = document.createElement("div");
     o.className = "overlay";
-    const record = score > 0 && score >= best ? "，創下這個模式的新紀錄" : "";
-    const summary = `本局 ${score} 分${record}，最高合成到「${tierName(topValue())}」。`;
-    if (kind === "win") {
+    const record = rec ? "，創下這個模式的新紀錄" : "";
+    const summary = mode.daily
+      ? (official ? `今日成績 ${score} 分，最高合成到「${tierName(topValue())}」。` : `練習 ${score} 分（今日成績 ${best} 分，重玩不計分）。`)
+      : `本局 ${score} 分${record}，最高合成到「${tierName(topValue())}」。`;
+    if (kind === "confirm") {
+      const note = mode.daily && official ? `今日成績會以 ${score} 分記下，之後重玩算練習。` : `目前這局 ${score} 分會結束。`;
+      o.innerHTML = `<h2>開新局？</h2><p>${note}</p><div><button type="button" class="ghost" data-a="cancel">繼續這局</button><button type="button" data-a="new">開新局</button></div>`;
+    } else if (kind === "win") {
       o.innerHTML = `<h2>${tierName(mode.target)}已成</h2><p>你合成了 ${mode.target}。可以繼續往上，看能走多遠。</p><div><button type="button" data-a="go">繼續</button><button type="button" class="ghost" data-a="new">新局</button></div>`;
     } else {
       const title = { over: skin.full, time: "時間到", steps: "步數用完" }[kind];
       const canUndo = kind === "over" && canUndoMode() && undosLeft && history.length;
       const again = mode.daily ? "重玩今日盤面" : skin.again;
-      o.innerHTML = `<h2>${title}</h2><p>${summary}</p><div>${canUndo ? `<button type="button" class="ghost" data-a="undo">${skin.undo}一步（剩 ${undosLeft}）</button>` : ""}<button type="button" data-a="new">${again}</button></div>`;
+      const share = mode.daily ? `<button type="button" class="ghost" data-a="share">複製成績</button>` : "";
+      const cele = newTier ? `<p class="cele">★ 這個模式第一次合成「${tierName(newTier)}」！</p>` : "";
+      o.innerHTML = `<h2>${title}</h2>${cele}<p>${summary}</p><div>${canUndo ? `<button type="button" class="ghost" data-a="undo">${skin.undo.endsWith("步") ? skin.undo : skin.undo + "一步"}（剩 ${undosLeft}）</button>` : ""}${share}<button type="button" data-a="new">${again}</button></div>`;
     }
     o.addEventListener("click", e => {
-      const a = e.target.closest("button")?.dataset.a;
-      if (a === "go") { keepGoing = true; o.remove(); renderGoal(); board.focus(); if (mode.steps && stepsLeft <= 0) end("steps", 0); else if (!canMove()) end("over", 0); }
+      const btn = e.target.closest("button"), a = btn?.dataset.a;
+      if (a === "go") { keepGoing = true; o.remove(); renderGoal(); persist(); board.focus(); if (mode.steps && stepsLeft <= 0) end("steps", 0); else if (!canMove()) end("over", 0); }
       if (a === "new") newGame();
       if (a === "undo") undo();
+      if (a === "cancel") { confirming = false; o.remove(); board.focus(); }
+      if (a === "share") copy(shareText(), btn);
     });
     board.appendChild(o);
     o.querySelector("button")?.focus();
@@ -554,39 +692,73 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     if (!mode || !mode.time || !started || over || document.hidden) return;
     const shown = Math.ceil(timeLeft);
     timeLeft = Math.max(0, timeLeft - dt);
-    if (Math.ceil(timeLeft) !== shown) renderGoal();
+    if (Math.ceil(timeLeft) !== shown) { renderGoal(); persist(); }
     if (timeLeft <= 0) { flush(); end("time", 0); }
   }, 200);
 
   const KEYS = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right", W: "up", S: "down", A: "left", D: "right" };
   addEventListener("keydown", e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape") { if (!sheet.hidden) closeSheet(); else if (confirming) board.querySelector('.overlay [data-a="cancel"]')?.click(); return; }
+    if (!sheet.hidden || confirming) return;
     if (KEYS[e.key]) { e.preventDefault(); move(KEYS[e.key]); }
     else if (e.key === "z" || e.key === "Z") undo();
   });
 
-  // swipe (pointer events cover touch, pen and mouse drag)
-  let start = null;
+  // swipe (pointer events cover touch, pen and mouse drag); every finger is tracked on its own, so two
+  // overlapping swipes are two moves and lifting one finger never drops the other's swipe
+  const starts = new Map();
   board.addEventListener("pointerdown", e => {
     if (e.target.closest(".overlay")) return;
-    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    starts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   });
   addEventListener("pointerup", e => {
-    if (!start || e.pointerId !== start.id) return;
-    const dx = e.clientX - start.x, dy = e.clientY - start.y;
-    start = null;
+    const s = starts.get(e.pointerId);
+    if (!s) return;
+    starts.delete(e.pointerId);
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
     move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
   });
-  addEventListener("pointercancel", () => { start = null; });
-  document.addEventListener("touchmove", e => { if (start) e.preventDefault(); }, { passive: false });
+  addEventListener("pointercancel", e => { starts.delete(e.pointerId); });
+  document.addEventListener("touchmove", e => { if (starts.size) e.preventDefault(); }, { passive: false });
 
-  $("newGame").addEventListener("click", newGame);
+  // 新局 asks first when a game is under way, so one stray tap never throws away a board
+  $("newGame").addEventListener("click", () => {
+    if (started && !over && !(won && !keepGoing) && !board.querySelector(".overlay")) showOverlay("confirm");
+    else if (!confirming) newGame();
+  });
   undoBtn.addEventListener("click", undo);
+
+  const muteBtn = $("mute");
+  const paintMute = () => { muteBtn.setAttribute("aria-pressed", muted); muteBtn.title = muted ? "音效已關（點一下打開）" : "音效開（點一下靜音）"; };
+  muteBtn.addEventListener("click", () => { muted = !muted; store.set("kiln2048-mute", muted ? "1" : "0"); paintMute(); if (!muted) tone(660, 0.08, "sine", 0.05); });
+  paintMute();
+
+  // mode & theme sheet: the same tab and theme buttons move into it while it is open
+  const sheet = $("sheet"), menuBtn = $("menu");
+  const homeModes = [modesEl.parentNode, modesEl.nextSibling], homeSkins = [skinsEl.parentNode, skinsEl.nextSibling];
+  function openSheet() {
+    if (!sheet.hidden) return;
+    $("sheetModes").appendChild(modesEl); $("sheetSkins").appendChild(skinsEl);
+    const st = statOf(mode.id);
+    $("statLine").innerHTML = `${mode.name}：已玩 <b>${st.games}</b> 局，最高合成到 <b>${st.games && st.top ? tierName(st.top) + " " + st.top : "—"}</b>，${mode.daily ? "今日成績" : "最佳"} <b>${best}</b> 分。`;
+    sheet.hidden = false;
+    modesEl.querySelector('[aria-selected="true"]')?.focus();
+  }
+  function closeSheet() {
+    if (sheet.hidden) return;
+    sheet.hidden = true;
+    homeModes[0].insertBefore(modesEl, homeModes[1]); homeSkins[0].insertBefore(skinsEl, homeSkins[1]);
+    menuBtn.focus();
+  }
+  menuBtn.addEventListener("click", openSheet);
+  $("sheetClose").addEventListener("click", closeSheet);
+  sheet.addEventListener("click", e => { if (e.target === sheet) closeSheet(); });
 
   // each mode keeps its own game, so switching modes never loses progress
   const save = () => ({ mode: mode.id, skin: document.documentElement.dataset.skin, cells: snapshot(), stones, seed, day: mode.daily ? today() : 0,
-    score, undosLeft, history, won, keepGoing, timeLeft, stepsLeft, started, over });
+    score, undosLeft, history, won, keepGoing, timeLeft, stepsLeft, started, over, official, rec, newTier });
   function persist() { if (mode && grid) store.set("kiln2048-game-" + mode.id, JSON.stringify(save())); }
   addEventListener("pagehide", persist);
   document.addEventListener("visibilitychange", () => { if (document.hidden) persist(); });
@@ -597,7 +769,10 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     stones = Array.isArray(s.stones) ? s.stones : [];
     seed = s.seed || 0;
     load(s.cells); score = s.score || 0; undosLeft = s.undosLeft ?? UNDOS; history = s.history || [];
-    won = !!s.won; keepGoing = !!s.keepGoing; started = !!s.started;
+    won = !!s.won; keepGoing = !!s.keepGoing; started = !!s.started; confirming = false;
+    official = mode.daily ? s.official ?? true : true;
+    if (mode.daily && official && started) store.set(playedKey(), "1");
+    rec = s.rec ?? (score > 0 && score >= best); newTier = s.newTier || 0;
     timeLeft = s.timeLeft ?? (mode.time || 0); stepsLeft = s.stepsLeft ?? (mode.steps || 0);
     over = !!s.over || !canMove() || (mode.time && timeLeft <= 0) || (mode.steps && stepsLeft <= 0);
     render();
