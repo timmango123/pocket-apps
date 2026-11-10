@@ -40,6 +40,8 @@ const FEEDER = () => {
   const txt = (page, s) => page.locator(s).innerText();
   const num = async (page, s) => parseFloat((await txt(page, s)).replace('−', '-'));
   const settle = () => sleep(900);
+  // wait (not sleep) until the filtered reading has converged; robust on a loaded machine
+  const conv = (page, k, v, e = 0.04) => page.waitForFunction(([k, v, e]) => { const r = __level.readings(); return r && Math.abs(r[k] - v) < e; }, [k, v, e], { timeout: 8000 }).catch(() => {});
   try {
     {
       const { ctx, page } = await mk();
@@ -124,7 +126,12 @@ const FEEDER = () => {
       await page.evaluate(() => __level.setForceAngle(null));
       // plumb
       await feed(page, 'motion', [G * Math.cos(rad(0.8)), G * Math.sin(rad(0.8)), 0]); await settle();
-      assert((await txt(page, '#eRef')) === '以垂直為準' && near(await num(page, '#eBig'), -0.8, 0.05), 'edge near 90° reads against plumb: -0.8°');
+      await conv(page, 'dev', -0.8); await sleep(50);
+      // screen still portrait (rotation lock) but the phone stands on its LONG edge: measured against level, not plumb
+      assert((await txt(page, '#eRef')).startsWith('長邊以水平為準') && near(await num(page, '#eBig'), -0.8, 0.05) && (await txt(page, '#statusText')) !== '長邊已垂直', 'edge, portrait screen, long edge down: long edge vs level -0.8°');
+      await feed(page, 'motion', [G * Math.sin(rad(0.1)), G * Math.cos(rad(0.1)), 0]); await settle();
+      await conv(page, 'dev', 0.1); await sleep(100);
+      assert((await txt(page, '#eRef')) === '長邊以垂直為準' && (await txt(page, '#statusText')) === '長邊已垂直', 'edge, short edge down: long edge vs plumb -> 長邊已垂直');
 
       // protractor
       await page.click('[data-mode=prot]');
@@ -156,6 +163,7 @@ const FEEDER = () => {
       await page.click('#goBtn');
       await feed(page, 'motion', tiltX(3)); await feed(page, 'orient', { alpha: 0, beta: 0, gamma: -3 }); await settle();
       assert(await page.evaluate(() => __level.R.sign) === 1, 'sign vote flips to +1 when the vector agrees with beta/gamma');
+      await conv(page, 'x', 3); await sleep(50);
       assert(near(await num(page, '#r1'), 3, 0.05), 'X 3.0 after sign detection');
       await ctx.close();
     }
@@ -166,7 +174,8 @@ const FEEDER = () => {
       await page.click('#goBtn');
       await feed(page, 'motion', tiltX(3).map(v => -v)); await feed(page, 'orient', { alpha: 0, beta: 0, gamma: -3 }); await settle();
       assert(await page.evaluate(() => __level.R.sign) === -1, 'inverted accelerationIncludingGravity detected (sign -1)');
-      assert(near(await num(page, '#r1'), 3, 0.05), 'X 3.0 with inverted gravity');
+      await conv(page, 'x', 3); await sleep(50);
+      assert(near(await num(page, '#r1'), 3, 0.05), 'X 3.0 with inverted gravity (' + await txt(page, '#r1') + ')');
       await ctx.close();
     }
     {
@@ -181,6 +190,7 @@ const FEEDER = () => {
       await page.evaluate(FEEDER);
       await page.click('#goBtn');
       await feed(page, 'orient', { alpha: 0, beta: 12, gamma: 0 }); await settle();
+      await conv(page, 'y', 12); await sleep(50);
       assert(near(await num(page, '#r2'), 12, 0.05), 'deviceorientation fallback: beta 12 -> Y 12.0');
       await ctx.close();
     }
