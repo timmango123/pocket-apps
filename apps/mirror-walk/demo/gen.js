@@ -1,6 +1,7 @@
 // Offline level generator for 鏡湖雙影 (mirror-walk). Core logic is read from ../index.html (or $CORE).
 // Usage: node gen.js <outdir> <levels: comma list and/or a-b ranges> [bands.json {"L":[Dlo,Dhi]}]   env: BUDGET=ms per level, ATT0=first attempt seed
 // Levels 11,85,94,95,99,100 were re-run with explicit D bands (11:[14.95,15.45] 85:[94.95,96.3] 94:[102.35,103.05] 95:[103.1,104.05] 99:[105.55,106.6] 100:[106.65,109]; ATT0=40, L94 ATT0=120)
+// 2026-11 release fixes: level 1 is a hand-made 3-step tutorial (not generated); 70,80,90,95 are breathers: BREATHER=1 BUDGET=200000 node gen.js out 70,80,90,95
 // Deterministic: PRNG seeded with L*69069 (+attempt), DFS maze carving + holes, element placement,
 // then hill-climb with full BFS (optimum, min 錯位 steps, trap ratio) toward the spec curves.
 const fs = require('fs'), path = require('path');
@@ -13,7 +14,7 @@ function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; le
 // Target difficulty curve (strictly increasing); each level's D must land in [Dt(L), Dt(L+1)) so D rises every level.
 const DT = [[1, 10], [20, 19], [40, 33], [60, 60], [78, 90], [100, 107], [101, 107.8]];
 function Dt(L) { for (let i = 1; i < DT.length; i++) if (L <= DT[i][0]) { const [a, da] = DT[i - 1], [b, db] = DT[i]; return da + (db - da) * (L - a) / (b - a); } return 108; }
-function spec(L) {
+var spec = function (L) {
   const size = L <= 12 ? [5, 5] : L <= 30 ? [6, 6] : L <= 55 ? [7, 7] : L <= 80 ? [8, 7] : [9, 8];
   return {
     w: size[0], h: size[1],
@@ -30,6 +31,14 @@ function spec(L) {
     frag: L >= 85 ? Math.min(3, 2 + Math.floor((L - 85) / 8)) : 0,
   };
 }
+// Breather levels (BREATHER=1, used for 70/80/90/95): ~half the optimum and fewer 錯位 steps, same mechanics and
+// trap target and at most ~45% 錯位 steps, so the late game has short "find the key move" levels between the long mazes; the D band is dropped.
+const spec0 = spec;
+spec = function (L) {
+  const sp = spec0(L);
+  if (process.env.BREATHER) { sp.M = Math.round(sp.M * 0.5); sp.E = Math.floor(sp.E * 0.5); sp.Dlo = 0; sp.Dhi = 1e9; sp.Emax = Math.round(sp.M * 0.45); }
+  return sp;
+};
 
 // world grid: array of chars
 function maze(w, h, rnd, density) {
@@ -123,6 +132,7 @@ function cost(sp, r) {
   let c = 0;
   if (r.opt < sp.M) c += 4 * (sp.M - r.opt); else if (r.opt > sp.M + 2) c += 2 * (r.opt - sp.M - 2);
   if (r.E < sp.E) c += 3 * (sp.E - r.E);
+  if (sp.Emax && r.E > sp.Emax) c += 2 * (r.E - sp.Emax); // breathers: fewer forced wall bumps
   const tlo = sp.trap - 0.08, thi = sp.trap >= 0.75 ? 1 : sp.trap + 0.12;
   if (r.trap < tlo) c += 40 * (tlo - r.trap); else if (r.trap > thi) c += 25 * (r.trap - thi);
   if (sp.doors && !r.u.door) c += 6;
