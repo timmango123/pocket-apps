@@ -59,7 +59,7 @@ const wait = p => p.waitForTimeout(80);
   await page.click('#type_dots'); await page.evaluate(() => { const s = window.__pm.S; s.angle = 0; s.params.dots = { size: 24, r: 4 }; window.__pm.S = s; }); await wait(page);
   assert(await page.isVisible('#copyPure'), 'pure CSS available for dots');
   const pure = await page.evaluate(() => window.__pm.pureCSS());
-  assert(pure.includes('radial-gradient(circle at center, #1d5a48 4px, transparent 4.5px)') && pure.includes('background-size: 24px 24px'), 'pure CSS dots');
+  assert(pure.includes('radial-gradient(circle at center, #1d5a48 3.75px, transparent 4.25px)') && pure.includes('background-size: 24px 24px'), 'pure CSS dots');
   // compare pure css vs svg rendering
   const diff = await page.evaluate(async () => { const svg = window.__pm.buildTile({ withBg: true }).svg; const im = new Image(); im.src = window.__pm.dataURI(svg); await im.decode(); const c = document.createElement('canvas'); c.width = 24; c.height = 24; const x = c.getContext('2d'); x.drawImage(im, 0, 0);
     const d = x.getImageData(0, 0, 24, 24).data; return [d[(12 * 24 + 12) * 4], d[(12 * 24 + 12) * 4 + 1], d[0], d[1]]; });
@@ -75,8 +75,9 @@ const wait = p => p.waitForTimeout(80);
   assert(saved.length === 2 && saved[1].type === 'image/png' && saved[1].size > 200, 'PNG download 600x400 (custom 300x200 @2x)');
   const dims = await page.evaluate(async () => { const c = await window.__pm.makePNG(); return [c.width, c.height]; });
   assert(dims[0] === 600 && dims[1] === 400, 'PNG dims ' + dims);
-  await page.fill('#pngW', '9000'); const dims2 = await page.evaluate(async () => { const c = await window.__pm.makePNG(); return [c.width, c.height]; });
-  assert(dims2[0] <= 8192 && dims2[1] <= 8192, 'PNG capped at 8192: ' + dims2);
+  await page.fill('#pngW', '9000'); const dims2 = await page.evaluate(async () => { try { await window.__pm.makePNG(); return 'made'; } catch (e) { return e.message; } });
+  assert(/1–8192/.test(dims2) && await page.isVisible('#pngErr'), 'custom PNG size over 8192 is refused with a message: ' + dims2);
+  await page.fill('#pngW', '300');
   // favorites persist
   await page.click('#favAdd'); await page.waitForTimeout(450);
   await page.reload(); await page.waitForTimeout(400);
