@@ -31,7 +31,8 @@ const check = (name, ok, extra) => { ok ? pass++ : fail++; console.log((ok ? 'PA
   await sleep(1000);
   check('slicing 「開始」 starts the game', (await st()).state === 'play');
   await page.evaluate(() => { __game.hold(); __game.set({ waveTimer: 1e9 }); });
-  await sleep(2600); // let the first wave (if any) clear
+  // let the first wave (if any) clear
+  for (let k = 0; k < 120 && (await page.evaluate(() => __game.snap().items.length)); k++) await sleep(50);
   await page.evaluate(() => __game.set({ lives: 3, score: 0, nextLife: 100, misses: 0 }));
   await page.evaluate(() => { __game.snap().items.length; });
   // 1. slow drag does not cut
@@ -53,7 +54,8 @@ const check = (name, ok, extra) => { ok ? pass++ : fail++; console.log((ok ? 'PA
   await swipe([120, 300], [270, 300], 90); await sleep(1000);
   g = await st(); const left = (await page.evaluate(() => __game.snap().items.filter(i => i.kind !== 'start').length));
   check('chestnut costs 1 life and clears all fruit without score', g.lives === 2 && left === 0 && g.score === 0, `lives ${g.lives}, items left ${left}, score ${g.score}`);
-  // 4. missed fruit costs a life
+  // 4. missed fruit costs a life (after the 20 s warm-up, during which misses are free)
+  await page.evaluate(() => { __game.jump(25); __game.set({ grace: 0 }); });
   await page.evaluate(() => __game.place('apple', 195, 820, 300));
   await sleep(1500); g = await st();
   check('a fruit falling off the bottom costs 1 life', g.lives === 1 && g.misses === 1, `lives ${g.lives}, misses ${g.misses}`);
@@ -101,7 +103,7 @@ const check = (name, ok, extra) => { ok ? pass++ : fail++; console.log((ok ? 'PA
   await c2.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: m2.x - m2.r * 1.4, y: m2.y }] });
   for (let i = 1; i <= 6; i++) { await sleep(16); await c2.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: m2.x - m2.r * 1.4 + m2.r * 2.8 * i / 6, y: m2.y }] }); }
   await c2.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(900);
-  await p2.evaluate(() => __game.set({ lives: 1 })); await p2.evaluate(() => __game.place('apple', 195, 820, 300)); await sleep(4000);
+  await p2.evaluate(() => { __game.jump(25); __game.set({ lives: 1, grace: 0 }); }); await p2.evaluate(() => __game.place('apple', 195, 820, 300)); await sleep(4000);
   const g2 = await p2.evaluate(() => __game.state());
   check('blocked localStorage: game still plays and ends without errors', g2.state === 'over' && e2.length === 0, e2.join(' | '));
   await browser.close();
