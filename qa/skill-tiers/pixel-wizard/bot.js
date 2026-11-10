@@ -5,7 +5,7 @@
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs');
 const path = require('path');
-const APP = '/mnt/project-files/apps/pixel-wizard/index.html';
+const APP = process.env.PW_APP || path.resolve(__dirname, '../../../apps/pixel-wizard/index.html');
 const OUT = __dirname;
 // --- hub-like host page: the app has no <!doctype>/viewport meta, so (like game-hub) it is run inside a
 // full-screen iframe of a 390x844 page with a viewport meta. Touch coordinates map 1:1 into the iframe.
