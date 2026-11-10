@@ -5,8 +5,8 @@ const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const HE = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return HE;')();
 const { card, suit, rank, QS, JD, C2 } = HE;
-let pass = 0, fail = 0;
-const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg); } };
+let pass = 0, fail = 0; const T0 = Date.now(); if (process.env.HT_TIME) { const o = console.log; console.log = (...a) => o(((Date.now() - T0) / 1000).toFixed(1) + 's', ...a); }
+const ok = (c, msg) => { if (process.env.HT_TIME) console.log(msg); if (c) pass++; else { fail++; console.log('FAIL', msg); } };
 const C = s => { const m = s.match(/^(10|[2-9JQKA])([CDSH])$/); return card('CDSH'.indexOf(m[2]), HE.RANKS.indexOf(m[1])); };
 const cs = str => str.split(' ').filter(Boolean).map(C);
 const same = (a, b) => JSON.stringify(a.slice().sort((x, y) => x - y)) === JSON.stringify(b.slice().sort((x, y) => x - y));
@@ -171,5 +171,145 @@ function finishedRound(opts, ptsTo) {
   ok(bad === 0, '3000 rounds: 52 plays, 13 tricks, 26 raw points, total 26 or 78 (−26 / J♦ adjusted)');
   console.log('self-play: ' + rounds + ' rounds, ' + moons + ' moons, illegal ' + illegal + ', bad totals ' + bad);
 }
-console.log(pass + ' passed, ' + fail + ' failed');
-process.exit(fail ? 1 : 0);
+// --- match length option, 一般 difficulty (release review 2026-11-02) ---
+{
+  const M = HE.newMatch(1, { target: 50 });
+  HE.finishRound(M, { d: [10, 20, 30, 49], shooter: -1 }); ok(!M.over, 'target 50: 49 points does not end the match');
+  HE.finishRound(M, { d: [0, 0, 0, 1], shooter: -1 }); ok(M.over && M.winner === 0, 'target 50: reaching 50 ends it');
+  const O = HE.newMatch(1, { jd: false }); delete O.opts.target; HE.finishRound(O, { d: [10, 20, 30, 99], shooter: -1 });
+  ok(!O.over, 'old saved match without target still plays to 100');
+  // a 1-step greedy player (the skill-tier "casual" bot without slips) must win some matches at the default level
+  const greedy = S => { const L = HE.legal(S, 0); if (L.length === 1 || S.tc === 0) return L.slice().sort((a, b) => rank(a) - rank(b))[0];
+    const Ls = suit(S.trick[S.lead]); let wr = -1; for (let q = 0; q < 4; q++) { const c = S.trick[q]; if (c >= 0 && suit(c) === Ls && rank(c) > wr) wr = rank(c); }
+    const f = L.filter(c => suit(c) === Ls); if (f.length) { const u = f.filter(c => rank(c) < wr && c !== QS); return (u.length ? u : f).sort((a, b) => rank(b) - rank(a))[0]; }
+    if (L.includes(QS)) return QS; return L.sort((a, b) => (suit(b) === 3) - (suit(a) === 3) || rank(b) - rank(a))[0]; };
+  let wins = 0; const N = 60;
+  for (let i = 0; i < N; i++) {
+    const M = HE.newMatch(HE.hash('lv1', i), {});
+    while (!M.over && M.round < 60) {
+      const S = HE.startRound(M); S.log = false;
+      if (S.phase === 'pass') HE.applyPass(S, [0, 1, 2, 3].map(p => HE.think(HE.viewFor(S, p), p, p ? 1 : 0, HE.hash(M.seed, M.round, 'pass', p)).move));
+      while (S.phase === 'play') { const p = S.turn; HE.play(S, p ? HE.think(HE.viewFor(S, p), p, 1, HE.hash(M.seed, M.round, S.tno, S.tc, p)).move : greedy(S)); }
+      HE.finishRound(M, HE.roundScore(S));
+    }
+    if (M.winner === 0) wins++;
+  }
+  console.log('greedy player vs 一般: ' + wins + '/' + N + ' wins');
+  ok(wins >= N * .1 && wins <= N * .6, '一般 is beatable by a simple greedy player (10–60% wins; was ~2%)');
+}
+// --- static checks on the page ---
+ok(!/扣 1 分/.test(html) && /\+1 分/.test(html), 'help text says hearts are +1 penalty points, not 扣');
+ok(/#tip button\{[^}]*min-height:44px/.test(html), 'tutorial tip button is 44px tall');
+
+// --- browser checks (real CDP touch, phone contexts) ---
+(async () => {
+  let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('playwright missing: browser checks skipped'); return; }
+  const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+  const browser = await chromium.launch();
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function open(w, h, init) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage(), errors = [];
+    page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    // storage is prepared once, then the page is reloaded (no init script, so later reloads keep what the game saved)
+    await page.goto(URL); await page.waitForFunction(() => window.__hearts);
+    await page.evaluate(match => { localStorage.clear(); localStorage.setItem('hearts:settings', JSON.stringify({ level: 1, tutDone: true, snd: false, vib: false })); if (match) localStorage.setItem('hearts:match', match); }, init || null);
+    await page.reload(); await page.waitForFunction(() => window.__hearts);
+    const cdp = await ctx.newCDPSession(page);
+    const touch = async (x, y) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] }); await sleep(40); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
+    const tapSel = async sel => { const b = await page.locator(sel).boundingBox(); await touch(b.x + b.width / 2, b.y + b.height / 2); };
+    const info = () => page.evaluate(() => window.__hearts.info());
+    return { ctx, page, errors, touch, tapSel, info };
+  }
+  try {
+    // 1) deal can be skipped with one tap; hand strips ≥44px; every card is hit where cardPt says; subtitle fits
+    for (const [w, h] of [[360, 640], [390, 844], [430, 932]]) {
+      const T = await open(w, h);
+      await T.tapSel('#bNew');
+      await T.page.waitForFunction(() => window.__hearts.info().hand.length === 13);
+      await T.touch(w / 2, h / 2);
+      const st = await T.info();
+      ok(st.passReady || (st.wait && st.turn === 0) || st.turn > 0, w + ': a tap during the deal finishes it at once');
+      await T.page.waitForFunction(() => { const i = window.__hearts.info(); return i.passReady || i.wait; }, null, { timeout: 30000 });
+      const I = await T.info();
+      if (I.passReady) {
+        const pts = await T.page.evaluate(h => h.map(c => window.__hearts.cardPt(c)), I.hand);
+        let wrong = 0; // each card once (alternating cardPt and 20px lower), so every tap adds a new card to the pass selection
+        for (let i = 0; i < (w < 400 ? 13 : 0); i++) {
+          const c = I.hand[i], p = await T.page.evaluate(c => window.__hearts.cardPt(c), c);
+          await T.touch(p.x, p.y + (i % 2 ? 20 : 0)); if (!(await T.info()).passSel.includes(c)) wrong++;
+        }
+        if (w < 400) ok(wrong === 0, w + 'x' + h + ': tapping each of the 13 cards selects that card (wrong ' + wrong + ')');
+        const minW = await T.page.evaluate(() => Math.min(...window.__hearts.fan().map(f => f.rgt - f.l)));
+        ok(minW >= 44, w + 'x' + h + ': each hand card has a ≥44px wide tap strip (min ' + minW.toFixed(1) + ')');
+        const minL = await T.page.evaluate(() => Math.min(...window.__hearts.fan().map(f => f.l)));
+        ok(minL >= 8, w + ': leftmost card is inset from the screen edge (' + minL.toFixed(1) + 'px)');
+      } else ok(true, 'no-pass round');
+      const sub = await T.page.evaluate(() => { const e = document.getElementById('tSub'); return { fit: e.scrollWidth <= e.clientWidth + 1, t: e.textContent }; });
+      ok(sub.fit && /破心|紅心/.test(sub.t), w + ': top subtitle fits without ellipsis and keeps the hearts-broken state ("' + sub.t + '")');
+      ok(!T.errors.length, w + ': no page errors ' + T.errors.join(' | '));
+      await T.ctx.close();
+    }
+    // 2) final round: result is recorded before the result sheet; reload keeps it and shows it once
+    {
+      const ctxS = HE.newMatch(4242, {}); delete ctxS.opts.target; ctxS.round = 6; ctxS.totals = [0, 40, 60, 100 - 1];
+      for (let i = 0; i < 6; i++) ctxS.rounds.push({ d: [0, 0, 0, 0], shooter: -1 });
+      // the last round with 1 trick left (old save format, no target), so the page finishes it on its own
+      const S = HE.newRound(HE.hash('final'), 3, ctxS.opts);
+      while (S.tno < 12) HE.play(S, HE.legal(S)[0]);
+      ctxS.totals[3] = 100; // anyone ≥100 after this round ends the match; seat 0 stays lowest
+      const save = JSON.stringify({ v: 1, M: ctxS, S, level: 1, daily: null, mf: { worst: false, qs: 0 } });
+      const T = await open(390, 844, save);
+      await T.page.evaluate(() => { window.__msgs = []; new MutationObserver(() => window.__msgs.push(document.getElementById('msg').textContent)).observe(document.getElementById('msg'), { childList: true, characterData: true, subtree: true }); });
+      await T.tapSel('#bResume');
+      await T.page.waitForFunction(() => window.__hearts.info().ov.includes('ovRound'), null, { timeout: 30000 });
+      const r = await T.page.evaluate(() => ({ stats: JSON.parse(localStorage.getItem('hearts:stats')), match: JSON.parse(localStorage.getItem('hearts:match')), btn: document.getElementById('bNext').textContent, msg: document.getElementById('msg'), msgs: window.__msgs }));
+      ok(r.stats && r.stats.games === 1 && r.stats.wins === 1 && r.stats.lv[1][0] === 1 && r.stats.ach.first, 'final round: win and achievement are saved as soon as the round is scored');
+      ok(r.match && r.match.M.over && r.match.M.recorded, 'final round: finished match kept (marked recorded) until the result is shown');
+      ok(r.btn === '查看最終結果', 'final round: button leads to the final result');
+      const m = await T.page.evaluate(() => { const e = document.getElementById('msg'); return { hidden: e.hidden, t: e.textContent }; });
+      ok(m.hidden || !m.t, 'final round: the message pill is cleared at the round result (was "X 思考中…")');
+      ok(r.msgs.some(t => /出了/.test(t)) && r.msgs.some(t => /吃下這墩/.test(t)), 'message pill reports the card played and who took the trick');
+      await T.page.reload(); await T.page.waitForFunction(() => window.__hearts);
+      const a = await T.page.evaluate(() => ({ stats: JSON.parse(localStorage.getItem('hearts:stats')), resume: !document.getElementById('bResume').hidden && document.getElementById('bResume').textContent }));
+      ok(a.stats.games === 1 && a.stats.wins === 1 && /最終結果/.test(a.resume), 'reload on the result sheet: stats kept, menu offers the final result');
+      await T.tapSel('#bResume');
+      await T.page.waitForFunction(() => window.__hearts.info().ov.includes('ovEnd'));
+      const e = await T.page.evaluate(() => ({ stats: JSON.parse(localStorage.getItem('hearts:stats')), match: localStorage.getItem('hearts:match'), t: document.getElementById('eTitle').textContent }));
+      ok(e.stats.games === 1 && !e.match && e.t === '你贏了！', 'final result shown after reload, counted once, save cleared');
+      ok(!T.errors.length, 'final round: no page errors ' + T.errors.join(' | '));
+      await T.ctx.close();
+    }
+    // 3) a running match is not overwritten by 每日牌局 without a confirm; illegal taps explain themselves
+    {
+      const T = await open(390, 844);
+      await T.tapSel('#bNew');
+      await T.page.waitForFunction(() => window.__hearts.info().hand.length === 13); await T.touch(195, 300);
+      await T.page.waitForFunction(() => { const i = window.__hearts.info(); return i.passReady || i.wait; }, null, { timeout: 30000 });
+      let I = await T.info();
+      if (I.passReady) { for (const c of I.hand.slice(-3)) { const p = await T.page.evaluate(c => window.__hearts.cardPt(c), c); await T.touch(p.x, p.y); } await T.tapSel('#act'); }
+      await T.page.waitForFunction(() => { const i = window.__hearts.info(); return i.wait && i.turn === 0; }, null, { timeout: 60000 });
+      I = await T.info();
+      const bad = I.hand.find(c => !I.legal.includes(c));
+      if (bad !== undefined) {
+        const p = await T.page.evaluate(c => window.__hearts.cardPt(c), bad); await T.touch(p.x, p.y);
+        const t = await T.page.evaluate(() => ({ n: window.__hearts.info().hand.length, toast: document.getElementById('toast').textContent, sel: window.__hearts.info().sel }));
+        ok(t.n === I.hand.length && /不能出這張/.test(t.toast) && t.sel === -1, 'tapping a dimmed card plays nothing and says why');
+      } else ok(true, 'all cards legal');
+      const seed0 = await T.page.evaluate(() => JSON.parse(localStorage.getItem('hearts:match')).M.seed);
+      await T.tapSel('#bMenu'); await T.tapSel('#bDaily');
+      const c = await T.page.evaluate(() => ({ ov: window.__hearts.info().ov, seed: JSON.parse(localStorage.getItem('hearts:match')).M.seed }));
+      ok(c.ov.includes('ovConfirm') && c.seed === seed0, '每日牌局 asks before replacing a running match');
+      await T.page.locator('#ovConfirm [data-close]').click();
+      // options: match length
+      await T.tapSel('#bOpts'); await T.tapSel('#segLen [data-v="50"]');
+      ok(await T.page.evaluate(() => JSON.parse(localStorage.getItem('hearts:settings')).target === 50), 'match length 50 can be chosen and is saved');
+      ok(!T.errors.length, 'no page errors ' + T.errors.join(' | '));
+      await T.ctx.close();
+    }
+  } catch (e) { ok(false, 'browser checks threw: ' + e.message); }
+  await browser.close();
+})().then(() => {
+  console.log(pass + ' passed, ' + fail + ' failed');
+  process.exit(fail ? 1 : 0);
+});
