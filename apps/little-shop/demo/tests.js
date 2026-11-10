@@ -215,6 +215,9 @@ for (const [season, seed] of [[0, 11], [1, 12], [2, 13], [3, 14]]) {
 }
 
 // --- page drive ---
+// Waits are on conditions, never fixed sleeps, and the day's clock is frozen (__shop.lockstep) wherever a
+// check reads it, so a slow machine only makes the drive slower, not different. A watchdog names the step
+// that stalls well before qa/smoke/run.js would kill the run.
 (async () => {
   let chromium;
   try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch { console.log('(playwright not found, page checks skipped)'); return done(); }
@@ -223,16 +226,27 @@ for (const [season, seed] of [[0, 11], [1, 12], [2, 13], [3, 14]]) {
   const srv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(page_); });
   await new Promise(r => srv.listen(0, r));
   const URL = 'http://localhost:' + srv.address().port + '/app/little-shop/';
-  const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  let step = 'launch', t0 = Date.now();
+  const at = s => { step = s; };
+  const watchdog = setTimeout(() => { fail++; console.log(`FAIL page drive stalled at "${step}" after ${Math.round((Date.now() - t0) / 1000)} s`); done(); }, 150000);
+  // 2D canvas only: plain software raster. The SwiftShader GL flags other apps need for WebGL made every frame
+  // here 5–10× slower on a busy machine, and each tap waits on frames to see the button hold still.
+  const browser = await chromium.launch({ args: ['--disable-gpu'] });
   try {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const page = await ctx.newPage(), errors = [], external = [];
+    page.setDefaultTimeout(30000);
     page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('request', r => { if (!r.url().startsWith('http://localhost') && !r.url().startsWith('data:')) external.push(r.url()); });
-    await page.goto(URL); await page.waitForTimeout(600);
+    // true once fn(arg) holds in the page, false if it does not within the timeout (the check then fails)
+    const until = (fn, arg, timeout = 20000) => page.waitForFunction(fn, arg, { polling: 50, timeout }).then(() => true, () => false);
+    const ready = () => until(() => window.__shop && document.readyState === 'complete');
+
+    at('open the title'); await page.goto(URL); await ready();
     ok(await page.isVisible('#title') && await page.isVisible('#bStart'), 'title screen with the start button on first open');
-    ok(await page.evaluate(() => __shop.view === 'title' && __shop.Scene.actors.size > 0), 'title shows the shop with customers in the background');
+    ok(await until(() => __shop.view === 'title' && __shop.Scene.actors.size > 0), 'title shows the shop with customers in the background');
     // the forecast line and its hint say the same thing, over many seeds
+    at('forecast lines');
     const fcBad = await page.evaluate(() => {
       const out = []; let n = 0;
       for (let season = 0; season < 4; season++) for (let seed = 1; seed <= 300; seed++) for (const w of SHOP.newRun(season, seed).wxs) {
@@ -243,40 +257,48 @@ for (const [season, seed] of [[0, 11], [1, 12], [2, 13], [3, 14]]) {
       return { n, out: out.slice(0, 4), bad: out.length };
     });
     ok(fcBad.bad === 0, `forecast line and hint agree in ${fcBad.n} forecasts ${fcBad.out.join(' / ')}`);
-    await page.tap('#bStart'); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => __shop.view === 'market'), 'start opens the morning market');
+    at('start'); await page.tap('#bStart');
+    ok(await until(() => __shop.view === 'market'), 'start opens the morning market');
+    at('order taps');
     const b0 = await page.evaluate(() => __shop.run.order.noodle);
-    for (let i = 0; i < 6; i++) { await page.tap('.item[data-id="noodle"] [data-a="b+"]'); await page.waitForTimeout(125); }
+    for (let i = 1; i <= 6; i++) { await page.tap('.item[data-id="noodle"] [data-a="b+"]'); await until(n => __shop.run.order.noodle >= n, b0 + i, 5000); }
     ok(await page.evaluate(() => __shop.run.order.noodle) === b0 + 6, 'six taps on ＋ order six packs');
-    await page.tap('.item[data-id="noodle"] [data-a="p+"]'); await page.waitForTimeout(80);
-    ok(await page.evaluate(() => __shop.run.price.noodle) === ITEMS.noodle.ref + 1, 'price ＋ raises the price by $1');
-    await page.tap('#bSuggest'); await page.waitForTimeout(100);
-    ok(await page.evaluate(() => SHOP.orderCost(__shop.run) > 0), '照建議 fills the order');
-    await page.reload(); await page.waitForTimeout(500);
-    ok(await page.evaluate(() => __shop.view === 'market' && __shop.run.price.noodle === 16), 'refresh keeps the market and prices');
-    await page.tap('#bOpen'); await page.waitForTimeout(300);
-    ok(await page.evaluate(() => __shop.view === 'day' && __shop.run.phase === 'day'), 'open starts the day');
-    await page.evaluate(() => { const r = __shop.run; while (r.ds.q.length < 3) SHOP.tick(r); });
-    const before = await page.evaluate(() => __shop.run.ds.served);
-    await page.tap('#bServe'); await page.waitForTimeout(60);
-    ok(await page.evaluate(() => __shop.run.ds.served) >= before + 1 && await page.evaluate(() => __shop.run.ds.taps) === 1, 'touching 結帳 serves the counter');
-    await page.waitForTimeout(1600);
-    const t1 = await page.evaluate(() => { __shop.save(); return __shop.run.ds.t; });
-    await page.reload(); await page.waitForTimeout(500);
+    at('price tap'); await page.tap('.item[data-id="noodle"] [data-a="p+"]');
+    ok(await until(p => __shop.run.price.noodle === p, ITEMS.noodle.ref + 1, 5000), 'price ＋ raises the price by $1');
+    at('suggest'); await page.tap('#bSuggest');
+    ok(await until(() => SHOP.orderCost(__shop.run) > 0, null, 5000), '照建議 fills the order');
+    at('refresh in the market'); await page.reload(); await ready();
+    ok(await until(() => __shop.view === 'market' && __shop.run.price.noodle === 16, null, 5000), 'refresh keeps the market and prices');
+    at('open the shop'); await page.tap('#bOpen');
+    ok(await until(() => __shop.view === 'day' && __shop.run.phase === 'day'), 'open starts the day');
+    // freeze the clock so nobody is served on their own between filling the queue and the tap
+    at('serve tap');
+    const before = await page.evaluate(() => { __shop.lockstep(true); const r = __shop.run; while (r.ds.q.length < 3 && !SHOP.dayDone(r)) SHOP.tick(r); return r.ds.served; });
+    await page.tap('#bServe');
+    ok(await until(n => __shop.run.ds.served === n && __shop.run.ds.taps === 1, before + 1, 5000), 'touching 結帳 serves the counter');
+    // let the day run on its own for a while (it autosaves as it goes), then freeze it and refresh
+    at('day runs');
+    const tRun = await page.evaluate(() => { __shop.lockstep(false); return __shop.run.ds.t; });
+    ok(await until(t => __shop.run.ds.t >= t, tRun + 20), `the day clock runs on its own (from ${tRun})`);
+    const t1 = await page.evaluate(() => { __shop.lockstep(true); __shop.save(); return __shop.run.ds.t; });
+    at('refresh mid-day'); await page.reload(); await ready();
     const after = await page.evaluate(() => ({ v: __shop.view, t: __shop.run.ds && __shop.run.ds.t }));
-    ok(after.v === 'day' && Math.abs(after.t - t1) <= 30, `refresh mid-day resumes the same moment (${t1} → ${after.t})`);
+    ok(after.v === 'day' && after.t === t1, `refresh mid-day resumes the same moment (${t1} → ${after.t})`);
     ok(await page.evaluate(() => __shop.paused && !!document.getElementById('pauseBox')), 'after a refresh the day waits paused');
-    await page.tap('#pauseBox [data-r]'); await page.waitForTimeout(100);
+    at('resume'); await page.tap('#pauseBox [data-r]');
+    ok(await until(() => !__shop.paused && !document.getElementById('pauseBox'), null, 5000), '繼續營業 resumes the day');
+    at('closing time');
     await page.evaluate(() => { const r = __shop.run; while (!SHOP.dayDone(r)) SHOP.tick(r); });
-    for (let i = 0; i < 40 && await page.evaluate(() => __shop.view) !== 'report'; i++) await page.waitForTimeout(100);
+    await until(() => __shop.view === 'report');
     { const vv = await page.evaluate(() => __shop.view + '/' + __shop.run.phase + '/' + __shop.paused); ok(vv === 'report/report/false', 'closing time shows the report (' + vv + ')'); }
-    await page.reload(); await page.waitForTimeout(400);
-    ok(await page.evaluate(() => __shop.view === 'report'), 'refresh keeps the report');
-    await page.tap('#bNext'); await page.waitForTimeout(200);
-    ok(await page.evaluate(() => __shop.view === 'market' && __shop.run.day === 2), 'next morning is day 2');
+    at('refresh the report'); await page.reload(); await ready();
+    ok(await until(() => __shop.view === 'report', null, 5000), 'refresh keeps the report');
+    at('next morning'); await page.tap('#bNext');
+    ok(await until(() => __shop.view === 'market' && __shop.run.day === 2, null, 5000), 'next morning is day 2');
     ok(errors.length === 0, 'no page errors: ' + errors.join(' | '));
     ok(external.length === 0, 'no external requests: ' + external.join(' '));
-  } finally { await browser.close(); srv.close(); }
+  } catch (e) { fail++; console.log(`FAIL page drive: ${step}: ${String(e.message || e).split('\n')[0]}`); }
+  finally { at('close the browser'); await browser.close(); srv.close(); clearTimeout(watchdog); }
   done();
 })();
 function done() { console.log(`${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }

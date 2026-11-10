@@ -9,6 +9,8 @@ const fs = require('fs'), path = require('path'), http = require('http'), { spaw
 const ROOT = path.resolve(__dirname, '../..'), APPS = path.join(ROOT, 'apps');
 const args = process.argv.slice(2), HUBS = args.includes('--hubs'), only = args.filter(a => !a.startsWith('--'));
 const apps = fs.readdirSync(APPS).filter(d => !d.endsWith('-hub') && fs.existsSync(path.join(APPS, d, 'index.html')) && (!only.length || only.includes(d))).sort();
+// each demo/tests.js gets this long; a killed run is reported as such instead of with an empty reason
+const TEST_TIMEOUT = 300000;
 // Hosts the sandbox can't reach (fonts, CDNs) aren't app bugs.
 const NETWORK = /ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_INTERNET_DISCONNECTED|net::ERR_FAILED/;
 
@@ -86,13 +88,20 @@ function serve() {
   for (const a of apps) {
     const t = path.join(APPS, a, 'demo', 'tests.js');
     if (!fs.existsSync(t)) continue;
-    const r = spawnSync('node', [t], { cwd: path.dirname(t), encoding: 'utf8', timeout: 300000 });
-    const out = (r.stdout + r.stderr).trim().split('\n'), last = out[out.length - 1] || '';
-    const ok = r.status === 0 && !/^FAIL/m.test(r.stdout);
+    const t0 = Date.now(), r = spawnSync('node', [t], { cwd: path.dirname(t), encoding: 'utf8', timeout: TEST_TIMEOUT });
+    const secs = Math.round((Date.now() - t0) / 1000);
+    const out = ((r.stdout || '') + (r.stderr || '')).trim().split('\n').filter(Boolean);
+    // a run that was killed (timeout, out of memory) or exited without a word still says what happened
+    const killed = r.error && r.error.code === 'ETIMEDOUT' ? `逾時：${TEST_TIMEOUT / 1000} 秒內沒跑完，已中止`
+      : r.signal ? `被訊號 ${r.signal} 中止（${secs} 秒）` : r.error ? `無法執行：${r.error.message}` : '';
+    const last = killed ? `${killed}${out.length ? '，最後輸出：' + out[out.length - 1] : '，沒有任何輸出'}`
+      : out[out.length - 1] || `結束碼 ${r.status}，沒有任何輸出（${secs} 秒）`;
+    const ok = r.status === 0 && !/^FAIL/m.test(r.stdout || '');
     testRows.push(`| ${a} | ${ok ? '通過' : '**失敗**'} | ${last.slice(0, 160).replace(/\|/g, '\\|')} |`);
     if (!ok) fails.push(a + '（單元測試）');
     // on failure also show which checks failed, so a CI-only failure can be diagnosed from the log
-    const why = ok ? [] : out.filter(l => l !== last && /FAIL|✗|失敗|not ok|Error|timeout/i.test(l)).slice(0, 8);
+    let why = ok ? [] : out.filter(l => l !== last && /FAIL|✗|失敗|not ok|Error|timeout/i.test(l)).slice(0, 8);
+    if (!ok && !why.length) why = out.slice(-6, killed ? undefined : -1);
     process.stdout.write(ok ? '.' : `\n  ✗ ${a}: ${last}\n${why.map(l => '      ' + l.trim().slice(0, 200) + '\n').join('')}`);
   }
 
