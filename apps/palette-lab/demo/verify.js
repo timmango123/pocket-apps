@@ -1,9 +1,9 @@
 // Verify palette-lab: node verify.js
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs');
-const OUT = __dirname;
+const OUT = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'palette-lab-shots-'));
 // Mimic the Artifact publish wrapper (doctype + viewport meta) so isMobile contexts lay out at device width.
-const WRAP = path.join(__dirname, 'preview.html');
+const WRAP = path.join(OUT, 'preview.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
 const URL_ = 'file://' + WRAP;
 const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); console.log('  ok -', m); };
@@ -43,7 +43,7 @@ async function canvasFile(page, spec) { // build an image in page canvas, return
   assert(m.a === '#000000' && m.b === '#1E3A5F' && m.d === '#FF6347' && m.f === null, 'parse hex / rgb / names / invalid');
   assert(m.c === '#1F3C61', 'parse hsl(213,52%,25%) → #1F3C61 (hand-computed)');
   assert(Math.abs(m.e - 0.502) < 0.002 && m.g === '#FF000080', '#RRGGBBAA alpha + rgba()');
-  assert(m.r1 === '21.00' && m.r2 === '4.48', '#000/#fff = 21.00, #777/#fff = 4.48');
+  assert(m.r1 === '21.00' && m.r2 === '4.47', '#000/#fff = 21.00, #777/#fff = 4.47 (floored)');
   assert(Math.abs(m.ok[0] - 0.628) < 0.002 && Math.abs(m.ok[1] - 0.258) < 0.002 && Math.abs(m.ok[2] - 29.23) < 0.1, 'OKLCH of #FF0000 = ' + m.ok);
   assert(m.back === '#FF0000', 'OKLCH round-trip to #FF0000');
   assert(m.mat === 10 && m.mono === 6, 'material 10 steps / mono 6 steps');
@@ -60,7 +60,7 @@ async function canvasFile(page, spec) { // build an image in page canvas, return
 
   // --- contrast UI: #777 on #fff ---
   await page.fill('#fgHex', '#777'); await page.fill('#bgHex', '#fff'); await page.click('h1');
-  assert((await page.textContent('#ratio')) === '4.48:1', 'UI shows 4.48:1');
+  assert((await page.textContent('#ratio')) === '4.47:1', 'UI shows 4.47:1 (floored)');
   const badges = await page.$$eval('#badges .bd', bs => bs.map(b => b.className.includes('pass')));
   assert(JSON.stringify(badges) === '[false,true,false,false]', 'AA normal fail, AA large pass, AAA fail ×2');
   assert(await page.isVisible('#applyFix'), 'suggest-fix offered');
@@ -120,6 +120,9 @@ async function canvasFile(page, spec) { // build an image in page canvas, return
   assert((await page.locator('.sv').count()) === 0, 'two-step delete');
   await page.click('#drawerClose');
 
+  // locks now survive a reload; unlock them through the detail panel before testing extraction
+  for (const i of await page.evaluate(() => window.__pl.strip.map((s, i) => s.locked ? i : -1).filter(i => i >= 0))) { await sw(i).click(); await page.click('#dLock'); await page.click('#dClose'); }
+  assert((await page.evaluate(() => window.__pl.strip.filter(s => s.locked).length)) === 0, 'unlocked via detail panel');
   // --- photo ---
   await page.click('#tab-photo');
   await page.waitForFunction(() => window.__pl.strip.length === 5 && !document.querySelector('#photoBadge').hidden);
