@@ -59,8 +59,12 @@ const INTRO = { switch: 1, frag: 1, mode: 1, split: 1, portal: 1, ice: 1, spring
     const center = sel => p.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
     const tapAt = async (x, y, id = 1) => { await touch('touchStart', [[x, y, id]]); await touch('touchEnd', []); };
     const tapEl = async sel => { const c = await center(sel); await tapAt(c[0], c[1]); };
+    // Chromium 141 follows a tap whose pointerdown was preventDefault-ed with a click of detail 0: replay one right after
+    // the real tap, so each control is checked to act exactly once
+    const echo = sel => p.$eval(sel, e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+    const tapEcho = async sel => { await tapEl(sel); await echo(sel); };
     const swipe = async (x, y, d, id = 1, len = 40) => { const v = SWV[d]; await touch('touchStart', [[x, y, id]]); await touch('touchMove', [[x + v[0] * len / 2, y + v[1] * len / 2, id]]); await touch('touchMove', [[x + v[0] * len, y + v[1] * len, id]]); await touch('touchEnd', []); };
-    return { ctx, p, touch, st, idle, sol, level, play, center, tapAt, tapEl, swipe, cdp };
+    return { ctx, p, touch, st, idle, sol, level, play, center, tapAt, tapEl, tapEcho, echo, swipe, cdp };
   }
 
   // 1. 否決項：翻滾中的輸入排成先進先出佇列（至少 4 個），一個都不丟
@@ -140,7 +144,7 @@ const INTRO = { switch: 1, frag: 1, mode: 1, split: 1, portal: 1, ice: 1, spring
     for (let k = 0; k < 4; k++) {
       sp = await t.st(); const other = sp.cubes[1 - sp.active];
       await t.p.keyboard.press(KEYS[mv]);
-      await t.tapEl('#bSwap');
+      await t.tapEcho('#bSwap');
       await t.idle(); const a = await t.st();
       if (!a.split) break;
       eq(a.activeCell, other, `翻滾中點「切換」(${k + 1}/4)：落地後換成另一顆`);
@@ -214,7 +218,7 @@ const INTRO = { switch: 1, frag: 1, mode: 1, split: 1, portal: 1, ice: 1, spring
     await t.p.evaluate(() => { window.__undo = 0; document.getElementById('bUndo').addEventListener('click', () => __undo++); });
     const s1 = await t.sol(1); await t.play(s1[0]); await t.play(OPP[s1[0]]);
     const u = await t.center('#bUndo');
-    await t.touch('touchStart', [[u[0], u[1]]]); await t.p.waitForTimeout(1000); await t.touch('touchEnd', []); await t.p.waitForTimeout(60);
+    await t.touch('touchStart', [[u[0], u[1]]]); await t.p.waitForTimeout(1000); await t.touch('touchEnd', []); await t.echo('#bUndo'); await t.p.waitForTimeout(60);
     eq([await t.p.evaluate(() => __undo), (await t.st()).hist.length], [1, 1], '長按悔棋 1 秒：只悔 1 步');
     await t.touch('touchStart', [[150, 450, 1]]); await t.touch('touchStart', [[150, 450, 1], [u[0], u[1], 2]]);
     await t.touch('touchEnd', [[u[0], u[1], 2]]); await t.touch('touchEnd', []); await t.p.waitForTimeout(60);
@@ -234,9 +238,10 @@ const INTRO = { switch: 1, frag: 1, mode: 1, split: 1, portal: 1, ice: 1, spring
     await t.p.waitForFunction(() => { const m = __game.more(); return m.overview === 0 && m.cam.s > m.cam.fit * 1.6; }, null, { timeout: 5000 });
     s = await t.st();
     eq(await t.p.textContent('#zLbl'), '跟隨', `約 1 秒後拉近跟隨（${s.cam.fit.toFixed(1)} → ${s.cam.s.toFixed(1)}），按鈕標「跟隨」`);
-    await t.tapEl('#bZoom'); await t.p.waitForTimeout(50);
+    await t.tapEcho('#bZoom'); await t.p.waitForTimeout(50);
     eq(await t.p.textContent('#zLbl'), '全圖', '點一下：切到全圖，按鈕標「全圖」');
-    await t.tapEl('#bZoom'); await t.p.waitForFunction(() => !__game.more().lively, null, { timeout: 8000 });
+    await t.tapEcho('#bZoom'); eq(await t.p.textContent('#zLbl'), '跟隨', '再點一次（含 detail 0 的追加 click）：只切一次，回到「跟隨」');
+    await t.p.waitForFunction(() => !__game.more().lively, null, { timeout: 8000 });
     const fd0 = (await t.st()).floorDraws, sol = await t.sol(75);
     await t.play(sol[0]); await t.p.waitForFunction(() => !__game.more().lively, null, { timeout: 8000 });
     const fd1 = (await t.st()).floorDraws;
@@ -267,7 +272,7 @@ const INTRO = { switch: 1, frag: 1, mode: 1, split: 1, portal: 1, ice: 1, spring
     const hit = !(b.r <= pad.l || b.l >= pad.r || b.b <= pad.t || b.t >= pad.b);
     assert(!hit && b.l >= 0 && b.r <= w, `${w}×${h} 第 ${n} 關開方向鍵：棋盤在畫面內、不在方向鍵底下`);
     const s = await t.sol(n);
-    await t.tapEl('#pad ' + ['.pn', '.pe', '.ps', '.pw'][s[0] & 3]); await t.idle();
+    await t.tapEcho('#pad ' + ['.pn', '.pe', '.ps', '.pw'][s[0] & 3]); await t.idle();
     eq((await t.st()).hist, [s[0]], `${w}×${h}：點方向鍵一次只翻一步`);
     await t.ctx.close();
   }

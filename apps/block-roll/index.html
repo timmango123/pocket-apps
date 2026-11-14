@@ -1662,7 +1662,10 @@ function resume(){ status = 'play'; showOnly(null); showGameUi(true); layout(); 
    than 10 px, or it lifts inside the button's box grown by 16 px (the browser itself aims taps just outside an edge at the
    button). So taps work while another finger is on the board, and a tap that changes the screen can't fire whatever
    appears under the finger. The press's pointerdown is preventDefault-ed so no compatibility mousedown / focus follows;
-   pointer-made clicks (detail > 0) are swallowed page-wide in the capture phase; keyboard activation (detail 0) still works. */
+   the tap layer's own click is the only one that runs for a tap. Any other click counts as keyboard activation only right
+   after an Enter/Space keydown on that same element; a pointer-made click (detail > 0) is swallowed, and so is a detail-0
+   click on an element the tap layer fired within the last 800 ms (Chromium 141 sends the tap's follow-up click with detail 0
+   when pointerdown was preventDefault-ed). Scoped per element, so other controls and direct taps are never blocked. */
 var downOn = {};
 (function(){
   var SLACK = 16;
@@ -1681,10 +1684,18 @@ var downOn = {};
     var bx = b.getBoundingClientRect(), x = e.clientX, y = e.clientY;
     var still = Math.hypot(x - r.x, y - r.y) < 10;
     var inside = x >= bx.left - SLACK && x <= bx.right + SLACK && y >= bx.top - SLACK && y <= bx.bottom + SLACK;
-    if (still || inside) b.click(); // untrusted, detail 0: passes the filter below
+    if (still || inside) { firing = b; try { b.click(); } finally { firing = null; } b.__tapAt = performance.now(); }
   }, true);
   document.addEventListener('pointercancel', function(e){ delete downOn[e.pointerId]; }, true);
-  document.addEventListener('click', function(e){ if (e.isTrusted && e.detail > 0) { e.preventDefault(); e.stopPropagation(); } }, true);
+  var firing = null, keyEl = null, keyAt = 0;
+  document.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { keyEl = ctl(e.target); keyAt = performance.now(); } }, true);
+  document.addEventListener('click', function(e){
+    var b = ctl(e.target);
+    if (b && b === firing) return; // the tap layer's own click
+    if (b && b === keyEl && performance.now() - keyAt < 1000) { keyEl = null; return; } // keyboard activation
+    var recent = b && b.__tapAt && performance.now() - b.__tapAt < 800;
+    if (e.detail > 0 || recent) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
 })();
 function on(id, fn){ $(id).addEventListener('click', function(e){ audio(); fn(e); }); }
 on('tPlay', function(){ SFX.ui(); startLevel(playTarget()); });
