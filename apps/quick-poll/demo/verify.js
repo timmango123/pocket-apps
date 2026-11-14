@@ -44,8 +44,8 @@ async function voteSingle(page, idx) {
     out.c2 = { winner: r.winner, rounds: r.rounds.map(x => ({ c: x.counts, e: x.eliminated, prev: x.byPrev, ex: x.exhausted })) };
     // 案例 3：首輪即過半
     r = irv(3, [[A], [A], [A], [B], [C]]); out.c3 = { winner: r.winner, rounds: r.rounds.length };
-    // 案例 4：完全同票 → 抽籤淘汰
-    r = irv(2, [[A], [B]]); out.c4 = { winner: r.winner, lotto: r.rounds[0].lotto };
+    // 案例 4：剩下的候選完全同票 → 平手（不抽籤）
+    r = irv(2, [[A], [B]]); out.c4 = { winner: r.winner, tied: r.tied, tie: r.rounds[0].tie };
     // 效能：100 票 × 20 項
     const big = [...Array(100)].map(() => shuffled([...Array(20).keys()]));
     const t0 = performance.now(); irv(20, big); out.ms = performance.now() - t0;
@@ -57,7 +57,7 @@ async function voteSingle(page, idx) {
   ok(irvCases.c2.winner === 0 && c2.length === 4 && c2[0].e === 3 && c2[1].e === 2 && c2[1].prev && c2[2].ex === 1 && c2[2].c[0] === 5 && c2[2].c[1] === 5 && c2[2].e === 1,
     'IRV 案例 2：A5/B3/C2/D1 → 淘汰 D → B、C 同 3 票依上一輪淘汰 C → A5:B5（1 張用盡）依上一輪淘汰 B → A 當選（4 輪）');
   ok(irvCases.c3.winner === 0 && irvCases.c3.rounds === 1, 'IRV 案例 3：首輪 3/5 過半直接當選');
-  ok(irvCases.c4.lotto && irvCases.c4.winner >= 0, 'IRV 案例 4：1:1 無上一輪 → 抽籤淘汰並註明');
+  ok(irvCases.c4.tie && irvCases.c4.winner === -1 && irvCases.c4.tied.length === 2, 'IRV 案例 4：1:1 → 回報平手，不抽籤');
   ok(irvCases.ms < 10, `IRV 100 票 × 20 項耗時 ${irvCases.ms.toFixed(2)}ms`);
 
   // 2. 建立驗證：空白與重複
