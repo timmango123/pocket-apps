@@ -96,7 +96,14 @@ const HELPERS = () => {
     // 7. dial fling then tap the angle: inertia stops at 0.0°
     await drag(cdp, d[0], d[1], d[0] - 120, d[1], 6);
     await tap(cdp, await center(p, '#angleBtn')); await idle(p);
-    ok((await st(p)).a === 0 && (await p.textContent('#angleBtn')).trim() === '0.0°', 'zero tap during dial inertia stays at 0.0°');
+    { const s7 = await st(p), t7 = (await p.textContent('#angleBtn')).trim(); ok(s7.a === 0 && t7 === '0.0°', `zero tap during dial inertia stays at 0.0° (a ${s7.a}, ${t7})`); }
+    { // zero tapped with a second finger while the dial is still held, then the dial finger lifts
+      await touch(cdp, 'touchStart', [d]); for (let i = 1; i <= 6; i++) await touch(cdp, 'touchMove', [[d[0] - 20 * i, d[1]]]);
+      const z = await center(p, '#angleBtn');
+      await touch(cdp, 'touchStart', [[d[0] - 120, d[1]], z]); await touch(cdp, 'touchEnd', [z]); await touch(cdp, 'touchEnd', []);
+      await idle(p); await p.waitForTimeout(400);
+      ok((await st(p)).a === 0, `zero tapped while the dial is held stays at 0.0° after the dial is released (a ${(await st(p)).a})`);
+    }
 
     // 8. reset keeps the ratio and can be undone
     await tap(cdp, await center(p, '#ratio-1x1')); await idle(p);
