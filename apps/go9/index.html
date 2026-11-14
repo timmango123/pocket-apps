@@ -712,7 +712,7 @@ function search(game, cfg, limits) {
   if (!root) { root = new Node(b.last, 3 - b.toPlay); expand(root, b, cfg, true, game); }
   var s = new Board(b.n), amaf = new Uint8Array(b.len), oB = new Int32Array(b.len), oW = new Int32Array(b.len), path = [], sims = 0, nPlay = 0;
   if (root.kids.length === 1 && root.kids[0].m === 0) maxSims = Math.min(maxSims, 200);
-  var early = !limits.sims, lastProg = t0;
+  var early = !limits.sims, lastProg = -Infinity;   /* first progress report at the first check (256 sims), then every 200 ms */
   while (sims < maxSims) {
     if ((sims & 15) === 0 && sims > 0) {
       var el = now() - t0;
@@ -721,7 +721,7 @@ function search(game, cfg, limits) {
         /* top two root moves by visits */
         var b1 = null, b2 = null;
         for (var ri = 0; ri < root.kids.length; ri++) { var rk = root.kids[ri]; if (!b1 || rk.v > b1.v) { b2 = b1; b1 = rk; } else if (!b2 || rk.v > b2.v) b2 = rk; }
-        if (limits.prog && el - (lastProg - t0) > 200) { lastProg = now(); limits.prog({ f: Math.min(1, Math.max(sims / maxSims, el / tmax)), m: b1 ? b1.m : 0, wr: b1 && b1.n ? b1.w / b1.n : 0.5, col: b1 ? b1.col : 0 }); }
+        if (limits.prog && now() - lastProg > 200) { lastProg = now(); limits.prog({ f: Math.min(1, Math.max(sims / maxSims, el / tmax)), m: b1 ? b1.m : 0, wr: b1 && b1.n ? b1.w / b1.n : 0.5, col: b1 ? b1.col : 0 }); }
         /* stop early once the second-best move can no longer catch up within the remaining budget (the chosen move does not change) */
         if (early && b1 && b2 && el > tmax * 0.3 && sims >= 1000) {
           var remain = Math.min(maxSims - sims, sims / el * (tmax - el));
@@ -1076,11 +1076,13 @@ function maybeAI() {
   G.thinkProg = null;
   ask({ type: 'think', opts: G.game.opts(), moves: G.game.moves.slice(), level: G.level }, function (r) {
     if (!G || phase !== 'think' || G.game.moves.length !== mvAt) return;
-    G.thinkProg = null;
+    /* keep showing the finished search (100%, the chosen move) for the rest of the minimum think time */
+    G.thinkProg = r.sims ? { f: 1, m: r.move, wrB: G.ai === BLACK ? r.wr : 1 - r.wr } : null;
+    updateBar(); draw(true);
     var wait = Math.max(0, 450 - (now() - t0));
     setTimeout(function () {
       if (!G || phase !== 'think' || G.game.moves.length !== mvAt) return;
-      phase = 'play';
+      phase = 'play'; G.thinkProg = null;
       if (r.own) G.own = r.own;
       var wrB = G.ai === BLACK ? r.wr : 1 - r.wr;
       if (r.sims) { G.wr[mvAt] = G.wr[mvAt] != null ? G.wr[mvAt] : wrB; G.wr[mvAt + 1] = wrB; }
