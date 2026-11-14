@@ -167,11 +167,16 @@ async function browserTests() {
       const FEN = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'; // not in the opening book: the computer has to search
       const s = await open({ width: 390, height: 844 }, { ls: { 'chess.game': JSON.stringify({ mode: 'ai', startFen: FEN, moves: [], human: 0, level: 5, clock: null, undos: 0, flipped: false }) } });
       await s.tapSel('#tResume'); await s.humanReady();
+      // Lv5 stops at the first finished iteration after 55% of its 3 s, so its answer can land after ~1.65 s, sooner than the taps
+      // below take on a loaded machine. Hold the worker's reply (the search itself still runs) until the checks are done.
+      await s.page.evaluate(() => { const real = wCall; window.__held = null; wCall = function (msg, cb) { wCall = real; real(msg, function (r) { window.__held = { frames: window.__game.state().frames, go: function () { cb(r); } }; }); }; });
       await s.tapSq('d2'); ok((await s.st()).sel >= 0, 'tap selects d2'); await s.tapSq('d3');
       let g = await s.st(); ok(g.moves[0] === 'd3' && g.busy, 'tap-tap played d3 and the computer is thinking: ' + g.moves);
       const f0 = g.frames; await s.tapSq('c4'); await s.tapSq('b5'); await s.dragSq('b1', 'c3'); await sleep(600); g = await s.st();
       ok(g.busy && g.moves.length === 1 && g.sel === -1, 'taps and a drag while it thinks did nothing: ' + JSON.stringify([g.busy, g.moves, g.sel]));
-      ok(g.frames - f0 > 10, 'frames kept running while it thinks (' + (g.frames - f0) + ')');
+      const held = await s.page.evaluate(() => window.__held && window.__held.frames), fT = held == null ? g.frames : held; // frames up to the end of the search
+      ok(fT - f0 > 10, 'frames kept running while it thinks (' + (fT - f0) + ')');
+      await s.page.waitForFunction(() => window.__held && (window.__held.go(), true), null, { timeout: 20000 });
       await s.humanReady(); g = await s.st(); ok(g.moves.length === 2, 'computer answered: ' + g.moves);
       const mv = await s.page.evaluate(() => legalMoves().map(moveUci).filter(u => u.length === 4 && bd[sqParse(u.slice(0, 2))] === 2)[0]); // a knight move
       await s.dragSq(mv.slice(0, 2), mv.slice(2, 4)); g = await s.st(); ok(g.moves.length === 3 && /^N/.test(g.moves[2]), 'drag played ' + mv + ': ' + g.moves);
