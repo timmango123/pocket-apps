@@ -4,6 +4,7 @@
 //    two-player hints, landscape HUD, title panel, score box fade, no console errors.
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {newMatch, stepMatch, difficulty, targetScore, aiParams, aiStep, levelRule, otWiden, applyGeom, RULES, OT_T, OT_MAX, geom: function () { return { GX0: GX0, GX1: GX1, DAMP: DAMP, WALL_E: WALL_E }; }};')();
@@ -119,11 +120,16 @@ const T = (cdp, type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touch
 async function tap(cdp, page, sel, after = 350) { await page.locator(sel).scrollIntoViewIfNeeded(); const b = await page.locator(sel).boundingBox(); await T(cdp, 'touchStart', [{ x: b.x + b.width / 2, y: b.y + b.height / 2, id: 9 }]); await sleep(50); await T(cdp, 'touchEnd', []); await sleep(after); }
 const st = page => page.evaluate(() => window.__game.state());
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch(), errors = [];
   async function open(w, h, scheme, keep) {
     const ctx = keep || await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: scheme || 'dark' });
     const page = await ctx.newPage(); page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('file://' + APP); await sleep(500); return { ctx, page, cdp: await ctx.newCDPSession(page) };
+    await page.goto(PAGE_URL); await sleep(500); return { ctx, page, cdp: await ctx.newCDPSession(page) };
   }
   async function toLevel(o, n) {
     await tap(o.cdp, o.page, '#tSelect', 500);
