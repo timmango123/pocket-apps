@@ -1,8 +1,7 @@
 // Verification for 金字塔接龍 (pyramid-solitaire).
 // 1) Node: extracts the game's own rules + DFS solver from index.html (CORE-START/CORE-END) and, for all 100 embedded
 //    levels, solves the deal under that level's recycle rule, replays the solution move-by-move through the rules
-//    (each move must be legal, the pyramid must end empty), recomputes the difficulty score S and asserts that S
-//    matches the embedded value and rises strictly from level to level. Prints full solutions for 50/75/99/100.
+//    (each move must be legal, the pyramid must end empty) and asserts the displayed difficulty never goes down. Prints full solutions for 50/75/99/100.
 // 2) Chromium: a bot clears levels 50, 75, 99, 100 in the real page with real touch input (CDP Input.dispatchTouchEvent)
 //    at human pace (>=150 ms between taps), recording level-NN.mp4 and level-NN-result.png.
 // Usage: node verify.js [--solve-only] [levels...]
@@ -29,14 +28,15 @@ function solveAll() {
     good = good && C.isWon(s);
     const p = good ? C.randomRate(D, R, 500, seed) : 0;
     const S = good ? C.difficultyScore(D, R, r, p) : NaN;
-    const match = Math.abs(S - Semb) < 0.002, rising = S > prevS;
-    if (n > 1) minStep = Math.min(minStep, S - prevS);
-    if (!good || !match || !rising) { ok = false; console.log('LEVEL', n, 'PROBLEM solved', good, 'S', S, 'embedded', Semb, 'rising', rising); }
-    prevS = S;
+    // the embedded number is the displayed difficulty (1-10, from simulated skill-tier win rates, see gen.js): never goes down
+    const rising = Semb >= prevS;
+    if (n > 1) minStep = Math.min(minStep, Semb - prevS);
+    if (!good || !rising) { ok = false; console.log('LEVEL', n, 'PROBLEM solved', good, 'difficulty', Semb, 'rising', rising); }
+    prevS = Semb;
     res.push({ n, seed, R, S, nodes: r.nodes, p, def: good ? C.deferredCount(D, r.sol, R) : 0, sol: r.sol, D, left: C.stockLeft(s) });
   }
-  console.log('All', LEVELS.length, 'levels proven clearable, replay-checked, S matches embedded and strictly increasing:', ok);
-  console.log('S range', res[0].S.toFixed(2), '→', res[99].S.toFixed(2), '| smallest level-to-level increase', minStep.toFixed(3), '| mean growth', Math.pow(res[99].S / res[0].S, 1 / 99).toFixed(4) + '×/level');
+  console.log('All', LEVELS.length, 'levels proven clearable, replay-checked, displayed difficulty never decreases:', ok);
+  console.log('difficulty', LEVELS[0][2], '→', LEVELS[99][2], '| smallest level-to-level step', minStep.toFixed(2));
   for (const [a, b] of [[1, 30], [31, 70], [71, 100]]) {
     const t = res.slice(a - 1, b);
     console.log(`  levels ${a}-${b}: recycles ${t[0].R}, S ${t[0].S.toFixed(2)}–${t[t.length - 1].S.toFixed(2)}, solver nodes ${Math.min(...t.map(x => x.nodes))}–${Math.max(...t.map(x => x.nodes))}, random-player win rate ${(t[0].p * 100).toFixed(1)}% → ${(t[t.length - 1].p * 100).toFixed(1)}%`);
