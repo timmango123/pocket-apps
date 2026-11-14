@@ -84,7 +84,10 @@ details.card[open] > summary { margin-bottom: 4px; }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; font-size: 14px; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; flex: none; }
 .check:has(input:disabled) { color: var(--muted); cursor: not-allowed; }
-.check small { display: block; font-size: 11px; line-height: 1.3; }
+.check small { display: block; font-size: 11px; line-height: 1.3; color: var(--muted); }
+.check small .nw { display: inline-block; }
+.errs li.fix { list-style: none; margin: 6px 0 0 -18px; color: var(--ink); }
+button, summary, label, #chart { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .pals { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .pals button { min-height: 52px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; padding: 6px 8px; text-align: left; font-size: 12px; font-weight: 600; }
 .pals button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -117,6 +120,7 @@ details.card[open] > summary { margin-bottom: 4px; }
     <label class="label" for="data-input">資料（可從試算表直接貼上）</label>
     <textarea id="data-input" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="每列一筆，用 Tab、逗號或空白分隔&#10;月份 銷量&#10;一月 120&#10;二月 98"></textarea>
     <p class="detect" id="detect"></p>
+    <label class="check" id="hdr-row" hidden><input type="checkbox" id="o-header"><span>首列是標題<small id="hdr-note">自動判斷；判斷錯時可切換</small></span></label>
     <ul class="errs" id="errs" hidden></ul>
   </section>
   <section class="card">
@@ -136,14 +140,14 @@ details.card[open] > summary { margin-bottom: 4px; }
       <div class="field"><label for="o-format">數值格式</label>
         <select id="o-format"><option value="auto">自動</option><option value="int">整數</option><option value="d1">小數 1 位</option><option value="d2">小數 2 位</option><option value="pct">百分比</option><option value="thousands">千分位</option></select></div>
       <div class="field"><label for="o-abbr">大數縮寫</label>
-        <select id="o-abbr"><option value="zh">中文（萬・億・兆）</option><option value="en">英文（K・M・B・T）</option><option value="none">不縮寫</option></select></div>
+        <select id="o-abbr"><option value="zh">中文（萬、億）</option><option value="en">英文（K、M）</option><option value="none">不縮寫</option></select></div>
       <div class="field"><label for="o-legendpos">圖例位置</label>
         <select id="o-legendpos"><option value="top">上方</option><option value="bottom">下方</option><option value="right">右側</option></select></div>
       <div class="field"><label for="o-bg">背景</label>
         <select id="o-bg"><option value="white">白色</option><option value="dark">深色</option><option value="transparent">透明</option></select></div>
       <label class="check"><input type="checkbox" id="o-labels">顯示數值標籤</label>
       <label class="check"><input type="checkbox" id="o-legend">顯示圖例</label>
-      <label class="check"><input type="checkbox" id="o-zero"><span>Y 軸從 0 開始<small>折線、散佈；長條一律從 0</small></span></label>
+      <label class="check"><input type="checkbox" id="o-zero"><span>Y 軸從 0 開始<small><span class="nw">折線、散佈適用；</span><span class="nw">長條一律從 0</span></small></span></label>
       <label class="check"><input type="checkbox" id="o-smooth">平滑曲線</label>
       <label class="check full"><input type="checkbox" id="o-merge">圓餅圖小於 3% 合併為「其他」</label>
     </div>
@@ -205,9 +209,9 @@ const MODES = {
 };
 
 /* ---------- 狀態 ---------- */
-const DEF = { type: 'bar', aspect: '4:3', title: SAMPLE_TITLE, subtitle: '', xtitle: '', ytitle: '', palette: 'default', format: 'auto', abbr: 'zh', legend: true, legendPos: 'top', labels: false, zero: true, smooth: false, merge: true, bg: 'white' };
+const DEF = { type: 'bar', aspect: '4:3', title: SAMPLE_TITLE, subtitle: '', xtitle: '', ytitle: '', palette: 'default', format: 'auto', abbr: 'zh', legend: true, legendPos: 'top', labels: false, zero: true, smooth: false, merge: true, bg: 'white', header: 'auto' };
 // 列舉型選項只接受已知值，其他（舊版或被改壞的儲存）回到預設
-const ENUMS = { type: TYPES.map(t => t[0]), aspect: ASPECTS.map(a => a[0]), palette: Object.keys(PALETTES), format: ['auto', 'int', 'd1', 'd2', 'pct', 'thousands'], abbr: ['zh', 'en', 'none'], legendPos: ['top', 'bottom', 'right'], bg: ['white', 'dark', 'transparent'] };
+const ENUMS = { type: TYPES.map(t => t[0]), aspect: ASPECTS.map(a => a[0]), palette: Object.keys(PALETTES), format: ['auto', 'int', 'd1', 'd2', 'pct', 'thousands'], abbr: ['zh', 'en', 'none'], legendPos: ['top', 'bottom', 'right'], bg: ['white', 'dark', 'transparent'], header: ['auto', 'yes', 'no'] };
 const MAX_TEXT = 400;
 function cleanOpts(o) {
   const r = { ...DEF };
@@ -229,7 +233,7 @@ let data = null;
 let saveWarned = false;
 function store(k, v) {
   try { localStorage.setItem(k, v); return true; }
-  catch { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('瀏覽器空間不足，資料無法保存；重新整理前請先下載圖表', 4000)); } return false; }
+  catch (e) { if (!saveWarned) { saveWarned = true; const full = e && (e.name === 'QuotaExceededError' || e.code === 22); setTimeout(() => toast(`無法保存（${full ? '瀏覽器儲存空間已滿' : '瀏覽器封鎖儲存空間'}）；重新整理前請先下載圖表`, 4000)); } return false; }
 }
 const saveOpts = () => store(KEY_OPTS, JSON.stringify(opts));
 let dataDirty = false, dataTimer = 0;
@@ -266,9 +270,9 @@ function splitCSV(line) {
   }
   out.push(cur); return out;
 }
-function parseData(src) {
+function parseData(src, headMode = 'auto') {
   const lines = src.replace(/\r\n?/g, '\n').split('\n').map((l, i) => ({ l, n: i + 1 })).filter(x => x.l.trim());
-  const res = { labels: [], series: [], errors: [], delim: '', hasHeader: false, labelCol: false, labelNum: false, pct: false };
+  const res = { labels: [], series: [], errors: [], delim: '', hasHeader: false, labelCol: false, labelNum: false, pct: false, hints: [], rows: 0 };
   if (!lines.length) return res;
   let rows;
   if (lines.some(x => x.l.includes('\t'))) { res.delim = 'Tab'; rows = lines.map(x => x.l.split('\t')); }
@@ -279,20 +283,33 @@ function parseData(src) {
   }
   else {
     res.delim = '空白'; rows = lines.map(x => x.l.trim().split(/\s+/));
-    // 標籤含空白時，把多出的前段併成標籤
-    const counts = rows.map(r => r.length).sort((a, b) => a - b), med = counts[Math.floor(counts.length / 2)];
-    rows = rows.map(r => r.length > med && med >= 2 ? [r.slice(0, r.length - med + 1).join(' '), ...r.slice(r.length - med + 1)] : r);
+    // 標籤含空白時：每列從右邊數最後 N 格當數值，前面的併成標籤。N 取各列「結尾連續數字格數」最常見的值
+    const tail = r => { let k = 0; while (k < r.length) { const p = parseNum(r[r.length - 1 - k]); if (!p || p.empty) break; k++; } return k; };
+    const freq = new Map(); for (const r of rows) { const k = tail(r); if (k) freq.set(k, (freq.get(k) || 0) + 1); }
+    let N = 0, best = 0; for (const [k, f] of freq) if (f > best || (f === best && k > N)) { N = k; best = f; }
+    if (N) rows = rows.map(r => r.length > N + 1 ? [r.slice(0, r.length - N).join(' '), ...r.slice(r.length - N)] : r);
   }
   rows = rows.map(r => r.map(c => c.trim()));
   const lineNo = lines.map(x => x.n);
   const ncol = Math.max(...rows.map(r => r.length));
   const isNum = c => { const p = parseNum(c); return p && !p.empty; };
-  // 首列是否為標題列
+  // 看起來是數字但不合法（1e400、NaN、Infinity）：是壞掉的資料，不是欄名
+  const numLike = c => isNum(c) || /^[-−–+(]?\s*[$€£¥]?[\d.,，]*\d[\d.,，]*(e[-+]?\d+)?\s*[)%％]?$/i.test(half(c).trim()) || /^[-−–+]?(nan|inf(inity)?)$/i.test(c.trim());
+  const isYear = c => /^[12]\d{3}$/.test(half(c || '').trim());
+  // 首列是否為標題列（可手動指定）
   const r0 = rows[0];
+  res.rows = rows.length;
   if (rows.length > 1) {
     const rest = ncol > 1 ? r0.slice(1) : r0;
-    if (rest.some(c => c && !isNum(c)) && rest.every(c => !c || !isNum(c))) res.hasHeader = true;
-    else if (ncol > 1 && !isNum(r0[0]) && r0.slice(1).every(c => !c || !isNum(c)) ) res.hasHeader = true;
+    if (rest.some(c => c && !numLike(c)) && rest.every(c => !c || !isNum(c))) res.hasHeader = true;
+    // 欄名是年份（月份 2023 2024）：首格是文字或空白、其餘都是年份，第一欄其他列多數是文字，而且數值欄不全是年份
+    else if (ncol > 1 && !isNum(r0[0]) && rest.length && rest.every(isYear)) {
+      const b = rows.slice(1), textFirst = b.filter(r => r[0] && !isNum(r[0])).length;
+      const valsYears = b.every(r => r.slice(1).every(c => !c || isYear(c)));
+      if (textFirst >= b.length * 0.5 && !valsYears) res.hasHeader = true;
+    }
+    res.autoHeader = res.hasHeader;
+    if (headMode === 'yes') res.hasHeader = true; else if (headMode === 'no') res.hasHeader = false;
   }
   const body = res.hasHeader ? rows.slice(1) : rows, bodyLines = res.hasHeader ? lineNo.slice(1) : lineNo;
   if (!body.length) return res;
@@ -310,14 +327,20 @@ function parseData(src) {
     const name = res.hasHeader ? (r0[c] || `系列 ${c - start + 1}`) : (ncol - start === 1 ? '數值' : `系列 ${c - start + 1}`);
     res.series.push({ name, values: [] });
   }
+  let notNum = false, tooBig = false, firstBad = false;
   body.forEach((r, i) => {
     res.labels.push(res.labelCol ? (r[0] || `（空白）`) : String(i + 1));
     for (let c = start; c < ncol; c++) {
       const cell = r[c] == null ? '' : r[c], p = parseNum(cell);
       if (p && !p.empty) { res.series[c - start].values.push(p.v); if (p.pct) res.pct = true; }
-      else { res.series[c - start].values.push(null); if (!p) res.errors.push(`第 ${bodyLines[i]} 列第 ${c + 1} 欄「${cell.length > 12 ? cell.slice(0, 12) + '…' : cell}」${/\d/.test(cell) && /^[-−–+]?[\d.,，eE]+$/.test(half(cell).replace(/\s/g, '')) ? '超出可畫的範圍' : '不是數字'}`); }
+      else { res.series[c - start].values.push(null); if (!p) { const big = /\d/.test(cell) && /^[-−–+]?[\d.,，eE]+$/.test(half(cell).replace(/\s/g, '')); big ? tooBig = true : (notNum = true, firstBad = firstBad || i === 0); res.errors.push(`第 ${bodyLines[i]} 列第 ${c + 1} 欄「${cell.length > 12 ? cell.slice(0, 12) + '…' : cell}」${big ? '超出可畫的範圍' : '不是數字'}`); } }
     }
   });
+  // 修正建議
+  res.hints = [];
+  if (notNum && res.delim === '空白') res.hints.push('標籤或數值本身有空白時，請改用 Tab 或逗號分隔（例如：New York,100）。');
+  if (notNum) res.hints.push('請把這些格子改成數字（可帶千分位、$、% 或括號負數），或清空成空白格' + (firstBad && res.rows > 1 && !res.hasHeader ? '；如果第一列是欄名，請勾選「首列是標題」' : '') + '。');
+  if (tooBig) res.hints.push('數值的大小需在 ±1e100 以內。');
   return res;
 }
 
@@ -800,12 +823,15 @@ function exportSVG() {
 }
 function reparse() {
   clearTimeout(parseTimer);
-  data = parseData(text);
+  data = parseData(text, opts.header);
   const det = $('detect'), errs = $('errs');
   if (!data.labels.length) det.textContent = '尚無資料：每列一筆，貼上兩欄（標籤＋數值）或多欄表格；手機上可用空白或逗號分隔。';
   else det.innerHTML = `<span class="tag">${text === SAMPLE ? '範例' : esc(data.delim) + ' 分隔'}</span>偵測到 <b>${data.labels.length}</b> 個類別 × <b>${data.series.length}</b> 個系列${data.hasHeader ? '・首列為標題' : ''}${data.labelCol ? (data.labelNum ? '・第一欄當標籤（年份）' : '') : '・無標籤欄，以 1、2、3… 編號'}`;
   errs.hidden = !data.errors.length;
-  errs.innerHTML = data.errors.slice(0, 30).map(e => `<li>${esc(e)}</li>`).join('') + (data.errors.length > 30 ? `<li>…另有 ${data.errors.length - 30} 處</li>` : '');
+  errs.innerHTML = data.errors.slice(0, 30).map(e => `<li>${esc(e)}</li>`).join('') + (data.errors.length > 30 ? `<li>…另有 ${data.errors.length - 30} 處</li>` : '') + data.hints.map(h => `<li class="fix">修正建議：${esc(h)}</li>`).join('');
+  $('hdr-row').hidden = !(data.rows > 1);
+  $('o-header').checked = data.hasHeader;
+  $('hdr-note').textContent = opts.header === 'auto' ? '自動判斷；判斷錯時可切換' : `已手動指定（自動判斷為「${data.autoHeader ? '是' : '否'}」）`;
   hidden = new Set([...hidden].filter(k => { if (k === 'other') return true; const i = +k.slice(1); return k[0] === 's' ? i < data.series.length : i < data.labels.length; }));
   draw();
 }
@@ -839,6 +865,8 @@ $('pals').addEventListener('click', e => { const b = e.target.closest('button');
 for (const [k, id] of Object.entries(FIELDS)) $(id).addEventListener('input', e => setOpt(k, e.target.value.slice(0, MAX_TEXT)));
 for (const [k, id] of Object.entries(SELECTS)) $(id).addEventListener('change', e => setOpt(k, e.target.value));
 for (const [k, id] of Object.entries(CHECKS)) $(id).addEventListener('change', e => setOpt(k, e.target.checked));
+// 手動指定首列是不是標題；和自動判斷相同時回到自動
+$('o-header').addEventListener('change', e => { const on = e.target.checked; opts.header = on === parseData(text).autoHeader ? 'auto' : on ? 'yes' : 'no'; saveOpts(); reparse(); });
 let parseTimer = 0;
 $('data-input').addEventListener('input', e => {
   text = e.target.value; saveDataSoon();
@@ -848,14 +876,14 @@ $('data-input').addEventListener('input', e => {
 });
 // 換資料（範例、清除）前留一份，提示上可以「復原」
 function replaceData(t, title) {
-  const prev = { text, title: opts.title, hidden: new Set(hidden) };
+  const prev = { text, title: opts.title, header: opts.header, hidden: new Set(hidden) };
   if (prev.text === t && prev.title === title) return;
-  text = t; $('data-input').value = t; opts.title = title;
+  text = t; $('data-input').value = t; opts.title = title; opts.header = 'auto';
   saveData(); saveOpts(); hidden.clear(); syncControls(); reparse();
-  if (prev.text.trim()) toast(t ? '已換成範例資料' : '已清除資料', 6000, () => { text = prev.text; $('data-input').value = text; opts.title = prev.title; hidden = prev.hidden; saveData(); saveOpts(); syncControls(); reparse(); toast('已復原'); });
+  if (prev.text.trim()) toast(t ? '已換成範例資料' : '已清除資料', 6000, () => { text = prev.text; $('data-input').value = text; opts.title = prev.title; opts.header = prev.header; hidden = prev.hidden; saveData(); saveOpts(); syncControls(); reparse(); toast('已復原'); });
 }
 $('btn-sample').addEventListener('click', () => replaceData(SAMPLE, SAMPLE_TITLE));
-$('btn-clear').addEventListener('click', () => { replaceData('', opts.title === SAMPLE_TITLE ? '' : opts.title); $('data-input').focus({ preventScroll: true }); });
+$('btn-clear').addEventListener('click', () => replaceData('', opts.title === SAMPLE_TITLE ? '' : opts.title));
 
 // 提示泡泡與圖例切換。手指點不準時，取 14px 內最近的圖例或資料點
 function nearest(sel, x, y, within) {
@@ -866,11 +894,13 @@ function nearest(sel, x, y, within) {
   }
   return best;
 }
-$('chart').addEventListener('click', e => {
+// 由觸控層在放開時呼叫：target 是按下的元素，(cx, cy) 是按下的位置
+function chartTap(target, cx, cy) {
+  const e = { target, clientX: cx, clientY: cy };
   const tipEl = $('tip');
   // 直接點到的長條／扇形／點優先；透明感應帶（rect）不擋住旁邊的圖例
-  const mark = e.target.closest('[data-tip]'), solid = mark && mark.tagName !== 'rect';
-  const leg = e.target.closest('[data-leg]') || (!solid && nearest('[data-leg]', e.clientX, e.clientY, 14));
+  const mark = target.closest('[data-tip]'), solid = mark && mark.tagName !== 'rect';
+  const leg = target.closest('[data-leg]') || (!solid && nearest('[data-leg]', e.clientX, e.clientY, 14));
   if (leg) {
     const k = leg.dataset.leg, off = !hidden.has(k);
     off ? hidden.add(k) : hidden.delete(k); draw();
@@ -885,9 +915,42 @@ $('chart').addEventListener('click', e => {
   if (x + tipEl.offsetWidth > box.width - 4) x = Math.max(4, e.clientX - box.left - tipEl.offsetWidth - 12);
   if (y < 4) y = Math.min(e.clientY - box.top + 14, box.height - tipEl.offsetHeight - 4);
   tipEl.style.left = x + 'px'; tipEl.style.top = Math.max(4, y) + 'px';
-});
+}
 // 點圖表以外的地方就收起提示泡泡
 document.addEventListener('pointerdown', e => { if (!$('pwrap').contains(e.target)) $('tip').hidden = true; });
+
+/* ---------- 觸控：放開時才觸發 ----------
+   每個 pointerId 各自記錄按下的控制項，在同一個控制項上放開（移動 < 10px，或在外擴 16px 的範圍內）才觸發一次。
+   瀏覽器自己產生的 click（detail > 0）一律在捕獲階段吞掉，避免換畫面後「幽靈點擊」打到新的按鈕；鍵盤觸發的 click（detail 0）照常。
+   另一指放在畫面上時 Chrome 不產生 click，改用 pointerup 才點得到。 */
+const TAP_SEL = 'button, summary, label, #chart';
+const downs = new Map();
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const el = e.target.closest && e.target.closest(TAP_SEL);
+  if (!el || el.disabled) return;
+  downs.set(e.pointerId, { el, target: e.target, x: e.clientX, y: e.clientY });
+  // 擋掉相容的 mousedown／聚焦：按鈕不搶焦點，換畫面後的輸入框也不會叫出鍵盤
+  e.preventDefault();
+});
+document.addEventListener('pointerup', e => {
+  const d = downs.get(e.pointerId); if (!d) return;
+  downs.delete(e.pointerId);
+  const el = d.el; if (!el.isConnected || el.disabled) return;
+  const r = el.getBoundingClientRect(), m = 16;
+  const still = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 10;
+  const inBox = e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
+  if (!still && !inBox) return;
+  // 擋掉 pointerdown 的預設動作後原生 blur 不會發生，自己收起鍵盤
+  const a = document.activeElement;
+  if (a && a !== el && !el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio)$/.test(a.type)))) a.blur();
+  if (el.id === 'chart') chartTap(d.target, d.x, d.y);
+  else if (el.tagName === 'LABEL' && el.control && !/^(checkbox|radio)$/.test(el.control.type)) el.control.focus();
+  else el.click();
+});
+document.addEventListener('pointercancel', e => downs.delete(e.pointerId));
+addEventListener('click', e => { if (e.isTrusted && e.detail > 0 && !(e.target.closest && e.target.closest('select, input[type=text], textarea'))) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('button, summary, label')) e.preventDefault(); });
 
 /* ---------- 匯出 ---------- */
 let toastT = 0;
@@ -925,8 +988,10 @@ async function save(filename, dataOut) {
 async function busy(btn, fn) {
   if (btn.disabled) return;
   btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+  const t0 = performance.now();
   try { await fn(); } catch (e) { if (!e || e.name !== 'AbortError') toast('匯出失敗：' + (e && e.message || e), 3000); }
-  finally { btn.disabled = false; btn.removeAttribute('aria-busy'); }
+  // 至少停用 0.6 秒：匯出很快時，連點第二下也不會再下載一次
+  finally { setTimeout(() => { btn.disabled = false; btn.removeAttribute('aria-busy'); }, Math.max(0, 600 - (performance.now() - t0))); }
 }
 const pngBlob = () => { const [w, h] = exportSize(); return svgToPngBlob(exportSVG(), w, h); };
 $('btn-png').addEventListener('click', () => busy($('btn-png'), async () => {
