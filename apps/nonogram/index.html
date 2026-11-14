@@ -69,6 +69,7 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.2;stro
 .res b{display:block;font-size:20px;color:var(--ink)}
 #win{align-items:flex-end;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
 #win .card{animation:rise .45s cubic-bezier(.2,.9,.3,1.1)}
+#win.arming .card .btn{opacity:.55;transition:opacity .2s}
 @keyframes rise{from{transform:translateY(60px);opacity:0}to{transform:none;opacity:1}}
 /* title */
 #title{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;flex-direction:column;justify-content:space-between;padding-top:calc(var(--sat) + 4vh)}
@@ -136,7 +137,9 @@ svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2.2;stro
   .seg{flex-direction:column;flex:none;max-width:none}
   .seg button{flex:none;width:66px;height:46px;font-size:15px}
   .palette{flex-direction:column;gap:6px}
-  .palette .sw{width:40px;height:40px}
+  .palette .sw{width:44px;height:44px}
+  #win{justify-content:flex-end;align-items:center;padding:calc(var(--sat) + 10px) calc(var(--sar) + 16px) calc(var(--sab) + 10px) 16px}
+  #win .card{width:min(360px,52vw)}
   .bottom .ibtn{height:46px;width:66px}
   .hud .hmid{max-width:560px}
 }
@@ -188,6 +191,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
       <button id="mCross" role="radio" aria-checked="false"><svg class="i" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M7 7l10 10M17 7L7 17"/></svg>叉</button>
     </div>
     <button class="ibtn" id="bZoom" aria-label="縮放"><svg class="i" viewBox="0 0 24 24" id="zIcon"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5M8.5 11h5M11 8.5v5"/></svg></button>
+    <button class="ibtn" id="bSound" aria-label="音效：開" aria-pressed="true"><svg class="i" viewBox="0 0 24 24" id="sIcon"></svg></button>
   </div>
 </div>
 
@@ -235,6 +239,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <div class="setl">
     <button class="tog" role="switch" data-k="check"><span>錯誤提示<small>繡錯立即標紅並扣一顆心</small></span><span class="trk"></span></button>
     <button class="tog" role="switch" data-k="autoX"><span>自動劃叉<small>一行完成時，其餘格子自動打叉</small></span><span class="trk"></span></button>
+    <button class="tog" role="switch" data-k="lp"><span>長按打叉<small>按住 0.55 秒（會畫進度圈）標記不繡的格子；放開才算</small></span><span class="trk"></span></button>
     <button class="tog" role="switch" data-k="sound"><span>音效</span><span class="trk"></span></button>
     <button class="tog" role="switch" data-k="vib"><span>震動</span><span class="trk"></span></button>
   </div>
@@ -254,7 +259,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </div></div>
 
 <div class="ov hidden" id="out"><div class="card">
-  <h2>心碎了…</h2><p>三顆心都用完了。可以繼續把圖繡完，但這關最多只能拿 ★。</p>
+  <h2>心碎了…</h2><p>心都用完了。可以繼續把圖繡完，但這關最多只能拿 ★。</p>
   <button class="btn" id="oCont">繼續刺繡</button>
   <button class="btn sec" id="oRestart">重新開始</button>
 </div></div>
@@ -508,12 +513,13 @@ function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 function fmt(ms) { var s = Math.floor(ms / 1000); return (s >= 3600 ? Math.floor(s / 3600) + ':' : '') + ('0' + Math.floor(s / 60) % 60).slice(-2) + ':' + ('0' + s % 60).slice(-2); }
 
 /* ---------- persistent state ---------- */
-var settings = Object.assign({ check: true, autoX: true, sound: true, vib: true }, sget('settings', {}));
+var settings = Object.assign({ check: true, autoX: true, sound: true, vib: true, lp: true }, sget('settings', {}));
 var progress = Object.assign({ done: {}, last: 1 }, sget('progress', {}));
 var starsMap = sget('stars', {});
 var unlockAll = !!sget('unlockAll', false);
 var inprog = sget('inprogress', {});
-var stats = Object.assign({ cells: 0, solved: 0, time: 0, perfect: 0, fast20: false, multi: false, daily: 0, hints: 0 }, sget('stats', {}));
+var stats = Object.assign({ cells: 0, solved: 0, time: 0, perfect: 0, fast20: false, multi: false, daily: 0, hints: 0, pset: {} }, sget('stats', {}));
+if (!stats.pset || typeof stats.pset !== 'object') stats.pset = {};
 var dailyRec = sget('daily', {});
 function saveAll() { sset('progress', progress); sset('stars', starsMap); sset('stats', stats); }
 
@@ -523,6 +529,9 @@ function getLevel(n) { if (!decoded[n]) { var L = decodeLevel(LEVELS[n - 1][0]);
 var CHAPTERS = [[1, 10, '初學', '5×5'], [11, 25, '入門', '8×8'], [26, 45, '熟練', '10×10'], [46, 65, '進階', '12×12'], [66, 80, '高手', '15×15'], [81, 90, '彩線', '15×15 多色'], [91, 95, '大師', '20×20'], [96, 100, '繡神', '20×20 多色']];
 function needle(d) { return clamp(Math.ceil(d / 20), 1, 5); }
 function diffColor(d) { var h = 120 - d * 1.15; return 'hsl(' + h + ',62%,52%)'; }
+function maxHearts(L) { return L.w * L.h <= 100 ? 3 : (L.w <= 15 && L.h <= 15) ? 4 : 5; } // bigger boards = more cells to mis-tap
+function refMs(L) { return L.w * L.h * 600; } // 3-star reference time: 0.6 s per cell
+var LP_MS = 550, GAP_M = 0.45, GAP_S = 0.38, LH_M = 1.28, LH_S = 1.14, CHIP_H = 1.16;
 function isUnlocked(n) { return unlockAll || n === 1 || !!progress.done[n - 1] || !!progress.done[n]; }
 
 /* ---------- audio ---------- */
@@ -599,12 +608,13 @@ var dirty = true, anims = [], particles = [], lastT = 0;
 function newGame(L, opts) {
   opts = opts || {};
   var N = L.w * L.h;
-  G = { L: L, board: new Int8Array(N), hearts: 3, errors: 0, time: 0, hints: 3, hintUsed: false, continued: false, undo: [], redo: [], status: 'play',
-    rowSat: new Uint8Array(L.h), colSat: new Uint8Array(L.w), errMark: {}, pop: {}, glow: [], cursor: -1, hl: -1, winT: 0, saveT: 0 };
+  G = { L: L, board: new Int8Array(N), hearts: maxHearts(L), maxH: maxHearts(L), errors: 0, time: 0, hints: 3, hintUsed: false, continued: false, undo: [], redo: [], status: 'play',
+    rowSat: new Uint8Array(L.h), colSat: new Uint8Array(L.w), errMark: {}, errTry: {}, hintLi: -1, pop: {}, glow: [], cursor: -1, hl: -1, winT: 0, saveT: 0 };
   var sv = !opts.fresh && inprog[L.id];
   if (sv && sv.b && sv.b.length === N) {
     for (var i = 0; i < N; i++) { var ch = sv.b.charCodeAt(i) - 48; G.board[i] = ch === 0 ? 0 : ch === 1 ? -1 : ch - 1; }
-    G.time = sv.t || 0; G.hearts = sv.h == null ? 3 : sv.h; G.errors = sv.e || 0; G.hints = sv.k == null ? 3 : sv.k; G.hintUsed = !!sv.u; G.continued = !!sv.c;
+    G.time = sv.t || 0; G.hearts = sv.h == null ? G.maxH : Math.min(G.maxH, sv.h); G.errors = sv.e || 0; G.hints = sv.k == null ? 3 : sv.k; G.hintUsed = !!sv.u; G.continued = !!sv.c;
+    if (Array.isArray(sv.ud)) G.undo = sv.ud.filter(function (ch) { return Array.isArray(ch) && ch.every(function (q) { return Array.isArray(q) && q.length === 3 && q[0] >= 0 && q[0] < N; }); });
   }
   for (var r = 0; r < L.h; r++) G.rowSat[r] = lineDone(r) ? 1 : 0;
   for (var c = 0; c < L.w; c++) G.colSat[c] = lineDone(L.h + c) ? 1 : 0;
@@ -615,7 +625,8 @@ function saveProgressSoon() { if (!G || G.status !== 'play') return; clearTimeou
 function saveInprog() {
   if (!G) return; var s = '', b = G.board, any = false;
   for (var i = 0; i < b.length; i++) { var v = b[i]; s += String.fromCharCode(48 + (v === 0 ? 0 : v < 0 ? 1 : v + 1)); if (v) any = true; }
-  if (G.status !== 'play' || !any) delete inprog[G.L.id]; else inprog[G.L.id] = { b: s, t: Math.round(G.time), h: G.hearts, e: G.errors, k: G.hints, u: G.hintUsed ? 1 : 0, c: G.continued ? 1 : 0 };
+  if (G.errors || G.undo.length) any = true;
+  if (G.status !== 'play' || !any) delete inprog[G.L.id]; else inprog[G.L.id] = { b: s, t: Math.round(G.time), h: G.hearts, e: G.errors, k: G.hints, u: G.hintUsed ? 1 : 0, c: G.continued ? 1 : 0, ud: G.undo.slice(-40) };
   var keys = Object.keys(inprog); if (keys.length > 30) delete inprog[keys[0]];
   sset('inprogress', inprog);
 }
@@ -631,17 +642,35 @@ function setupHUD() {
   var pal = $('palette');
   if (L.multi) {
     pal.classList.remove('hidden'); pal.innerHTML = '';
-    L.colors.forEach(function (col, i) { var b = document.createElement('button'); b.className = 'sw' + (i === 0 ? ' on' : ''); b.style.background = col; b.setAttribute('aria-label', '顏色 ' + (i + 1)); b.dataset.c = i + 1; b.addEventListener('click', function () { audio(); SFX.click(); curColor = i + 1; setMode('fill'); }); pal.appendChild(b); });
+    L.colors.forEach(function (col, i) { var b = document.createElement('button'); b.className = 'sw' + (i === 0 ? ' on' : ''); b.style.background = col; b.style.backgroundImage = patCSS(i, lum(col) > 0.62); if (i % 6 === 2) b.style.backgroundSize = '7px 7px'; b.setAttribute('aria-label', '顏色 ' + (i + 1)); b.dataset.c = i + 1; b.addEventListener('click', function () { audio(); SFX.click(); curColor = i + 1; setMode('fill'); }); pal.appendChild(b); });
   } else pal.classList.add('hidden');
   updateHUD(); setMode('fill');
 }
 function updateHUD() {
   if (!G) return;
   $('hTime').textContent = fmt(G.time);
-  var h = ''; for (var i = 0; i < 3; i++) h += i < G.hearts ? '♥' : '<span class="off">♥</span>';
+  var h = ''; for (var i = 0; i < G.maxH; i++) h += i < G.hearts ? '♥' : '<span class="off">♥</span>';
   $('hHearts').innerHTML = settings.check ? h : '<span style="font-size:11px;color:var(--ink2)">自由模式</span>';
   $('hintN').textContent = G.hints; $('bHint').disabled = G.hints <= 0 || G.status !== 'play';
-  $('bUndo').disabled = !G.undo.length; $('bRedo').disabled = !G.redo.length;
+  var pl = G.status === 'play'; $('bUndo').disabled = !pl || !G.undo.length; $('bRedo').disabled = !pl || !G.redo.length;
+}
+// colour-blind aid: every colour index also gets its own texture (same on palette swatches and clue chips)
+function patCSS(k, light) {
+  var m = light ? 'rgba(0,0,0,.32)' : 'rgba(255,255,255,.5)', st = function (a) { return 'repeating-linear-gradient(' + a + 'deg,' + m + ' 0 2px,transparent 2px 7px)'; };
+  return ['none', st(45), 'radial-gradient(circle at 3.5px 3.5px,' + m + ' 1.6px,transparent 2px)', st(0), st(45) + ',' + st(-45), st(90)][k % 6];
+}
+var patCache = {};
+function chipPattern(k, light) {
+  k = k % 6; if (!k) return null; var key = k + (light ? 'l' : 'd'); if (patCache[key]) return patCache[key];
+  var c = document.createElement('canvas'), S = 10; c.width = c.height = S; var g = c.getContext('2d');
+  g.strokeStyle = g.fillStyle = light ? 'rgba(0,0,0,.3)' : 'rgba(255,255,255,.45)'; g.lineWidth = 2;
+  var ln = function (x0, y0, x1, y1) { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  if (k === 1 || k === 4) { ln(-2, S + 2, S + 2, -2); ln(-2, 2, 2, -2); ln(S - 2, S + 2, S + 2, S - 2); }
+  if (k === 4) { ln(-2, -2, S + 2, S + 2); ln(S - 2, -2, S + 2, 2); ln(-2, S - 2, 2, S + 2); }
+  if (k === 2) { g.beginPath(); g.arc(S / 2, S / 2, 1.8, 0, Math.PI * 2); g.fill(); }
+  if (k === 3) ln(0, S / 2, S, S / 2);
+  if (k === 5) ln(S / 2, 0, S / 2, S);
+  return (patCache[key] = ctx.createPattern(c, 'repeat'));
 }
 function setMode(m) {
   mode = m;
@@ -653,7 +682,7 @@ function setMode(m) {
 }
 
 /* ---------- layout ---------- */
-function clueWidth(cl, fs, multi) { var w = 0; for (var i = 0; i < cl.length; i++) w += (cl[i][0] >= 10 ? fs * 1.15 : fs * 0.72) + (multi ? fs * 0.55 : fs * 0.42); return w; }
+function clueWidth(cl, fs, multi) { var w = 0; for (var i = 0; i < cl.length; i++) w += (cl[i][0] >= 10 ? fs * 1.15 : fs * 0.72) + fs * (multi ? GAP_M : GAP_S); return w; }
 function layout(reset) {
   if (!G) return;
   var L = G.L, hud = $('hud').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect();
@@ -665,13 +694,17 @@ function layout(reset) {
   for (var it = 0; it < 3; it++) {
     maxR = 0; for (i = 0; i < L.h; i++) maxR = Math.max(maxR, clueWidth(L.rows[i], fs, L.multi));
     maxC = 0; for (i = 0; i < L.w; i++) maxC = Math.max(maxC, L.cols[i].length);
-    view.RW = Math.max(fs * 1.4, maxR + 8); view.CH = Math.max(fs * 1.6, maxC * fs * (L.multi ? 1.38 : 1.18) + 8);
+    view.RW = Math.max(fs * 1.4, maxR + 8); view.CH = Math.max(fs * 1.6, maxC * fs * (L.multi ? LH_M : LH_S) + 8);
     c0 = Math.min((aw - view.RW) / L.w, (ah - view.CH) / L.h, 54);
     fs = clamp(Math.round(c0 * 0.6), 11, 16);
   }
   view.fs = fs; view.c0 = c0;
-  view.autoZ = c0 < 28 ? Math.min(3, 28 / c0) : 1;
-  view.maxZ = Math.max(1, Math.min(3, 60 / c0));
+  // default cell size: big boards open zoomed in to a comfortable tap target (minimap in the clue corner to navigate);
+  // in landscape a board that already fits at >= 22 px stays whole so nothing is cut off
+  var T = Math.max(L.w, L.h) >= 15 ? 38 : Math.max(L.w, L.h) >= 12 ? 32 : 28;
+  if (side) T = c0 >= 22 ? c0 : Math.min(T, 32);
+  view.autoZ = c0 < T ? T / c0 : 1;
+  view.maxZ = Math.max(1, 60 / c0, view.autoZ);
   if (reset) { view.z = view.autoZ; view.c = c0 * view.z; centerView(); }
   else { view.c = c0 * view.z; clampPan(); }
   updateZoomBtn(); dirty = true;
@@ -746,10 +779,24 @@ function draw(now) {
       var sp = G.pop[i], sc = 1; if (sp) { var pt = (now - sp) / 160; if (pt >= 1) delete G.pop[i]; else sc = 0.55 + 0.45 * easeOutBack(pt); }
       var spr = stitchSprite(col, c);
       if (sc !== 1) { var s2 = c * sc; ctx.drawImage(spr, px + (c - s2) / 2, py + (c - s2) / 2, s2, s2); } else ctx.drawImage(spr, px, py, c, c);
-    } else if (v < 0) {
-      ctx.strokeStyle = em ? TH.err : TH.cross; ctx.lineWidth = Math.max(1.2, c * 0.08); ctx.lineCap = 'round';
-      var m = c * 0.32; ctx.beginPath(); ctx.moveTo(px + m, py + m); ctx.lineTo(px + c - m, py + c - m); ctx.moveTo(px + c - m, py + m); ctx.lineTo(px + m, py + c - m); ctx.stroke();
-    }
+    } else if (v < 0) drawCross(px, py, c, em ? TH.err : TH.cross);
+  }
+  // wrong guesses: the cell is NOT changed (no free answer); a fading red ghost shows what was tried
+  for (var ek in G.errTry) {
+    var ei = +ek, ev = G.errTry[ek], ex = ei % W, ey = (ei - ex) / W, ea2 = clamp(1 - (now - (G.errMark[ei] || 0)) / 1600, 0, 1); if (ea2 <= 0) continue;
+    ctx.globalAlpha = 0.5 * ea2;
+    if (ev > 0) ctx.drawImage(stitchSprite(cellColor(ev), c), ox + ex * c, oy + ey * c, c, c); else drawCross(ox + ex * c, oy + ey * c, c, TH.err);
+    ctx.globalAlpha = 1;
+  }
+  // press feedback: what a tap will do shows the moment the finger lands; long-press progress ring
+  if (stroke && stroke.touch && !stroke.moved && G.status === 'play' && (!stroke.action || stroke.lpPending)) {
+    var si = stroke.start, sx = si % W, sy = (si - sx) / W, spx = ox + sx * c, spy = oy + sy * c, act = stroke.lpPending ? stroke.action : decideAction(si, stroke.how);
+    ctx.globalAlpha = stroke.lpPending ? 0.85 : 0.5;
+    if (act === 'fill') ctx.drawImage(stitchSprite(cellColor(stroke.color), c), spx, spy, c, c);
+    else if (act === 'cross') drawCross(spx, spy, c, TH.cross);
+    else { ctx.fillStyle = TH.board; ctx.fillRect(spx + 1, spy + 1, c - 2, c - 2); }
+    ctx.globalAlpha = 1;
+    if (!stroke.action && settings.lp) { var lp = clamp((now - stroke.t0 - 120) / (LP_MS - 120), 0, 1); if (lp > 0) { ctx.strokeStyle = '#c4513f'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(spx + c / 2, spy + c / 2, c * 0.5 + 4, -Math.PI / 2, -Math.PI / 2 + lp * Math.PI * 2); ctx.stroke(); } }
   }
   // hint glow
   if (G.hintCell != null) { var ht = (now - G.hintT) / 1800; if (ht > 1) G.hintCell = null; else { var hx2 = G.hintCell % W, hy2 = (G.hintCell - hx2) / W; ctx.strokeStyle = 'rgba(217,162,60,' + (1 - ht) + ')'; ctx.lineWidth = 3; ctx.strokeRect(ox + hx2 * c + 1.5, oy + hy2 * c + 1.5, c - 3, c - 3); } }
@@ -759,6 +806,27 @@ function draw(now) {
   drawClues(now);
   drawParticles(now);
   drawBubble();
+}
+function drawCross(px, py, c, col) {
+  ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.2, c * 0.08); ctx.lineCap = 'round';
+  var m = c * 0.32; ctx.beginPath(); ctx.moveTo(px + m, py + m); ctx.lineTo(px + c - m, py + c - m); ctx.moveTo(px + c - m, py + m); ctx.lineTo(px + m, py + c - m); ctx.stroke();
+}
+// minimap in the empty clue corner while the board is zoomed past the screen: shows where you are; tap/drag it to jump
+function drawMinimap() {
+  view.map = null; var L = G.L, c = view.c, vx0 = view.ax0 + view.RW, vy0 = view.ay0 + view.CH;
+  if (G.status !== 'play' || (L.w * c <= view.ax1 - vx0 + 1 && L.h * c <= view.ay1 - vy0 + 1)) return;
+  var BW = view.RW - 8, BH = view.CH - 8, s = Math.min(BW / L.w, BH / L.h); if (s < 2) return;
+  var mw = s * L.w, mh = s * L.h, mx = view.ax0 + 2 + (BW - mw) / 2, my = view.ay0 + 2 + (BH - mh) / 2;
+  ctx.fillStyle = TH.board; ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4); ctx.strokeStyle = TH.grid5; ctx.lineWidth = 1; ctx.strokeRect(mx - 2.5, my - 2.5, mw + 5, mh + 5);
+  for (var i = 0; i < G.board.length; i++) { var v = G.board[i]; if (v <= 0) continue; var x = i % L.w, y = (i - x) / L.w; ctx.fillStyle = cellColor(v); ctx.fillRect(mx + x * s, my + y * s, Math.ceil(s), Math.ceil(s)); }
+  var rx0 = clamp((vx0 - view.ox) / c, 0, L.w), ry0 = clamp((vy0 - view.oy) / c, 0, L.h), rx1 = clamp((view.ax1 - view.ox) / c, 0, L.w), ry1 = clamp((view.ay1 - view.oy) / c, 0, L.h);
+  ctx.strokeStyle = '#c4513f'; ctx.lineWidth = 2; ctx.strokeRect(mx + rx0 * s, my + ry0 * s, (rx1 - rx0) * s, (ry1 - ry0) * s);
+  view.map = { x: mx, y: my, s: s };
+}
+function inMapCorner(x, y) { return view.map && x >= view.ax0 - 8 && x <= view.ax0 + view.RW && y >= view.ay0 - 4 && y <= view.ay0 + view.CH; }
+function mapJump(x, y) {
+  var m = view.map; if (!m) return; var gx = clamp((x - m.x) / m.s, 0, G.L.w), gy = clamp((y - m.y) / m.s, 0, G.L.h);
+  view.ox = (view.ax0 + view.RW + view.ax1) / 2 - gx * view.c; view.oy = (view.ay0 + view.CH + view.ay1) / 2 - gy * view.c; clampPan(); dirty = true;
 }
 function easeOutBack(t) { var s = 1.7; t -= 1; return t * t * ((s + 1) * t + s) + 1; }
 function lineGlow(li, now) { for (var k = 0; k < G.glow.length; k++) if (G.glow[k].li === li) { var t = (now - G.glow[k].t) / 900; if (t < 1) return 1 - t; } return 0; }
@@ -777,9 +845,9 @@ function drawClues(now) {
     if (G.hl >= 0 && Math.floor(G.hl / W) === y && G.status === 'play') { ctx.fillStyle = TH.hl; ctx.fillRect(rx - view.RW + 2, view.oy + y * c, view.RW - 2, c); }
     if (!cl.length) { ctx.fillStyle = done ? TH.done : TH.ink2; ctx.font = '600 ' + fs + 'px system-ui,sans-serif'; ctx.fillText('0', x - fs * 0.36, py); continue; }
     for (var k = cl.length - 1; k >= 0; k--) {
-      var n = cl[k][0], wv = (n >= 10 ? fs * 1.15 : fs * 0.72), gap = multi ? fs * 0.55 : fs * 0.42;
+      var n = cl[k][0], wv = (n >= 10 ? fs * 1.15 : fs * 0.72), gap = fs * (multi ? GAP_M : GAP_S);
       var cxp = x - wv / 2 - (multi ? gap / 2 : 0);
-      drawNum(n, cl[k][1], cxp, py, fs, done, multi, wv + (multi ? gap * 0.7 : 0));
+      drawNum(n, cl[k][1], cxp, py, fs, done, multi, wv + (multi ? gap * 0.55 : 0));
       x -= wv + gap;
     }
   }
@@ -787,7 +855,7 @@ function drawClues(now) {
   // column clues
   ctx.save(); ctx.beginPath(); ctx.rect(view.ax0 + view.RW - 1, 0, view.ax1 - view.ax0 - view.RW + 2, VH); ctx.clip();
   if (stickyY) { var pxA = Math.max(view.ax0 + view.RW, view.ox), pxB = Math.min(view.ax1, view.ox + W * c); ctx.fillStyle = TH.clueBg; ctx.fillRect(pxA, cy - view.CH, pxB - pxA, view.CH); }
-  var lh = fs * (multi ? 1.38 : 1.18);
+  var lh = fs * (multi ? LH_M : LH_S);
   for (var xx = 0; xx < W; xx++) {
     var px = view.ox + xx * c + c / 2; if (px < view.ax0 + view.RW - c || px > view.ax1 + c) continue;
     var cl2 = L.cols[xx], done2 = G.colSat[xx], g2 = lineGlow(H + xx, now), yy = cy - 4 - lh / 2;
@@ -799,11 +867,13 @@ function drawClues(now) {
   ctx.restore();
   // corner patch over sticky intersections
   if (stickyX || stickyY) { ctx.fillStyle = linenPat; ctx.fillRect(view.ax0 - 8, view.ay0 - 4, view.RW + 8, view.CH + 4); }
+  drawMinimap();
 }
 function drawNum(n, colorIdx, x, y, fs, done, multi, w) {
   if (multi) {
-    var col = G.L.colors[colorIdx - 1], h = fs * 1.22;
+    var col = G.L.colors[colorIdx - 1], h = fs * CHIP_H, pat = chipPattern(colorIdx - 1, lum(col) > 0.62);
     ctx.globalAlpha = done ? 0.3 : 1; ctx.fillStyle = col; roundRect(x - w / 2, y - h / 2, w, h, 4); ctx.fill();
+    if (pat) { ctx.fillStyle = pat; ctx.fill(); }
     ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.fillStyle = lum(col) > 0.62 ? '#2e2a26' : '#fff'; ctx.font = '700 ' + fs + 'px system-ui,sans-serif'; ctx.fillText(String(n), x, y + 0.5); ctx.globalAlpha = 1;
   } else { ctx.fillStyle = done ? TH.done : TH.ink; ctx.font = '700 ' + fs + 'px system-ui,sans-serif'; ctx.fillText(String(n), x, y + 0.5); }
@@ -853,14 +923,30 @@ function drawHoopAt(g, cxp, cyp, R, L, t) {
 function roundRectG(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function drawHoop(now) {
   var L = G.L, t = clamp((now - G.hoopT) / 650, 0, 1), e = 1 - Math.pow(1 - t, 3);
-  var top = view.ay0 - 10, cardTop = $('win').classList.contains('hidden') ? VH * 0.62 : $('win').querySelector('.card').getBoundingClientRect().top;
-  var R1 = Math.min(VW * 0.36, (cardTop - top) * 0.40, 190), cx1 = VW / 2, cy1 = top + (cardTop - top) / 2 + R1 * 0.02;
-  var bw = L.w * view.c, R0 = Math.max(bw, L.h * view.c) * 0.72, cx0 = view.ox + bw / 2, cy0 = view.oy + L.h * view.c / 2;
-  var R = R0 + (R1 - R0) * e, cx = cx0 + (cx1 - cx0) * e, cy = cy0 + (cy1 - cy0) * e;
+  var top = view.ay0 - 10, card = $('win').classList.contains('hidden') ? null : $('win').querySelector('.card').getBoundingClientRect();
+  var R1, cx1, cy1;
+  if (card && card.left > VW * 0.35) { // landscape: result card on the right, hoop in the free left part (screw above, name ribbon below)
+    R1 = Math.min((VH - top - 40) / 2.5, card.left * 0.4, 190); R1 = Math.max(12, R1); cx1 = card.left / 2; cy1 = top + R1 * 1.3 + 4;
+  } else {
+    var cardTop = card ? card.top : VH * 0.62;
+    R1 = Math.max(12, Math.min(VW * 0.36, (cardTop - top) * 0.40, 190)); cx1 = VW / 2; cy1 = top + (cardTop - top) / 2 + R1 * 0.02;
+  }
+  var bw = L.w * view.c, R0 = Math.max(1, Math.max(bw, L.h * view.c) * 0.72), cx0 = view.ox + bw / 2, cy0 = view.oy + L.h * view.c / 2;
+  var R = Math.max(1, R0 + (R1 - R0) * e), cx = cx0 + (cx1 - cx0) * e, cy = cy0 + (cy1 - cy0) * e;
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.sin(now / 900) * 0.02 * e); ctx.translate(-cx, -cy);
-  ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
-  ctx.fillStyle = TH.board; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); ctx.shadowColor = 'transparent';
-  drawHoopAt(ctx, cx, cy, R, L, t);
+  if (t >= 1) { // settled: render the hoop once into an offscreen canvas and just blit it each frame
+    var key = Math.round(R * 4) + '|' + DPR + '|' + dark, hc = G.hoopCache;
+    if (!hc || hc.key !== key) {
+      var SZ = Math.ceil(R * 2.9 + 40), oc = document.createElement('canvas'); oc.width = oc.height = Math.ceil(SZ * DPR); var og = oc.getContext('2d'); og.scale(DPR, DPR);
+      og.shadowColor = 'rgba(0,0,0,.25)'; og.shadowBlur = 20; og.shadowOffsetY = 8; og.fillStyle = TH.board; og.beginPath(); og.arc(SZ / 2, SZ / 2, R, 0, Math.PI * 2); og.fill(); og.shadowColor = 'transparent';
+      drawHoopAt(og, SZ / 2, SZ / 2, R, L, 1); hc = G.hoopCache = { key: key, c: oc, S: SZ };
+    }
+    ctx.drawImage(hc.c, cx - hc.S / 2, cy - hc.S / 2, hc.S, hc.S);
+  } else {
+    ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+    ctx.fillStyle = TH.board; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); ctx.shadowColor = 'transparent';
+    drawHoopAt(ctx, cx, cy, R, L, t);
+  }
   ctx.restore();
   if (t > 0.6) { // name ribbon
     var a = clamp((t - 0.6) / 0.4, 0, 1); ctx.globalAlpha = a;
@@ -899,7 +985,7 @@ function drawTitle(now) {
 var titlePic = 1;
 
 /* ---------- input ---------- */
-var stroke = null, pointers = {}, pinch = null, panDrag = null;
+var stroke = null, pointers = {}, pinch = null, panDrag = null, mapDrag = false;
 function cellAt(x, y) {
   if (!G) return -1; var L = G.L;
   if (x < view.ax0 + view.RW - 0.5 && view.ox < view.ax0 + view.RW) return -1; // under sticky clues
@@ -917,8 +1003,9 @@ function decideAction(i, how) { // how: 'fill' | 'cross'
 function startStroke(i, how, touch) {
   stroke = { start: i, how: how, action: null, axis: null, cells: [i], changes: {}, touch: touch, moved: false, t0: performance.now(), startVal: G.board[i], stopped: false, color: G.L.multi ? curColor : 1 };
   G.hl = i; dirty = true;
-  if (!touch) { stroke.action = decideAction(i, how); applyCell(i); }
-  else stroke.lpTimer = setTimeout(function () { if (stroke && !stroke.moved && !stroke.action) { stroke.how = 'cross'; stroke.action = decideAction(stroke.start, 'cross'); applyCell(stroke.start); vib(8); } }, 350);
+  if (!touch || !settings.lp) { stroke.action = decideAction(i, how); applyCell(i); }
+  else stroke.lpTimer = setTimeout(function () { // long-press = cross, but only committed (and judged) on release; a second finger cancels it
+    if (stroke && !stroke.moved && !stroke.action) { stroke.how = 'cross'; stroke.action = decideAction(stroke.start, 'cross'); stroke.lpPending = true; vib(8); dirty = true; } }, LP_MS);
 }
 function strokeMove(x, y) {
   if (!stroke || stroke.stopped) return;
@@ -926,6 +1013,7 @@ function strokeMove(x, y) {
   var L = G.L, sx = stroke.start % L.w, sy = (stroke.start - sx) / L.w, p = cellAtLoose(x, y);
   if (p.x === sx && p.y === sy && !stroke.axis) return;
   if (!stroke.action) { clearTimeout(stroke.lpTimer); stroke.action = decideAction(stroke.start, stroke.how); applyCell(stroke.start); if (!stroke || stroke.stopped) return; }
+  else if (stroke.lpPending) { stroke.lpPending = false; applyCell(stroke.start); if (!stroke || stroke.stopped) return; }
   stroke.moved = true;
   if (!stroke.axis) stroke.axis = Math.abs(p.x - sx) >= Math.abs(p.y - sy) ? 'x' : 'y';
   var tx = stroke.axis === 'x' ? clamp(p.x, 0, L.w - 1) : sx, ty = stroke.axis === 'y' ? clamp(p.y, 0, L.h - 1) : sy;
@@ -944,11 +1032,11 @@ function applyCell(i) {
   else if (a === 'cross') { if (v !== 0) return; nv = -1; }
   else if (a === 'clear') { if (stroke.startVal === -1 ? v !== -1 : v !== stroke.startVal) return; nv = 0; }
   if (nv === v) return;
-  var err = false;
-  if (settings.check && G.L && nv !== 0) {
-    if (nv > 0 && sol !== nv) { err = true; nv = sol > 0 ? sol : -1; }
-    else if (nv === -1 && sol > 0) { err = true; nv = sol; }
+  if (settings.check && G.L && nv !== 0 && ((nv > 0 && sol !== nv) || (nv === -1 && sol > 0))) {
+    // wrong guess: mark it red and cost a heart, but leave the cell as it was (no free answer)
+    stroke.changes[i] = { from: v, to: v, err: true }; G.errTry[i] = nv; onError(i); dirty = true; return;
   }
+  var err = false;
   stroke.changes[i] = { from: v, to: nv, err: err };
   G.board[i] = nv;
   if (nv > 0) { G.pop[i] = performance.now(); SFX.stitch(stroke.cells.length); stats.cells++; }
@@ -961,8 +1049,8 @@ function onError(i) {
   var L = G.L, x = i % L.w, y = (i - x) / L.w; spawn(view.ox + x * view.c + view.c / 2, view.oy + y * view.c + view.c / 2, '#d23c2c', 10, 90);
   shake = performance.now();
   if (stroke) stroke.stopped = true;
-  if (!G.continued) { G.hearts = Math.max(0, G.hearts - 1); if (G.hearts === 0) { setTimeout(function () { if (G && G.status === 'play') { finishStroke(); show('out'); } }, 450); } }
-  updateHUD();
+  if (!G.continued) { G.hearts = Math.max(0, G.hearts - 1); if (G.hearts === 0) { var g0 = G; setTimeout(function () { if (G === g0 && G.status === 'play' && screen === 'game') { finishStroke(); show('out'); arm('out', 600); } }, 450); } }
+  updateHUD(); saveProgressSoon();
 }
 var shake = 0;
 function afterChange(i, silent) {
@@ -994,6 +1082,7 @@ function finishStroke() {
 function tapStroke() { // touch released without moving
   if (!stroke) return; clearTimeout(stroke.lpTimer);
   if (!stroke.action) { stroke.action = decideAction(stroke.start, stroke.how); applyCell(stroke.start); }
+  else if (stroke.lpPending) { stroke.lpPending = false; applyCell(stroke.start); }
 }
 function cancelStroke() { // second finger arrived: revert this stroke unless it caused errors
   if (!stroke) return; clearTimeout(stroke.lpTimer);
@@ -1009,15 +1098,15 @@ cv.addEventListener('pointerdown', function (e) {
   if (screen !== 'game' || !G || G.status !== 'play') return;
   audio(); e.preventDefault();
   try { cv.setPointerCapture(e.pointerId); } catch (er) {}
-  if (e.isPrimary) { pointers = {}; pinch = null; panDrag = null; } // a new gesture: drop any pointer whose 'up' got lost
+  if (e.isPrimary) { pointers = {}; pinch = null; panDrag = null; mapDrag = false; } // a new gesture: drop any pointer whose 'up' got lost
   pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
   var ids = Object.keys(pointers);
   if (ids.length >= 2) {
-    if (stroke) cancelStroke(); panDrag = null;
-    var a = pointers[ids[0]], b = pointers[ids[1]];
-    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: view.z, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+    if (stroke) cancelStroke(); panDrag = null; mapDrag = false;
+    if (!pinch) startPinch();
     return;
   }
+  if (inMapCorner(e.clientX, e.clientY)) { mapDrag = true; mapJump(e.clientX, e.clientY); return; }
   var i = cellAt(e.clientX, e.clientY);
   if (i < 0) { panDrag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy }; return; }
   G.cursor = -1;
@@ -1028,18 +1117,29 @@ cv.addEventListener('pointermove', function (e) {
   if (!pointers[e.pointerId]) { if (screen === 'game' && G && e.pointerType === 'mouse') { var hi = cellAt(e.clientX, e.clientY); if (hi !== G.hl && !stroke) { G.hl = hi; dirty = true; } } return; }
   pointers[e.pointerId].x = e.clientX; pointers[e.pointerId].y = e.clientY;
   var ids = Object.keys(pointers);
-  if (pinch && ids.length >= 2) {
-    var a = pointers[ids[0]], b = pointers[ids[1]], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    var nz = clamp(pinch.z * d / pinch.d, 1, view.maxZ);
-    setZoom(nz, mx, my); view.ox += mx - pinch.mx; view.oy += my - pinch.my; clampPan(); pinch.mx = mx; pinch.my = my; pinch.z = view.z; pinch.d = d; dirty = true; return;
-  }
+  if (pinch && ids.length >= 2) { pinch.dirty = true; return; } // applied once per frame from both fingers' latest positions
+  if (mapDrag) { mapJump(e.clientX, e.clientY); return; }
   if (panDrag) { view.ox = panDrag.ox + e.clientX - panDrag.x; view.oy = panDrag.oy + e.clientY - panDrag.y; clampPan(); dirty = true; return; }
   if (stroke) { stroke.px = e.clientX; stroke.py = e.clientY; strokeMove(e.clientX, e.clientY); }
 });
+// two-finger pan/zoom: anchored to the board point under the fingers' midpoint at pinch start, so a diagonal drag tracks exactly;
+// distance changes under 3% are ignored so a pure pan never jitters the zoom
+function pinchPts() { var ids = Object.keys(pointers); return [pointers[ids[0]], pointers[ids[1]]]; }
+function startPinch() {
+  var p = pinchPts(), a = p[0], b = p[1], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: view.z, gx: (mx - view.ox) / view.c, gy: (my - view.oy) / view.c, dirty: false };
+}
+function applyPinch() {
+  if (!pinch || !pinch.dirty || Object.keys(pointers).length < 2) return; pinch.dirty = false;
+  var p = pinchPts(), a = p[0], b = p[1], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, q = Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0;
+  q = q > 1.03 ? q / 1.03 : q < 0.97 ? q / 0.97 : 1;
+  var z = clamp(pinch.z0 * q, 1, view.maxZ);
+  view.z = z; view.c = view.c0 * z; view.ox = mx - pinch.gx * view.c; view.oy = my - pinch.gy * view.c; clampPan(); updateZoomBtn(); dirty = true;
+}
 function endPointer(e) {
   if (!pointers[e.pointerId]) return; delete pointers[e.pointerId];
-  if (pinch) { if (Object.keys(pointers).length < 2) pinch = null; return; }
-  panDrag = null;
+  if (pinch) { applyPinch(); if (Object.keys(pointers).length < 2) pinch = null; return; }
+  panDrag = null; mapDrag = false;
   if (stroke) { if (!stroke.moved) tapStroke(); finishStroke(); }
 }
 cv.addEventListener('pointerup', endPointer); cv.addEventListener('pointercancel', endPointer);
@@ -1054,6 +1154,7 @@ window.addEventListener('keydown', function (e) {
   if (/^[1-6]$/.test(k) && L.multi && +k <= L.colors.length) { curColor = +k; setMode('fill'); return; }
   var d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k];
   if (d) { e.preventDefault(); if (G.cursor < 0) G.cursor = 0; else { var x = G.cursor % L.w, y = (G.cursor - x) / L.w; x = clamp(x + d[0], 0, L.w - 1); y = clamp(y + d[1], 0, L.h - 1); G.cursor = y * L.w + x; if (keyHeld && stroke) { stroke.cells.push(G.cursor); applyCell(G.cursor); } } G.hl = G.cursor; dirty = true; return; }
+  if ((k === ' ' || k === 'Enter') && e.target && e.target.closest && e.target.closest('button')) return; // keyboard activation of a focused button
   if ((k === ' ' || k === 'Enter' || k === 'x' || k === 'X') && !e.repeat) {
     e.preventDefault(); audio(); if (G.cursor < 0) { G.cursor = 0; G.hl = 0; dirty = true; return; }
     var how = (k === 'x' || k === 'X') ? 'cross' : mode === 'cross' ? 'cross' : 'fill';
@@ -1072,7 +1173,7 @@ function checkWin() {
 }
 function calcStars() {
   if (G.continued) return 1;
-  var ref = G.L.w * G.L.h * 1200, s = 3;
+  var ref = refMs(G.L), s = 3;
   if (settings.check && G.errors > 0) s = 2;
   if (G.time > ref) s = Math.min(s, 2);
   if (G.hintUsed) s = Math.min(s, 2);
@@ -1095,13 +1196,14 @@ function win() {
     if (L.multi) stats.multi = true;
     if (L.w >= 20 && G.time < 600000) stats.fast20 = true;
   }
-  if (settings.check && G.errors === 0 && !G.continued) stats.perfect++;
+  if (settings.check && G.errors === 0 && !G.continued && !stats.pset[L.id]) { stats.pset[L.id] = 1; stats.perfect++; } // each level counts once
   stats.time += G.time;
   delete inprog[L.id]; sset('inprogress', inprog); saveAll();
   SFX.win(); vib([20, 40, 20, 40, 60]);
   var diag = L.w + L.h, dur = diag * 10 + 300;
-  setTimeout(function () { for (var k = 0; k < 40; k++) spawn(view.ox + Math.random() * L.w * view.c, view.oy + Math.random() * L.h * view.c, L.colors[k % L.colors.length], 1, 160); }, 120);
-  setTimeout(function () { G.hoop = true; G.hoopT = performance.now(); $('bottom').classList.add('hidden'); showWinCard(); }, dur + 350);
+  setTimeout(function () { if (G !== g) return; for (var k = 0; k < 40; k++) spawn(view.ox + Math.random() * L.w * view.c, view.oy + Math.random() * L.h * view.c, L.colors[k % L.colors.length], 1, 160); }, 120);
+  var g = G; // a level left before the reveal must not get this win card
+  setTimeout(function () { if (G !== g || screen !== 'game') return; G.hoop = true; G.hoopT = performance.now(); $('bottom').classList.add('hidden'); showWinCard(); }, dur + 350);
   updateHUD(); dirty = true;
 }
 function showWinCard() {
@@ -1109,11 +1211,11 @@ function showWinCard() {
   $('wTitle').textContent = '「' + L.name + '」完成！';
   var h = ''; for (var i = 1; i <= 3; i++) h += i <= st ? '<span class="on" style="animation-delay:' + (0.35 + i * 0.15) + 's">★</span>' : '★';
   $('wStars').innerHTML = h;
-  $('wTime').textContent = fmt(G.time); $('wErr').textContent = settings.check ? G.errors : '—'; $('wRef').textContent = fmt(L.w * L.h * 1200);
+  $('wTime').textContent = fmt(G.time); $('wErr').textContent = settings.check ? G.errors : '—'; $('wRef').textContent = fmt(refMs(L));
   var note = st === 3 ? '零失誤、在參考時間內完成，完美！' : G.continued ? '心數用完後繼續完成，最多 ★。' : G.hintUsed ? '使用了提示，最多 ★★。' : (settings.check && G.errors) ? '無失誤並在參考時間內可得 ★★★。' : '在參考時間內完成可得 ★★★。';
   $('wNote').textContent = note;
   $('wNext').textContent = L.daily ? '回到首頁' : L.n >= NL ? '看看圖鑑' : '下一關';
-  show('win');
+  show('win'); arm('win', 800);
   setTimeout(function () { var R = Math.min(VW * 0.36, 190); for (var k = 0; k < 50; k++) spawn(VW / 2 + (Math.random() - 0.5) * R * 2, view.ay0 + R, ['#d9a23c', '#c4513f', '#4f8a5b', '#3f7fd6'][k % 4], 1, 220); }, 500);
 }
 function useHint() {
@@ -1126,17 +1228,18 @@ function useHint() {
   var st = new Int32Array(N);
   for (i = 0; i < N; i++) { var b = G.board[i]; st[i] = b > 0 ? 1 << b : b === -1 ? 1 : L.full; }
   var found = null;
-  for (var li = 0; li < L.h + L.w && !found; li++) {
-    var idx = L.lineIdx[li], m = idx.map(function (q) { return st[q]; }), r = solveLine(m, L.lines[li]); if (!r) continue;
+  var NLN = L.h + L.w; // rotate the starting line so successive hints point at different lines
+  for (var lk = 0; lk < NLN && !found; lk++) {
+    var li = (G.hintLi + 1 + lk) % NLN, idx = L.lineIdx[li], m = idx.map(function (q) { return st[q]; }), r = solveLine(m, L.lines[li]); if (!r) continue;
     var cand = null;
     for (var k = 0; k < idx.length; k++) if (r[k] !== m[k] && isSingle(r[k]) && G.board[idx[k]] === 0) { if (r[k] !== 1) { cand = k; break; } if (cand == null) cand = k; }
-    if (cand != null) found = { li: li, cell: idx[cand], val: r[cand] === 1 ? -1 : bitIndex(r[cand]) };
+    if (cand != null) found = { li: li, k: cand, cell: idx[cand], val: r[cand] === 1 ? -1 : bitIndex(r[cand]) };
   }
   var msg;
   if (found) {
     var isRow = found.li < L.h, num = isRow ? found.li + 1 : found.li - L.h + 1, cl = L.lines[found.li].map(function (q) { return q[0]; }).join(' ');
-    msg = '看' + (isRow ? '第 ' + num + ' 列' : '第 ' + num + ' 行') + '（提示 ' + (cl || '0') + '），可以推出這一格' + (found.val > 0 ? '要繡' : '是空白') + '。';
-    G.glow.push({ li: found.li, t: performance.now() });
+    msg = '看' + (isRow ? '第 ' + num + ' 列' : '第 ' + num + ' 行') + '（提示 ' + (cl || '0') + '）：' + (isRow ? '從左數' : '從上數') + '第 ' + (found.k + 1) + ' 格' + (found.val > 0 ? '一定要繡' : '一定是空白') + '。';
+    G.glow.push({ li: found.li, t: performance.now() }); G.hintLi = found.li;
   } else {
     for (i = 0; i < N; i++) if (G.board[i] === 0 && L.sol[i] > 0) break;
     if (i >= N) for (i = 0; i < N; i++) if (G.board[i] === 0) break;
@@ -1153,6 +1256,9 @@ function useHint() {
 /* ---------- overlays / screens ---------- */
 var OVS = ['title', 'select', 'gallery', 'stats', 'pause', 'settings', 'help', 'out', 'win'];
 function show(id) { OVS.forEach(function (o) { $(o).classList.toggle('hidden', o !== id); }); dirty = true; }
+// a card that pops up on its own (result, out of hearts) ignores touches for a moment, so a finger still tapping the board can't hit it
+var armUntil = {};
+function arm(id, ms) { armUntil[id] = performance.now() + ms; var el = $(id); el.classList.add('arming'); setTimeout(function () { el.classList.remove('arming'); }, ms); }
 function overlayOpen() { for (var i = 0; i < OVS.length; i++) if (!$(OVS[i]).classList.contains('hidden')) return OVS[i]; return null; }
 function hideAll() { OVS.forEach(function (o) { $(o).classList.add('hidden'); }); dirty = true; }
 var toastT = 0;
@@ -1246,21 +1352,24 @@ function sharePNG() {
 
 /* ---------- daily puzzle ---------- */
 function makeDaily() {
+  // a real picture every day: one of the 10x10-15x15 pictures (L26-L90), mirrored/flipped and re-coloured by the date,
+  // kept only if it solves by plain line-by-line logic (no guessing)
   var d = new Date(), key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(), seed = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-  var COLS = ['r', 'b', 'G', 'v', 'o', 't', 'm', 'n'];
-  for (var tries = 0; tries < 400; tries++) {
-    var rnd = mulberry(seed * 31 + tries), W = 10, cells = [], x, y;
-    for (y = 0; y < W; y++) for (x = 0; x < 5; x++) cells[y * W + x] = rnd() < 0.55 ? 1 : 0;
-    for (var it = 0; it < 2; it++) { var nc = cells.slice(); for (y = 0; y < W; y++) for (x = 0; x < 5; x++) { var n = 0; for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var yy = y + dy, xx = x + dx; if (xx > 4) xx = 9 - xx; if (yy >= 0 && yy < W && xx >= 0) n += cells[yy * W + xx] || 0; } nc[y * W + x] = n >= 5 ? 1 : n <= 3 ? 0 : cells[y * W + x]; } cells = nc; }
-    for (y = 0; y < W; y++) for (x = 5; x < W; x++) cells[y * W + x] = cells[y * W + (9 - x)];
-    var cnt = cells.reduce(function (a, b) { return a + b; }, 0); if (cnt < 35 || cnt > 70) continue;
-    var letter = COLS[Math.floor(rnd() * COLS.length)], str = '每日一繡|10|10|0|' + letter + '|' + encodeRLE(cells, letter);
+  var MONO = ['r', 'b', 'G', 'v', 'o', 't', 'm', 'n', 'B', 'R'], rnd = mulberry(Math.imul(seed, -1640531535));
+  for (var tries = 0; tries < 60; tries++) {
+    var n = 26 + Math.floor(rnd() * 65), src = getLevel(n), W = src.w, H = src.h, fx = rnd() < 0.5, fy = rnd() < 0.35, cells = [], x, y;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) cells.push(src.pic[(fy ? H - 1 - y : y) * W + (fx ? W - 1 - x : x)]);
+    if (!fx && !fy) for (y = 0; y < H; y++) for (x = 0; x < W; x++) cells[y * W + x] = src.pic[y * W + W - 1 - x]; // always differ from the level itself
+    var letters = LEVELS[n - 1][0].split('|')[4];
+    if (src.multi) { var arr = letters.split(''); for (var q = arr.length - 1; q > 0; q--) { var j = Math.floor(rnd() * (q + 1)), tmp = arr[q]; arr[q] = arr[j]; arr[j] = tmp; } letters = arr.join(''); }
+    else { letters = MONO[Math.floor(rnd() * MONO.length)]; cells = cells.map(function (v) { return v ? 1 : 0; }); }
+    var str = src.name + '|' + W + '|' + H + '|' + (src.multi ? 1 : 0) + '|' + letters + '|' + encodeRLE(cells, letters);
     var L = decodeLevel(str); prepLevel(L); var r = solveLevel(L, { probe: false });
-    if (!r.ok) continue;
-    L.daily = true; L.dkey = key; L.id = 'D' + key; L.n = 0; L.diff = Math.round(clamp(1 + 99 * (Math.log(rawDifficulty(L, r)) - DIFF_NORM[0]) / (DIFF_NORM[1] - DIFF_NORM[0]), 1, 100)); L.name = '每日一繡 ' + (d.getMonth() + 1) + '/' + d.getDate();
+    if (!r.ok || L.pic.join() === src.pic.join()) continue; // symmetric picture: the flip must actually change it
+    L.daily = true; L.dkey = key; L.id = 'D' + key + 'p'; L.n = 0; L.src = n; L.diff = Math.round(clamp(1 + 99 * (Math.log(rawDifficulty(L, r)) - DIFF_NORM[0]) / (DIFF_NORM[1] - DIFF_NORM[0]), 1, 100)); L.name = src.name + '（每日 ' + (d.getMonth() + 1) + '/' + d.getDate() + '）';
     return L;
   }
-  var L2 = getLevel(30); return L2;
+  return getLevel(30);
 }
 
 /* ---------- help demo animation ---------- */
@@ -1286,6 +1395,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (document.hidden) { lastT = now; return; }
   var dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
+  applyPinch();
   if (screen === 'game' && G && G.status === 'play' && !overlayOpen()) { G.time += dt * 1000; var sec = Math.floor(G.time / 1000); if (sec !== lastSec) { lastSec = sec; $('hTime').textContent = fmt(G.time); } }
   stepParticles(dt);
   if (stroke && stroke.px != null && stroke.moved && G && G.status === 'play') { // auto-scroll a zoomed board while dragging near its edge
@@ -1295,8 +1405,8 @@ function frame(now) {
     if (!(ex || ey)) stroke.edgeT = 0; else if (!stroke.edgeT) stroke.edgeT = now; // dwell 350ms at the edge before scrolling
     if ((ex || ey) && now - stroke.edgeT > 350) { var ox0 = view.ox, oy0 = view.oy; view.ox += ex * 320 * dt; view.oy += ey * 320 * dt; clampPan(); if (view.ox !== ox0 || view.oy !== oy0) { strokeMove(stroke.px, stroke.py); dirty = true; } }
   }
-  var anim = particles.length || screen === 'title' || (G && (G.status === 'won' || G.hintCell != null || Object.keys(G.pop).length || Object.keys(G.errMark).length || G.glow.length));
-  if (G) { var k = Object.keys(G.errMark); for (var i = 0; i < k.length; i++) if (now - G.errMark[k[i]] > 1700) delete G.errMark[k[i]]; while (G.glow.length && now - G.glow[0].t > 1000) G.glow.shift(); }
+  var anim = particles.length || screen === 'title' || (stroke && stroke.touch && !stroke.moved) || (G && (G.status === 'won' || G.hintCell != null || Object.keys(G.pop).length || Object.keys(G.errMark).length || G.glow.length));
+  if (G) { var k = Object.keys(G.errMark); for (var i = 0; i < k.length; i++) if (now - G.errMark[k[i]] > 1700) { delete G.errMark[k[i]]; delete G.errTry[k[i]]; } while (G.glow.length && now - G.glow[0].t > 1000) G.glow.shift(); }
   if (dirty || anim) {
     dirty = false;
     var sh = shake && now - shake < 260 ? Math.sin((now - shake) / 18) * 4 * (1 - (now - shake) / 260) : 0;
@@ -1308,7 +1418,23 @@ function frame(now) {
 }
 
 /* ---------- wiring ---------- */
-function on(id, f) { $(id).addEventListener('click', function (e) { audio(); SFX.click(); f(e); }); }
+/* Buttons fire from pointerup (tracked per pointerId, only when released on the same button), so taps work while another
+   finger is on the board and a tap that changes the screen can never land on the control that appears under the finger.
+   Pointer-made clicks (detail > 0) are swallowed page-wide; keyboard activation (detail 0) still clicks normally. */
+var fires = {}, downOn = {};
+(function () {
+  function ctl(t) { return t && t.closest ? t.closest('button') : null; }
+  function armed(b) { var ov = b.closest('.ov'); return !(ov && armUntil[ov.id] && performance.now() < armUntil[ov.id]); }
+  document.addEventListener('pointerdown', function (e) { var b = ctl(e.target); if (b && !b.disabled && armed(b)) downOn[e.pointerId] = b; else delete downOn[e.pointerId]; }, true);
+  document.addEventListener('pointerup', function (e) {
+    var b = downOn[e.pointerId]; delete downOn[e.pointerId]; if (!b || b.disabled || !b.isConnected) return;
+    if (ctl(document.elementFromPoint(e.clientX, e.clientY)) !== b) return;
+    b.click(); // untrusted, detail 0: passes the filter below
+  }, true);
+  document.addEventListener('pointercancel', function (e) { delete downOn[e.pointerId]; }, true);
+  document.addEventListener('click', function (e) { if (e.isTrusted && e.detail > 0) { e.preventDefault(); e.stopPropagation(); } }, true);
+})();
+function on(id, f) { $(id).addEventListener('click', function (e) { fires[id] = (fires[id] || 0) + 1; audio(); SFX.click(); f(e); }); }
 on('tPlay', function () { startLevel(clamp(progress.last || 1, 1, NL)); });
 on('tSelect', function () { buildSelect(); show('select'); });
 on('tDaily', startDaily);
@@ -1325,8 +1451,12 @@ on('pSelect', function () { saveInprog(); buildSelect(); show('select'); setTime
 on('pHome', goTitle); on('pHelp', openHelp); on('pSet', openSettings);
 on('helpOk', function () { if (helpFrom && helpFrom !== 'help') show(helpFrom); else hideAll(); });
 on('setOk', function () { if (helpFrom && helpFrom !== 'settings') show(helpFrom); else hideAll(); if (G) updateHUD(); });
-Array.prototype.forEach.call(document.querySelectorAll('#settings .tog'), function (b) { b.addEventListener('click', function () { var k = b.dataset.k; settings[k] = !settings[k]; sset('settings', settings); syncSettings(); audio(); SFX.click(); }); });
+Array.prototype.forEach.call(document.querySelectorAll('#settings .tog'), function (b) { b.addEventListener('click', function () { var k = b.dataset.k; settings[k] = !settings[k]; sset('settings', settings); syncSettings(); syncSound(); audio(); SFX.click(); }); });
 on('bUndo', undo); on('bRedo', redo); on('bHint', useHint);
+function syncSound() { var b = $('bSound'); b.setAttribute('aria-pressed', settings.sound ? 'true' : 'false'); b.setAttribute('aria-label', settings.sound ? '音效：開' : '音效：關');
+  $('sIcon').innerHTML = '<path d="M4 9v6h4l5 4V5L8 9z"/>' + (settings.sound ? '<path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>' : '<path d="M17 9l5 6M22 9l-5 6"/>'); }
+on('bSound', function () { settings.sound = !settings.sound; sset('settings', settings); syncSound(); syncSettings(); if (settings.sound) SFX.click(); });
+syncSound();
 on('mFill', function () { setMode('fill'); }); on('mCross', function () { setMode('cross'); });
 on('bZoom', function () { if (view.z > 1.05) setZoom(1); else setZoom(Math.max(view.autoZ, Math.min(view.maxZ, 2))); });
 on('oCont', function () { G.continued = true; hideAll(); updateHUD(); toast('繼續加油！這關最多 ★'); });
@@ -1349,7 +1479,10 @@ window.__game = {
   view: function () { return { c: view.c, ox: view.ox, oy: view.oy, z: view.z, ax0: view.ax0, ay0: view.ay0, ax1: view.ax1, ay1: view.ay1, RW: view.RW, CH: view.CH }; },
   solution: function () { return G ? Array.prototype.slice.call(G.L.sol) : null; },
   board: function () { return G ? Array.prototype.slice.call(G.board) : null; },
-  color: function () { return curColor; }
+  color: function () { return curColor; },
+  fires: function () { return Object.assign({}, fires); },
+  dbg: function () { return G ? { maxH: G.maxH, undo: G.undo.length, map: view.map, autoZ: view.autoZ, maxZ: view.maxZ, lpPending: !!(stroke && stroke.lpPending), pinch: !!pinch, hoopCached: !!G.hoopCache } : null; },
+  daily: function () { var L = makeDaily(), r = solveLevel(L, { probe: false }); return { id: L.id, src: L.src, w: L.w, h: L.h, daily: !!L.daily, pic: L.pic.join(''), srcPic: L.src ? getLevel(L.src).pic.join('') : '', lineSolvable: !!r.ok }; }
 };
 })();
 </script>
@@ -1361,7 +1494,7 @@ function showPng(c) {
   im.style.cssText = 'max-width:100%;max-height:72vh;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.4);-webkit-touch-callout:default;user-select:auto;pointer-events:auto';
   var t = document.createElement('div'); t.textContent = '長按圖片（或按右鍵）即可儲存'; t.style.cssText = 'color:#fff;font-size:15px';
   var btn = document.createElement('button'); btn.textContent = '關閉'; btn.style.cssText = 'min-width:120px;min-height:44px;border-radius:22px;border:0;font-size:16px;background:#fff;color:#333';
-  btn.onclick = function () { o.remove(); }; o.onclick = function (e) { if (e.target === o) o.remove(); };
+  btn.onclick = function () { o.remove(); }; var down = null; o.addEventListener('pointerdown', function (e) { down = e.target === o ? e.pointerId : null; }); o.addEventListener('pointerup', function (e) { if (down === e.pointerId && document.elementFromPoint(e.clientX, e.clientY) === o) o.remove(); down = null; });
   im.addEventListener('contextmenu', function (e) { e.stopPropagation(); }, true);
   o.append(im, t, btn); document.body.appendChild(o);
 }
