@@ -4,7 +4,8 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'gradient-maker-'));
 const WRAP = path.join(DIR, 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL_ = 'file://' + WRAP, KEY = 'gradient-maker:v1:';
+let URL_ = '';
+const KEY = 'gradient-maker:v1:';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
@@ -12,6 +13,11 @@ const S = (r, g, b, a, p) => ({ c: { r, g, b, a }, p });
 const L = o => Object.assign({ type: 'linear', angle: 135, shape: 'ellipse', size: 'farthest-corner', cx: 50, cy: 50, repeat: false, space: 'srgb' }, o);
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL_ = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, ...opt });

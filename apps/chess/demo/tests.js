@@ -5,6 +5,7 @@
 // Usage: node tests.js [--no-browser]
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html'), html = fs.readFileSync(APP, 'utf8');
+let PAGE_URL = '';
 const coreSrc = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
 const C = new Function(coreSrc + '\nreturn {setFen,getFen,perft,legalMoves,make,unmake,inCheck,moveUci,san,handleMsg,gameStatus,findUci,canMate,parseMove,side:function(){return side;},F_CAS:F_CAS,F_EP:F_EP};')();
 const PUZ = JSON.parse(html.match(/var PUZZLES = (\[[\s\S]*?\n\]);/)[1]);
@@ -128,7 +129,7 @@ async function open(vp, o = {}) {
   if (o.ls) await ctx.addInitScript(ls => { if (!localStorage.getItem('test.seeded')) { localStorage.clear(); localStorage.setItem('test.seeded', 1); for (const k in ls) localStorage.setItem(k, ls[k]); } }, o.ls);
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + APP); await page.waitForFunction(() => window.__game);
+  await page.goto(PAGE_URL); await page.waitForFunction(() => window.__game);
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: tid }] });
   const tap = async (x, y, hold = 40) => { tid++; await touch('touchStart', x, y); await sleep(hold); await touch('touchEnd'); };
@@ -147,6 +148,11 @@ const LV = lv => JSON.stringify({ level: lv, color: 'w', clock: 0 });
 async function newAI(s, lv) { await s.tapSel('#tAI'); await s.tapSel('#ngLv button[data-v="' + lv + '"]'); await s.tapSel('#ngColor button[data-v="w"]'); await s.tapSel('#ngGo'); await s.humanReady(); }
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, touch)');
   try {
