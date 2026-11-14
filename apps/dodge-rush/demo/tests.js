@@ -4,6 +4,7 @@
 // Usage: node tests.js
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {makeSim, speedMul, density, dailyOrder, openingOrder, rng32, PATS};')();
@@ -73,6 +74,11 @@ const B390 = { w: 390, h: 844, left: 10, right: 380, top: 64, bottom: 832 };
 
   console.log('Page (390x844 touch, lock-step clock)');
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   const LOCK = `(() => { let vt = 1000; const q = []; performance.now = () => vt;
@@ -84,7 +90,7 @@ const B390 = { w: 390, h: 844, left: 10, right: 380, top: 64, bottom: 832 };
     if (o.init) await ctx.addInitScript(o.init);
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('file://' + APP);
+    await page.goto(PAGE_URL);
     await page.waitForFunction(() => window.__game && document.getElementById('tPlay').getBoundingClientRect().height > 40, null, { timeout: 30000 });
     const cdp = await ctx.newCDPSession(page);
     const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(p => ({ x: p[0], y: p[1], id: p[2] })) });
