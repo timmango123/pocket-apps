@@ -210,6 +210,7 @@ function gameAt(st, pcol) { const g = new BQ.Game({ seed: 1, v: st.v }); g.st = 
 
 // ---------------- in the real page (mobile Chromium, real CDP touch): one regression check per review finding ----------------
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let browser = null, tid = 1;
 async function at(name, fn) {
@@ -222,7 +223,7 @@ async function open(vp, o = {}) {
   if (o.ls) await ctx.addInitScript(ls => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); for (const k in ls) localStorage.setItem(k, ls[k]); } }, o.ls);
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + APP); await page.waitForFunction(() => window.__banqi && window.__banqi.info());
+  await page.goto(PAGE_URL); await page.waitForFunction(() => window.__banqi && window.__banqi.info());
   const cdp = await ctx.newCDPSession(page);
   const tap = async (x, y, hold = 40) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: tid++ }] }); await sleep(hold); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
   // wait for the panel's pop-in animation to end first (a box measured mid-scale is off by up to ~35px at the card's edge)
@@ -250,6 +251,11 @@ function findSave(pick, seed0) {
 }
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, touch)');
   try {
