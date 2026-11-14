@@ -3,7 +3,8 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs'), os = require('os');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'qr-maker-t-')), WRAP = path.join(TMP, 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP, KEY = 'qr-maker:v1:';
+let URL = '';
+const KEY = 'qr-maker:v1:';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
@@ -14,6 +15,11 @@ const pngWidth = buf => buf.readUInt32BE(16);
 const seedHist = n => Array.from({ length: n }, (_, i) => ({ type: 'url', fields: { url: 'https://example.com/a-very-long-path/that-does-not-wrap/' + 'x'.repeat(40) + i }, style: {}, createdAt: 1760000000000 - i * 1000 }));
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, init, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, ...opt });
