@@ -3,7 +3,8 @@
 // Usage: node tests.js   (about 40-70 s; waits on conditions, no timing-based assertions)
 const fs = require('fs'), path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const APP = path.resolve(__dirname, '..', 'index.html'), URL = 'file://' + APP;
+const APP = path.resolve(__dirname, '..', 'index.html');
+let URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {msDecode, msSolve, msGenDaily, msDailyGen, msTarget};')();
@@ -42,6 +43,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   });
 
   console.log('Page');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const errors = [];
   async function open(w, h) {
