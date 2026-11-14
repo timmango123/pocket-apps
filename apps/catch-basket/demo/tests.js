@@ -42,9 +42,9 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
   const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
   const browser = await chromium.launch();
   const errors = [];
-  async function open(w = 390, h = 844, init) {
+  async function open(w = 390, h = 844, init, arg) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
-    if (init) await ctx.addInitScript(init);
+    if (init) await ctx.addInitScript(init, arg);
     const p = await ctx.newPage();
     p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     await p.goto(URL); await p.waitForFunction(() => window.__game);
@@ -219,7 +219,7 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
       async tap(x, y, id = 9, hold = 0) { await H.down(id, x, y); if (hold) await t.p.waitForTimeout(hold); await H.up(id); },
       async tapSel(sel, id = 9, hold = 0, dx = 0, dy = 0) { const c = await t.ev(s => { const b = document.querySelector(s).getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2, b.width, b.height]; }, sel); await H.tap(c[0] + dx * (c[2] / 2), c[1] + dy * (c[3] / 2), id, hold); return c; } };
     return H; };
-  const openT = async (w, h, init) => { const t = await open(w, h, init); t.cdp = await t.ctx.newCDPSession(t.p); return t; };
+  const openT = async (w, h, init, arg) => { const t = await open(w, h, init, arg); t.cdp = await t.ctx.newCDPSession(t.p); return t; };
   const count = () => window.__n = { mute: 0, pause: 0 };
 
   // R1. [veto] a second finger on HUD / overlay buttons while one finger drags: each fires exactly once
@@ -246,6 +246,9 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
     ok(await t.p.isVisible('#settings'), 'R1: 設定 from pause opens settings');
     const vib0 = (await t.ev(() => window.__game.data())).set.vib;
     await H.tapSel('#sVib'); ok((await t.ev(() => window.__game.data())).set.vib === !vib0, 'R1: one tap on 震動 toggles exactly once');
+    // CI's Chromium 141 delivers the tap's own click with detail 0 (it looked like a keyboard press and toggled again): replay that click
+    await H.tapSel('#sVib'); await t.ev(() => document.getElementById('sVib').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+    ok((await t.ev(() => window.__game.data())).set.vib === vib0, 'R1: a tap whose click arrives with detail 0 (Chromium 141) still toggles exactly once');
     await H.tapSel('#sSkin button[data-v="1"]'); ok((await t.ev(() => window.__game.data())).set.skin === 1, 'R1: a 籃子造型 segment tap selects it');
     // edge tap: 12 px outside the right edge of 完成 still counts (browser targets it); a slide off the control does not
     const c = await t.ev(() => { const b = document.getElementById('sOk').getBoundingClientRect(); return [b.right - 4, b.top + b.height / 2]; });
@@ -267,14 +270,17 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
     await t.ctx.close();
   }
 
-  // R2. [veto] the HUD top row never clips at 360 px (5 lives, 5- and 6-digit scores, 最高 difficulty)
+  // R2. [veto] the HUD never clips at 360 px (5 lives, 5- and 6-digit scores, 1100 s, 最高 difficulty) — also with wider glyphs than
+  // this machine's fonts (CI's Ubuntu fonts measured 239 > 234 at 360 px), emulated with extra letter spacing
   for (const [w, h] of [[360, 640], [390, 844], [375, 500]]) {
     const t = await openT(w, h);
-    for (const [score, tt] of [[99999, 120], [999999, 900]]) {
-      await t.play(); await t.ev(([sc, tt]) => { const S = window.__game.sim; S.lives = 5; S.score = sc; S.t = tt; S.lvl = Math.min(21, 1 + Math.floor(tt / 15)); for (let i = 0; i < 19; i++) S.basket.push({ k: 'grape', v: 50 }); }, [score, tt]);
-      await t.p.waitForFunction(s => document.getElementById('hS').textContent === String(s), score, { timeout: 5000 });
-      const r = await t.ev(() => { const row = document.querySelector('.hrow'); return [row.scrollWidth, row.clientWidth, document.getElementById('hD').textContent]; });
-      ok(r[0] <= r[1], 'R2: ' + w + '×' + h + ' HUD row fits with 5 lives and ' + score + ' (' + r[0] + ' ≤ ' + r[1] + ', 難度 ' + r[2] + ')');
+    for (const wide of [0, 1.5, 3]) for (const [score, tt] of [[99999, 120], [120000, 1100], [999999, 900]]) {
+      await t.play(); await t.ev(([sc, tt, wide]) => { let st = document.getElementById('wide'); if (!st) { st = document.createElement('style'); st.id = 'wide'; document.head.appendChild(st); }
+        st.textContent = wide ? '.hud .hs,.hud .brow{letter-spacing:' + wide + 'px}' : ''; dispatchEvent(new Event('resize'));
+        const S = window.__game.sim; S.lives = 5; S.score = sc; S.t = tt; S.lvl = Math.min(21, 1 + Math.floor(tt / 15)); for (let i = 0; i < 19; i++) S.basket.push({ k: 'grape', v: 50 }); }, [score, tt, wide]);
+      await t.p.waitForFunction(s => document.getElementById('hS').textContent === String(s), score, { timeout: 5000 }); await t.frames();
+      const r = await t.ev(() => { const row = document.querySelector('.hrow'), b = document.querySelector('.brow'); return [row.scrollWidth, row.clientWidth, b.scrollWidth, b.clientWidth, document.getElementById('hD').textContent, document.getElementById('hL').textContent]; });
+      ok(r[0] <= r[1] && r[2] <= r[3], 'R2: ' + w + '×' + h + (wide ? ' (+' + wide + ' px glyphs)' : '') + ' HUD fits with 5 lives, ' + score + ', ' + tt + ' s (' + r[0] + '≤' + r[1] + ', ' + r[2] + '≤' + r[3] + ', 難度 ' + r[4] + ')');
     }
     await t.ctx.close();
   }
@@ -327,6 +333,20 @@ const ok = (c, m) => { if (c) pass++; else { fail++; console.log('FAIL', m); } }
     const t2 = await openT(390, 844, () => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); localStorage.setItem('basket.run', '{"v":1,"mode":"endless","day":1,"d":{"o":{"t":5,"items":"x"},"r":1}}'); } });
     ok(!(await t2.p.isVisible('#tCont')) && await t2.ls('run') === null, 'R8: a damaged saved run is dropped, the title works');
     await t2.ctx.close();
+    // wrong types inside an otherwise valid saved run (review round 2: caught:null threw on every catch) are replaced by defaults
+    const bad = { v: 1, mode: 'endless', day: 1, d: { r: 1, evN: 'x', spT: null, o: { t: 5, W: 360, score: 10, lives: 3, x: 180, tx: 180, nextSpawn: 6, seed: 1, basket: [], items: [], caught: null,
+      streak: 'x', maxStreak: null, harvest: 'yes', freeze: 'a', shake: {}, rainOn: 1, maxLives: 'q', cm: 5, prevBest: 'x', lvl: [], limit: 'x', mode: 7, endBy: 3, rainBest: NaN } } };
+    const t3 = await openT(390, 844, b => { if (!sessionStorage.getItem('s')) { sessionStorage.setItem('s', 1); localStorage.setItem('basket.run', b); } }, JSON.stringify(bad));
+    const H3 = hands(t3); await H3.tapSel('#tCont');
+    await t3.ev(() => { const g = window.__game, S = g.sim; g.skipCountdown(); g.hold(true);
+      for (const k of ['apple', 'grape', 'stone']) { S.items.push({ k, good: k !== 'stone' ? 1 : 0, r: 13, x0: S.x, y0: 540, vx: 0, vy: 300, t0: S.t, W: S.W, ta: S.t + 0.05, alive: true, passed: false, rot: 0, spin: 0, ph: 0 }); g.advance(0.2); }
+      S.basket.push({ k: 'apple', v: 10 }); g.advance(1); });
+    const s3 = await t3.ev(() => { const S = window.__game.sim; return { caught: S.caught, streak: S.streak, lives: S.lives, score: S.score, mode: window.__game.mode, limit: S.limit }; });
+    ok(s3.mode === 'play' && s3.caught.apple === 1 && s3.caught.grape === 1 && s3.lives === 2 && s3.limit === 0 && Number.isFinite(s3.score), 'R8: a saved run with wrong field types continues and plays normally ' + JSON.stringify(s3));
+    await t3.ev(() => { const S = window.__game.sim; S.lives = 1; S.items.push({ k: 'rotten', good: 0, r: 13, x0: S.x, y0: 540, vx: 0, vy: 300, t0: S.t, W: S.W, ta: S.t + 0.05, alive: true, passed: false, rot: 0, spin: 0, ph: 0 }); window.__game.advance(0.1); });
+    await t3.p.waitForFunction(() => window.__game.mode === 'over', null, { timeout: 4000 });
+    ok((await t3.ls('stats')).games === 1, 'R8: …and is booked when it ends');
+    await t3.ctx.close();
   }
 
   // R9/R10. difficulty keeps building after 190 s up to 最高 (21); 限時 runs the hazard curve slower

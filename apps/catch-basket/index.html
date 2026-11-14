@@ -30,6 +30,9 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .lives svg{width:15px;height:15px}
 .lives i{font-style:normal;font-size:13px;font-weight:800;color:var(--ink);margin-left:1px;font-variant-numeric:tabular-nums}
 .hud.tighter{gap:5px;padding-left:calc(var(--sal) + 6px);padding-right:calc(var(--sar) + 6px)}.hud.tighter .hs{font-size:9.5px}.hud.tighter .hs b{font-size:14px;margin-left:1px}.hud.tighter .hp{padding-left:6px;padding-right:6px}
+.hud.nolbl #hTw{font-size:0}.hud.nolbl #hTw b{margin-left:0}.hud.nolbl #hTw b::after{content:"s";font-size:10px;font-weight:600;color:var(--ink2);margin-left:1px}
+.brow .lives{flex:none}
+.hud.shrink .hrow .hs b{font-size:var(--hb)}
 .hud.tight .hrow{gap:4px}.hud.tight .hs{font-size:10px}.hud.tight .hs b{font-size:15px;margin-left:2px}.hud.tight .hp{padding-left:7px;padding-right:7px}
 .hud.land{right:auto;flex-wrap:wrap;justify-content:space-between;align-content:flex-start;width:calc(var(--sal) + var(--hudw,220px));padding-right:0}
 .hud.land .hp{order:3;flex:1 1 100%;max-width:none;height:auto;gap:3px;padding-top:4px;padding-bottom:6px}.hud.land .hrow{flex-wrap:wrap;justify-content:flex-start;column-gap:12px}
@@ -371,7 +374,23 @@ function makeSim(o) {
   S.advance = dt => { let rem = dt; while (rem > 1e-9 && !S.dead) { const h = Math.min(rem, STEP); S.step(h); rem -= h; } };
   // a run in progress as plain data (for 繼續收成 after a reload) and back; the RNG state goes with it so the run continues as it would have
   S.save = () => { const o = {}; for (const k in S) if (typeof S[k] !== 'function' && k !== 'ev') o[k] = S[k]; return { o, r: R.st(), evN, spT }; };
-  S.load = d => { for (const k in d.o) if (typeof S[k] !== 'function' && k !== 'W') S[k] = d.o[k]; R.set(d.r); evN = d.evN | 0; spT = +d.spT || 0; S.ev.length = 0; return S; };
+  // takes only fields the run has, of the same type as a fresh run's (number: finite, object: plain object, array: array)
+  S.load = d => {
+    const o = d.o && typeof d.o === 'object' ? d.o : {}, plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
+    for (const k in o) {
+      const cur = S[k], v = o[k]; if (k === 'W' || k === 'ev' || cur === undefined || typeof cur === 'function') continue;
+      if (typeof cur === 'number' ? typeof v === 'number' && isFinite(v) : Array.isArray(cur) ? Array.isArray(v) : typeof cur === 'object' ? plain(v) : typeof v === typeof cur) S[k] = v;
+    }
+    const cnt = {}; for (const k in S.caught) if (KINDS[k] && Number.isInteger(S.caught[k]) && S.caught[k] >= 0) cnt[k] = S.caught[k]; S.caught = cnt;
+    S.basket = S.basket.filter(b => b && KINDS[b.k] && typeof b.v === 'number' && isFinite(b.v)).slice(0, CAP);
+    S.items = S.items.filter(i => i && KINDS[i.k] && ['x0', 'y0', 'vx', 'vy', 't0', 'W', 'ta', 'r'].every(f => typeof i[f] === 'number' && isFinite(i[f])) && i.vy > 0)
+      .map(i => ({ ...i, good: KINDS[i.k].good, alive: i.alive !== false, passed: !!i.passed, rot: +i.rot || 0, spin: +i.spin || 0, ph: +i.ph || 0 }));
+    S.lives = Math.max(1, Math.min(MAXLIFE, Math.round(S.lives))); S.maxLives = Math.max(S.lives, Math.min(MAXLIFE, Math.round(S.maxLives) || 0));
+    for (const k of ['streak', 'maxStreak', 'score', 'dumps', 'missed', 'bestDump', 'bestDumpN', 'rainC', 'rainM', 'rainBest', 'fairChecks', 'fairFix', 'maxOnScreen', 'settle']) S[k] = Math.max(0, Math.round(S[k]));
+    for (const k of ['freeze', 'shake']) S[k] = Math.max(0, Math.min(3, S[k]));
+    S.x = Math.max(lo, Math.min(hi, S.x)); S.tx = Math.max(lo, Math.min(hi, S.tx)); S.lvl = diffLevel(S.t); S.dead = false;
+    if (typeof d.r === 'number' && isFinite(d.r)) R.set(d.r); evN = d.evN | 0; spT = typeof d.spT === 'number' && isFinite(d.spT) ? d.spT : S.t; S.ev.length = 0; return S;
+  };
   return S;
 }
 /*CORE-END*/
@@ -729,11 +748,21 @@ const appleSvg = on => '<svg viewBox="0 0 20 20"><path d="M10 6c3-3 8-1 7 5-1 5-
 let lastLives = -1, lastN = -1, lastHarv = null, lastD = -1, lastT = -1, fitKey = '', hudMode = 0;
 function drawLives() { const L = sim.lives; let h = ''; if (hudMode >= 1) h = appleSvg(L > 0) + '<i>×' + L + '</i>'; else for (let i = 0; i < Math.max(3, L); i++) h += appleSvg(i < L); $('hL').innerHTML = h; $('hL').setAttribute('aria-label', '命 ' + L); }
 function updLives() { if (!sim) return; if (lastLives === sim.lives) return; lastLives = sim.lives; drawLives(); fitHud(); }
-// The top row never clips: when it does not fit, lives turn into one apple ×N, then labels and numbers get smaller (two steps).
+// The HUD never clips, whatever the font: it is measured and stepped down until both rows really fit — lives become one
+// apple ×N, labels and numbers get smaller (two steps), the 時間 label becomes an "s" after the number, the lives move to
+// the basket row, and as a last resort the numbers shrink 1 px at a time.
 function fitHud() {
-  if (!sim || $('hud').classList.contains('hidden')) return; const row = $('hS').parentNode.parentNode;
-  for (hudMode = 0; hudMode < 4; hudMode++) { $('hud').classList.toggle('tight', hudMode >= 2); $('hud').classList.toggle('tighter', hudMode === 3); drawLives(); if (row.scrollWidth <= row.clientWidth) break; }
-  if (hudMode > 3) hudMode = 3;
+  const hud = $('hud'); if (!sim || hud.classList.contains('hidden')) return;
+  const row = $('hS').parentNode.parentNode, brow = $('bbar').parentNode, L = $('hL');
+  const fits = () => row.scrollWidth <= row.clientWidth && brow.scrollWidth <= brow.clientWidth;
+  hud.classList.remove('shrink');
+  for (hudMode = 0; hudMode <= 5; hudMode++) {
+    hud.classList.toggle('tight', hudMode >= 2); hud.classList.toggle('tighter', hudMode >= 3); hud.classList.toggle('nolbl', hudMode >= 4);
+    const inB = hudMode >= 5; if (inB !== (L.parentNode === brow)) { if (inB) brow.insertBefore(L, brow.firstChild); else row.appendChild(L); }
+    drawLives(); if (fits()) return;
+  }
+  hudMode = 5; hud.classList.add('shrink');
+  for (let f = 13; f >= 8; f--) { hud.style.setProperty('--hb', f + 'px'); if (fits()) return; }
 }
 function updHud() {
   if (!sim || state === 'title') return;
@@ -828,8 +857,14 @@ function btnEnd(e) {
   if (p.moved < 10 || (e.clientX >= r.left - S && e.clientX <= r.right + S && e.clientY >= r.top - S && e.clientY <= r.bottom + S)) activate(p.el);
 }
 document.addEventListener('pointerup', btnEnd, true); document.addEventListener('pointercancel', btnEnd, true);
+let lastUp = -1e9, lastKey = -1e9; addEventListener('pointerup', () => { lastUp = performance.now(); }, true);
+addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') lastKey = performance.now(); }, true);
 document.addEventListener('click', e => {
-  if (e.detail > 0) { e.preventDefault(); e.stopPropagation(); return; } // pointer-made: already handled at pointerup
+  // Pointer-made: already handled at pointerup. Not every Chromium marks it with detail > 0 (Chromium 141 in CI delivered the
+  // tap's click as if from the keyboard, so 震動 toggled twice), so a click within 800 ms of a pointer release counts as
+  // pointer-made too, unless Enter / Space was just pressed (keyboard activation keeps working).
+  const keyed = performance.now() - lastKey < 500;
+  if (e.detail > 0 || (!keyed && (e.pointerType || performance.now() - lastUp < 800))) { e.preventDefault(); e.stopPropagation(); return; }
   const b = e.target.closest && e.target.closest('button'); if (b) { e.preventDefault(); e.stopPropagation(); activate(b); }
 }, true);
 on('bDump', () => tryDump());
@@ -873,7 +908,13 @@ function retire(S) { commit(S, false); stats.games++; sv('stats', stats); if (cu
 function retireSaved() { const r = saved; clearRun(); if (!r) return; stats.games++; sv('stats', stats); if (r.mode === 'daily' && r.day === today) { daily.plays++; sv('daily', daily); } }
 function contRun() {
   const r = saved; if (!r) return; let S;
-  try { const o = r.d.o; S = makeSim({ W: o.W, seed: o.seed, mode: r.mode === 'timed' ? 'timed' : 'endless', fixed: r.mode === 'daily' }); S.load(r.d); } catch (e) { retireSaved(); refreshTitle(); return; }
+  try {
+    const o = r.d.o; S = makeSim({ W: o.W, seed: o.seed, mode: r.mode === 'timed' ? 'timed' : 'endless', fixed: r.mode === 'daily' }); S.load(r.d);
+    // the page's own bookkeeping on the run, each checked the same way
+    S.seed = o.seed; S.prevBest = int(o.prevBest, 0, 1e12); S.rec = o.rec === true; S.recShown = o.recShown === true;
+    const cm = obj(o.cm), cc = {}; for (const k in obj(cm.caught)) if (KINDS[k] && int(cm.caught[k], -1) >= 0) cc[k] = cm.caught[k];
+    S.cm = { g: num(cm.g, 0, 0, 1e12), caught: cc };
+  } catch (e) { retireSaved(); refreshTitle(); return; }
   saved = null; curMode = r.mode; sim = S; beginRun();
   banner('繼續收成<small>' + Math.floor(S.t) + ' 秒・' + S.score + ' 分・籃中 ' + S.basket.length + ' 件</small>');
 }
