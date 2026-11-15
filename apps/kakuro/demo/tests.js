@@ -8,6 +8,7 @@
 // sloppier taps when not zoomed, restart needs a second tap, daily streak/history, L20 block-sum picture.
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {decodeLevel, humanSolve, countSolutions, genLevel, mkRng, SGL, COMBOS};')();
 const LEVELS = JSON.parse('[' + html.match(/\/\*LEVELS-START\*\/([\s\S]*?)\/\*LEVELS-END\*\//)[1] + ']');
@@ -65,13 +66,18 @@ const t3frac = P => { const h = C.humanSolve(P, { maxTier: 3 }); return h.ok ? 1
   if (process.argv.includes('--node-only')) return done(T0);
 
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const br = await chromium.launch({ args: ['--disable-gpu'] });
   const errors = [];
   async function open(w, h) {
     const ctx = await br.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push(w + 'x' + h + ' ' + e)); page.on('console', m => { if (m.type() === 'error') errors.push(w + 'x' + h + ' ' + m.text()); });
-    await page.goto('file://' + APP);
+    await page.goto(PAGE_URL);
     const cdp = await ctx.newCDPSession(page);
     return { ctx, page, cdp };
   }
@@ -84,7 +90,7 @@ const t3frac = P => { const h = C.humanSolve(P, { maxTier: 3 }); return h.ok ? 1
   async function center(page, sel) { const b = await page.locator(sel).boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; }
   async function setup(page, store) {
     // leave the page first: a reload saves the running game on visibilitychange and would overwrite injected saves
-    await page.goto('about:blank'); await page.goto('file://' + APP);
+    await page.goto('about:blank'); await page.goto(PAGE_URL);
     await page.evaluate(s => { localStorage.clear(); for (const k in s) localStorage.setItem('kakuro.' + k, JSON.stringify(s[k])); }, store || {});
     await page.reload(); await waitFor(page, () => !document.getElementById('title').classList.contains('hidden'));
   }
