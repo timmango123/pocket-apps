@@ -77,8 +77,9 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .tb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .tb:disabled { opacity: .4; }
 .tb.hot { background: var(--accent); color: var(--accent-ink); }
-@media (hover: hover) { .tb:not(:disabled):hover, .ibtn:hover { filter: brightness(1.06); transform: translateY(-1px); } }
-.tb:active, .ibtn:active, .btn:active, .chip:active { transform: scale(.96); }
+@media (hover: hover) { .tb:not(:disabled):hover, .ibtn:hover { filter: brightness(1.06); } }
+/* press feedback without moving or shrinking the hit box */
+.tb:active, .ibtn:active, .btn:active, .chip:active { filter: brightness(.9); box-shadow: inset 0 0 0 2px var(--line); }
 .toast { position: fixed; left: 50%; top: 22%; transform: translate(-50%, -10px); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 99px;
   font-weight: 800; font-size: 15px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50; white-space: nowrap; }
 .toast.show { opacity: .94; transform: translate(-50%, 0); }
@@ -109,13 +110,19 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
 .row { display: flex; align-items: center; justify-content: space-between; min-height: 46px; gap: 10px; border-top: 1px solid var(--line); font-size: 15px; }
 .row:first-child { border-top: 0; }
 .row small { display: block; color: var(--sub); font-size: 12px; }
-.sw { width: 52px; height: 32px; border-radius: 99px; border: 0; background: var(--line); position: relative; flex: 0 0 52px; transition: background .2s; }
-.sw::before { content: ""; position: absolute; inset: -6px; }
-.sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .25); transition: transform .2s; }
-.sw[aria-checked="true"] { background: var(--good); }
+/* the button is the 56x44 hit box; the 52x32 track and the knob are drawn by its pseudo-elements */
+.sw { width: 56px; height: 44px; padding: 0; border: 0; background: none; position: relative; flex: 0 0 56px; }
+.sw::before { content: ""; position: absolute; left: 2px; top: 6px; width: 52px; height: 32px; border-radius: 99px; background: var(--line); transition: background .2s; }
+.sw::after { content: ""; position: absolute; left: 5px; top: 9px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .25); transition: transform .2s; }
+.sw[aria-checked="true"]::before { background: var(--good); }
 .sw[aria-checked="true"]::after { transform: translateX(20px); }
 .sw:disabled { opacity: .4; }
 .btns { display: flex; gap: 8px; margin-top: 14px; }
+/* the menu's start bar stays at the bottom of the screen while the settings above it scroll; scroll-padding keeps a control
+   scrolled into view (focus, scrollIntoView) clear of it */
+#menu { scroll-padding-bottom: 96px; }
+.btns.dock { position: sticky; bottom: -14px; z-index: 2; margin: 14px -16px -16px; padding: 10px 16px 16px; background: var(--card); border-radius: 0 0 24px 24px;
+  box-shadow: 0 -12px 14px -12px rgba(0, 0, 0, .25); }
 .btn { flex: 1; min-height: 50px; border-radius: 16px; border: 0; background: var(--chip); font-weight: 800; font-size: 16px; }
 .btn.pri { background: var(--accent); color: var(--accent-ink); box-shadow: 0 4px 0 rgba(0, 0, 0, .2); }
 .btn small { font-size: 12px; font-weight: 600; color: var(--sub); }
@@ -252,9 +259,9 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
       <div class="row"><div>音效</div><button class="sw" role="switch" id="swSound" aria-label="音效"></button></div>
       <div class="row"><div>震動</div><button class="sw" role="switch" id="swVib" aria-label="震動"></button></div>
     </div>
-    <div class="btns"><button class="btn" id="mResume">繼續對局</button><button class="btn pri" id="mStart">開始新局</button></div>
-    <div class="btns" style="margin-top:8px"><button class="btn" id="mNet" hidden>連線對戰 <small id="mNetInfo"></small></button></div>
+    <div class="btns"><button class="btn" id="mNet" hidden>連線對戰 <small id="mNetInfo"></small></button></div>
     <div class="note">點擊或在盤面上左右拖曳選欄，放開投下；拖到盤外放開可取消。對電腦時，走過棋後中途開新局算輸；用了提示或悔棋的勝局不計成就。<br>鍵盤：1–8 直接投欄、←/→ 加空白鍵、U 悔棋、H 提示。Pop Out 模式點盤面下方的箭頭（或 Shift+數字）抽出自己的底子，若抽出後雙方同時連四，抽出者勝。</div>
+    <div class="btns dock"><button class="btn" id="mResume">繼續對局</button><button class="btn pri" id="mStart">開始新局</button></div>
   </div>
 </div>
 
@@ -1018,7 +1025,7 @@ var C4 = (function () {
   // ---------- AI levels ----------
   var LEVELS = [
     { name: '小朋友', depth: 1, ms: 50, err: 0.40 },
-    { name: '入門', depth: 3, ms: 150, err: 0.20 },
+    { name: '入門', depth: 2, ms: 150, err: 0.40 },
     { name: '中級', depth: 7, ms: 500, err: 0.08 },
     { name: '高手', depth: 12, ms: 1500, err: 0.02 },
     { name: '完美', depth: 99, ms: 4000, err: 0 }
@@ -1039,11 +1046,18 @@ var C4 = (function () {
     if (v == null) return -1;
     return mk.m ? 6 - v : v;
   }
-  function pickBest(scores, order, rnd) {
-    var best = -Infinity, i;
+  // a random column among those scoring within `slack` of the best (ties by default), so equal moves vary between games
+  function pickBest(scores, order, rnd, slack) {
+    var best = -Infinity, i, c = [];
     for (i = 0; i < scores.length; i++) if (scores[i] != null && scores[i] > best) best = scores[i];
-    for (i = 0; i < order.length; i++) if (scores[order[i]] === best) return order[i];
-    return -1;
+    for (i = 0; i < order.length; i++) if (scores[order[i]] != null && scores[order[i]] >= best - (slack || 0)) c.push(order[i]);
+    return c.length ? c[Math.min(c.length - 1, Math.floor((rnd || Math.random)() * c.length))] : -1;
+  }
+  // exact scores: same outcome as the best column, never a worse one. A win stays a win (the fastest or one move slower),
+  // every drawing column is equal, a lost position resists about as long; so 「完美」 does not replay one fixed line
+  function pickExact(ex, order, rnd) {
+    var best = -Infinity; for (var i = 0; i < ex.length; i++) if (ex[i] != null && ex[i] > best) best = ex[i];
+    return pickBest(ex, order, rnd, best > 0 ? Math.min(1, best - 1) : best === 0 ? 0 : 1);
   }
   // req: {W,H,pop,moves:[{t,c}],level(1..5),rand?:fn}. returns {move:{t,c}, info}
   function think(req) {
@@ -1061,7 +1075,7 @@ var C4 = (function () {
       }
       var mx = -1e9; bestR.forEach(function (x) { if (x.s > mx) mx = x.s; });
       var cands = bestR.filter(function (x) { return x.s === mx; });
-      return { move: cands[0].m, info: { kind: 'pop', depth: dReached, score: mx, ms: Date.now() - t0 } };
+      return { move: cands[Math.min(cands.length - 1, Math.floor(rand() * cands.length))].m, info: { kind: 'pop', depth: dReached, score: mx, ms: Date.now() - t0 } };
     }
     var E = getEngine(W, H);
     E.reset();
@@ -1100,7 +1114,7 @@ var C4 = (function () {
     for (var dd = 1; dd <= maxD; dd++) {
       try {
         var sc = E.hRoot(dd, dd <= 2 ? 0 : deadline);
-        bestScores = sc; depthDone = dd; bestC = pickBest(sc, E.order);
+        bestScores = sc; depthDone = dd; bestC = pickBest(sc, E.order, rand);
       } catch (e2) { if (e2 !== E.ABORT) throw e2; break; }
       if (Date.now() > deadline) break;
     }
@@ -1108,7 +1122,7 @@ var C4 = (function () {
     // perfect: exact analysis within ~65% of the budget, then a weak (win/draw/loss) pass, else deepest heuristic result
     try {
       var ex = E.analyze(t0 + budget * 0.65);
-      return mv(pickBest(ex, E.order), { kind: 'exact', scores: ex, depth: depthDone });
+      return mv(pickExact(ex, E.order, rand), { kind: 'exact', scores: ex, depth: depthDone });
     } catch (e3) { if (e3 !== E.ABORT) throw e3; }
     var hs = bestScores || [], cand = playable.filter(function (c) { return safe.indexOf(c) >= 0; });
     if (!cand.length) cand = playable.slice();
@@ -1155,7 +1169,7 @@ var C4 = (function () {
     newGame: newGame, play: play, replay: replay, legalMoves: legalMoves, canDrop: canDrop, canPop: canPop,
     linesThrough: linesThrough, allLines: allLines, fullBoard: fullBoard, toNotation: toNotation, fromNotation: fromNotation,
     Engine: Engine, getEngine: getEngine, popRoot: popRoot, popEval: popEval, LEVELS: LEVELS, POP_DEPTH: POP_DEPTH,
-    loadBook: loadBook, bookMove: bookMove, think: think, hint: hint, pickBest: pickBest
+    loadBook: loadBook, bookMove: bookMove, think: think, hint: hint, pickBest: pickBest, pickExact: pickExact
   };
 })();
 if (typeof module !== 'undefined') module.exports = C4;
@@ -1360,6 +1374,7 @@ function layout() {
   const fit = (pr, mr, fz, dzU, popU) => { const pzU = G.pop ? popU : fz, wu = W + 2 * pr + 2 * mr, hu = dzU + H + 2 * pr + pzU; return { pr, mr, pzU, dzU, wu, hu, c: Math.max(20, Math.floor(Math.min(aw / wu, ah / hu, 480 / wu))) }; };
   let f = fit(0.38, 0.1, 0.34, 1.32, 0.8);
   if (f.c < 44) { const s = fit(0.28, 0.05, 0.3, 1.2, 0.8); if (s.c > f.c) f = s; }
+  if (f.c < 44) { const s = fit(0.14, 0.02, 0.26, 1.15, 0.75); if (s.c > f.c) f = s; } // 8 columns on a 360px screen
   const c = f.c, wu = f.wu, hu = f.hu, pzU = f.pzU;
   const m = f.mr * c, p = f.pr * c, dz = f.dzU * c;
   L = { c, m, p, dz, W, H, pw: W * c + 2 * p, ph: H * c + 2 * p, cw: Math.round(wu * c), chh: Math.round(hu * c), pz: pzU * c };
@@ -1471,7 +1486,8 @@ function animPop(c) {
   for (let r = 0; r < H - 1; r++) { const pc = disp[c][r + 1]; disp[c][r] = pc; if (pc) { pc.falling = true; pc.vy = 0; pc.b = 0; pc.rows = 0.6; pc.quiet = true; } }
   disp[c][H - 1] = null;
 }
-const busy = () => disp.some(col => col.some(p => p && p.falling)) || outgoing.length > 0;
+// a piece blocks input until it first lands; its small bounces after that are cosmetic (the next move may start meanwhile)
+const busy = () => disp.some(col => col.some(p => p && p.falling && p.b === 0)) || outgoing.length > 0;
 function stepAnim(dt) {
   for (let c = 0; c < disp.length; c++) for (let r = 0; r < disp[c].length; r++) {
     const pc = disp[c][r]; if (!pc || !pc.falling) continue;
@@ -1501,11 +1517,15 @@ function confetti(colors, n) {
 // ---------- input state ----------
 let hoverCol = 3, hoverX = 0, aiHover = { x: 0, target: -1, active: false, wander: 0 }, drag = null, kbCursor = false;
 let aiThinking = false, aiReq = 0, hintData = null, hintReq = 0, pendingAfter = false;
+let lastMoveAt = { t: 0, c: -1 }; // column and time of the last local move (a second tap there right after is a double tap)
 let timerEnd = 0, timerLeft = 0;
 function colAtX(x) { return Math.max(0, Math.min(G.W - 1, Math.floor((x - L.px - L.p) / L.c))); }
 function canvasXY(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
 const overlayOpen = () => !$('#menu').hidden || !$('#result').hidden || !$('#stats').hidden || !$('#shareOv').hidden;
-const inputOK = () => G && L && humanTurn() && !busy() && !aiThinking && !pendingAfter && !overlayOpen(); // L: a restored game lays out on the next frame
+// L: a restored game lays out on the next frame. A falling piece does not hold up the next move: the rules have already
+// applied it, so the next player (the other person in a two-player game, or you once the computer's piece is on its way)
+// can tap at once; the turn flow (computer's reply, end of game) still waits for the pieces to land
+const inputOK = () => G && L && humanTurn() && !aiThinking && !overlayOpen();
 function setHover(c, sound) { if (c !== hoverCol) { hoverCol = c; if (sound) sfx.tick(); } }
 cv.addEventListener('pointerdown', e => {
   if (!G) return; audio();
@@ -1531,10 +1551,16 @@ function endDrag(e, cancel) {
   const d = drag; drag = null;
   if (cancel) return;
   const [x, y] = canvasXY(e);
-  if (d.pop) { if (y > L.bottom - L.c * 0.2 && colAtX(x) === d.col) humanMove({ t: 'p', c: d.col }); return; }
-  const out = x < -L.c * 0.2 || x > L.cw + L.c * 0.2 || y < -L.c * 0.4 || y > L.bottom + L.c * 0.6;
-  if (out) { toast('已取消'); return; }
-  humanMove({ t: 'd', c: colAtX(x) });
+  let mv;
+  if (d.pop) { if (!(y > L.bottom - L.c * 0.2 && colAtX(x) === d.col)) return; mv = { t: 'p', c: d.col }; }
+  else {
+    const out = x < -L.c * 0.2 || x > L.cw + L.c * 0.2 || y < -L.c * 0.4 || y > L.bottom + L.c * 0.6;
+    if (out) { toast('已取消'); return; }
+    mv = { t: 'd', c: colAtX(x) };
+  }
+  // the same column again right after a move is a double tap, not the next player's move
+  if (mv.c === lastMoveAt.c && now() - lastMoveAt.t < 350) return;
+  humanMove(mv);
 }
 cv.addEventListener('pointerup', e => endDrag(e, false));
 cv.addEventListener('pointercancel', e => endDrag(e, true));
@@ -1546,6 +1572,7 @@ document.addEventListener('keydown', e => {
   const m = /^Digit([1-9])$/.exec(e.code);
   if (m) { const c = +m[1] - 1; if (c < G.W && inputOK()) { e.preventDefault(); setHover(c); humanMove({ t: e.shiftKey && G.pop ? 'p' : 'd', c }); } return; }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); kbCursor = true; setHover(Math.max(0, Math.min(G.W - 1, hoverCol + (e.key === 'ArrowLeft' ? -1 : 1))), true); return; }
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.closest && e.target.closest('button')) return; // a focused button activates itself
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (inputOK()) humanMove({ t: 'd', c: hoverCol }); return; }
   if (e.key === 'u' || e.key === 'U') { undo(); return; }
   if (e.key === 'h' || e.key === 'H') { requestHint(true); return; }
@@ -1555,7 +1582,7 @@ function humanMove(mv, force) { // force: test hook may move while a piece is st
   if (!(force ? G && humanTurn() : inputOK())) return false;
   if (mv.t === 'd' && !C4.canDrop(G.g, mv.c)) { fx.shake = now(); fx.shakeCol = mv.c; sfx.full(); vib(25); toast('此欄已滿'); return false; }
   if (mv.t === 'p' && !C4.canPop(G.g, mv.c)) { sfx.full(); toast('只能抽出自己在最底下的棋子'); return false; }
-  timerEnd = 0;
+  timerEnd = 0; lastMoveAt = { t: now(), c: mv.c };
   applyMove(mv);
   if (G.mode === 'net') NET.moved(encMv(mv));
   return true;
@@ -1603,7 +1630,7 @@ function requestAI() {
 }
 function cancelAI() { aiReq++; aiThinking = false; aiHover.active = false; aiHover.target = -1; aiHover.go = null; }
 function requestHint(manual) {
-  if (!G || G.g.over || G.mode === 'net' || !humanTurn() || busy() || hintData) return;
+  if (!G || G.g.over || G.mode === 'net' || !humanTurn() || hintData) return;
   if (manual && G.mode === 'tour') { toast('錦標賽中不能使用提示'); return; }
   const id = ++hintReq;
   if (manual) { G.hints++; saveGame(); }
@@ -1615,7 +1642,7 @@ function requestHint(manual) {
   }).catch(() => { hintData = null; });
 }
 function undo() {
-  if (!G || G.mode === 'net' || busy() || pendingAfter || overlayOpen()) return;
+  if (!G || G.mode === 'net' || overlayOpen() || (G.g.over && !G.done)) return; // works while a piece is falling (the board is re-laid at once), not while a game is ending
   if (G.mode === 'tour') { toast('錦標賽中不能悔棋'); return; }
   const mv = G.g.moves.slice();
   if (!mv.length) return;
@@ -1627,7 +1654,7 @@ function undo() {
     if (n < 0) return;
     G.g = C4.replay(G.W, G.H, G.pop, mv, n);
   } else G.g = C4.replay(G.W, G.H, G.pop, mv, mv.length - 1);
-  G.undos++; G.done = false;
+  G.undos++; G.done = false; pendingAfter = false;
   fx.winT = 0; fx.loseT = 0; fx.lastMove = null; parts = []; hintData = null; hintReq++;
   $('#result').hidden = true;
   snapDisplay(); saveGame(); sfx.click();
@@ -1844,7 +1871,7 @@ function draw() {
   const hl = hintLabels();
   if (hl) for (let col = 0; col < G.W; col++) if (hl.out[col]) pill(cx(col), c * 0.2, hl.out[col]);
   // hover piece (human) or AI piece
-  const ht = humanTurn() && !busy() && !pendingAfter && !G.g.over && !aiThinking;
+  const ht = humanTurn() && !G.g.over && !aiThinking && !disp.some(col => col.some(p => p && p.falling && p.y < hoverY() + c)); // once the last piece has left the top
   if (ht) {
     let tx = cx(hoverCol);
     if (fx.shake && now() - fx.shake < 380 && fx.shakeCol === hoverCol) { const k = (now() - fx.shake) / 380; tx += Math.sin(k * 30) * c * 0.12 * (1 - k); }
@@ -2028,6 +2055,60 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { flush(); cancelAnimationFrame(raf); raf = 0; if (timerEnd) { timerLeft = timerEnd - now(); timerEnd = 0; } }
   else { tPrev = 0; if (!raf) raf = requestAnimationFrame(frame); if (timerLeft > 0) { timerEnd = now() + timerLeft; timerLeft = 0; } }
 });
+// ---------- tap layer ----------
+// Every HTML control (and the netplay status pill) fires from pointerup, tracked per pointerId, so a tap still counts while
+// another finger is down (the browser makes no click then). It fires only when released on the same control: moved < 10px,
+// or inside its box grown by 16px. A tap on an overlay's dim backdrop is passed on the same way (moved < 10px, same element).
+// The action runs as el.click() under TAP.firing. Any other click within 800ms of a tap-layer pointerup is swallowed, whatever
+// its detail or target, unless an Enter/Space keydown came after that pointerup; outside that window pointer-made clicks
+// (detail > 0) are swallowed too, and a lone detail-0 click (keyboard, or el.click() from a script) acts once.
+// pointerdown is prevented on a control so no compatibility mousedown/focus lands on the next screen; a focused text field is
+// blurred instead. A control on a card that appeared after the finger went down does not fire.
+const TAP = { downs: {}, lastTapUp: 0, lastKey: 0, firing: false, fired: 0 };
+(() => {
+  const CTRL = 'button, [role="button"], .np-pill';
+  const ctrlOf = t => t && t.closest ? t.closest(CTRL) : null;
+  const backdrop = t => t && t.classList && (t.classList.contains('ov') || t.classList.contains('np-ov')) ? t : null;
+  const fire = el => { el.__tapT = Date.now(); TAP.fired++; TAP.firing = true; try { el.click(); } finally { TAP.firing = false; } };
+  new MutationObserver(ms => {
+    const t = performance.now();
+    for (const m of ms) {
+      if (m.type === 'attributes' && m.target.classList.contains('ov') && !m.target.hidden) m.target.__shownT = t;
+      if (m.type === 'childList') m.addedNodes.forEach(n => { if (n.classList && n.classList.contains('np-ov')) n.__shownT = t; });
+    }
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'] });
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') TAP.lastKey = Date.now(); }, true);
+  document.addEventListener('pointerdown', e => {
+    if (e.button > 0) return;
+    const el = ctrlOf(e.target), bd = el ? null : backdrop(e.target);
+    if (!el && !bd) return;
+    TAP.downs[e.pointerId] = { el: el || bd, bd: !!bd, x: e.clientX, y: e.clientY, t: performance.now() };
+    if (e.cancelable) e.preventDefault();
+    const a = document.activeElement; if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+  }, true);
+  document.addEventListener('pointerup', e => {
+    const d = TAP.downs[e.pointerId]; if (!d) return; delete TAP.downs[e.pointerId];
+    TAP.lastTapUp = Date.now();
+    const el = d.el;
+    if (!el.isConnected || el.disabled || !el.getClientRects().length) return; // hidden or disabled since the finger went down
+    const moved = Math.hypot(e.clientX - d.x, e.clientY - d.y);
+    if (d.bd) { if (moved < 10 && e.target === el) fire(el); return; }
+    const r = el.getBoundingClientRect();
+    const inside = e.clientX >= r.left - 16 && e.clientX <= r.right + 16 && e.clientY >= r.top - 16 && e.clientY <= r.bottom + 16;
+    if (!(moved < 10 || inside)) return;
+    const card = el.closest('.ov, .np-ov'); if (card && card.__shownT > d.t) return;
+    fire(el);
+  }, true);
+  document.addEventListener('pointercancel', e => { delete TAP.downs[e.pointerId]; }, true);
+  document.addEventListener('click', e => {
+    if (TAP.firing) return;
+    const swallow = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (Object.keys(TAP.downs).length) return swallow(); // a finger is still on a control: its pointerup decides (with two fingers down Chromium may click first)
+    if (Date.now() - TAP.lastTapUp < 800 && !(TAP.lastKey > TAP.lastTapUp)) return swallow(); // the tap layer ran (or refused) this one
+    if (e.detail > 0) return swallow(); // made by a pointer
+  }, true);
+})();
+window.__tap = TAP;
 // test hooks (used by demo/verify.js)
 window.__game = {
   state: () => G && ({ W: G.W, H: G.H, pop: G.pop, mode: G.mode, level: G.level, human: G.human, turn: G.g.turn, over: G.g.over, winner: G.g.winner,

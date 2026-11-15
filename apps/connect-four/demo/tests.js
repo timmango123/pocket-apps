@@ -1,6 +1,7 @@
 // Rule + engine tests for 四子連線. Loads the game's own core (between CORE-START/CORE-END in index.html).
 // Part 2 drives the real page in mobile Chromium with CDP touch (served over http): board fit and 44px columns at phone,
-// short and landscape sizes, taps anywhere in a column, double taps / taps during a drop / second fingers, the computer
+// short and landscape sizes, taps anywhere in a column, double taps / taps during a drop / second fingers, the HTML tap layer
+// (second finger down, holds, detail-0 clicks after a tap), 開始新局 on screen at first launch, the computer
 // thinking off the UI thread, results banked once at the deciding move (reload-safe), abandon = loss, undo vs achievements,
 // validated storage, timer paused under the menu, colour-blind marks.
 // Usage: node tests.js [--quick] [--no-browser]
@@ -194,7 +195,47 @@ const always = v => () => v;
   // perfect opens in the centre and uses the book
   const r0 = C4.think({ W: 7, H: 6, pop: false, moves: [], level: 5 }); ok(r0.move.c === 3 && r0.info.kind === 'book', 'perfect AI opens in the centre column (book)');
   // perfect AI finds the fastest win in an endgame and the exact scores match analysis
-  { const s = randomPosition(C4.Engine(7, 6, 10), 7, 26); const r = C4.think({ W: 7, H: 6, pop: false, moves: s.map(c => ({ t: 'd', c })), level: 5 }); ok(r.info.kind === 'exact', 'perfect AI solves a 26-ply position exactly'); const best = Math.max(...r.info.scores.filter(x => x != null)); ok(r.info.scores[r.move.c] === best, 'perfect AI plays a best-scoring column'); }
+  { const s = randomPosition(C4.Engine(7, 6, 10), 7, 26); const r = C4.think({ W: 7, H: 6, pop: false, moves: s.map(c => ({ t: 'd', c })), level: 5 }); ok(r.info.kind === 'exact', 'perfect AI solves a 26-ply position exactly'); const best = Math.max(...r.info.scores.filter(x => x != null)), got = r.info.scores[r.move.c]; ok(Math.sign(got) === Math.sign(best) && got >= best - 1, 'perfect AI plays a column with the best outcome (' + got + ' vs best ' + best + ')'); }
+  // 「完美」 is not one fixed line: equal columns are picked at random, never a worse outcome
+  {
+    const order = [3, 2, 4, 1, 5, 0, 6], pick = (ex, n = 200) => { const seen = new Set(); let s = 9; for (let i = 0; i < n; i++) seen.add(C4.pickExact(ex, order, () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x80000000)); return [...seen].sort(); };
+    ok(JSON.stringify(pick([-3, 1, -3, -2, 1, -2, -2])) === '[1,4]', 'tied winning columns both get played: ' + pick([-3, 1, -3, -2, 1, -2, -2]));
+    ok(JSON.stringify(pick([-2, -2, -5, 2, -2, -2, 1])) === '[3,6]', 'a win stays a win (fastest or one slower): ' + pick([-2, -2, -5, 2, -2, -2, 1]));
+    ok(JSON.stringify(pick([-2, 0, 0, null, -2, -2, 1])) === '[6]', 'the only winning column is always played');
+    ok(JSON.stringify(pick([-1, 0, -5, 0, 0, -3, -1])) === '[1,3,4]', 'every drawing column, never a losing one: ' + pick([-1, 0, -5, 0, 0, -3, -1]));
+    ok(JSON.stringify(pick([1, 1, -9, null, 1, 1, 1].map(x => x == null ? null : x))) === '[0,1,4,5,6]', 'all equal wins vary');
+    const s = randomPosition(C4.Engine(7, 6, 10), 7, 24), lines = new Set();
+    for (let i = 0; i < 3; i++) { const r = C4.think({ W: 7, H: 6, pop: false, moves: s.map(c => ({ t: 'd', c })), level: 5 }); if (r.info.kind === 'exact') lines.add(r.move.c); }
+    console.log('  perfect AI replies in one 24-ply position:', [...lines].join(','));
+  }
+  // the step from 小朋友 to 入門 is a step, not a wall: a simple win/block/centre player beats 入門 in a good share of games
+  {
+    const ladder = (lv, n) => {
+      let s = 77; const r = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x80000000;
+      const winsAt = (g, c, who) => { const k = C4.newGame(7, 6, false); k.grid.set(g.grid); k.hts.set(g.hts); k.turn = who; return C4.play(k, { t: 'd', c }) && k.over && k.winner === who; };
+      let w = 0;
+      for (let i = 0; i < n; i++) {
+        const g = C4.newGame(7, 6, false), me = i % 2 ? 2 : 1;
+        while (!g.over) {
+          let c;
+          if (g.turn === me) {
+            const L = [0, 1, 2, 3, 4, 5, 6].filter(x => C4.canDrop(g, x));
+            c = L.find(x => winsAt(g, x, me)); if (c == null) c = L.find(x => winsAt(g, x, 3 - me));
+            if (c == null) {
+              const safe = L.filter(x => { const k = C4.newGame(7, 6, false); k.grid.set(g.grid); k.hts.set(g.hts); k.turn = me; C4.play(k, { t: 'd', c: x }); return ![0, 1, 2, 3, 4, 5, 6].some(y => C4.canDrop(k, y) && winsAt(k, y, 3 - me)); });
+              const P = safe.length ? safe : L, wt = P.map(x => 4 - Math.abs(x - 3)); let t = r() * wt.reduce((a, b) => a + b, 0); c = P[P.length - 1];
+              for (let j = 0; j < P.length; j++) { t -= wt[j]; if (t <= 0) { c = P[j]; break; } }
+            }
+          } else c = C4.think({ W: 7, H: 6, pop: false, moves: g.moves.slice(), level: lv, rand: r }).move.c;
+          C4.play(g, { t: 'd', c });
+        }
+        if (g.winner === me) w++;
+      }
+      return w;
+    };
+    const w1 = ladder(1, 24), w2 = ladder(2, 24);
+    ok(w2 >= 6 && w2 < w1, `simple player vs 小朋友 ${w1}/24, vs 入門 ${w2}/24 (入門 harder, still beatable)`);
+  }
   // Pop Out AI takes a winning pop
   { const g = C4.newGame(7, 6, true); const req = { W: 7, H: 6, pop: true, moves: C4.fromNotation('121314'), level: 4, rand: always(0.99) }; const r = C4.think(req); ok(r.move.t === 'd' && r.move.c === 0, 'Pop Out AI completes a vertical four'); }
   // hint labels: exact scores for an endgame
@@ -276,7 +317,7 @@ async function browserTests() {
       }
     });
 
-    await at('a tap anywhere in a column drops there; double taps, taps during the drop and a second finger add nothing', async () => {
+    await at('a tap anywhere in a column drops there; a double tap or a second finger adds nothing, a tap during a drop is the next move', async () => {
       const s = await open({ width: 390, height: 844 }, { settings: SET() });
       await s.tapSel('#mStart'); await s.ready();
       let [x, y] = await s.cell(0, 5); await s.tap(x, y); await s.movesIs('1'); await s.ready();       // top hole of column 1
@@ -288,17 +329,99 @@ async function browserTests() {
       ok((await s.st()).moves === '1743', 'a double tap dropped one piece');
       [x, y] = await s.cell(4, 2); await s.tap(x, y); await s.movesIs('17435');
       const [x2, y2] = await s.cell(5, 2); await s.tap(x2, y2);                                          // during the drop
-      await s.ready(); await sleep(150);
-      ok((await s.st()).moves === '17435', 'a tap while the piece was still falling was ignored');
+      await s.movesIs('174356'); await s.ready(); await sleep(150);
+      ok((await s.st()).moves === '174356', 'a tap while the piece is still falling plays the next move (once)');
       { // two fingers: the first one decides
         const [ax, ay] = await s.cell(1, 3), [bx, by] = await s.cell(5, 3), a = ++tid, b = ++tid;
         await s.touch('touchStart', [{ x: ax, y: ay, id: a }]); await sleep(40);
         await s.touch('touchStart', [{ x: ax, y: ay, id: a }, { x: bx, y: by, id: b }]); await sleep(40);
         await s.touch('touchEnd', [{ x: ax, y: ay, id: a }]); await sleep(40); await s.touch('touchEnd', []);
-        await s.movesIs('174352'); await s.ready(); await sleep(150);
-        ok((await s.st()).moves === '174352', 'with a second finger down, one piece went to the first finger\'s column');
+        await s.movesIs('1743562'); await s.ready(); await sleep(150);
+        ok((await s.st()).moves === '1743562', 'with a second finger down, one piece went to the first finger\'s column');
       }
       ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+
+    await at('HTML buttons fire once from pointerup: with another finger down, on 0.6 / 1 s holds; a detail-0 click after a tap adds nothing', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: SET({ mode: 'ai', sound: false }), game: NEAR_WIN() });
+      await s.ready();
+      const mid = async sel => { const b = await s.page.locator(sel).first().boundingBox(); return [b.x + b.width / 2, b.y + b.height / 2]; };
+      const set = () => s.ls('settings');
+      const fired = () => s.page.evaluate(() => window.__tap.fired);
+      // a finger rests on the score bar's middle while another taps the controls
+      const [hx, hy] = await mid('#midInfo'), hold = ++tid;
+      await s.touch('touchStart', [{ x: hx, y: hy, id: hold }]); await sleep(60);
+      const tap2 = async (sel, ms = 50) => { const [x, y] = await mid(sel), id = ++tid; await s.touch('touchStart', [{ x: hx, y: hy, id: hold }, { x, y, id }]); await sleep(ms); await s.touch('touchEnd', [{ x, y, id }]); await sleep(120); };
+      await tap2('#bSound'); ok((await set()).sound === true, 'sound key works with another finger down');
+      await tap2('#bUndo'); await s.page.waitForFunction(() => window.__game.state().undos === 1, null, { timeout: 5000 }).catch(() => {});
+      ok((await s.st()).undos === 1, 'undo works with another finger down (undos ' + (await s.st()).undos + ')');
+      let f0 = await fired(); await tap2('#bNew'); ok((await fired()) === f0 + 1 && /本局算輸/.test(await s.page.textContent('#toast')), 'new-game key works with another finger down');
+      await tap2('#bMenu'); await s.page.waitForFunction(() => !document.querySelector('#menu').hidden, null, { timeout: 5000 });
+      await s.page.waitForFunction(() => document.querySelector('#menu .sheet').getAnimations().every(a => a.playState !== 'running'), null, { timeout: 5000 });
+      const centre = sel => s.page.evaluate(sel => document.querySelector(sel).scrollIntoView({ block: 'center' }), sel);
+      await centre('#swVib');
+      const vib0 = (await set()).vib; await tap2('#swVib'); ok((await set()).vib === !vib0, 'menu switch works with another finger down');
+      await centre('#cSkin [data-v="wood"]');
+      await tap2('#cSkin [data-v="wood"]'); ok((await set()).skin === 'wood', 'theme chip works with another finger down');
+      await s.touch('touchEnd', [{ x: hx, y: hy, id: hold }]); await sleep(100);
+      // holds of 0.6 s and 1 s fire exactly once each
+      const vib1 = (await set()).vib;
+      let [x, y] = await mid('#swVib'); await s.tap(x, y, 600); await sleep(150); ok((await set()).vib === !vib1, '0.6 s hold toggles once');
+      await s.tap(x, y, 1000); await sleep(150); ok((await set()).vib === vib1, '1 s hold toggles once');
+      // a tap, then the detail-0 click Chromium 141 may send: on the control, on its edge and on whatever is under the finger
+      const replay = sel => s.page.evaluate(sel => {
+        const el = document.querySelector(sel), r = el.getBoundingClientRect(), mk = () => new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 });
+        el.dispatchEvent(mk()); (document.elementFromPoint(r.right - 2, r.bottom - 2) || el).dispatchEvent(mk());
+        (document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) || el).dispatchEvent(mk());
+      }, sel);
+      const tm0 = (await set()).timer; [x, y] = await mid('#swTimer'); await s.tap(x, y); await replay('#swTimer'); await sleep(150);
+      ok((await set()).timer === !tm0, 'switch: tap + detail-0 clicks toggled once');
+      await s.tapSel('#mResume'); await s.page.waitForFunction(() => document.querySelector('#menu').hidden);
+      await s.ready(); [x, y] = await s.cell(0, 0); await s.tap(x, y);
+      await s.page.waitForFunction(() => window.__game.state().moves.length === 6, null, { timeout: 10000 }); await s.ready();
+      const u0 = (await s.st()).undos; [x, y] = await mid('#bUndo'); await s.tap(x, y); await replay('#bUndo'); await sleep(300);
+      ok((await s.st()).undos === u0 + 1, 'undo: tap + detail-0 clicks undid once (' + u0 + ' -> ' + (await s.st()).undos + ')');
+      const s0 = (await set()).sound; [x, y] = await mid('#bSound'); await s.tap(x, y); await replay('#bSound'); await sleep(150);
+      ok((await set()).sound === !s0, 'sound key: tap + detail-0 clicks toggled once');
+      // a tap that opens the menu: the detail-0 click that follows lands on the new screen and must do nothing there
+      [x, y] = await mid('#bMenu'); await s.tap(x, y);
+      await s.page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); e && e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); }, [x, y]);
+      await sleep(150); ok(!(await s.page.isHidden('#menu')), 'the click after the tap that opened the menu did not close it');
+      await s.tapSel('#mResume'); await s.page.waitForFunction(() => document.querySelector('#menu').hidden);
+      // keyboard and a lone scripted click still act once
+      await sleep(900); const s1 = (await set()).sound; await s.page.evaluate(() => document.querySelector('#bSound').click()); await sleep(100);
+      ok((await set()).sound === !s1, 'a lone detail-0 click (no tap in the last 800 ms) acts once');
+      await s.page.focus('#bSound'); await s.page.keyboard.press('Enter'); await sleep(100);
+      ok((await set()).sound === s1, 'Enter on the focused sound key acts once');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+
+    await at('two players tapping fast in turn (8 taps/s): a falling piece does not swallow the next tap', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: SET() });
+      await s.tapSel('#mStart'); await s.ready();
+      // columns 1 7 2 6 3 5 again and again: nobody gets four, so all 16 taps are moves
+      const cols = [0, 6, 1, 5, 2, 4], pts = []; for (const c of cols) pts.push(await s.cell(c, 5));
+      const t0 = Date.now();
+      for (let i = 0; i < 16; i++) { const [x, y] = pts[i % 6]; await s.tap(x, y, 40); await sleep(Math.max(0, t0 + (i + 1) * 125 - Date.now())); }
+      await s.page.waitForFunction(() => !window.__game.state().busy, null, { timeout: 10000 }); await sleep(200);
+      const m = (await s.st()).moves, want = Array.from({ length: 16 }, (_, i) => cols[i % 6] + 1).join('');
+      ok(m === want, '16 taps in 2 s: every one dropped a piece (' + m + ')');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+
+    await at('first launch: 開始新局 is on screen at every portrait size; menu switches are 44px tall', async () => {
+      for (const [w, h] of [[360, 640], [390, 844], [430, 932]]) {
+        const s = await open({ width: w, height: h }, null);
+        await s.page.waitForFunction(() => !document.querySelector('#menu').hidden);
+        await s.page.waitForFunction(() => document.querySelector('#menu .sheet').getAnimations().every(a => a.playState !== 'running'), null, { timeout: 5000 });
+        const r = await s.page.evaluate(() => { const b = document.querySelector('#mStart').getBoundingClientRect(), sw = document.querySelector('#swTimer').getBoundingClientRect();
+          return { top: b.top, bottom: b.bottom, hit: document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === document.querySelector('#mStart'), sw: [sw.width, sw.height] }; });
+        ok(r.bottom <= h && r.top >= 0 && r.hit, `${w}x${h}: 開始新局 visible without scrolling (${JSON.stringify(r)})`);
+        ok(r.sw[0] >= 44 && r.sw[1] >= 44, `${w}x${h}: switch hit box ${r.sw.join('x')}`);
+        const [x, y] = [(await s.page.locator('#mStart').boundingBox()).x + 40, r.top + 20]; await s.tap(x, y);
+        await s.page.waitForFunction(() => document.querySelector('#menu').hidden && !window.__game.state().idle, null, { timeout: 5000 });
+        ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+      }
     });
 
     await at('the strongest computer thinks off the UI thread; taps meanwhile are ignored', async () => {
