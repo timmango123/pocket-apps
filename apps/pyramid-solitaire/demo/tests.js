@@ -74,7 +74,14 @@ function stuckSpot() {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let browser, tid = 1;
+let browser, tid = 1, URL0 = '';
+// Chromium 141 (CI) follows every touch tap with a click of detail 0 and no pointerType, aimed at whatever is under the
+// finger once the tap's own pointerup has run. Newer Chromium sends detail 1, so every page here replays that click too.
+const GHOST141 = () => { addEventListener('pointerup', e => { if (e.pointerType !== 'touch' || !e.isTrusted) return; const x = e.clientX, y = e.clientY; setTimeout(() => { const el = document.elementFromPoint(x, y); window.__ghosts = (window.__ghosts || 0) + 1; if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, detail: 0, clientX: x, clientY: y, view: window })); }, 0); }, false); };
+// served over local http (file:// gives an opaque origin, and the reload test relies on localStorage)
+function serve() {
+  return new Promise(res => { const srv = require('http').createServer((q, r) => { if (q.url.split('?')[0] === '/' || q.url.startsWith('/index.html')) { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); r.end(fs.readFileSync(APP)); } else { r.writeHead(404); r.end(); } }); srv.listen(0, '127.0.0.1', () => res(srv)); });
+}
 async function at(name, fn) {
   const t0 = Date.now(); let tm;
   try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 60 s')), 60000); })]); clearTimeout(tm); pass++; console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); }
@@ -84,9 +91,10 @@ async function open(vp, o = {}) {
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: 'light' });
   const seed = Object.assign({ 'pyramid:unlockAll': 'true', 'pyramid:settings': JSON.stringify({ seen: { 1: 1, 31: 1, 51: 1, 71: 1 } }) }, o.ls || {});
   await ctx.addInitScript(ls => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', 1); for (const k in ls) localStorage.setItem(k, ls[k]); } }, seed);
+  if (!o.noGhost) await ctx.addInitScript(GHOST141);
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + APP); await page.waitForFunction(() => window.__game && window.__game.state().n);
+  await page.goto(URL0); await page.waitForFunction(() => window.__game && window.__game.state().n);
   const cdp = await ctx.newCDPSession(page);
   const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
   const down = async (x, y, id) => T('touchStart', [{ x, y, id }]);
@@ -111,10 +119,40 @@ const noPair = D => { for (const a of [21, 22, 23, 24, 25, 26, 27]) for (const b
 
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const srv = await serve(); URL0 = 'http://127.0.0.1:' + srv.address().port + '/index.html';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, CDP touch)');
   const P = firstPair(D1), NP = noPair(D1);
   try {
+    await at('Chromium 141 ghost click: a detail-0 click right after a real tap fires nothing new; Enter / Space still click', async () => {
+      const s = await open({ width: 390, height: 844 }, { noGhost: true });
+      // replay the click exactly where the finger was, right after the tap layer ran (as Chromium 141 does)
+      const tapGhost = async (x, y) => { const id = tid++; await s.T('touchStart', [{ x, y, id }]); await sleep(40); await s.T('touchEnd', []);
+        await s.page.evaluate(([x, y]) => { const el = document.elementFromPoint(x, y); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: x, clientY: y, view: window })); }, [x, y]); await sleep(150); };
+      // 選擇關卡: a tile now sits under the finger; the ghost must not start that level
+      const sel = await s.box('#tSelect'); await tapGhost(sel.x, sel.y);
+      let r = await s.st(); ok(r.ov.join() === 'select' && r.status !== 'play', 'ghost after 選擇關卡: ' + r.status + ' ' + r.ov);
+      // the ghost aimed at the very button that ran (late arrival) does not run it twice
+      await s.tapSel('#sBack'); const set0 = await s.page.evaluate(() => JSON.stringify(settings)), set = await s.box('#tSet'); await tapGhost(set.x, set.y);
+      r = await s.st(); ok(r.ov.includes('settings') && await s.page.evaluate(() => JSON.stringify(settings)) === set0, 'ghost after 設定 changed a setting: ' + r.ov);
+      await s.tapSel('#setOk');
+      // last pair of a level: the win panel appears; a ghost on whatever is under the finger fires nothing
+      const sol = C.solve(D1, C.initState(), LEVELS[0][1], 400000).sol, last = sol[sol.length - 1];
+      await s.level(1);
+      const snd = await s.page.evaluate(() => settings.sound), mb = await s.box('#bMute'); await tapGhost(mb.x, mb.y);
+      ok(await s.page.evaluate(() => settings.sound) === !snd, '音效 toggled exactly once');
+      let x = C.initState(); for (const m of sol.slice(0, -1)) x = C.applyMove(D1, x, m);
+      await s.page.evaluate(x => { G.s = x; G.hist = [{ s: x, score: 0 }]; updateHud(); }, x);
+      if (last.t === 'd' || last.t === 'r') { const q = await s.stock(); await tapGhost(q.x, q.y); }
+      else { const q = await s.loc(last.a); await tapGhost(q.x, q.y); if (last.t === 'p') { const q2 = await s.loc(last.b); await tapGhost(q2.x, q2.y); } }
+      await s.page.waitForSelector('#win:not(.hidden)', { timeout: 6000 }); await sleep(300);
+      const wb = await s.box('#wSelect'); await s.page.evaluate(([x, y]) => { document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: x, clientY: y, view: window })); }, [wb.x, wb.y]);
+      await sleep(150); r = await s.st(); ok(r.ov.join() === 'win', 'stray detail-0 click on the win panel: ' + r.ov);
+      // keyboard: Enter on a focused button, Space on another
+      await s.page.focus('#wSelect'); await s.page.keyboard.press('Enter'); await sleep(150); r = await s.st(); ok(r.ov.join() === 'select', 'Enter on 選關: ' + r.ov);
+      await s.page.focus('#sBack'); await s.page.keyboard.press(' '); await sleep(150); r = await s.st(); ok(r.ov.join() === 'title', 'Space on 返回: ' + r.ov);
+      ok(!s.errors.length, s.errors.join(' | ')); await s.close();
+    });
     await at('two fingers overlapping on a pair: both taps count and the pair is removed (4 timings)', async () => {
       const s = await open({ width: 390, height: 844 }); await s.level(1);
       for (const [d1, d2] of [[60, 60], [40, 120], [120, 40], [100, 100]]) {
@@ -317,7 +355,7 @@ async function browserTests() {
       ok(tops[0] === tops[1], '再玩一次 and 選關 bottoms ' + tops); await L.close();
       const P = await open({ width: 375, height: 500 }); await P.level(4); ok(await P.page.evaluate(() => LAY.cw) >= 40, '375x500 card width ' + await P.page.evaluate(() => LAY.cw)); await P.close();
     });
-  } finally { await browser.close(); }
+  } finally { await browser.close(); srv.close(); }
 }
 browserTests().then(() => { console.log((fail ? 'FAIL ' : '') + 'pyramid-solitaire tests: ' + pass + ' passed, ' + fail + ' failed'); process.exit(fail ? 1 : 0); })
   .catch(e => { console.log('FAIL', e); process.exit(1); });

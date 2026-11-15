@@ -1190,7 +1190,7 @@ window.addEventListener('pagehide', function () { saveGame(); });
    the edge to the button; the HUD/bottom bars are pointer-events:none, so hit-testing the release point is not used).
    A press made before an overlay appeared never fires anything under it: a button fires only if no overlay was shown
    after the press (unless the button lives in that overlay and the press began after it showed) and it is still visible.
-   The browser's own click from a pointer (detail > 0) is swallowed page-wide; keyboard clicks (detail 0) still work.
+   The browser's own click from a pointer is swallowed page-wide (see below); keyboard clicks (Enter/Space) still work.
    Touch presses on buttons preventDefault their pointerdown, so no compatibility mousedown/focus lands on the next screen. */
 var BTN = new Map(), firing = null, ovShown = {};
 document.addEventListener('pointerdown', function (e) {
@@ -1218,12 +1218,27 @@ document.addEventListener('pointerup', function (e) {
   var moved = Math.max(d.moved, Math.hypot(e.clientX - d.x, e.clientY - d.y)), r = b.getBoundingClientRect(), pad = 16;
   var inside = e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
   if (moved >= 10 && !inside) return;
+  lastFire = { el: b, t: performance.now(), r: r };
   firing = b; try { b.click(); } finally { firing = null; }
 }, true);
 document.addEventListener('pointercancel', function (e) { BTN.delete(e.pointerId); }, true);
+// Chromium 141 sends the click that follows a touch (whose pointerdown was preventDefault'ed) with detail 0 and no
+// pointerType, so "detail 0" does not mean keyboard. A click counts as keyboard only right after an Enter/Space key
+// on a control; any other click from the browser is swallowed, and so is one landing on or near the control the tap
+// layer just ran (within 800 ms), so a tap that changes the screen never also fires what appears under the finger.
+var lastKey = -1e9, lastFire = { el: null, t: -1e9, r: null };
+function keyAct(e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') lastKey = performance.now(); }
+document.addEventListener('keydown', keyAct, true); document.addEventListener('keyup', keyAct, true);
+function nearFired(e) {
+  if (performance.now() - lastFire.t > 800 || !lastFire.el) return false;
+  var t = e.target, el = lastFire.el, r = lastFire.r, pad = 24;
+  if (t && t.nodeType === 1 && (el === t || el.contains(t) || t.contains(el))) return true;
+  return !!r && (e.clientX || e.clientY) && e.clientX >= r.left - pad && e.clientX <= r.right + pad && e.clientY >= r.top - pad && e.clientY <= r.bottom + pad;
+}
 window.addEventListener('click', function (e) {
   if (firing) return;
-  if (e.detail > 0) { e.preventDefault(); e.stopPropagation(); }
+  var keyboard = e.detail === 0 && performance.now() - lastKey < 1000;
+  if (!keyboard || nearFired(e)) { e.preventDefault(); e.stopPropagation(); }
 }, true);
 
 /* ===== UI ===== */
