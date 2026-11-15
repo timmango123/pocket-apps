@@ -4,7 +4,8 @@
 // gaps the game measures.   Usage: node tests.js
 const path = require('path'), { execFileSync } = require('child_process');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const APP = process.env.APP_URL || 'file://' + path.resolve(__dirname, '..', 'index.html');
+const PAGE_FILE = path.resolve(__dirname, '..', 'index.html');
+let APP = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name, ok, extra) => { ok ? pass++ : fail++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (extra != null ? '  (' + extra + ')' : '')); };
@@ -42,6 +43,11 @@ const check = (name, ok, extra) => { ok ? pass++ : fail++; console.log((ok ? 'PA
 }
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(PAGE_FILE)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  APP = process.env.APP_URL || 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(w, h, clear = true) {
