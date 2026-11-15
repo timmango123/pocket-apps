@@ -3,13 +3,18 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs'), os = require('os');
 const WRAP = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'caption-card-')), 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP;
+let URL = '';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const eq = (a, b, m) => { const A = JSON.stringify(a), B = JSON.stringify(b); assert(A === B, A === B ? m : `${m}: ${A} != ${B}`); };
 const errors = [];
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, opt = {}, init) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, ...opt });
@@ -163,7 +168,7 @@ const errors = [];
     assert(/\.jpg$/.test(d2.suggestedFilename()) && jb[0] === 0xff && jb[1] === 0xd8, 'JPG 92% 下載為 JPEG ' + d2.suggestedFilename());
     await t.p.goBack(); await t.p.waitForTimeout(150);
     assert(await t.p.isHidden('#dlOv') && !(await t.p.evaluate(() => document.querySelector('.app').inert)), 'Android 返回鍵（history.back）關閉面板，背景恢復可操作');
-    eq(await t.p.evaluate(() => location.protocol), 'file:', '返回鍵沒有離開頁面');
+    eq(await t.p.evaluate(() => location.origin + location.pathname), URL, '返回鍵沒有離開頁面');
     await t.p.click('#tplBtn'); await t.p.keyboard.press('Escape');
     assert(await t.p.isHidden('#tplOv'), 'Esc 關閉範本面板');
     await t.p.waitForTimeout(150); eq(await t.p.evaluate(() => history.state && history.state.ccSheet || null), null, '用按鈕／Esc 關閉時同時退回歷史紀錄');
