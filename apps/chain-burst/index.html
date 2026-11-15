@@ -37,6 +37,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--line)}
 .bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .15s}
 .bar u{position:absolute;top:-3px;bottom:0;width:2px;background:var(--gold)}
+.bar s{position:absolute;top:-2px;bottom:0;width:2px;background:var(--ink2);opacity:.75}
 .hint{position:fixed;left:50%;bottom:calc(var(--sab) + 16px);transform:translateX(-50%);z-index:4;pointer-events:none;
   background:var(--card);border:1px solid var(--line);padding:9px 16px;border-radius:20px;font-size:14px;font-weight:600;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis;
   animation:bob 2.4s ease-in-out infinite}
@@ -154,7 +155,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
       <div class="hs">目標<b id="hT">4</b></div>
       <div class="hs" id="hsC">引爆<b id="hC">0/12</b></div>
     </div>
-    <div class="bar"><i id="hBar"></i><u id="hMark"></u></div>
+    <div class="bar"><i id="hBar"></i><s id="hMark2" title="二星"></s><s id="hMark3" title="三星"></s><u id="hMark"></u></div>
   </div>
   <button class="ibtn" id="bRetry" aria-label="重試"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-3-6.2"/><path d="M20 4v5h-5"/></svg></button>
 </div>
@@ -245,27 +246,58 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 /*CORE-START*/
 var FW = 390, FH = 780, T_EXP = 0.4, T_HOLD = 1.0, T_SHR = 0.3, DT = 1 / 60, JR = 11;
 var K_NORM = 0, K_BIG = 1, K_ARM = 2, K_DARK = 3, K_SPLIT = 4, K_ABS = 5, K_KID = 6;
-var SEEDFIX = {"64":1,"70":1,"76":1,"79":1,"82":1,"83":2,"86":1,"87":2,"88":3,"90":1,"92":9,"94":8,"95":18,"96":23,"97":4,"98":23,"99":23,"100":13};
+// level-shape tuning (checked by demo/gen.js and the skill-tier sim): big jellies from BIG_LV; two facing schools on levels
+// 4..TWIN_END with lane gap GAP0 -> GAP0+GAPK (in ring radii) over GAP1 levels, pair drift PV radii/s, rows along the drift (TH);
+// loose schools of up to DMAX0 -> DMAX1 jellies spaced >= DSP radii; UPD0..UPD1 = how far across the lane a big jelly reaches.
+// From MIDL+1: rows up to CAPM long (one line, so the lane is the brightest spot) and the far row drifts away, easing in from
+// 0 to DIVM radii/s by level 64.
+// After level 64 ("deep sea"): target capped at TC0 + TCK per level, lane gap GAPL (+GAPLK by 100), rows up to CAPL long spaced
+// SPL, drift PVL, the far row tilted by TILTL (+TILTK) so the lane pinches at one end, and drifting away at DIVL (+DIVK) radii/s.
+var BIG_LV = 4, TWIN_END = 100, TC0 = 18, TCK = 0.1, GAPL = 1.2, PVL = 0.4, SPL = 20, THL = 1.5708, CAPL = 15, GAPLK = -0.2, DIVL = 0, DIVK = 0.1, DMAXL = 5, MIDL = 40, CAPM = 13, DIVM = 0.04, TILTL = 0.2, TILTK = 0, GAP0 = 1.0, GAPK = 0.4, PV = 0.6, TH = 1.5708, DMAX0 = 3, DMAX1 = 5, DSP = 0.55, GAP1 = 35, UPD0 = 0.2, UPD1 = 0.9, S3CAP = {"1":7,"3":7,"5":8,"6":8,"8":10,"9":8,"11":8,"12":9,"13":9,"15":9,"16":9,"17":11,"22":11,"23":11,"24":11,"29":13,"32":15,"33":14,"34":15,"35":17,"37":18,"38":18,"39":19,"40":16,"41":17,"42":17,"43":17,"45":18,"46":18,"48":19,"49":19,"53":23,"55":21,"57":25,"59":26,"60":23,"64":29,"65":28,"66":27,"76":33,"77":33,"80":31,"82":36,"84":30,"89":39,"93":37};
+var SEEDFIX = {"11":1,"14":1,"20":8,"21":17,"22":5,"27":2,"35":6,"37":2,"39":2,"40":12,"41":18,"42":15,"43":8,"44":4,"45":11,"46":6,"47":5,"48":19,"49":8,"50":3,"52":7,"53":2,"54":3,"55":4,"56":31,"57":15,"59":10,"60":3,"61":17,"62":32,"63":15,"64":36,"65":16,"66":6,"67":11,"68":12,"69":20,"71":1,"72":20,"73":7,"74":21,"76":6,"77":3,"78":12,"79":22,"80":3,"81":12,"82":5,"83":13,"84":8,"85":15,"86":6,"87":25,"88":7,"89":2,"90":6,"91":7,"92":15,"93":20,"94":25,"95":10,"96":2,"97":1,"98":40,"99":27};
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function levelParams(L) {
   var N = Math.min(60, Math.round(12 * Math.pow(1.018, L - 1)));
   var ratio = Math.min(0.95, 0.30 * Math.pow(1.012, L - 1));
   var R = 52 * Math.pow(0.995, L - 1), v = 30 * Math.pow(1.01, L - 1);
   var c = { big: 0, arm: 0, dark: 0, split: 0, abs: 0 }, mech = 0;
-  if (L >= 21) { c.big = Math.max(1, Math.round(N * (0.06 + 0.0008 * (L - 21)))); mech++; }
+  if (L >= BIG_LV) { c.big = L < 21 ? 1 : Math.max(1, Math.round(N * (0.06 + 0.0008 * (L - 21)))); mech++; }
   if (L >= 41) { c.arm = Math.max(1, Math.round(N * (0.05 + 0.0008 * (L - 41)))); mech++; }
   if (L >= 56) { c.dark = Math.max(1, Math.round(N * (0.04 + 0.0006 * (L - 56)))); mech++; }
   if (L >= 71) { c.split = Math.max(1, Math.round(N * (0.04 + 0.0006 * (L - 71)))); mech++; }
   if (L >= 86) { c.abs = 1 + Math.floor((L - 86) / 6); mech++; }
   var nExp = N - c.abs, T = Math.ceil(nExp * ratio);
+  if (L > 40 && L <= 64) T = Math.min(T, Math.round(13 + 5 * (L - 41) / 24)); // middle levels: the target climbs gently to meet the deep-sea cap
+  if (L > 64 && L <= TWIN_END) T = Math.min(T, Math.round(TC0 + TCK * (L - 64))); // late lane levels: keep each row a line or two deep (they get harder by a narrower lane instead)
   var mf = 1 + 0.12 * mech + 0.002 * (L - 1);
   var raw = ratio * Math.sqrt(N) * Math.pow(52 / R, 2) * Math.sqrt(v / 30) * mf;
-  return { L: L, N: N, nExp: nExp, ratio: ratio, T: T, R: R, v: v, cnt: c, mech: mech, raw: raw };
+  var P = { L: L, N: N, nExp: nExp, ratio: ratio, T: T, R: R, v: v, cnt: c, mech: mech, raw: raw };
+  // how the main school is built (see genLevel): one connected school for the first levels, then two schools that only
+  // light each other if the tap lands between them (or, "up" levels, if the chain reaches a big jelly on the near edge)
+  P.dmax = Math.round(DMAX0 + (DMAX1 - DMAX0) * Math.min(1, L / 64)); P.dsp = DSP;
+  if (L <= 3) { P.form = 'one'; P.extra = 4 - L; P.pv = PV; P.th = TH; }
+  else if (L > TWIN_END) P.form = 'classic';
+  else {
+    P.form = 'twin';
+    P.up = L <= 6 ? 0.4 - 0.1 * (L - 3) : 0; // levels 4-6: a big jelly on the near row also bridges the lane
+    P.upd = Math.min(1, UPD0 + (UPD1 - UPD0) * (L - 4) / 60);
+    P.gap = GAP0 + GAPK * Math.min(1, (L - 4) / GAP1);
+    P.pv = PV;
+    P.th = TH;
+    P.cap = L > 64 ? CAPL : L > MIDL ? CAPM : 9; P.div = L > MIDL ? DIVM * (L - MIDL) / (64 - MIDL) : 0; // eased in: no drift at 41, DIVM by 64
+    if (L > 64) { P.gap = GAPL + GAPLK * (L - 65) / 35; P.pv = PVL; P.th = THL; P.div = DIVL + DIVK * (L - 65) / 35; P.tilt = TILTL + TILTK * (L - 65) / 35; P.dmax = DMAXL; } // late levels: narrower lane than the early ones
+  }
+  var s2 = P.T + (P.nExp - P.T) * 0.3, s3 = P.T + (P.nExp - P.T) * 0.6;
+  P.s3 = Math.max(P.T, Math.min(P.nExp, Math.ceil(s3), S3CAP[L] || 999));
+  P.s2 = Math.max(P.T, Math.min(P.s3, Math.ceil(s2)));
+  if (P.s2 === P.s3 && P.s3 > P.T) P.s2 = P.s3 - 1;
+  return P;
 }
 function difficulty(L) { // normalised 1..100 by the spec's metric
   var a = levelParams(1).raw, b = levelParams(100).raw, x = levelParams(L).raw;
   return Math.max(1, Math.min(100, Math.round(1 + 99 * Math.log(x / a) / Math.log(b / a))));
 }
+function reachOf(k, R) { return k === K_DARK ? 0 : R * (k === K_BIG ? 1.6 : 1); }
 function genLevel(L, custom) {
   var P = custom || levelParams(L);
   var seed = custom ? custom.seed : L * 31337 + (SEEDFIX[L] || 0) * 7919;
@@ -276,16 +308,166 @@ function genLevel(L, custom) {
   for (i = 0; i < c.split; i++) kinds.push(K_SPLIT);
   while (kinds.length < P.nExp) kinds.push(K_NORM);
   for (i = kinds.length - 1; i > 0; i--) { var j = Math.floor(rnd() * (i + 1)), t = kinds[i]; kinds[i] = kinds[j]; kinds[j] = t; }
+  var js = [];
+  if (P.form === 'twin' || (P.form === 'one' && !custom)) { for (var at = 0; at < 30; at++) { js = genTwin(P, rnd, kinds.slice()); if (js) break; } if (!js) js = []; }
+  var built = js.length ? 'twin' : P.form === 'twin' ? 'fallback' : 'one';
+  if (!js.length) js = genClassic(P, rnd, kinds, !custom);
+  for (i = 0; i < c.abs; i++) { // drifting light-eaters, kept away from the main school
+    var x2, y2, tries = 0;
+    do { x2 = 30 + rnd() * (FW - 60); y2 = 40 + rnd() * (FH - 80); } while (!farAll(js, x2, y2, R * 2.6) && ++tries < 300);
+    var m0 = js[0], f2 = 0.9 + 0.2 * rnd(); // shadows the main school's drift
+    js.push({ x: x2, y: y2, vx: m0.vx * f2, vy: m0.vy * f2, k: K_ABS, ph: rnd() * 6.283, hue: 0, g: -1 });
+  }
+  return { P: P, jellies: js, built: built };
+}
+function farAll(js, x, y, d) { for (var q = 0; q < js.length; q++) { var dx = js[q].x - x, dy = js[q].y - y, lim = js[q].g === -1 ? 22 : d; if (dx * dx + dy * dy < lim * lim) return false; } return true; }
+function inb(x, y) { return x > 22 && x < FW - 22 && y > 26 && y < FH - 26; }
+// no chain may jump between two different schools at the start: keep them out of each other's light
+function apart(js, x, y, k, grp, R, skip) {
+  for (var q = 0; q < js.length; q++) {
+    var o = js[q], dx = o.x - x, dy = o.y - y, d2 = dx * dx + dy * dy;
+    if (o.g === grp) { if (d2 < 22 * 22) return false; continue; }
+    var lim = Math.max(skip && skip(o) ? 0 : reachOf(o.k, R), reachOf(k, R)) * 1.05 + 3;
+    if (d2 < lim * lim) return false;
+  }
+  return true;
+}
+// does a light ring left at (0,0) catch a jelly that starts at (ox,oy) and drifts at (vx,vy)? (rings stay put, jellies keep swimming)
+function caught(ox, oy, vx, vy, reach) {
+  if (!reach) return false;
+  for (var t = 0; t <= T_EXP + T_HOLD; t += 0.05) { var r = reach * Math.min(1, t / T_EXP), x = ox + vx * t, y = oy + vy * t; if (x * x + y * y <= r * r) return true; }
+  return false;
+}
+function linked(a, b, R, f) { return caught(b.x - a.x, b.y - a.y, b.vx, b.vy, reachOf(a.k, R) * f); }
+// a jelly may not light (or be lit by) any jelly of another school, allowing for both drifts
+function clear(js, c, R, skip) {
+  for (var q = 0; q < js.length; q++) {
+    var o = js[q], dx = o.x - c.x, dy = o.y - c.y;
+    if (o.g === c.g) { if (dx * dx + dy * dy < 22 * 22) return false; continue; }
+    if ((!skip || !skip(o)) && linked(o, c, R, 1.06)) return false;
+    if (linked(c, o, R, 1.06)) return false;
+  }
+  return true;
+}
+// a school member next to an emitting member of its own school: lit by it despite the drift, and lighting it back
+// where the drift allows (a fast school only lights downstream); armoured ones next to two
+function grow(js, mem, c, R, rnd, ok, score, dmin) {
+  var em = mem.filter(function (o) { return o.k !== K_DARK && o.k !== K_ARM; }); if (!em.length) em = mem;
+  var best = null, found = 0;
+  for (var tries = 0; tries < 500; tries++) {
+    var lo = Math.min(dmin || 22, R * 0.8), p = em[Math.floor(rnd() * em.length)], an = rnd() * 6.283, d = lo + rnd() * (R * 0.85 - lo);
+    c.x = p.x + Math.cos(an) * d; c.y = p.y + Math.sin(an) * d;
+    if (!inb(c.x, c.y) || !linked(p, c, R, 0.9) || (c.k !== K_DARK && tries < 250 && !linked(c, p, R, 0.9)) || !ok(c, tries) || !clear(js, c, R)) continue;
+    if (c.k === K_ARM && tries < 350) { var n2 = 0; for (var k = 0; k < em.length; k++) if (linked(em[k], c, R, 0.85)) n2++; if (n2 < 2) continue; }
+    if (!score) return true;
+    var sc = score(c); if (!best || sc > best.s) best = { x: c.x, y: c.y, s: sc };
+    if (++found >= 6) break;
+  }
+  if (best) { c.x = best.x; c.y = best.y; return true; }
+  return false;
+}
+function takeKind(kinds, want) { // pull a kind of jelly out of the shuffled list (for school seeds)
+  var i = kinds.indexOf(want); if (i < 0) { i = kinds.indexOf(K_NORM); if (i >= 0) kinds[i] = want; else return kinds.shift(); }
+  kinds.splice(i, 1); return want;
+}
+// Two schools swimming side by side as facing rows. Neither school alone reaches the target; one tap in the lane
+// between the rows (where the light reaches both) lights both. On "up" levels a big jelly in the near row reaches
+// across the lane by itself, so lighting the near row anywhere also works.
+function genTwin(P, rnd, kinds) {
+  function no() { return null; }
+  var R = P.R, T = P.T, nExp = P.nExp, m = Math.min(nExp, T + Math.ceil((nExp - T) * 0.3)), a, b, i, k;
+  var one = P.form === 'one', up = !one && P.up > 0;
+  if (one) { a = Math.min(nExp, T + P.extra); b = 0; }
+  else {
+    if (up) { a = Math.max(2, Math.min(T - 1, Math.round(P.up * nExp))); b = m - a; if (b >= T) { b = T - 1; a = m - b; } if (a >= T) up = false; }
+    if (!up) { a = Math.floor(m / 2); b = m - a; }
+    if (a < 1 || b < 1 || a >= T || b >= T) return no('size');
+  }
+  m = a + b;
+  var sp = Math.min(P.v * (0.8 + 0.4 * rnd()), P.pv * R), al = rnd() * 6.283, gvx = Math.cos(al) * sp, gvy = Math.sin(al) * sp;
+  // rows run across the drift (th = 0) or along it (th = pi/2)
+  var na = al + (rnd() < 0.5 ? 1 : -1) * (P.th + (rnd() - 0.5) * 0.4), nx = Math.cos(na), ny = Math.sin(na), ux = -ny, uy = nx;
+  var s = Math.max(P.L > 64 ? SPL : 23, Math.min(0.55 * R, 30)), cap = Math.max(3, Math.floor(Math.min(P.cap || 9, 300 / s)));
+  // special jellies sit in the back lines so the front rows always pass the light along
+  var front = function (n) { var r = []; for (var q = 0; q < Math.min(n, cap); q++) r.push(takeKind(kinds, K_NORM)); return r; };
+  var kA = front(a), kB = front(b);
+  while (kA.length < a) kA.push(kinds.shift()); while (kB.length < b) kB.push(kinds.shift());
+  var rank = function (q) { return q === K_DARK ? 2 : q === K_ARM ? 1 : 0; };
+  [kA, kB].forEach(function (kk) { var back = kk.splice(Math.min(cap, kk.length)); back.sort(function (x, y) { return rank(x) - rank(y); }); kk.push.apply(kk, back); });
+  if (up) kA[Math.floor(Math.min(a, cap) / 2)] = K_BIG;
+  var dv = (P.div || 0) * R; // late levels: the far row drifts slowly away from the near one, so the lane narrows with time
+  function mk(x, y, kk, g) { return { x: x, y: y, vx: gvx + (g === 1 ? nx * dv : 0) + (rnd() - 0.5) * 0.01 * sp, vy: gvy + (g === 1 ? ny * dv : 0) + (rnd() - 0.5) * 0.01 * sp, k: kk, ph: rnd() * 6.283, hue: g % 4, g: g }; }
+  // lay a school out as lines parallel to the lane, front line first, back lines further from the lane
+  function lay(kk, g, w0, dir, cx, cy) {
+    var out = [];
+    for (var q = 0; q < kk.length; q++) {
+      var line = Math.floor(q / cap), idx = q % cap, cnt = Math.min(cap, kk.length - line * cap);
+      var u = (idx - (cnt - 1) / 2) * s + (line % 2 ? s / 2 : 0) + (rnd() - 0.5) * s * 0.25;
+      var w = w0 + dir * (line * s * 0.95 + (rnd() - 0.5) * s * 0.15) + (g === 1 ? (P.tilt || 0) * u : 0); // tilted far row: the lane pinches at one end
+      out.push(mk(cx + ux * u + nx * w, cy + uy * u + ny * w, kk[q], g));
+    }
+    return out;
+  }
+  for (var att = 0; att < 40; att++) {
+    var cx = 70 + rnd() * (FW - 140), cy = 100 + rnd() * (FH - 200);
+    var A = lay(kA, 0, 0, -1, cx, cy);
+    if (!A.every(function (o) { return inb(o.x, o.y); })) continue;
+    // the far row: just out of reach of the near one (but within reach of the big jelly on "up" levels), plus the gap
+    var conn = up ? A.filter(function (o) { return o.k === K_BIG; })[0] : null, B = one ? [] : null, D = 0, ups = [];
+    for (D = R * 0.9; !one && D < R * 4; D += R * 0.03) {
+      var tryB = lay(kB, 1, D, 1, cx, cy);
+      var ok = tryB.every(function (o) { return clear(A, o, R, up ? function (q) { return q === conn; } : null); });
+      if (!ok) { if (ups.length) break; continue; }
+      // "up": every distance where only the big jelly reaches across; take the requested share of that range
+      if (up) { if (!tryB.some(function (o) { return linked(conn, o, R, 0.85); })) break; ups.push(D); continue; }
+      D += R * (P.gap - 1) * (0.8 + 0.4 * rnd()); B = lay(kB, 1, D, 1, cx, cy); if (!B.every(function (o) { return clear(A, o, R); })) B = null;
+      break;
+    }
+    if (up && ups.length) { D = ups[Math.min(ups.length - 1, Math.floor(ups.length * P.upd))]; B = lay(kB, 1, D, 1, cx, cy); }
+    if (!B || !B.every(function (o) { return inb(o.x, o.y); })) continue;
+    var js = A.concat(B);
+    // every school must pass its light from any member to all the others
+    var okc = (one ? [A] : [A, B]).every(function (S) { return S.every(function (o0) { if (o0.k === K_DARK || o0.k === K_ARM) return true; var lit = [o0], seen = new Set([o0]); for (var h = 0; h < lit.length; h++) S.forEach(function (o) { if (!seen.has(o) && linked(lit[h], o, R, 0.9)) { seen.add(o); if (o.k !== K_ARM && o.k !== K_DARK) lit.push(o); } }); return S.every(function (o) { return seen.has(o) || o.k === K_ARM; }); }); });
+    if (!okc) { no('chain'); continue; }
+    break;
+  }
+  if (att >= 40) return no('place');
+  // the pair drifts together; turn it round if it would hit a wall within ~3 s
+  function wallT(vx, vy) { var tt = 99; js.forEach(function (o) { if (vx > 0) tt = Math.min(tt, (FW - 22 - o.x) / vx); else if (vx < 0) tt = Math.min(tt, (o.x - 22) / -vx); if (vy > 0) tt = Math.min(tt, (FH - 26 - o.y) / vy); else if (vy < 0) tt = Math.min(tt, (o.y - 26) / -vy); }); return tt; }
+  if (wallT(gvx, gvy) < 3 && wallT(-gvx, -gvy) > wallT(gvx, gvy)) { gvx = -gvx; gvy = -gvy; js.forEach(function (o) { o.vx = -o.vx; o.vy = -o.vy; if (o.g === 1) { o.vx += 2 * nx * dv; o.vy += 2 * ny * dv; } }); }
+  // the rest swims in small schools, away from everything else and drifting away from the pair
+  var left = nExp - m, g = 2, c, mx0 = cx + nx * D / 2, my0 = cy + ny * D / 2;
+  while (left > 0) {
+    var sz = Math.min(left, T - 1, P.dmax, 2 + Math.floor(rnd() * (P.dmax - 1))), mem = [], sp2 = P.v * (0.8 + 0.4 * rnd()), vx2 = 0, vy2 = 0, tries = 0; left -= sz;
+    c = { x: 0, y: 0, vx: 0, vy: 0, k: kinds.shift(), ph: rnd() * 6.283, hue: g % 4, g: g };
+    do {
+      c.x = 40 + rnd() * (FW - 80); c.y = 50 + rnd() * (FH - 100);
+      var mx = c.x - mx0, my = c.y - my0, ml = Math.hypot(mx, my) || 1;
+      for (var tv = 0; tv < 40; tv++) { var a2 = rnd() * 6.283; vx2 = Math.cos(a2) * sp2; vy2 = Math.sin(a2) * sp2; if (((vx2 - gvx) * mx + (vy2 - gvy) * my) / ml > sp2 * 0.35) break; }
+      c.vx = vx2; c.vy = vy2;
+    } while ((!apart(js, c.x, c.y, c.k, g, R * 1.3) || !clear(js, c, R)) && ++tries < 300);
+    if (tries >= 300) return no('dseed');
+    js.push(c); mem.push(c);
+    for (var mm = 1; mm < sz; mm++) {
+      c = { x: 0, y: 0, vx: vx2 + (rnd() - 0.5) * 0.02 * sp2, vy: vy2 + (rnd() - 0.5) * 0.02 * sp2, k: kinds.shift(), ph: rnd() * 6.283, hue: g % 4, g: g };
+      if (!grow(js, mem, c, R, rnd, function () { return true; }, null, R * P.dsp)) return no('dgrow');
+      js.push(c); mem.push(c);
+    }
+    g++;
+  }
+  return js;
+}
+function genClassic(P, rnd, kinds, strict) {
+  var R = P.R, c = P.cnt, i, k, tries;
   // schools: one main school sized a bit above the target, the rest in small schools
-  var main = Math.min(P.nExp, P.T + Math.ceil((P.nExp - P.T) * 0.3)), sizes = [main], left = P.nExp - main;
+  var main = Math.min(P.nExp, P.form === 'one' ? P.T + P.extra : P.T + Math.ceil((P.nExp - P.T) * 0.3)), sizes = [main], left = P.nExp - main;
   while (left > 0) { var s = Math.min(left, 2 + Math.floor(rnd() * 4)); sizes.push(s); left -= s; }
   var js = [], ki = 0;
-  function far(x, y, d, grp) { for (var q = 0; q < js.length; q++) { var dx = js[q].x - x, dy = js[q].y - y, lim = js[q].g === grp ? 22 : d; if (dx * dx + dy * dy < lim * lim) return false; } return true; }
-  function inb(x, y) { return x > 22 && x < FW - 22 && y > 26 && y < FH - 26; }
+  function far(x, y, d, grp, kind) { if (strict) return apart(js, x, y, kind, grp, R * 1.3); for (var q = 0; q < js.length; q++) { var dx = js[q].x - x, dy = js[q].y - y, lim = js[q].g === grp ? 22 : d; if (dx * dx + dy * dy < lim * lim) return false; } return true; }
   for (var g = 0; g < sizes.length; g++) {
     var a = rnd() * 6.283, sp = P.v * (0.8 + 0.4 * rnd()), gvx = Math.cos(a) * sp, gvy = Math.sin(a) * sp, mem = [], sep = g === 0 ? 0 : R * 1.25;
-    var rx, ry, tries = 0;
-    do { rx = 40 + rnd() * (FW - 80); ry = 50 + rnd() * (FH - 100); } while (!far(rx, ry, R * (g === 0 ? 0 : 1.6), g) && ++tries < 200);
+    var rx, ry; tries = 0;
+    do { rx = 40 + rnd() * (FW - 80); ry = 50 + rnd() * (FH - 100); } while (!far(rx, ry, R * (g === 0 ? 0 : 1.6), g, kinds[ki]) && ++tries < 200);
     for (var m = 0; m < sizes[g]; m++) {
       var kind = kinds[ki++], x = rx, y = ry;
       if (m > 0) {
@@ -296,7 +478,7 @@ function genLevel(L, custom) {
           var p = em[Math.floor(rnd() * em.length)], reach = R * (p.k === K_BIG ? 1.6 : 1);
           var an = rnd() * 6.283, d = 22 + rnd() * (reach * 0.8 - 22);
           x = p.x + Math.cos(an) * d; y = p.y + Math.sin(an) * d;
-          if (!inb(x, y) || !far(x, y, sep, g)) continue;
+          if (!inb(x, y) || !far(x, y, sep, g, kind)) continue;
           if (kind === K_ARM) { var n2 = 0; for (k = 0; k < em.length; k++) { var ex = em[k].x - x, ey = em[k].y - y, rr = R * (em[k].k === K_BIG ? 1.6 : 1) * 0.85; if (ex * ex + ey * ey < rr * rr) n2++; } if (n2 < 2 && tries < 200) continue; }
           ok = true;
         }
@@ -306,13 +488,7 @@ function genLevel(L, custom) {
       js.push(o); mem.push(o);
     }
   }
-  for (i = 0; i < c.abs; i++) { // drifting light-eaters, kept away from the main school
-    var x2, y2; tries = 0;
-    do { x2 = 30 + rnd() * (FW - 60); y2 = 40 + rnd() * (FH - 80); } while (!far(x2, y2, R * 2.6, -1) && ++tries < 300);
-    var m0 = js[0], f2 = 0.9 + 0.2 * rnd(); // shadows the main school's drift
-    js.push({ x: x2, y: y2, vx: m0.vx * f2, vy: m0.vy * f2, k: K_ABS, ph: rnd() * 6.283, hue: 0, g: -1 });
-  }
-  return { P: P, jellies: js };
+  return js;
 }
 function newSim(lv) {
   var js = lv.jellies.map(function (j, i) { return { id: i, x: j.x, y: j.y, px: j.x, py: j.y, vx: j.vx, vy: j.vy, k: j.k, ph: j.ph, hue: j.hue, alive: true, hit: [] }; });
@@ -411,9 +587,10 @@ function gridSearch(lv, f) {
 var KP = 'chainburst.';
 function sget(k, d){ try{ var v = localStorage.getItem(KP+k); if (v == null) return d; var o = JSON.parse(v); return o == null ? d : o; }catch(e){ return d; } }
 function sset(k, v){ try{ localStorage.setItem(KP+k, JSON.stringify(v)); }catch(e){} }
+var pend0 = sget('pending', null); // a shot fired just before the page was closed (booked once everything is loaded)
 var $ = function(id){ return document.getElementById(id); };
 var cv = $('cv'), ctx = cv.getContext('2d');
-var W = 0, H = 0, DPR = 1, land = false, FS = 1, FOX = 0, FOY = 0, FWS = 0, FHS = 0;
+var W = 0, H = 0, DPR = 1, land = false, FS = 1, FOX = 0, FOY = 0, FWS = 0, FHS = 0, JSC = 1;
 var NL = 100;
 /* every stored value is validated: a damaged or hand-edited save falls back to defaults instead of breaking the page */
 function isObj(o){ return !!o && typeof o === 'object' && !Array.isArray(o); }
@@ -518,7 +695,7 @@ var parts = [], floats = [], bubbles = [], counterPop = 0, shownCount = 0, goalH
 var lastRun = null, replaying = false, demo = null, demoT = 0, resultInfo = null;
 var MECH = [
   { lv: 1, key: 'basic', k: K_NORM, name: '螢光水母', desc: '光圈碰到的水母會爆開，並放出同樣大小的光圈，一路連鎖下去。' },
-  { lv: 21, key: 'big', k: K_BIG, name: '大型水母', desc: '體型較大，爆開時的光圈半徑是一般的 1.6 倍，是連鎖的好幫手。' },
+  { lv: BIG_LV, key: 'big', k: K_BIG, name: '大型水母', desc: '體型較大，爆開時的光圈半徑是一般的 1.6 倍，能把光傳到稍遠的另一群水母。' },
   { lv: 41, key: 'arm', k: K_ARM, name: '盔甲水母', desc: '有六角形外殼，必須被兩個不同的光圈碰到才會爆開。' },
   { lv: 56, key: 'dark', k: K_DARK, name: '暗水母', desc: '不會發光。被引爆時會計數，但不產生光圈──連鎖到這裡就斷了。' },
   { lv: 71, key: 'split', k: K_SPLIT, name: '分裂水母', desc: '爆開時分出 3 隻小水母高速飛散，小水母也能接續連鎖（不計數）。' },
@@ -527,7 +704,7 @@ var MECH = [
 function getLevel(n){ return genLevel(n); }
 function unlocked(n){ return unlockAll || n === 1 || (stars[n-1] > 0) || (stars[n] > 0); }
 function firstOpen(){ for (var n = 1; n <= NL; n++) if (!(stars[n] > 0)) return n; return NL; }
-function starsFor(c, P){ if (c < P.T) return 0; if (c >= P.nExp || c >= P.T + (P.nExp - P.T) * 0.6) return 3; if (c >= P.T + (P.nExp - P.T) * 0.3) return 2; return 1; }
+function starsFor(c, P){ if (c < P.T) return 0; var s3 = P.s3 != null ? P.s3 : P.T + (P.nExp - P.T) * 0.6, s2 = P.s2 != null ? P.s2 : P.T + (P.nExp - P.T) * 0.3; if (c >= P.nExp || c >= s3) return 3; if (c >= s2) return 2; return 1; }
 function diffVal(n){ var a = levelParams(1).raw, b = levelParams(100).raw; return 1 + 99 * Math.log(levelParams(n).raw / a) / Math.log(b / a); }
 function diffDots(n){ return Math.max(1, Math.min(5, Math.ceil(diffVal(n) / 20))); }
 function dotsHtml(k, col){ var h = ''; for (var i = 0; i < 5; i++) h += '<i' + (i < k ? ' style="background:' + col + ';box-shadow:0 0 5px ' + col + '"' : '') + '></i>'; return h; }
@@ -555,6 +732,8 @@ function layout(){
   if (!land){ FS = Math.min(availW / FW, availH / FH); FWS = FW * FS; FHS = FH * FS; }
   else { FS = Math.min(availW / FH, availH / FW); FWS = FH * FS; FHS = FW * FS; }
   FOX = sa.l + 6 + (availW - FWS) / 2; FOY = top + (availH - FHS) / 2;
+  // on a small field (narrow phone, game lobby) draw the jellies a bit larger so each is still ~18px across
+  JSC = Math.min(1.3, Math.max(1, 9 / (10.5 * FS)));
   bgInit();
 }
 window.addEventListener('resize', layout);
@@ -569,18 +748,34 @@ function screenXform(){ ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
 /* ---------- background ---------- */
 var motes = [];
 function bgInit(){ if (motes.length) return; for (var i = 0; i < 60; i++) motes.push({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.8, s: 0.008 + Math.random() * 0.02, p: Math.random() * 6.28, a: 0.25 + Math.random() * 0.5 }); }
-function drawBg(t){
-  screenXform();
-  var g = ctx.createLinearGradient(0, 0, 0, H);
+var bgC = null, bgKey = '', rayC = [];
+function bgCache(){
+  var key = W + 'x' + H + 'x' + DPR + (LIGHT ? 'L' : 'D');
+  if (key === bgKey) return; bgKey = key;
+  bgC = bgC || document.createElement('canvas'); bgC.width = Math.max(1, Math.round(W * DPR)); bgC.height = Math.max(1, Math.round(H * DPR));
+  var c = bgC.getContext('2d'); c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  var g = c.createLinearGradient(0, 0, 0, H);
   if (LIGHT){ g.addColorStop(0, '#e9f8ff'); g.addColorStop(1, '#bfe9ff'); } else { g.addColorStop(0, '#06304d'); g.addColorStop(1, '#021a2e'); }
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  // light rays from the surface
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  // light rays from the surface: one sprite each, slid sideways every frame
+  for (var i = 0; i < 4; i++){
+    var w = W * (0.07 + 0.03 * i % 2), rw = Math.max(1, Math.ceil(2 * w + W * 0.1)), rh = Math.max(1, Math.ceil(H * 0.85));
+    var rc = rayC[i] = rayC[i] || document.createElement('canvas'); rc.width = Math.round(rw * DPR); rc.height = Math.round(rh * DPR);
+    var x = rc.getContext('2d'); x.setTransform(DPR, 0, 0, DPR, 0, 0);
+    var rg = x.createLinearGradient(0, 0, 0, H * 0.85);
+    rg.addColorStop(0, LIGHT ? 'rgba(255,255,255,0.45)' : 'rgba(125,249,255,0.07)'); rg.addColorStop(1, 'rgba(125,249,255,0)');
+    x.fillStyle = rg; x.beginPath(); x.moveTo(0, 0); x.lineTo(w * 0.8, 0); x.lineTo(w * 2 + W * 0.1, H * 0.85); x.lineTo(w * 0.2 + W * 0.1, H * 0.85); x.fill();
+    rc.w = rw; rc.h = rh; rc.off = w * 0.4;
+  }
+}
+function drawBg(t){
+  bgCache();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(bgC, 0, 0);
+  screenXform();
   ctx.globalCompositeOperation = LIGHT ? 'source-over' : 'lighter';
   for (var i = 0; i < 4; i++){
-    var cx = W * (0.15 + i * 0.27) + Math.sin(t * 0.15 + i * 1.7) * W * 0.08, w = W * (0.07 + 0.03 * i % 2);
-    var rg = ctx.createLinearGradient(0, 0, 0, H * 0.85);
-    rg.addColorStop(0, LIGHT ? 'rgba(255,255,255,0.45)' : 'rgba(125,249,255,0.07)'); rg.addColorStop(1, 'rgba(125,249,255,0)');
-    ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(cx - w * 0.4, 0); ctx.lineTo(cx + w * 0.4, 0); ctx.lineTo(cx + w * 1.6 + W * 0.1, H * 0.85); ctx.lineTo(cx - w * 0.2 + W * 0.1, H * 0.85); ctx.fill();
+    var cx = W * (0.15 + i * 0.27) + Math.sin(t * 0.15 + i * 1.7) * W * 0.08, rc = rayC[i];
+    ctx.drawImage(rc, cx - rc.off, 0, rc.w, rc.h);
   }
   ctx.globalCompositeOperation = 'source-over';
   for (i = 0; i < motes.length; i++){
@@ -642,6 +837,23 @@ function drawJelly(c, j, x, y, t, hi, vx, vy, scl){
   }
   c.restore();
 }
+var cntSpr = null;
+function counterSprite(count, met, T, fz){
+  var key = count + '|' + met + '|' + T + '|' + fz + '|' + LIGHT + '|' + DPR;
+  if (cntSpr && cntSpr.key === key) return cntSpr.c;
+  var c = cntSpr && cntSpr.c || document.createElement('canvas'), pad = 30, W = Math.ceil(fz * 3.2 + pad * 2), Hh = Math.ceil(fz * 1.5 + pad * 2);
+  c.width = Math.ceil(W * DPR); c.height = Math.ceil(Hh * DPR);
+  var g = c.getContext('2d'); g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, Hh);
+  var x = W / 2, y = pad + fz * 0.55;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '900 ' + fz + 'px system-ui,sans-serif';
+  if (!LIGHT){ g.shadowColor = met ? '#ffd36e' : '#7df9ff'; g.shadowBlur = 24; }
+  g.fillStyle = LIGHT ? (met ? '#a86b00' : '#0b4a6e') : (met ? '#ffe9a8' : '#e8fdff');
+  g.fillText(count, x, y);
+  g.shadowBlur = 0; g.font = '700 ' + Math.round(fz * 0.24 + 4) + 'px system-ui,sans-serif';
+  g.fillText(met ? '達標！' : '目標 ' + T, x, y + fz * 0.62);
+  c.oy = y / Hh; cntSpr = { key: key, c: c };
+  return c;
+}
 function drawRings(rings, t){
   var start = Math.max(0, rings.length - 80);
   for (var i = start; i < rings.length; i++){
@@ -652,8 +864,9 @@ function drawRings(rings, t){
     if (r <= 0.5) continue;
     if (!LIGHT){
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a * 0.8;
-      ctx.drawImage(g.dead ? GLOWA : RING[hue], g.x - r, g.y - r, r * 2, r * 2);
-      ctx.globalAlpha = a * 0.5; ctx.strokeStyle = g.dead ? ABS : HUES.concat(['#e8fdff'])[hue]; ctx.lineWidth = 1.2;
+      // only the newest 40 rings get the soft glow sprite; older ones keep their outline (big chains stay cheap)
+      if (i >= rings.length - 40) ctx.drawImage(g.dead ? GLOWA : RING[hue], g.x - r, g.y - r, r * 2, r * 2);
+      ctx.globalAlpha = a * 0.5; ctx.strokeStyle = g.dead ? ABS : (hue < HUES.length ? HUES[hue] : '#e8fdff'); ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(g.x, g.y, r, 0, 6.283); ctx.stroke();
       ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     } else {
@@ -667,7 +880,7 @@ function drawRings(rings, t){
 }
 
 /* ---------- particles ---------- */
-function P(o){ parts.push(o); if (parts.length > 500) parts.shift(); }
+function P(o){ if (parts.length < 500) parts.push(o); else parts[(P.i = ((P.i || 0) + 1) % 500)] = o; }
 function burst(x, y, hue, n, sp){
   var col = hue < 0 ? ABS : HUES[hue];
   for (var i = 0; i < n; i++){ var a = Math.random() * 6.283, s = (sp || 60) * (0.4 + Math.random()); P({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.7, max: 0.7, r: 1 + Math.random() * 2, col: col }); }
@@ -684,14 +897,17 @@ function drawParts(){
 }
 
 /* ---------- simulation driving ---------- */
+var sfxBudget = 3, popsThisFrame = 0;
 function handleEvents(sim, live){
   for (var i = 0; i < sim.ev.length; i++){
     var e = sim.ev[i];
     if (e.t === 'pop'){
-      burst(e.x, e.y, e.k === K_DARK ? 0 : e.hue, e.k === K_KID ? 5 : 12, e.k === K_BIG ? 90 : 60);
+      // a big chain can pop a dozen jellies in one frame: fewer sparks each, and at most 3 pop sounds per frame
+      burst(e.x, e.y, e.k === K_DARK ? 0 : e.hue, Math.max(3, Math.round((e.k === K_KID ? 5 : 12) / Math.max(1, popsThisFrame / 3))), e.k === K_BIG ? 90 : 60);
+      popsThisFrame++;
       if (live){
-        if (e.k !== K_KID){ SFX.pop(e.n); counterPop = 1; if (e.n % 10 === 0) vib(8); if (live === 2 && e.n >= sim.P.T && !goalHit){ goalHit = true; SFX.goal(); } }
-        else SFX.pop(Math.max(1, sim.count));
+        if (e.k !== K_KID){ if (sfxBudget > 0){ sfxBudget--; SFX.pop(e.n); } counterPop = 1; if (e.n % 10 === 0) vib(8); if (live === 2 && e.n >= sim.P.T && !goalHit){ goalHit = true; SFX.goal(); } }
+        else if (sfxBudget > 0){ sfxBudget--; SFX.pop(Math.max(1, sim.count)); }
         shake = Math.min(4, shake + (e.k === K_BIG ? 1.5 : 0.5));
       }
       curtainX = e.x; curtainY = e.y;
@@ -725,7 +941,11 @@ function beginSim(){
 }
 function showHint(){
   var h = $('hint');
-  if (mode === 'level' && levelN <= 2) h.textContent = levelN === 1 ? '按住瞄準，放開引爆！對準水母群' : '每關只能點一下，挑最密的地方';
+  if (mode === 'level' && levelN <= 3) h.textContent = levelN === 1 ? '按住瞄準，放開引爆！對準水母群' : '每關只能點一下，挑最密的地方';
+  else if (mode === 'level' && LV.built === 'twin' && LV.P.up > 0) h.textContent = '大型水母的光圈較大，能把光傳到旁邊那群';
+  else if (mode === 'level' && LV.built === 'twin' && levelN <= 10) h.textContent = '兩群水母並排時，點在兩群中間';
+  else if (mode === 'level' && LV.built === 'twin' && levelN >= 41 && levelN <= 44) h.textContent = '從這裡開始，兩群會慢慢分開：早點下手，點在兩群中間';
+  else if (mode === 'level' && LV.built === 'twin' && levelN >= 65 && levelN <= 67) h.textContent = '深海：兩群斜著漸漸分開，趁早點在最靠近的那一頭';
   else h.textContent = mode === 'daily' ? '每日挑戰：80 隻水母，看你能引爆幾隻' : '目標 ' + S.P.T + ' 隻・只能點一下';
   h.classList.remove('hidden');
   clearTimeout(showHint.t); showHint.t = setTimeout(function(){ if (!(mode === 'level' && levelN === 1)) h.classList.add('hidden'); }, 2600);
@@ -742,6 +962,8 @@ function updateHud(){
   $('hsC').classList.toggle('ok', S.count >= P.T);
   $('hBar').style.width = Math.max(0, Math.min(100, S.count / P.nExp * 100)) + '%';
   $('hMark').style.left = 'calc(' + (P.T / P.nExp * 100) + '% - 1px)';
+  // 2- and 3-star counts as quieter ticks after the target tick
+  [['hMark2', P.s2], ['hMark3', P.s3]].forEach(function(m){ var e = $(m[0]), on = mode === 'level' && m[1] > P.T && m[1] <= P.nExp; e.classList.toggle('hidden', !on); if (on) e.style.left = 'calc(' + (m[1] / P.nExp * 100) + '% - 1px)'; });
 }
 function doTap(lx, ly){
   if (status !== 'aim' || S.tapped) return;
@@ -749,6 +971,8 @@ function doTap(lx, ly){
   audio();
   simTap(S, lx, ly); colourRings(S);
   lastRun = { frame: S.frame, x: lx, y: ly };
+  // the result follows from (level, frame, point) alone: keep it until the chain is booked, in case the page dies first
+  sset('pending', { m: mode, L: mode === 'daily' ? 0 : levelN, k: mode === 'daily' ? S.P.key : 0, f: S.tapFrame, x: lx, y: ly });
   status = 'chain'; aim.on = false; $('hint').classList.add('hidden');
   stats.taps++;
   handleEvents(S, 2);
@@ -795,6 +1019,7 @@ function commit(c, P){
   if (stats.wipes >= 10) unlockAch('wipe10');
   var s3 = 0; for (var k in stars) if (stars[k] >= 3) s3++; if (s3 >= 30) unlockAch('star30');
   if (mode === 'level' && won && levelN === 100) unlockAch('king');
+  try{ localStorage.removeItem(KP + 'pending'); }catch(e){}
 }
 var resultT = 0;
 function onChainEnd(){
@@ -816,34 +1041,56 @@ function showResult(again){
     if (!again && mode !== 'daily') for (i = 0; i < R.st; i++) (function(i){ setTimeout(function(){ SFX.star(i); }, 150 + i * 180); })(i);
     $('wC').textContent = Math.max(0, R.c); $('wT').textContent = P.T;
     $('wB').textContent = mode === 'daily' ? (daily[P.key] || R.c) : (prog[levelN] || R.c);
-    $('wMsg').textContent = mode === 'daily' ? '今天的海域每個人都一樣，明天換新的一片海。' : R.st < 3 ? '再多引爆 ' + Math.max(1, Math.ceil(P.T + (P.nExp - P.T) * 0.6) - R.c) + ' 隻就能拿到三星。' : '完美的一擊！';
+    $('wMsg').textContent = mode === 'daily' ? '今天的海域每個人都一樣，明天換新的一片海。' : R.st < 3 && P.s3 > R.c ? '再多引爆 ' + (P.s3 - R.c) + ' 隻就能拿到三星。' : '完美的一擊！';
     $('wNext').textContent = mode === 'daily' ? '回到標題' : levelN >= NL ? '回到關卡選擇' : '下一關';
     showOnly('win');
   } else {
     var miss = P.T - Math.max(0, R.c);
     $('fC').textContent = Math.max(0, R.c); $('fT').textContent = P.T;
-    $('fMsg').textContent = '還差 ' + miss + ' 隻。' + (S.js.some(function(j){ return j.k === K_ABS && !j.alive; }) ? '小心紫邊的吸光水母！' : '試著瞄準水母最密集的地方。');
+    $('fMsg').textContent = '還差 ' + miss + ' 隻。' + failReason();
     showOnly('fail');
   }
+}
+// why the chain stopped short, in the order a player can act on
+function failReason(){
+  var js = S.js, base = LV.jellies, lit = function(j){ return !j.alive; };
+  if (js.some(function(j){ return j.k === K_ABS && !j.alive; })) return '紫邊的吸光水母吃掉了光圈，還扣 1 隻──讓光圈離牠遠一點。';
+  if (js.some(function(j){ return j.k === K_ARM && j.alive && j.hit.length === 1; })) return '盔甲水母只被一個光圈碰到，殼裂了但沒破──要兩個不同的光圈。';
+  var g0 = false, g1 = false, has1 = false;
+  for (var i = 0; i < base.length; i++){ if (base[i].g === 1) has1 = true; if (lit(js[i])){ if (base[i].g === 0) g0 = true; if (base[i].g === 1) g1 = true; } }
+  if (LV.built === 'twin' && has1 && g0 !== g1) return mode === 'level' && levelN > 64 ? '光只點亮了其中一群。深海的兩群斜著漸漸分開：趁早，點在兩群最靠近的那一頭。' : '光只點亮了其中一群。點在兩群水母中間，同一個光圈就能碰到兩群。';
+  if (js.some(function(j){ return j.k === K_DARK && !j.alive; })) return '暗水母不會發光，連鎖到牠那裡就斷了。';
+  return '試著瞄準水母最密集的地方。';
 }
 function startReplay(){
   if (!lastRun) return;
   clearTimeout(resultT); activePtr = null; aim.on = false;
   S = newSim(LV); S.noBank = true; acc = 0; parts.length = 0; floats.length = 0; goalHit = true; curtain = 0;
   while (S.frame < Math.max(0, lastRun.frame - 20)){ simStep(S); S.ev.length = 0; }
-  replaying = true; status = 'replay'; simSpeed = 1;
+  replaying = true; status = 'replay'; simSpeed = 1; skipPtr = null;
   showOnly(null); $('replayTag').classList.remove('hidden');
 }
 
 /* ---------- input ---------- */
 var activePtr = null;
 function evPos(e){ return toLogical(e.clientX, e.clientY); }
+var skipPtr = null;
 cv.addEventListener('pointerdown', function(e){
-  if (status === 'replay'){ endReplay(); return; }
-  if (status !== 'aim' || activePtr !== null) return; // a second finger never steals or re-fires the aim
+  if (e.pointerType !== 'mouse') e.preventDefault();
+  // the second tap of a double-tap on 下一關 / 再試一次 lands here on the new level: it must not spend the one shot
+  if (performance.now() - lastFire.t < 300 && Math.hypot(e.clientX - lastFire.x, e.clientY - lastFire.y) < 40) return;
+  // skipping the replay waits for the finger to lift, so the result card it reveals can't take this tap
+  if (status === 'replay'){ if (skipPtr === null) skipPtr = e.pointerId; return; }
+  if (status !== 'aim') return;
+  // only a finger that lands on the sea (or within ~20px of it) aims: a thumb resting on the margin or the blank strip
+  // below never claims the shot. A newer finger on the sea takes the aim over, and the older one's release then does nothing.
+  var p = evPos(e), m = 20 / FS;
+  if (p.x < -m || p.y < -m || p.x > FW + m || p.y > FH + m) return;
   audio();
+  if (activePtr !== null && activePtr !== e.pointerId){ var old = activePtr; activePtr = null; try{ cv.releasePointerCapture(old); }catch(er){} }
   activePtr = e.pointerId; try{ cv.setPointerCapture(e.pointerId); }catch(er){}
-  var p = evPos(e); aim.on = true; aim.x = p.x; aim.y = p.y; aim.hover = false;
+  aim.on = true; aim.x = p.x; aim.y = p.y; aim.hover = false;
+  clearTimeout(showHint.t); $('hint').classList.add('hidden'); // the capsule never sits over the sea while aiming
 });
 cv.addEventListener('pointermove', function(e){
   if (status !== 'aim') return;
@@ -852,11 +1099,12 @@ cv.addEventListener('pointermove', function(e){
   else if (e.pointerType === 'mouse' && activePtr === null){ aim.on = p.x >= 0 && p.y >= 0 && p.x <= FW && p.y <= FH; aim.hover = true; aim.x = p.x; aim.y = p.y; }
 });
 cv.addEventListener('pointerup', function(e){
+  if (skipPtr === e.pointerId){ skipPtr = null; endReplay(); return; }
   if (activePtr !== e.pointerId) return; activePtr = null;
   var p = evPos(e); aim.on = false;
   doTap(p.x, p.y);
 });
-function dropPtr(e){ if (activePtr === e.pointerId){ activePtr = null; aim.on = false; } }
+function dropPtr(e){ if (skipPtr === e.pointerId) skipPtr = null; if (activePtr === e.pointerId){ activePtr = null; aim.on = false; } }
 cv.addEventListener('pointercancel', dropPtr);
 cv.addEventListener('lostpointercapture', dropPtr);
 cv.addEventListener('pointerleave', function(e){ if (e.pointerType === 'mouse' && activePtr === null) aim.on = false; });
@@ -869,12 +1117,54 @@ document.addEventListener('keydown', function(e){
 });
 function retry(){ audio(); SFX.click(); if (mode === 'daily') startDaily(); else startLevel(levelN); }
 
+/* ---------- buttons: act on pointerup ----------
+   A button fires when the pointer that pressed it is released on it: the same pointer moved < 10px, or it lets go
+   inside the button's box grown by 16px (browsers aim taps a few px outside an edge at the button). Pressing one
+   control and releasing on another fires nothing, so a tap that changes the screen never presses what appears under
+   the finger. A fired press is delivered as el.click() under the `firing` flag, so every button keeps a single handler.
+   Every other click is judged in the capture phase: pointer-made clicks (detail > 0) are swallowed; a detail-0 click counts
+   as keyboard only if an Enter/Space keydown came after the last tap pointerup; a click on or near the control the tap
+   layer just ran (within 800 ms) is swallowed, whatever its detail (some browsers send detail 0 after a touch); a lone
+   detail-0 click with no recent tap (assistive tech, scripts) still acts once. */
+var presses = {}, lastFire = { t: -1e9, x: 0, y: 0, el: null }, lastUp = -1e9, lastKey = -1e9, firing = false;
+document.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') lastKey = performance.now(); }, true);
+function shown(el){ return !!el && el.isConnected && el.getClientRects().length > 0; }
+document.addEventListener('pointerdown', function(e){
+  if (e.button > 0) return;
+  var b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if (!b || b.disabled) return;
+  presses[e.pointerId] = { el: b, x: e.clientX, y: e.clientY, moved: 0 };
+  // the action runs at pointerup: keep the compatibility mousedown from focusing anything under the finger
+  if (e.pointerType !== 'mouse') e.preventDefault();
+}, true);
+document.addEventListener('pointermove', function(e){ var p = presses[e.pointerId]; if (p) p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.x, e.clientY - p.y)); }, true);
+document.addEventListener('pointercancel', function(e){ delete presses[e.pointerId]; }, true);
+document.addEventListener('pointerup', function(e){
+  var p = presses[e.pointerId]; delete presses[e.pointerId];
+  if (e.pointerType !== 'mouse' || p) lastUp = performance.now();
+  if (!p || !shown(p.el)) return;
+  var r = p.el.getBoundingClientRect(), G = 16, moved = Math.max(p.moved, Math.hypot(e.clientX - p.x, e.clientY - p.y));
+  var inside = e.clientX >= r.left - G && e.clientX <= r.right + G && e.clientY >= r.top - G && e.clientY <= r.bottom + G;
+  if (!(moved < 10 || inside)) return;
+  // pointerdown's preventDefault also stops the native blur: drop focus from any text field ourselves
+  var ae = document.activeElement; if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) ae.blur();
+  lastFire = { t: performance.now(), x: e.clientX, y: e.clientY, el: p.el };
+  firing = true; try { p.el.click(); } finally { firing = false; }
+}, true);
+document.addEventListener('click', function(e){
+  if (firing) return; // the tap layer's own delivery
+  var now = performance.now(), b = e.target && e.target.closest ? e.target.closest('button, [role=button], .lt') : null;
+  var keyboard = e.detail === 0 && lastKey > lastUp && now - lastKey < 1000;
+  var nearFired = now - lastFire.t < 800 && (b === lastFire.el || (b && lastFire.el && (b.contains(lastFire.el) || lastFire.el.contains(b))) ||
+    (e.clientX || e.clientY ? Math.hypot(e.clientX - lastFire.x, e.clientY - lastFire.y) < 48 : false));
+  if (keyboard) return;
+  if (e.detail > 0 || nearFired || now - lastUp < 800){ e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+
 /* ---------- overlays ---------- */
 var OVS = ['title', 'select', 'pause', 'win', 'fail', 'help', 'intro', 'settings', 'stats'];
 var shownAt = 0;
 function showOnly(id){ OVS.forEach(function(o){ $(o).classList.toggle('hidden', o !== id); }); shownAt = performance.now(); }
-// a tap meant for the sea that lands just as the result card pops in must not press 下一關 / 再玩一次
-['win', 'fail'].forEach(function(id){ $(id).addEventListener('click', function(e){ if (performance.now() - shownAt < 450){ e.stopPropagation(); e.preventDefault(); } }, true); });
 var prevStatus = null, overlayBack = null;
 function pause(){ if (status !== 'aim' && status !== 'chain' && status !== 'ready') return; prevStatus = status; status = 'paused'; aim.on = false; activePtr = null;
   $('pInfo').textContent = mode === 'daily' ? '每日挑戰・目標 ' + S.P.T : '第 ' + levelN + ' 關・目標 ' + S.P.T + ' / ' + S.P.nExp; showOnly('pause'); }
@@ -934,7 +1224,8 @@ $('unlockSw').onclick = function(){ unlockAll = !unlockAll; sset('unlockAll', un
 function openHelp(back){
   overlayBack = back; if (back === 'title') status = 'title';
   var h = '<p>海裡漂著發光的水母。<b>每關只能點一下</b>：點下去的位置會擴散出一個光圈，碰到的水母會爆開並放出新的光圈，一路連鎖。</p>' +
-    '<p>連鎖完全停止時，引爆數達到<b>目標</b>就過關。引爆越多星星越多，全部引爆就是「全滅」。</p>' +
+    '<p>連鎖完全停止時，引爆數達到<b>目標</b>就過關。引爆越多星星越多（目標條上的細刻度是二星、三星），全部引爆就是「全滅」。</p>' +
+    '<p>兩群水母並排游時，一群的光圈碰不到另一群：<b>點在兩群中間</b>，讓同一個光圈同時碰到兩群。</p>' +
     '<p>手指按住會顯示準星與光圈範圍，移動微調，<b>放開才引爆</b>；放開在海域外就取消。水母一直在漂，抓準時機！</p>' +
     '<p>電腦：滑鼠移動預覽、點擊引爆；R 重試、N 下一關、Esc 暫停。</p>';
   MECH.forEach(function(m){ var seen = m.lv === 1 || introSeen[m.key] || unlockAll; h += '<div class="mech"><canvas data-k="' + m.k + '" width="120" height="120"></canvas><div><b>' + (seen ? m.name : '？？？') + '</b>（第 ' + m.lv + ' 關起）<br>' + (seen ? m.desc : '在更深的海裡等著你。') + '</div></div>'; });
@@ -1016,14 +1307,14 @@ function render(t, dt){
   var alpha = acc / DT; if (status !== 'chain' && status !== 'aim' && status !== 'replay') alpha = 1;
   var sx = 0, sy = 0; if (shake > 0){ sx = (Math.random() - .5) * shake; sy = (Math.random() - .5) * shake; }
   fieldXform(); ctx.translate(sx, sy);
-  ctx.save(); if (sim === S){ ctx.beginPath(); ctx.rect(-4, -4, FW + 8, FH + 8); ctx.clip(); }
+  ctx.save(); if (sim === S){ var cm = JR * 2.6; ctx.beginPath(); ctx.rect(-cm, -cm, FW + cm * 2, FH + cm * 2); ctx.clip(); }
   drawRings(sim.rings, t);
   var showAim = aim.on && status === 'aim' && sim === S, R0 = sim.P.R;
   for (var i = 0; i < sim.js.length; i++){
     var j = sim.js[i]; if (!j.alive) continue;
     var x = j.px + (j.x - j.px) * alpha, y = j.py + (j.y - j.py) * alpha, hi = false;
     if (showAim && set.aim){ var dx = j.x - aim.x, dy = j.y - aim.y; hi = dx * dx + dy * dy <= R0 * R0 && j.k !== K_ABS; }
-    drawJelly(ctx, j, x, y, t, hi, j.vx, j.vy, 1);
+    drawJelly(ctx, j, x, y, t, hi, j.vx, j.vy, JSC);
   }
   drawParts();
   if (showAim){
@@ -1032,6 +1323,10 @@ function render(t, dt){
     ctx.setLineDash([6, 5]); ctx.lineDashOffset = -t * 20; ctx.beginPath(); ctx.arc(ax, ay, R0, 0, 6.283); ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(ax - 12, ay); ctx.lineTo(ax - 4, ay); ctx.moveTo(ax + 4, ay); ctx.lineTo(ax + 12, ay); ctx.moveTo(ax, ay - 12); ctx.lineTo(ax, ay - 4); ctx.moveTo(ax, ay + 4); ctx.lineTo(ax, ay + 12); ctx.stroke();
     ctx.globalAlpha = 0.12; ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(ax, ay, R0, 0, 6.283); ctx.fill(); ctx.globalAlpha = 1;
+    // the finger hides the centre: four bold ticks just outside the ring show where the tap will land
+    ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.beginPath();
+    for (var q = 0; q < 4; q++){ var qa = q * 1.5708 + 0.7854, c0 = Math.cos(qa), s0 = Math.sin(qa); ctx.moveTo(ax + c0 * (R0 + 3), ay + s0 * (R0 + 3)); ctx.lineTo(ax + c0 * (R0 + 15), ay + s0 * (R0 + 15)); }
+    ctx.stroke(); ctx.lineCap = 'butt';
   }
   // L1 guide: pulse on the densest school before the tap
   if (sim === S && mode === 'level' && levelN === 1 && status === 'aim' && !S.tapped && !aim.on){
@@ -1047,18 +1342,14 @@ function render(t, dt){
   // chain counter
   if (sim === S && S.tapped && S.count !== 0){
     counterPop = Math.max(0, counterPop - dt * 4);
-    var cx = FOX + FWS / 2, cy = FOY + FHS * 0.42, sc = 1 + counterPop * 0.35, fz = Math.round(Math.min(96, FWS * 0.26) * sc);
-    var met = S.count >= S.P.T;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = '900 ' + fz + 'px system-ui,sans-serif';
+    var cx = FOX + FWS / 2, cy = FOY + FHS * 0.42, sc = 1 + counterPop * 0.35, fz0 = Math.round(Math.min(96, FWS * 0.26));
+    // the glowing number is rendered once per value into a sprite and scaled for the pop (text with a 24px shadow blur
+    // re-rasterised every frame was the biggest per-frame cost of long chains)
+    var spr = counterSprite(S.count, S.count >= S.P.T, S.P.T, fz0);
     ctx.globalAlpha = status === 'result' ? 0.35 : 0.85;
-    if (!LIGHT){ ctx.shadowColor = met ? '#ffd36e' : '#7df9ff'; ctx.shadowBlur = 24; }
-    ctx.fillStyle = LIGHT ? (met ? '#a86b00' : '#0b4a6e') : (met ? '#ffe9a8' : '#e8fdff');
-    ctx.fillText(S.count, cx, cy);
-    ctx.shadowBlur = 0;
-    ctx.font = '700 ' + Math.round(fz * 0.24 + 4) + 'px system-ui,sans-serif';
-    ctx.fillText(met ? '達標！' : '目標 ' + S.P.T, cx, cy + fz * 0.62);
-    ctx.globalAlpha = 1; ctx.textBaseline = 'alphabetic';
+    var w = spr.width / DPR * sc, h = spr.height / DPR * sc;
+    ctx.drawImage(spr, cx - w / 2, cy - h * spr.oy, w, h);
+    ctx.globalAlpha = 1;
   }
   // win curtain
   if (curtain > 0){
@@ -1072,7 +1363,7 @@ function render(t, dt){
 }
 function frame(now){
   var dt = Math.min(0.05, (now - (lastT || now)) / 1000); lastT = now;
-  var t = now / 1000;
+  var t = now / 1000; sfxBudget = 3; popsThisFrame = 0;
   shake = Math.max(0, shake - dt * 12);
   if (status === 'aim' || status === 'chain' || status === 'replay'){
     if (status === 'replay' && S.tapped) simSpeed = 0.3;
@@ -1086,8 +1377,21 @@ function frame(now){
 window.__game = {
   state: function(){ return { status: status, mode: mode, level: levelN, frame: S ? S.frame : -1, tapped: S ? S.tapped : false, tapFrame: S ? S.tapFrame : -1, tapX: S ? S.tapX : null, tapY: S ? S.tapY : null, count: S ? S.count : 0, banked: S && S.banked != null ? S.banked : null, T: S ? S.P.T : 0, nExp: S ? S.P.nExp : 0, stars: resultInfo ? resultInfo.st : 0, won: resultInfo ? resultInfo.won : false, aiming: activePtr !== null, land: land, field: { x: FOX, y: FOY, w: FWS, h: FHS } }; },
   jelly: function(i){ var j = S && S.js[i]; return j ? { x: j.x, y: j.y, alive: j.alive } : null; },
-  toScreen: toScreen
+  toScreen: toScreen,
+  home: function(){ goTitle(); }, // test hook: back to the title from any screen
+  info: function(){ return { built: LV ? LV.built : null, s2: S ? S.P.s2 : null, s3: S ? S.P.s3 : null, jsc: JSC, fs: FS }; }
 };
+// book a shot whose chain was still running when the page was reloaded or killed (validated: any damaged value is dropped)
+(function(){
+  var q = pend0; try{ localStorage.removeItem(KP + 'pending'); }catch(e){}
+  if (!isObj(q) || !fin(q.f) || !fin(q.x) || !fin(q.y) || q.f < 0 || q.f > 1e6 || q.x < 0 || q.y < 0 || q.x > FW || q.y > FH) return;
+  var lv = null;
+  if (q.m === 'level' && fin(q.L) && q.L >= 1 && q.L <= NL && q.L === Math.floor(q.L)) lv = genLevel(q.L);
+  else if (q.m === 'daily' && q.k === dailyParams().key) lv = genLevel(0, dailyParams());
+  if (!lv) return;
+  var sm = mode, sl = levelN; mode = q.m; levelN = q.m === 'level' ? q.L : levelN;
+  try{ stats.taps++; commit(runTap(lv, Math.floor(q.f), q.x, q.y), lv.P); } finally { mode = sm; levelN = sl; }
+})();
 playLabel();
 layout();
 requestAnimationFrame(frame);
