@@ -5,6 +5,7 @@
 // Usage: node tests.js [--no-browser]
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html'), html = fs.readFileSync(APP, 'utf8');
+let PAGE_URL = '';
 const coreSrc = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
 const C = new Function(coreSrc + '\nreturn {setFen,getFen,perft,legalMoves,make,unmake,inCheck,moveUci,san,handleMsg,gameStatus,findUci,canMate,parseMove,side:function(){return side;},F_CAS:F_CAS,F_EP:F_EP};')();
 const PUZ = JSON.parse(html.match(/var PUZZLES = (\[[\s\S]*?\n\]);/)[1]);
@@ -128,7 +129,7 @@ async function open(vp, o = {}) {
   if (o.ls) await ctx.addInitScript(ls => { if (!localStorage.getItem('test.seeded')) { localStorage.clear(); localStorage.setItem('test.seeded', 1); for (const k in ls) localStorage.setItem(k, ls[k]); } }, o.ls);
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + APP); await page.waitForFunction(() => window.__game);
+  await page.goto(PAGE_URL); await page.waitForFunction(() => window.__game);
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: tid }] });
   const tap = async (x, y, hold = 40) => { tid++; await touch('touchStart', x, y); await sleep(hold); await touch('touchEnd'); };
@@ -147,6 +148,11 @@ const LV = lv => JSON.stringify({ level: lv, color: 'w', clock: 0 });
 async function newAI(s, lv) { await s.tapSel('#tAI'); await s.tapSel('#ngLv button[data-v="' + lv + '"]'); await s.tapSel('#ngColor button[data-v="w"]'); await s.tapSel('#ngGo'); await s.humanReady(); }
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, touch)');
   try {
@@ -167,11 +173,16 @@ async function browserTests() {
       const FEN = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'; // not in the opening book: the computer has to search
       const s = await open({ width: 390, height: 844 }, { ls: { 'chess.game': JSON.stringify({ mode: 'ai', startFen: FEN, moves: [], human: 0, level: 5, clock: null, undos: 0, flipped: false }) } });
       await s.tapSel('#tResume'); await s.humanReady();
+      // Lv5 stops at the first finished iteration after 55% of its 3 s, so its answer can land after ~1.65 s, sooner than the taps
+      // below take on a loaded machine. Hold the worker's reply (the search itself still runs) until the checks are done.
+      await s.page.evaluate(() => { const real = wCall; window.__held = null; wCall = function (msg, cb) { wCall = real; real(msg, function (r) { window.__held = { frames: window.__game.state().frames, go: function () { cb(r); } }; }); }; });
       await s.tapSq('d2'); ok((await s.st()).sel >= 0, 'tap selects d2'); await s.tapSq('d3');
       let g = await s.st(); ok(g.moves[0] === 'd3' && g.busy, 'tap-tap played d3 and the computer is thinking: ' + g.moves);
       const f0 = g.frames; await s.tapSq('c4'); await s.tapSq('b5'); await s.dragSq('b1', 'c3'); await sleep(600); g = await s.st();
       ok(g.busy && g.moves.length === 1 && g.sel === -1, 'taps and a drag while it thinks did nothing: ' + JSON.stringify([g.busy, g.moves, g.sel]));
-      ok(g.frames - f0 > 10, 'frames kept running while it thinks (' + (g.frames - f0) + ')');
+      const held = await s.page.evaluate(() => window.__held && window.__held.frames), fT = held == null ? g.frames : held; // frames up to the end of the search
+      ok(fT - f0 > 10, 'frames kept running while it thinks (' + (fT - f0) + ')');
+      await s.page.waitForFunction(() => window.__held && (window.__held.go(), true), null, { timeout: 20000 });
       await s.humanReady(); g = await s.st(); ok(g.moves.length === 2, 'computer answered: ' + g.moves);
       const mv = await s.page.evaluate(() => legalMoves().map(moveUci).filter(u => u.length === 4 && bd[sqParse(u.slice(0, 2))] === 2)[0]); // a knight move
       await s.dragSq(mv.slice(0, 2), mv.slice(2, 4)); g = await s.st(); ok(g.moves.length === 3 && /^N/.test(g.moves[2]), 'drag played ' + mv + ': ' + g.moves);
