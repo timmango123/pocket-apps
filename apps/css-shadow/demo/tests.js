@@ -5,6 +5,7 @@ const path = require('path'), fs = require('fs'), http = require('http');
 const HTML = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>';
 const srv = http.createServer((q, r) => { r.setHeader('content-type', 'text/html; charset=utf-8'); r.end(HTML); });
 let fails = 0;
+const cdpMulti = (t, type, pts) => t.cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] })) });
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const eq = (a, b, m) => { const A = JSON.stringify(a), B = JSON.stringify(b); assert(A === B, A === B ? m : `${m}: ${A} != ${B}`); };
 const errors = [];
@@ -18,6 +19,7 @@ const SAME = () => {
     el.style.setProperty(m[1], m[2]); if (!el.style.getPropertyValue(m[1]) && !/^-webkit-/.test(m[1])) bad.push('invalid ' + line);   // a -webkit- alias this engine lacks is just ignored
     if (/box-shadow$/.test(m[1]) && (/,\s*$|,,|^\s*,/.test(m[2]) || !CSS.supports('box-shadow', m[2]))) bad.push('shadow ' + m[2]);
   }
+  el.style.color = getComputedStyle(box).color;   // currentcolor shadows follow the element's text colour
   document.body.appendChild(el);
   const a = getComputedStyle(el), b = getComputedStyle(box);
   for (const k of ['boxShadow', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius', 'backgroundColor', 'backdropFilter', 'borderTopWidth', 'borderTopStyle', 'borderTopColor'])
@@ -52,7 +54,7 @@ const SAME = () => {
     const S = () => p.evaluate(() => window.__cs.S);
     const css = () => p.evaluate(() => window.__cs.cssText());
     const setS = async s => { await p.evaluate(s => { window.__cs.S = s; }, s); await frames(); await p.evaluate(() => window.__cs.commit()); };
-    return { ctx, p, touch, frames, settle, center, show, tap, S, css, setS };
+    return { ctx, p, cdp, touch, frames, settle, center, show, tap, S, css, setS };
   }
 
   // 1. 輸出的 CSS 套到測試元素上，computed style 與預覽方塊完全相同（多層、inset、擴散、負位移、小數、透明度、單位、橢圓 %、玻璃）
@@ -268,6 +270,132 @@ const SAME = () => {
       }).filter(x => x[1] < 4.5);
     });
     eq(low, [], `${w}×${h} ${scheme}：文字對比 ≥ 4.5`);
+    await t.ctx.close();
+  }
+
+  // 10. 觸控：點按後的 detail 0 click 不重複執行；另一指放著時點按照常有反應；按住 0.6／1 秒只執行一次
+  {
+    const t = await open();
+    const W = ms => t.p.waitForTimeout(ms);
+    const st = () => t.p.evaluate(() => { const S = window.__cs.S; return { n: S.layers.length, inset: S.layers[0] && S.layers[0].inset, tw: S.opts.tw, showText: S.showText, det: document.querySelector('#pShadow details').open, mode: S.mode, sel: S.sel }; });
+    // tap X, then a detail-0 click on X, on X's edge point and on elementFromPoint: X ran once
+    const d0 = sel => t.p.evaluate(sel => {
+      const e = document.querySelector(sel); if (!e) return; const r = e.getBoundingClientRect();
+      const fire = (el, x, y) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window, clientX: x, clientY: y }));
+      fire(e, r.left + r.width / 2, r.top + r.height / 2); fire(e, r.left + 1, r.top + 1);
+      fire(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2), r.left + r.width / 2, r.top + r.height / 2);
+    }, sel);
+    const tapD0 = async (sel, check, label) => { await t.show(sel); const a = await st(); await t.tap(sel); await W(30); await d0(sel); await W(150); const b = await st(); assert(check(a, b), `${label}：點一下再送 detail 0 click 只執行一次 ${JSON.stringify([a, b])}`); await W(850); };
+    await tapD0('#addLayer', (a, b) => b.n === a.n + 1, '＋ 新增一層');
+    await tapD0('#l0inset', (a, b) => b.inset === !a.inset, 'inset 鈕');
+    await tapD0('#optTw', (a, b) => b.tw === !a.tw, 'Tailwind 勾選框');
+    await tapD0('#showText', (a, b) => b.showText === !a.showText, '文字勾選框');
+    await tapD0('#pShadow summary', (a, b) => b.det === !a.det, '匯入摺疊 summary');
+    await tapD0('#mRadius', (a, b) => b.mode === 'radius', '切到圓角');
+    await t.p.click('#mShadow'); await W(850);
+    // tap that re-renders: the layer-1 pick, then a detail-0 click at the same point lands on whatever is there now
+    { const a = await st(); await t.tap('#layDup'); await W(30); await d0('#layDup'); await W(150); const b = await st(); eq(b.n, a.n + 1, '複製此層 + detail 0 click：只多 1 層'); await W(850); }
+    // a lone detail-0 click (keyboard / screen reader) still acts once
+    { const a = await st(); await t.p.$eval('#addLayer', e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window }))); await W(100); eq((await st()).n, a.n + 1, '單獨一次 detail 0 click：執行一次'); }
+    // Enter on a focused button right after a tap: the key's click is not swallowed
+    { await t.p.evaluate(() => { const S = window.__cs.S; S.layers = S.layers.slice(0, 2); window.__cs.S = S; }); await t.frames();
+      const a = await st(); await t.tap('#addLayer'); await t.p.focus('#addLayer'); await t.p.keyboard.press('Enter'); await W(100); eq((await st()).n, a.n + 2, '點一下後按 Enter：各執行一次'); await W(850); }
+    // a resting finger anywhere on the page (blank gutter, stage) does not swallow a tap
+    await t.p.evaluate(() => { const S = window.__cs.S; S.layers = S.layers.slice(0, 2); window.__cs.S = S; }); await t.frames();
+    const multi = async (sel, rest, check, label) => {
+      await t.show(sel); const q = await t.center(sel), a = await st();
+      await t.touch('touchStart', [rest]); await W(60);
+      await cdpMulti(t, 'touchStart', [[...rest, 1], [...q, 2]]); await W(50); await cdpMulti(t, 'touchEnd', [[...q, 2]]);
+      await W(200); const mid = await st(); await cdpMulti(t, 'touchEnd', [[...rest, 1]]); await W(150); const b = await st();
+      assert(check(a, mid) && JSON.stringify(mid) === JSON.stringify(b), `${label}：另一指放在 (${rest}) 時點按執行一次 ${JSON.stringify([a, mid, b])}`); await W(850);
+    };
+    await multi('#addLayer', [4, 700], (a, b) => b.n === a.n + 1, '＋ 新增一層');
+    await multi('#l0inset', [4, 300], (a, b) => b.inset === !a.inset, 'inset 鈕');
+    await multi('#optTw', [4, 120], (a, b) => b.tw === !a.tw, 'Tailwind 勾選框');
+    await multi('#mGlass', [4, 780], (a, b) => b.mode === 'glass', '模式鈕');
+    // ± with a resting finger: one step; holding a button 0.6 s / 1 s fires once (± repeats by design)
+    { await t.p.click('#mShadow'); await W(850); const plus = '#layerCtl .ctl:nth-child(1) .pm:nth-of-type(2)'; await t.show(plus); const q = await t.center(plus); const x0 = (await t.S()).layers[0].x;
+      await t.touch('touchStart', [[4, 700]]); await W(60); await cdpMulti(t, 'touchStart', [[4, 700, 1], [...q, 2]]); await W(50); await cdpMulti(t, 'touchEnd', [[...q, 2]]); await W(150); await cdpMulti(t, 'touchEnd', [[4, 700, 1]]); await W(150);
+      eq((await t.S()).layers[0].x, x0 + 1, '另一指放著時點 ＋：剛好 +1'); await W(850); }
+    for (const hold of [600, 1000]) { await t.show('#addLayer'); const q = await t.center('#addLayer'), a = await st();
+      await t.touch('touchStart', [q]); await W(hold); await t.touch('touchEnd', []); await W(200); eq((await st()).n, a.n + 1, `按住 ${hold} ms 的「＋ 新增一層」只新增 1 層`); await W(850);
+      await t.p.evaluate(() => { const S = window.__cs.S; S.layers = S.layers.slice(0, 2); window.__cs.S = S; }); await t.frames(); }
+    // tapping a button doesn't focus a text box on the screen it opens
+    await t.tap('#mRadius'); await W(300); eq(await t.p.evaluate(() => document.activeElement.tagName), 'BODY', '切換模式後沒有輸入框取得焦點');
+    // :active must not move the hit box
+    eq(await t.p.evaluate(() => [...document.styleSheets].flatMap(s => [...s.cssRules]).filter(r => /:active/.test(r.selectorText || '') && /transform/.test(r.cssText)).length), 0, '按鈕 :active 沒有 transform');
+    await t.ctx.close();
+  }
+
+  // 11. 匯入：顏色在前（DevTools 格式）、沒寫顏色 = currentcolor、none = 0 層、被顏色隔開的長度要拒絕，錯誤說明哪裡不對
+  {
+    const t = await open();
+    await t.tap('#pShadow summary');
+    const imp = async v => { await t.p.fill('#importTxt', v); await t.tap('#importBtn'); await t.frames(); return t.p.$$eval('#importRes li', l => l.map(e => e.textContent)); };
+    await imp('rgba(0, 0, 0, 0.1) 0px 4px 6px -1px, rgba(0, 0, 0, 0.06) 0px 2px 4px -1px inset');
+    assert((await t.css()).includes('box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), inset 0 2px 4px -1px rgba(0, 0, 0, 0.06);'), 'DevTools computed 格式（顏色在前、inset 在後）');
+    await imp('red 2px 2px 4px, #0008 1px 1px');
+    assert((await t.css()).includes('box-shadow: 2px 2px 4px 0 #ff0000, 1px 1px 0 0 rgba(0, 0, 0, 0.533);'), '「red 2px 2px 4px」「#0008 1px 1px」');
+    await imp('2px 2px 3px, 1px 1px currentColor');
+    assert((await t.css()).includes('box-shadow: 2px 2px 3px 0 currentcolor, 1px 1px 0 0 currentcolor;'), '沒寫顏色／currentColor → currentcolor（不是 #000000）');
+    eq(await t.p.evaluate(SAME), [], 'currentcolor：輸出與預覽相同');
+    assert(await t.p.isVisible('#ccNote'), '顏色旁說明這層是 currentcolor');
+    let li = await imp('none');
+    eq([(await t.S()).layers.length, /box-shadow: none;/.test(await t.css()), /0 層/.test(li[0])], [0, true, true], '匯入 none → 0 層');
+    li = await imp('1px 2px red 3px');
+    assert((await t.S()).layers.length === 0 && /隔開/.test(li[0]), '拒絕被顏色隔開的長度：' + li[0]);
+    li = await imp('1px 2px foo, 3 4px, 1px 2px red blue');
+    assert(/「foo」不是長度也不是顏色/.test(li[0]) && /「3」缺少單位/.test(li[1]) && /兩個顏色/.test(li[2]), '錯誤訊息指出哪個部分不對：' + li.join(' | '));
+    eq(await t.p.locator('#l0inset').count(), 0, '0 層時沒有層列');
+    await imp('0 1px 2px #000');
+    eq(await t.p.$eval('#l0inset', e => e.textContent.trim()), 'inset', '層列的 inset 鈕顯示「inset」字樣');
+    await t.ctx.close();
+  }
+
+  // 12. 圓角：混合單位保留；13. 我的樣式刪除可復原；14. 直式手機不用捲到底就能複製，覆蓋物不蓋住方塊
+  {
+    const t = await open();
+    await t.tap('#mRadius');
+    await t.p.fill('#radTxt', '10px 5%'); await t.tap('#radApply'); await t.frames();
+    eq(await t.p.evaluate(() => window.__cs.radiusStr()), '10px 5%', '貼上「10px 5%」保留各自單位');
+    eq(await t.p.evaluate(SAME), [], '混合單位：輸出與預覽相同');
+    await t.p.fill('#r1n', '10'); await t.p.locator('#r1n').blur(); await t.frames();
+    eq(await t.p.evaluate(() => window.__cs.radiusStr()), '10px 10% 10px 5%', '混合單位的角用自己的單位調整');
+    await t.p.fill('#radTxt', '10px 5% / 20% 3px'); await t.tap('#radApply'); await t.frames();
+    eq(await t.p.evaluate(() => window.__cs.radiusStr()), '10px 5% / 20% 3px', '8 值混合單位');
+    await t.p.reload(); await t.p.waitForFunction(() => window.__csReady);
+    eq(await t.p.evaluate(() => window.__cs.radiusStr()), '10px 5% / 20% 3px', '重新整理後混合單位還在');
+    await t.tap('#uPx'); await t.frames();
+    eq(await t.p.evaluate(() => window.__cs.radiusStr()), '10px 8px / 32px 3px', '按 px：全部改成 px');
+    await t.tap('#mShadow');
+    // my styles: delete then undo
+    await t.tap('#saveMine'); await t.tap('#saveMine'); await t.tap('#editMine');
+    await t.tap('#mine0 .x');
+    eq(await t.p.$$eval('#mine .pre span', l => l.map(e => e.textContent)), ['樣式 2'], '管理模式刪除「樣式 1」');
+    assert(await t.p.isVisible('#mineUndo'), '刪除後出現「復原刪除」');
+    await t.tap('#mineUndo');
+    eq(await t.p.$$eval('#mine .pre span', l => l.map(e => e.textContent)), ['樣式 1', '樣式 2'], '復原刪除：放回原位');
+    eq(await t.p.evaluate(() => JSON.parse(localStorage.getItem('css-shadow:v1:mine')).map(m => m.name)), ['樣式 1', '樣式 2'], '復原後也寫回儲存');
+    await t.ctx.close();
+  }
+  for (const [w, h] of [[360, 640], [390, 844], [430, 932], [844, 390]]) {
+    const t = await open(w, h, { ctxOpt: { permissions: ['clipboard-read', 'clipboard-write'] } });
+    for (const mode of ['#mShadow', '#mGlass']) {
+      await t.p.evaluate(m => { scrollTo(0, 0); document.querySelector(m).click(); }, mode); await t.frames();
+      const v = await t.p.evaluate(() => { const b = document.getElementById('box').getBoundingClientRect(), hit = [];
+        const ov = (e) => { const r = e.getBoundingClientRect(); return r.width && !(r.right <= b.left || r.left >= b.right || r.bottom <= b.top || r.top >= b.bottom); };
+        for (const id of ['undoBtn', 'redoBtn', 'stageNote', 'copyTop', 'sampleTag']) { const e = document.getElementById(id); if (e && !e.hidden && ov(e)) hit.push(id); } return hit; });
+      eq(v, [], `${w}×${h} ${mode}：復原／重做、提示、複製鈕都不蓋住方塊`);
+    }
+    // scrolled down to the saved styles, the copy button is still on screen
+    await t.p.$eval('#saveMine', e => e.scrollIntoView({ block: 'center' })); await t.settle();
+    const c = await t.p.evaluate(() => { const r = document.getElementById('copyTop').getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.top >= 0 && r.bottom <= innerHeight && e && e.closest('#copyTop') !== null; });
+    if (h > w) {
+      assert(c, `${w}×${h}：捲到「我的樣式」時上方仍有可點的「複製 CSS」`);
+      const q = await t.center('#copyTop'); await t.touch('touchStart', [q]); await t.touch('touchEnd', []);
+      await t.p.waitForFunction(() => document.getElementById('copyTop').textContent === '已複製 ✓');
+      eq(await t.p.evaluate(() => navigator.clipboard.readText()), await t.css(), `${w}×${h}：上方「複製 CSS」複製的內容 = 輸出`);
+    }
     await t.ctx.close();
   }
 
