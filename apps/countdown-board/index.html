@@ -51,12 +51,14 @@ h1 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: .02em; }
 .tile .ttl { font-weight: 800; font-size: 15px; line-height: 1.3; margin-top: 8px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .tile .lbl { font-size: 12px; font-weight: 700; color: var(--fg2); margin-top: auto; padding-top: 8px; }
 .tile .days { font-family: var(--num); font-weight: 800; font-size: 46px; line-height: .95; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
-/* 四、五位數天數（例如 2,510、26,345）依卡片寬度縮小字級，「天」留在同一行、不貼到右緣 */
+/* 四、五位數天數（例如 2,510、26,345）：數字和「天」是一個不換行的單位；字級先用卡片寬度估，
+   再由 fitDays() 依實際量到的寬度縮小（不靠字型的字寬），所以換字型也不會換行或貼到右緣 */
+.tile .days small { white-space: nowrap; }
 .tile { container-type: inline-size; }
-.tile .days.k4 { font-size: min(46px, 29cqi); }
-.tile .days.k5 { font-size: min(46px, 23.5cqi); }
-.hero .days.k4 { font-size: min(72px, 29cqi); }
-.hero .days.k5 { font-size: min(72px, 23.5cqi); }
+.tile .days.k4 { font-size: min(46px, 26cqi); }
+.tile .days.k5 { font-size: min(46px, 21cqi); }
+.hero .days.k4 { font-size: min(72px, 26cqi); }
+.hero .days.k5 { font-size: min(72px, 21cqi); }
 .tile .days small { font-family: system-ui, sans-serif; font-size: 13px; font-weight: 700; margin-left: 3px; letter-spacing: 0; }
 .tile .days.word { font-family: system-ui, sans-serif; font-size: 26px; font-weight: 900; }
 .tile .dt { font-size: 12px; color: var(--fg2); font-variant-numeric: tabular-nums; margin-top: 4px; }
@@ -364,6 +366,22 @@ function tileHTML(it, hero) {
     '<span class="lbl">' + lbl + '</span>' + days +
     '<span class="dt">' + when + '</span></button>';
 }
+/* 依量到的寬度縮小天數：右邊留 6px 安全距離；最多縮 4 次（「天」的字級固定，不跟著等比例縮） */
+function fitDays(root) {
+  (root || document).querySelectorAll('.tile .days:not(.word)').forEach(d => {
+    d.style.fontSize = '';
+    const avail = d.clientWidth - 6; if (avail <= 0) return;
+    for (let i = 0; i < 4 && d.scrollWidth > avail; i++) {
+      const fs = parseFloat(getComputedStyle(d).fontSize), sm = d.querySelector('small'), sw = sm ? sm.offsetWidth + 3 : 0;
+      const num = d.scrollWidth - sw, room = avail - sw;
+      d.style.fontSize = Math.max(14, Math.floor(fs * Math.min(0.97, room / num))) + 'px';
+    }
+  });
+}
+let fitT = 0;
+const refit = () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(() => fitDays()); };
+addEventListener('resize', refit);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(refit).catch(() => {});
 function render() {
   const t = TODAY;
   $('#today-line').textContent = '今天 ' + dateText(t);
@@ -388,6 +406,7 @@ function render() {
   $('#past-toggle').setAttribute('aria-expanded', settings.pastOpen);
   $('#past').innerHTML = past.map(r => '<li>' + tileHTML(r.x) + '</li>').join('');
   $('#add').disabled = items.length >= 100;
+  fitDays($('#app'));
   if (detailId) renderDetail();
 }
 
@@ -457,7 +476,7 @@ function syncSheet() {
   document.querySelectorAll('#emojis button').forEach(b => b.setAttribute('aria-pressed', b.dataset.emoji === draft.emoji));
   document.querySelectorAll('#swatches button').forEach(b => b.setAttribute('aria-pressed', b.dataset.bg === draft.bg));
   const pv = Object.assign({ id: 'preview' }, draft, { title: draft.title || '（名稱）', date: parseISO(draft.date) != null ? draft.date : iso(TODAY) });
-  $('#preview').innerHTML = tileHTML(pv);
+  $('#preview').innerHTML = tileHTML(pv); fitDays($('#preview'));
 }
 function closeSheet(fromPop) {
   if ($('#sheet').hidden) return;

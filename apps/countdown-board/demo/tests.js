@@ -19,13 +19,18 @@ const item = (o) => Object.assign({ id: 'a' + Math.random().toString(36).slice(2
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cd-tests-'));
 
   // seed: items written before the app script runs (only on the first load of this context)
-  async function open({ time = '2026-10-30T10:00:00+08:00', tz = 'Asia/Taipei', seed, settings, w = 390, h = 844, acceptDownloads = false } = {}) {
+  async function open({ time = '2026-10-30T10:00:00+08:00', tz = 'Asia/Taipei', seed, settings, w = 390, h = 844, acceptDownloads = false, css = null } = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, reducedMotion: 'reduce', timezoneId: tz, acceptDownloads });
     if (seed || settings) await ctx.addInitScript(([K, seed, settings]) => {
       if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1');
       if (seed) localStorage.setItem(K + 'items', typeof seed === 'string' ? seed : JSON.stringify(seed));
       if (settings) localStorage.setItem(K + 'settings', JSON.stringify(settings));
     }, [K, seed || null, settings || null]);
+    // css：在 app 載入前插入的樣式（例如換成很寬的字型，確認版面不靠本機字型）
+    if (css) await ctx.addInitScript(css => {
+      const add = () => { const root = document.documentElement; if (!root) return false; const st = document.createElement('style'); st.textContent = css; root.appendChild(st); return true; };
+      if (!add()) { const mo = new MutationObserver(() => { if (add()) mo.disconnect(); }); mo.observe(document, { childList: true }); }
+    }, css);
     const p = await ctx.newPage();
     p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); p.on('pageerror', e => errors.push(e.message));
     await p.clock.install({ time: new Date(time) });
@@ -372,11 +377,17 @@ const item = (o) => Object.assign({ id: 'a' + Math.random().toString(36).slice(2
     eq(r, [0, true, true], '橫式抽屜不顯示預覽卡、名稱欄完整露出');
     await ctx.close();
   }
-  for (const w of [360, 390]) {
-    // 五位數天數：「天」不換行、不超出卡片
-    const { ctx, p } = await open({ w, seed: [item({ id: 'old', title: '很久以前', date: '1900-01-01' }), item({ id: 'k4', title: '四位數', date: '2020-01-01', order: 1 })] });
-    const r = await p.$$eval('#app .tile .days', ds => ds.map(d => { const s = d.querySelector('small').getBoundingClientRect(), b = d.getBoundingClientRect(), t = d.closest('.tile').getBoundingClientRect(); return Math.abs(s.bottom - b.bottom) < 12 && d.scrollWidth <= d.clientWidth + 1 && b.right <= t.right - 10; }));
-    eq(r, [true, true], w + ' 寬：五位數與四位數天數「天」留在同一行、不貼右緣');
+  // 五位數／四位數天數：「天」和數字在同一行、整組在卡片內距之內；本機字型和刻意很寬的字型（等寬＋字距）都要過
+  const WIDE = '.tile .days { font-family: "DejaVu Sans Mono", "DejaVu Sans", monospace !important; letter-spacing: .08em !important; } .tile .days small { font-family: "DejaVu Sans", serif !important; font-size: 16px !important; }';
+  for (const [w, css] of [[320, null], [360, null], [390, null], [430, null], [320, WIDE], [360, WIDE], [390, WIDE], [430, WIDE], [844, WIDE]]) {
+    const seed = [item({ id: 'hero', title: '置頂五位數', date: '1900-01-01', pinned: true }), item({ id: 'old', title: '很久以前', date: '1901-01-01', order: 1 }), item({ id: 'k4', title: '四位數', date: '2020-01-01', order: 2 }), item({ id: 'k3', title: '三位數', date: '2026-01-01', order: 3 })];
+    const { ctx, p } = await open({ w, h: w > 700 ? 390 : 844, seed, css });
+    if (css) eq(await p.$eval('#app .tile .days', d => getComputedStyle(d).letterSpacing !== 'normal'), true, w + ' 寬字型樣式有套用');
+    await p.evaluate(() => document.fonts.ready); await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const r = await p.$$eval('#app .tile .days', ds => ds.map(d => { const s = d.querySelector('small').getBoundingClientRect(), b = d.getBoundingClientRect(), t = d.closest('.tile').getBoundingClientRect(), pr = parseFloat(getComputedStyle(d.closest('.tile')).paddingRight);
+      const oneLine = s.top >= b.top - 2 && s.bottom <= b.bottom + 2, inside = s.right <= t.right - pr + 0.5 && d.scrollWidth <= d.clientWidth + 1;
+      return oneLine && inside ? 'ok' : d.closest('.tile').dataset.id + ' ' + d.textContent + ' line:' + oneLine + ' in:' + inside; }));
+    eq(r, ['ok', 'ok', 'ok', 'ok'], w + ' 寬' + (css ? '（很寬的字型）' : '') + '：五位數、四位數天數「天」在同一行、不超出卡片內距');
     await ctx.close();
   }
 
