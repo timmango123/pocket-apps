@@ -1,10 +1,10 @@
 // Tests for 指南針 (compass): math unit tests against the tool's own core (CORE-START..CORE-END in index.html), then
 // browser checks with synthetic DeviceOrientationEvents (Android absolute, iOS webkitCompassHeading + permission).
-// Usage: node tests.js   (about 40 s)
+// Usage: node tests.js   (about 60 s)
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const src = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
-const C = new Function(src + '\nreturn {norm360,angleDiff,smoothAngle,smoothK,holdDeg,holdDir,sideTilt,parseDecl,screenAngle,headingFromAlpha,headingFromEuler,headingFromWebkit,toTrue,DIR16,dirIndex,dirName,turnHint,tiltOf,circStd,needsCalibration,fmtHeading};')();
+const C = new Function(src + '\nreturn {norm360,angleDiff,smoothAngle,smoothK,holdDeg,settleDeg,holdDir,sideTilt,parseDecl,screenAngle,headingFromAlpha,headingFromEuler,headingFromWebkit,toTrue,DIR16,dirIndex,dirName,turnHint,tiltOf,circStd,needsCalibration,fmtHeading};')();
 let pass = 0, fail = 0;
 function t(name, cond) { if (cond) pass++; else { fail++; console.log('FAIL', name); } }
 const near = (a, b, e = 1e-6) => Math.abs(a - b) <= e;
@@ -119,6 +119,16 @@ t('holdDeg moves once the reading is clearly past', C.holdDeg(127, 127.8) === 12
 t('holdDeg across north: 0 shown, 359.6 read -> stays 0', C.holdDeg(0, 359.6) === 0 && C.holdDeg(0, 359.2) === 359);
 t('holdDir keeps 北 just past 11.25', C.holdDir(0, 11.8) === 0 && C.holdDir(0, 12.5) === 1);
 t('holdDir keeps 西北偏北 just past north', C.holdDir(15, 349) === 15 && C.holdDir(15, 0) === 0);
+
+{ // the held number settles on the plain rounding (0.4° approached from above shows 0°, not 1°)
+  const st = { shown: null, cand: null, t: 0 }; let shown;
+  for (let i = 0, h = 2; i < 60; i++, h = Math.max(0.4, h - 0.1)) shown = C.settleDeg(st, h, i * 16);
+  t('settleDeg: approaching 0.4 from above ends on 0 (was stuck on 1)', shown === 0);
+  const s2 = { shown: 104, cand: null, t: 0 }; C.settleDeg(s2, 103.3, 0); C.settleDeg(s2, 103.3, 200);
+  t('settleDeg holds 104 for a moment, then shows 103 for 103.3', s2.shown === 104 && C.settleDeg(s2, 103.3, 450) === 103);
+  const s3 = { shown: 127, cand: null, t: 0 }; let flips = 0, last = 127;
+  for (let i = 0; i < 100; i++) { const v = C.settleDeg(s3, i % 2 ? 127.45 : 127.55, i * 16); if (v !== last) { flips++; last = v; } }
+  t('settleDeg: a reading hovering at the edge changes the number at most once (' + flips + ')', flips <= 1); }
 
 // --- side tilt (only sideways roll makes the heading unreliable) ---
 t('flat: side tilt 0', near(C.sideTilt(0, 0, 0), 0));
@@ -269,6 +279,10 @@ const FEEDER = () => {
       await p.evaluate(() => { document.getElementById('toast').textContent = ''; });
       await T.tap('#readout'); await p.waitForTimeout(300);
       ok(await T.txt('#toast') === '', 'a plain tap on the reading does not copy');
+      await p.evaluate(() => document.getElementById('readout').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })));
+      await p.waitForTimeout(200);
+      ok(await T.txt('#toast') === '', 'a detail-0 click right after a finger tap on the reading does not copy either');
+      await p.waitForTimeout(500);
       await p.$eval('#readout', e => e.click()); await T.waitHas('#toast', '127° 東南');
       ok(true, 'screen-reader activation (click, detail 0) copies the heading');
 
@@ -383,6 +397,178 @@ const FEEDER = () => {
       const T = await open(390, 844, () => { Object.defineProperty(window, 'isSecureContext', { value: false }); window.__asked = 0; DeviceOrientationEvent.requestPermission = () => { window.__asked++; return Promise.resolve('granted'); }; });
       await T.tap('#goBtn'); await T.waitHas('#gateMsg', 'HTTPS');
       ok(await T.p.evaluate(() => window.__asked) === 0, 'insecure page -> HTTPS message at once, no futile permission prompt');
+      await T.ctx.close();
+    }
+
+    // ---------- 6. tap layer: detail-0 replay, second finger, holds, input focus, new screen ----------
+    {
+      const T = await open(390, 844), { p } = T, cdp = await T.ctx.newCDPSession(p);
+      const raw = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id })) });
+      const dec = () => p.evaluate(() => __compass.S.declination);
+      await T.set('abs', abs(233));
+      // a tap on 啟用 swaps the screen: the browser's follow-up click (detail 0, anywhere) must not hit what is now there
+      const gq = await T.center('#goBtn');
+      await raw('touchStart', [[gq[0], gq[1], 1]]); await raw('touchEnd', []);
+      await p.waitForFunction(() => __compass.R.got, null, W);
+      const before = await p.evaluate(() => JSON.stringify(__compass.S));
+      await p.evaluate(([x, y]) => { const ev = () => new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: x, clientY: y });
+        (document.elementFromPoint(x, y) || document.body).dispatchEvent(ev()); document.getElementById('goBtn').dispatchEvent(ev()); document.getElementById('tgtBtn').dispatchEvent(ev()); }, gq);
+      ok(await p.evaluate(() => JSON.stringify(__compass.S)) === before, 'tap 啟用 then detail-0 clicks on the new screen (under the finger, lock button) -> nothing else runs');
+      await p.waitForTimeout(850);
+
+      // tap ＋ then replay the detail-0 click on ＋, on its edge point and on elementFromPoint -> ran once
+      const d0 = await dec(), pb = await p.$eval('#declPlus', e => { const b = e.getBoundingClientRect(); return { cx: b.left + b.width / 2, cy: b.top + b.height / 2, ex: b.right - 1, ey: b.top + 1 }; });
+      await raw('touchStart', [[pb.cx, pb.cy, 1]]); await raw('touchEnd', []);
+      await p.evaluate(b => { const el = document.getElementById('declPlus'), ev = (x, y) => new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: x, clientY: y });
+        el.dispatchEvent(ev(b.cx, b.cy)); el.dispatchEvent(ev(b.ex, b.ey)); (document.elementFromPoint(b.ex, b.ey) || el).dispatchEvent(ev(b.ex, b.ey)); (document.elementFromPoint(b.cx, b.cy) || el).dispatchEvent(ev(b.cx, b.cy)); }, pb);
+      await p.waitForTimeout(100);
+      ok(await dec() === d0 + 0.5, `tap ＋ then detail-0 clicks on ＋, its edge and elementFromPoint -> +0.5 once (${d0} -> ${await dec()})`);
+      // a lone detail-0 click (screen reader / keyboard) long after a tap acts once
+      await p.waitForTimeout(850);
+      await p.$eval('#declPlus', e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+      ok(await dec() === d0 + 1, 'a lone detail-0 click with no recent tap acts once');
+      // Enter right after a tap still works (a keyboard press is never swallowed by the tap window)
+      await raw('touchStart', [[pb.cx, pb.cy, 1]]); await raw('touchEnd', []);
+      await p.focus('#declPlus'); await p.keyboard.press('Enter');
+      ok(await dec() === d0 + 2, 'tap ＋ then Enter on ＋ -> both count (+1.0)');
+      await p.waitForTimeout(850); await p.focus('#declMinus'); await p.keyboard.press(' ');
+      ok(await dec() === d0 + 1.5, 'Space on − steps once');
+
+      // second finger: id 7 rests on the dial, id 1 taps ＋ and touchEnd lists only id 1 -> +0.5
+      const dq = await p.$eval('#dialbox', e => { const b = e.getBoundingClientRect(); return [b.left + 30, b.top + b.height / 2]; });
+      const d1 = await dec();
+      await raw('touchStart', [[dq[0], dq[1], 7]]);
+      await raw('touchStart', [[dq[0], dq[1], 7], [pb.cx, pb.cy, 1]]);
+      await raw('touchEnd', [[pb.cx, pb.cy, 1]]);
+      await p.waitForFunction(v => __compass.S.declination === v, d1 + 0.5, W);
+      await raw('touchEnd', [[dq[0], dq[1], 7]]);
+      ok(true, 'tap ＋ while another finger rests on the screen -> +0.5');
+      const th0 = await p.evaluate(() => __compass.S.theme), tq = await T.center('#themeBtn');
+      await raw('touchStart', [[dq[0], dq[1], 7]]);
+      await raw('touchStart', [[dq[0], dq[1], 7], [tq[0], tq[1], 2]]);
+      await raw('touchEnd', [[tq[0], tq[1], 2]]);
+      await p.waitForFunction(t => __compass.S.theme !== t, th0, W); await raw('touchEnd', [[dq[0], dq[1], 7]]);
+      ok(await p.evaluate(() => __compass.S.theme) === 'light', 'theme button with a second finger down: auto -> light (once)');
+      // holds of 0.6 s and 1 s fire exactly once
+      for (const ms of [600, 1000]) {
+        await p.waitForTimeout(850); const v = await dec();
+        await raw('touchStart', [[pb.cx, pb.cy, 1]]); await p.waitForTimeout(ms); await raw('touchEnd', []);
+        await p.waitForTimeout(150);
+        ok(await dec() === v + 0.5, `a ${ms / 1000} s hold on ＋ counts once`);
+      }
+      // released 12 px outside the edge still counts; dragged away does not
+      await p.waitForTimeout(850);
+      { const v = await dec(), b = await p.$eval('#declPlus', e => e.getBoundingClientRect().toJSON());
+        await raw('touchStart', [[b.right - 2, pb.cy, 1]]); await raw('touchMove', [[b.right + 10, pb.cy, 1]]); await raw('touchEnd', []);
+        await p.waitForTimeout(150); const v1 = await dec();
+        await p.waitForTimeout(850);
+        await raw('touchStart', [[pb.cx, pb.cy, 1]]); await raw('touchMove', [[pb.cx, pb.cy + 90, 1]]); await raw('touchEnd', []);
+        await p.waitForTimeout(150);
+        ok(v1 === v + 0.5 && await dec() === v1, 'pressed at the edge and released 10 px past it counts; dragged 90 px away does not'); }
+      // a direct tap on the declination field focuses it (keyboard opens); tapping a button blurs it and commits
+      await p.waitForTimeout(850);
+      const iq = await T.center('#declIn');
+      await raw('touchStart', [[iq[0], iq[1], 1]]); await raw('touchEnd', []);
+      await p.waitForFunction(() => document.activeElement && document.activeElement.id === 'declIn', null, W);
+      ok(true, 'a direct tap on the declination field focuses it');
+      await p.fill('#declIn', '2');
+      await p.waitForTimeout(850);
+      await raw('touchStart', [[pb.cx, pb.cy, 1]]); await raw('touchEnd', []);
+      await p.waitForFunction(() => __compass.S.declination === 2.5, null, W);
+      ok(await p.evaluate(() => document.activeElement.id !== 'declIn'), 'tapping ＋ while typing blurs the field and commits it (2 -> 2.5)');
+      ok(!/:active[^{]*\{[^}]*transform/.test(html), 'press feedback on :active uses no transform');
+      await T.ctx.close();
+    }
+
+    // ---------- 7. declination limit, rounding, toast placement, copy hint, undo, contrast ----------
+    {
+      const T = await open(390, 844), { p } = T;
+      await T.set('abs', abs(270)); await T.tap('#goBtn'); await T.waitText('#hDeg', '90°');
+      ok(await p.isVisible('.cphint') && (await T.txt('.cphint')).includes('長按複製'), 'a 長按複製 hint with an icon sits beside the reading');
+      await p.fill('#declIn', '40'); await p.$eval('#declIn', e => e.dispatchEvent(new Event('change')));
+      await T.waitHas('#toast', '已限制為 +30°');
+      ok(await p.inputValue('#declIn') === '30', 'typing 40 -> 30 with a toast 已限制為 +30°（範圍 −30 到 +30）');
+      await p.fill('#declIn', '-55'); await p.$eval('#declIn', e => e.dispatchEvent(new Event('change')));
+      await T.waitHas('#toast', '已限制為 −30°'); ok(await p.inputValue('#declIn') === '-30', 'typing −55 -> −30 with a toast');
+      const ov = await p.evaluate(() => { const a = document.getElementById('toast').getBoundingClientRect(), b = document.querySelector('.top').getBoundingClientRect();
+        return !(a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right); });
+      ok(!ov, 'the toast does not cover the header (指南針 COMPASS)');
+      // display matches rounding: 90° -> 0.4° shows 0° (was 1°), 120° -> 103.25° shows 103° (was 104°)
+      await T.set('abs', abs(359.6)); await T.waitText('#hDeg', '0°'); ok(true, 'turning 90° -> 0.4° settles on 0°');
+      await T.set('abs', abs(240)); await T.waitText('#hDeg', '120°');
+      await T.set('abs', abs(256.75)); await T.waitText('#hDeg', '103°'); ok(true, 'turning 120° -> 103.25° settles on 103°');
+      // clearing a target offers 復原
+      await T.tap('#tgtBtn'); await p.waitForFunction(() => __compass.S.target != null, null, W);
+      const tg = await p.evaluate(() => __compass.S.target);
+      await p.waitForTimeout(850); await T.tap('#tgtBtn');
+      await p.waitForFunction(() => __compass.S.target == null && document.getElementById('toastBtn'), null, W);
+      ok((await T.txt('#toast')).includes('已清除目標'), 'clearing the target shows 已清除目標 with 復原');
+      await p.waitForTimeout(850); { const q = await T.center('#toastBtn'); await T.touch('touchStart', [q]); await T.touch('touchEnd', []); }
+      await p.waitForFunction(t => __compass.S.target === t, tg, W);
+      ok(await p.isVisible('#tgt') && (await T.txt('#tgtLbl')).startsWith('清除目標'), '復原 brings the target back');
+      // small inner dial labels: at least 4.5:1 on the face, light and dark
+      for (const th of ['light', 'dark']) {
+        const cr = await p.evaluate(th => { document.documentElement.dataset.theme = th;
+          const rgb = s => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = s; c.fillRect(0, 0, 1, 1); return [...c.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+          const L = a => { const v = a.map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
+          const f = rgb(getComputedStyle(document.querySelector('.icard')).fill), b = rgb(getComputedStyle(document.documentElement).getPropertyValue('--face').trim());
+          const a = L(f), c = L(b); return (Math.max(a, c) + 0.05) / (Math.min(a, c) + 0.05); }, th);
+        ok(cr >= 4.5, `${th}: 東北/東南… labels contrast ${cr.toFixed(1)}:1 on the dial face`);
+      }
+      await T.ctx.close();
+    }
+
+    // ---------- 8. the sensor is remembered ----------
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const T = await open(0, 0, null, ctx), { p } = T;
+      await T.set('abs', abs(233)); await T.tap('#goBtn'); await T.waitText('#hDeg', '127°');
+      await p.reload(); await p.waitForFunction(() => window.__compass, null, W); await p.evaluate(FEEDER); await T.set('abs', abs(233));
+      await T.waitText('#hDeg', '127°');
+      ok(await p.isHidden('#gate'), 'Android: enabled last time -> reading starts on reload without a tap');
+      await ctx.close();
+      const ios = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      // like iPhone Safari: without a user gesture requestPermission() rejects
+      const I = await open(0, 0, () => { window.__asked = 0; DeviceOrientationEvent.requestPermission = () => { if (!navigator.userActivation.isActive) return Promise.reject(new DOMException('needs a gesture', 'NotAllowedError')); window.__asked++; return Promise.resolve('granted'); }; }, ios);
+      await I.set('rel', { alpha: 10, beta: 5, gamma: 0, absolute: false, webkitCompassHeading: 291, webkitCompassAccuracy: 10 });
+      await I.tap('#goBtn'); await I.waitText('#hDeg', '291°');
+      await I.p.reload(); await I.p.waitForFunction(() => window.__compass, null, W); await I.p.evaluate(FEEDER);
+      await I.set('rel', { alpha: 10, beta: 5, gamma: 0, absolute: false, webkitCompassHeading: 291, webkitCompassAccuracy: 10 });
+      await I.p.waitForFunction(() => document.getElementById('goBtn').textContent === '點一下繼續', null, W);
+      ok(await I.txt('#goBtn') === '點一下繼續' && await I.p.isHidden('#gateMsg') && (await I.txt('#gate')).includes('上次已啟用') && await I.p.evaluate(() => window.__asked) === 0, 'iOS: enabled last time -> clear 點一下繼續 prompt (no error), permission only asked on the tap');
+      await I.tap('#goBtn'); await I.waitText('#hDeg', '291°'); ok(true, 'iOS: one tap resumes');
+      await ios.close();
+    }
+
+    // ---------- 9. auto-start facing a saved target before any tap: no vibrate, no console error ----------
+    {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const msgs = [];
+      const p = await ctx.newPage();
+      p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') msgs.push(m.type() + ': ' + m.text()); }); p.on('pageerror', e => msgs.push(e.message));
+      await p.addInitScript(() => { try { localStorage.setItem('compass.v1', JSON.stringify({ sensor: true, target: 127 })); } catch (e) {}
+        setInterval(() => dispatchEvent(new DeviceOrientationEvent('deviceorientationabsolute', { alpha: 233, beta: 0, gamma: 0, absolute: true })), 16); });
+      await p.goto(URL);
+      await p.waitForFunction(() => document.getElementById('turn').textContent === '方向正確', null, W);
+      await p.waitForTimeout(500);
+      ok(msgs.length === 0, 'remembered sensor + saved target, facing it before any tap -> 方向正確 and 0 console errors ' + JSON.stringify(msgs));
+      await ctx.close();
+    }
+
+    // ---------- 10. toasts never cover a control (360×640 and 390×844, also scrolled to the settings) ----------
+    for (const [w, h] of [[360, 640], [390, 844], [844, 390]]) {
+      const T = await open(w, h), { p } = T;
+      const covered = () => p.evaluate(() => { const t = document.getElementById('toast'), a = t.getBoundingClientRect();
+        return [...document.querySelectorAll('button, input, [role="button"]')].filter(c => !t.contains(c) && c.getClientRects().length && !c.closest('[hidden]')).map(c => [c.id || c.textContent.trim(), c.getBoundingClientRect()])
+          .filter(([, c]) => c.left < a.right && c.right > a.left && c.top < a.bottom && c.bottom > a.top).map(x => x[0]); });
+      await T.set('abs', abs(233)); await T.tap('#goBtn'); await p.waitForFunction(() => __compass.R.got, null, W);
+      await T.tap('#tgtBtn'); await p.waitForFunction(() => __compass.S.target != null, null, W);
+      await p.waitForTimeout(850); await T.tap('#tgtBtn'); await p.waitForFunction(() => document.getElementById('toastBtn'), null, W);
+      const c1 = await covered();
+      await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await p.waitForTimeout(850); await T.tap('#declSign'); await T.waitHas('#toast', '磁偏角');
+      const c2 = await covered();
+      ok(c1.length === 0 && c2.length === 0, `${w}×${h}: 復原 toast and a toast shown while scrolled to the settings cover no control ${JSON.stringify([c1, c2])}`);
       await T.ctx.close();
     }
 
