@@ -173,19 +173,20 @@ function bfsMin(b, from) { const sv = b[from]; b[from] = -1; const dist = new Ma
   ok(!s2.over && s2.stall < 3, 'normal play never trips the stall rule');
 }
 // ---- AI: every level returns a legal move, timings ----
-for (const np of [2, 6]) for (let lv = 1; lv <= 5; lv++) {
+for (const np of [2, 6]) for (let lv = 0; lv <= 5; lv++) {
   const st = CC.newGame({ np }); const rng = CC.rngOf(lv * 7 + np);
   for (let i = 0; i < np * 8; i++) { const L = CC.moves(st, st.turn); const m = L[Math.floor(rng() * L.length)]; CC.play(st, m >> 7, m & 127); }
   const t = Date.now(); const r = CC.think(st, st.turn, lv, { seed: 3 }); const ms = Date.now() - t;
   ok(r && CC.paths(st, st.turn, r.from)[r.to], np + 'p level ' + lv + ' returns a legal move');
-  ok(ms <= CC.LEVELS[lv - 1].time + 250, np + 'p level ' + lv + ' within time budget (' + ms + 'ms)');
-  console.log(np + 'p midgame think, level', lv, CC.LEVELS[lv - 1].name, ':', ms + 'ms', 'mode', r.mode, 'depth', r.depth, 'nodes', r.nodes);
+  ok(ms <= CC.LEVELS[lv].time + 250, np + 'p level ' + lv + ' within time budget (' + ms + 'ms)');
+  console.log(np + 'p midgame think, level', lv, CC.LEVELS[lv].name, ':', ms + 'ms', 'mode', r.mode, 'depth', r.depth, 'nodes', r.nodes);
 }
 // ---- AI levels are a ladder (each level is a different policy: error rate, straggler weight, search) ----
 {
   const lv = CC.LEVELS; ok(lv.every((l, i) => !i || (l.err <= lv[i - 1].err && l.time >= lv[i - 1].time)), 'levels: fewer mistakes and more time as they go up');
   // L1 vs L2 and L2 vs L3, a few quick games each with real budgets (full ladder, 12 games a pair: 1-11, 2-10, 0-12)
-  for (const [a, b] of [[1, 2], [2, 3]]) {
+  ok(CC.LEVELS.length === 6 && CC.LEVELS[0].name === '新手' && CC.LEVELS[1].name === '小孩' && CC.LEVELS[5].name === '冠軍', 'six levels: 新手 (0) below 小孩 (1); saved levels 1-5 keep their meaning');
+  for (const [a, b] of [[0, 1], [1, 2], [2, 3]]) {
     let wb = 0;
     for (let g = 0; g < 4; g++) {
       const st = CC.newGame({ np: 2 }), lvOf = q => ((q + g) % 2 === 0 ? a : b); let n = 0;
@@ -224,6 +225,7 @@ function serve() {
   });
 }
 async function at(name, fn) {
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
   const t0 = Date.now(); let tm;
   try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 90 s')), 90000); })]); clearTimeout(tm); console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); }
   catch (e) { clearTimeout(tm); fail++; console.log('FAIL', name, '-', String(e.message || e).split('\n')[0], process.env.DBG ? e.stack : ''); }
@@ -236,12 +238,19 @@ async function open(vp, ls, o = {}) {
   await page.goto(base); await page.waitForFunction(() => window.__game);
   if (ls) { await page.evaluate(ls => { localStorage.clear(); for (const k in ls) localStorage.setItem('ccheckers.' + k, ls[k]); }, ls); await page.reload(); await page.waitForFunction(() => window.__game); }
   const cdp = await ctx.newCDPSession(page);
+  const pts = {}, send = (type, list) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: list });
+  // real multi-touch: each finger has its own id; touchEnd lists only the finger that lifts
+  const down = async (x, y) => { const id = ++tid; pts[id] = { x, y, id }; await send('touchStart', Object.values(pts)); return id; };
+  const up = async id => { const q = pts[id]; delete pts[id]; await send('touchEnd', [q]); };
+  const tap2 = async (x, y, hold = 40) => { const id = await down(x, y); await sleep(hold); await up(id); };
+  const ctr = async sel => { const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error('not visible: ' + sel); return [b.x + b.width / 2, b.y + b.height / 2]; };
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: tid }] });
   const tap = async (x, y, hold = 40) => { tid++; await touch('touchStart', x, y); await sleep(hold); await touch('touchEnd'); };
   const settle = sel => page.waitForFunction(sel => { const e = document.querySelector(sel), c = e && e.closest('.card'); return !c || c.getAnimations().every(a => a.playState !== 'running'); }, sel, { timeout: 5000 }).catch(() => {});
   const tapSel = async sel => {
     await settle(sel); await page.locator(sel).first().scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
     const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error('not visible: ' + sel);
+    if (process.env.DBG) console.log("tapSel", sel, JSON.stringify(b));
     await page.evaluate(sel => { window.__clicked = 0; document.querySelector(sel).addEventListener('click', () => { window.__clicked = 1; }, { once: true }); }, sel);
     await tap(b.x + b.width / 2, b.y + b.height / 2);
     await page.waitForFunction(() => window.__clicked, null, { timeout: 5000 });
@@ -258,7 +267,7 @@ async function open(vp, ls, o = {}) {
       if (M.every(q => q === c || Math.hypot(g.cellXY(q)[0] - x, g.cellXY(q)[1] - y) > s * 0.42 + 2)) return [x, y]; }
     return [x0 + s * 0.3, y0];
   }, [c, meaningful]);
-  return { ctx, page, errors, tap, tapSel, st, xy, humanReady, vis, ls: ls2, offPoint, close: () => ctx.close() };
+  return { ctx, page, errors, tap, tapSel, down, up, tap2, ctr, st, xy, humanReady, vis, ls: ls2, offPoint, close: () => ctx.close() };
 }
 // first own marble with a plain step and the step's target, from the page state
 function stepMove(g) {
@@ -295,14 +304,14 @@ async function browserTests() {
       let g = await s.st(); const [from, to] = stepMove(g);
       const own = []; for (let c = 0; c < CC.N; c++) if (g.st.board[c] === 0) own.push(c);
       let [x, y] = await s.offPoint(from, own); await s.tap(x, y);
-      await s.page.waitForFunction(f => window.__game.state().sel === f, from, { timeout: 3000 });
+      await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from, { timeout: 3000 });
       g = await s.st(); ok(g.sel === from && g.dests.includes(to), 'tap ~0.42 spacing off the marble selected it');
       { // a tap right on an empty hole that is not a destination deselects instead of snapping to a neighbouring destination
         const D = g.dests, cand = []; for (let c = 0; c < CC.N; c++) if (g.st.board[c] < 0 && !D.includes(c) && D.some(d => CC.ADJ[c * CC.N + d])) cand.push(c);
         const e = cand[0], [ex, ey] = await s.xy(e), [dx, dy] = await s.xy(D.find(d => CC.ADJ[e * CC.N + d]));
-        await s.tap(ex + (dx - ex) * 0.2, ey + (dy - ey) * 0.2); await s.page.waitForFunction(() => window.__game.state().sel === -1, null, { timeout: 3000 });
+        await s.tap(ex + (dx - ex) * 0.2, ey + (dy - ey) * 0.2); await s.page.waitForFunction(() => { const g = window.__game.state(); return g.sel === -1 && !g.zooming; }, null, { timeout: 3000 });
         const g2 = await s.st(); ok(g2.sel === -1 && g2.st.round === 1 && g2.phase === 'human', 'tap inside a plain hole next to a destination: deselected, no move');
-        await s.tap(x, y); await s.page.waitForFunction(f => window.__game.state().sel === f, from, { timeout: 3000 }); g = await s.st();
+        await s.tap(x, y); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from, { timeout: 3000 }); g = await s.st();
       }
       [x, y] = await s.offPoint(to, own.concat(g.dests)); 
       await s.page.evaluate(() => { window.__ffSeen = false; window.__ffI = setInterval(() => { if (window.__game.state().ff) window.__ffSeen = true; }, 5); });
@@ -318,7 +327,7 @@ async function browserTests() {
       const s = await open({ width: 390, height: 844 }, { settings: SET({ np: 6, seats: [{ h: 1, l: 3 }, { h: 0, l: 5 }, { h: 0, l: 5 }, { h: 0, l: 5 }, { h: 0, l: 5 }, { h: 0, l: 5 }], speed: 1 }) });
       await s.tapSel('#bStart'); await s.humanReady();
       let g = await s.st(); const [from, to] = stepMove(g);
-      let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => window.__game.state().sel === f, from);
+      let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
       p = await s.xy(to); await s.tap(p[0], p[1], 650);
       await sleep(200); g = await s.st();
       ok(g.preview === to && g.st.board[to] < 0 && g.phase === 'human', 'long press: path previewed, no move (' + g.preview + ')');
@@ -337,10 +346,10 @@ async function browserTests() {
       const s = await open({ width: 390, height: 844 }, { settings: SET() });
       await s.tapSel('#bStart'); await s.humanReady();
       let g = await s.st(); const start = g.st.board.join();
-      let [from, to] = stepMove(g); let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => window.__game.state().sel === f, from);
+      let [from, to] = stepMove(g); let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
       p = await s.xy(to); await s.tap(p[0], p[1]); await s.humanReady();
       await sleep(3200); g = await s.st(); ok(!g.raf, 'nothing moving on your turn: animation loop idle');
-      [from, to] = stepMove(g); p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => window.__game.state().sel === f, from);
+      [from, to] = stepMove(g); p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
       g = await s.st(); ok(g.raf, 'selection pulse wakes the loop');
       p = await s.xy(to);
       const saved = s.page.evaluate(to => new Promise(res => { const i = setInterval(() => { const g = window.__game.state(); if (g.anim) { clearInterval(i); dispatchEvent(new Event('pagehide')); const sv = JSON.parse(localStorage.getItem('ccheckers.game')); res(sv.st.board[to]); } }, 1); }), to);
@@ -369,11 +378,12 @@ async function browserTests() {
       }
       await s.tapSel('#bStart'); await s.humanReady();
       let g = await s.st(); ok(g.st.np === 2, 'broken settings fell back to 2 players');
-      const [from, to] = stepMove(g); let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => window.__game.state().sel === f, from);
+      const [from, to] = stepMove(g); let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
       p = await s.xy(to); await s.tap(p[0], p[1]); await s.humanReady();
       await s.tapSel('#bMenu'); await s.tapSel('#mRestart'); ok(await s.vis('confirm'), '重新開局 asks first');
       await s.tapSel('#cNo'); g = await s.st(); ok(!(await s.vis('confirm')) && g.st.round === 2, 'cancel keeps the game');
-      await s.tapSel('#bMenu'); await s.tapSel('#mSetup'); ok(await s.vis('bResume'), '新局設定 keeps the game resumable');
+      ok(await s.vis('menu'), 'cancel returns to the open 選單');
+      await s.tapSel('#mSetup'); ok(await s.vis('bResume'), '新局設定 keeps the game resumable');
       await s.tapSel('#bStart'); ok(await s.vis('confirm'), '開始對局 over a saved game asks first');
       await s.tapSel('#cYes'); await s.humanReady(); g = await s.st(); ok(g.st.round === 1 && g.undo === 0, 'confirmed: fresh game');
       ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
@@ -390,21 +400,117 @@ async function browserTests() {
       for (const dark of [false, true]) {
         const s = await open({ width: 390, height: 844 }, { settings: SET(), game: JSON.stringify(sv) }, { dark });
         await s.tapSel('#bResume'); await s.humanReady();
-        let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => window.__game.state().sel === f, from);
+        let p = await s.xy(from); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
         p = await s.xy(last); await s.tap(p[0], p[1]);
         await s.page.waitForFunction(() => window.__game.state().phase === 'over', null, { timeout: 5000 });
         const early = await s.ls('stats'), vis0 = await s.vis('result');
         ok(early && early.games === 1 && early.wins === 1 && !vis0, 'stats written at the end, before the result card (' + JSON.stringify(early && [early.games, early.wins]) + ', card ' + vis0 + ')');
         await s.page.waitForFunction(() => window.__game.state().resultVisible, null, { timeout: 5000 });
         ok((await s.page.textContent('#rTitle')) === '你贏了！', 'result title');
+        await sleep(1000);
+        const ach = await s.page.evaluate(() => ({ t: document.getElementById('rAch').textContent, toast: !document.getElementById('toast').classList.contains('hidden') }));
+        ok(ach.t.includes('首勝') && !ach.toast, 'achievement shown on the result card, no toast over its title (' + ach.t + ', toast ' + ach.toast + ')');
+        const bl = (await s.ls('stats')).byLv; ok(bl && bl[1] && bl[1][0] === 1 && bl[1][1] === 1, 'win counted for the computer level (' + JSON.stringify(bl) + ')');
         const c = await s.page.evaluate(() => window.__game.inkContrast());
         ok(c.every(x => x >= 4.5), (dark ? 'dark' : 'light') + ': winner colours as title text ≥ 4.5:1 ' + c.map(x => x.toFixed(1)));
         await s.tapSel('#rView'); await s.tapSel('#bResult');
         let st2 = await s.ls('stats'); ok(st2.games === 1, 'reopening the result does not count it again');
         await s.page.reload(); await s.page.waitForFunction(() => window.__game);
         st2 = await s.ls('stats'); ok(st2.games === 1 && st2.ach.first && !(await s.vis('bResume')), 'after a reload: still one game, 首勝 unlocked, no resume of a finished game');
+        await s.tapSel('#bStats'); const sb = await s.page.textContent('#statsBody'); ok(sb.includes('Lv1 小孩') && sb.includes('1 場・勝 1'), '戰績 lists games and wins per computer level');
         ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
       }
+    });
+    await at('tap layer: a second finger works, 0.6/1 s holds fire once, a detail-0 click after a tap is swallowed, keyboard still works', async () => {
+      const s = await open({ width: 390, height: 844 }, { settings: SET({ speed: 1 }) });
+      await s.page.evaluate(() => { window.__n = {}; document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('button,.ov'); if (b) window.__n[b.id] = (window.__n[b.id] || 0) + 1; }); });
+      const n = id => s.page.evaluate(id => window.__n[id] || 0, id), aria = id => s.page.evaluate(id => document.getElementById(id).getAttribute('aria-checked'), id);
+      const cb0 = await aria('oCb'), [lx, ly] = await s.ctr('#logo'), f1 = await s.down(lx, ly);
+      let [x, y] = await s.ctr('#oCb'); await s.tap2(x, y); await sleep(150);
+      ok((await aria('oCb')) !== cb0 && (await n('oCb')) === 1, 'setup: switch toggled once by a second finger while another is down');
+      await s.up(f1);
+      await s.tap2(x, y, 600); await sleep(100); await s.tap2(x, y, 1000); await sleep(100);
+      ok((await aria('oCb')) !== cb0 && (await n('oCb')) === 3, '0.6 s and 1 s holds each toggled exactly once (' + (await n('oCb')) + ')');
+      await s.tapSel('#bStart'); await s.humanReady();
+      const spd = () => s.page.textContent('#spd');
+      // finger 1 rests on the board, finger 2 taps 速度
+      const f2 = await s.down(12, 420); [x, y] = await s.ctr('#bSpeed'); await s.tap2(x, y); await sleep(120);
+      ok((await spd()) === '2×', 'game: 速度 changed by a second finger while one rests on the board (' + (await spd()) + ')'); await s.up(f2);
+      await s.tap2(x, y, 600); await sleep(100); ok((await spd()) === '4×', '0.6 s hold on 速度: once');
+      await s.tap2(x, y, 1000); await sleep(100); ok((await spd()) === '1×', '1 s hold on 速度: once');
+      await s.tap2(x, y); await s.page.evaluate(() => { const b = document.getElementById('bSpeed'); b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })); });
+      await sleep(100); ok((await spd()) === '2×', 'a replayed detail-0 click (and a detail-1 click) right after the tap ran nothing more (' + (await spd()) + ')');
+      await sleep(900); await s.page.focus('#bSpeed'); await s.page.keyboard.press('Enter'); await sleep(100);
+      ok((await spd()) === '4×', 'keyboard Enter on a focused button still activates it (' + (await spd()) + ')');
+      await s.page.evaluate(() => document.activeElement.blur());
+      // one finger on a lit destination, a second finger on another of your marbles: the newer touch wins, the first does not move
+      let g = await s.st(); const own = []; for (let c = 0; c < CC.N; c++) if (g.st.board[c] === 0) own.push(c);
+      const [from, to] = stepMove(g); let p = await s.xy(from); await s.tap2(p[0], p[1]);
+      await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
+      p = await s.xy(to);
+      const vis = await s.page.evaluate(L => L.filter(c => { const [x, y] = window.__game.cellXY(c); return x > 20 && x < innerWidth - 20 && y > 90 && y < innerHeight - 120; }), own);
+      const other = vis.find(c => c !== from && Object.keys(CC.paths(CC.load(g.st), 0, c)).length);
+      const f3 = await s.down(p[0], p[1]); await sleep(60); const q = await s.xy(other); await s.tap2(q[0], q[1]); await sleep(60); await s.up(f3); await sleep(250);
+      g = await s.st(); ok(g.sel === other && g.st.board[to] < 0 && g.phase === 'human', 'second finger on another marble selected it; the first finger made no move (sel ' + g.sel + ')');
+      // make one move so 悔棋 is live
+      await s.page.waitForFunction(() => !window.__game.state().zooming); const q2 = await s.xy(other);
+      await s.tap2(q2[0], q2[1]); await s.page.waitForFunction(() => { const g = window.__game.state(); return g.sel === -1 && !g.zooming; });
+      p = await s.xy(from); await s.tap2(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
+      p = await s.xy(to); await s.tap2(p[0], p[1]); await s.humanReady(); await sleep(300);
+      g = await s.st(); ok(g.undo === 1, 'one move made (' + g.undo + ')');
+      // ghost clicks: closing an overlay with the tap that lands over 悔棋 / 速度 must not press them
+      for (const under of ['#bUndo', '#bSpeed']) {
+        const sp0 = await spd(), n0 = await n(under.slice(1)); await s.tapSel('#bMenu'); await sleep(300); ok(await s.vis('menu'), '選單 open');
+        const [ux, uy] = await s.ctr(under); await s.tap2(ux, uy); await sleep(700);
+        g = await s.st(); ok(!(await s.vis('menu')) && g.undo === 1 && (await spd()) === sp0 && (await n(under.slice(1))) === n0, 'tap on the 選單 backdrop over ' + under + ' only closed the menu (undo ' + g.undo + ', speed ' + (await spd()) + ')');
+      }
+      await s.tapSel('#bMenu'); await s.tapSel('#mSetup'); await s.tapSel('#bRules'); await sleep(300);
+      const [sx, sy] = await s.ctr('#bStats'); await s.tap2(sx, sy); await sleep(600);
+      ok(!(await s.vis('rules')) && !(await s.vis('stats')), 'tap on the 玩法 backdrop over 戰績 closed it without opening 戰績');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+    await at('setup labels fit at 360 and 390 px for every level; new players start against 小孩; picking a marble zooms in on it', async () => {
+      const fresh = await open({ width: 360, height: 640 }, { settings: 'null' });
+      ok((await fresh.page.textContent('#seats .seat:nth-child(2) .lv span')).startsWith('Lv1 小孩'), 'default computer is Lv1 小孩 (新手 Lv0 below it)');
+      await fresh.close();
+      const cut = s => s.page.evaluate(() => [...document.querySelectorAll('#seats .lv span, #seats .lv small')].filter(e => e.scrollWidth > e.clientWidth + 0.5).map(e => e.textContent));
+      for (const w of [360, 390]) for (const seats of [[1, 0, 0, 0, 0, 0].map((h, i) => ({ h, l: i })), [1, 1, 0, 0, 0, 0].map((h, i) => ({ h, l: 5 }))]) {
+        const s = await open({ width: w, height: w === 360 ? 640 : 844 }, { settings: SET({ np: 6, seats }) });
+        const c = await cut(s); ok(!c.length, w + ' px: no seat label cut (' + c.join(' / ') + ')'); await s.close();
+      }
+      const s = await open({ width: 390, height: 844 }, { settings: SET() });
+      await s.tapSel('#bStart'); await s.humanReady();
+      let g = await s.st(); const s0 = g.s, [from, to] = stepMove(g); let p = await s.xy(from); await s.tap(p[0], p[1]);
+      await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, from);
+      g = await s.st();
+      const inside = await s.page.evaluate(L => { const g = window.__game, t = document.getElementById('top').getBoundingClientRect(), b = document.getElementById('status').getBoundingClientRect();
+        return L.every(c => { const [x, y] = g.cellXY(c); return x > 0 && x < innerWidth && y > t.bottom && y < b.top; }); }, [from].concat(g.dests));
+      ok(g.zoom >= 1.5 && g.s >= s0 * 1.5 && inside, 'picked marble: view zoomed ' + g.zoom.toFixed(2) + 'x, spacing ' + Math.round(s0) + ' -> ' + Math.round(g.s) + ' px, marble and lit holes on screen');
+      p = await s.xy(to); await s.tap(p[0], p[1]); await s.page.waitForFunction(t => window.__game.state().st.board[t] === 0, to, { timeout: 3000 });
+      await s.page.waitForFunction(() => { const g = window.__game.state(); return g.zoom === 1 && !g.zooming; }, null, { timeout: 3000 });
+      ok(true, 'zoomed tap made the move and the view zoomed back out');
+      // quick re-picks between two marbles whose holes fit the zoomed view: the view stays put, each tap selects its marble
+      await s.humanReady(); g = await s.st();
+      const mine = []; for (let c = 0; c < CC.N; c++) if (g.st.board[c] === 0 && Object.keys(CC.paths(CC.load(g.st), 0, c)).length) mine.push(c);
+      const [m1] = stepMove(g), m0 = mine.find(c => c !== m1 && CC.ADJ[c * CC.N + m1]) ?? mine.find(c => c !== m1);
+      { // positions read on the whole board, then 8 taps at 8/s: no zoom kicks in under the fingers
+        const A = await s.xy(m1), B = await s.xy(m0); let hit = 0;
+        for (let i = 0; i < 8; i++) { const [x, y] = i % 2 ? B : A; await s.tap(x, y); await sleep(125); if ((await s.st()).sel === (i % 2 ? m0 : m1)) hit++; }
+        ok(hit === 8, 'quick alternating picks aimed at the whole-board view all land (' + hit + '/8)');
+        await s.page.waitForFunction(() => !window.__game.state().zooming); const q = await s.xy(m0); await s.tap(q[0], q[1]);
+        await s.page.waitForFunction(() => { const g = window.__game.state(); return g.sel === -1 && !g.zooming; });
+      }
+      p = await s.xy(m1); await s.tap(p[0], p[1]); await s.page.waitForFunction(f => { const g = window.__game.state(); return g.sel === f && !g.zooming; }, m1);
+      const m2 = mine.find(c => c !== m1 && CC.ADJ[c * CC.N + m1]) ?? mine.find(c => c !== m1);
+      const a = await s.xy(m1), b = await s.xy(m2); let okSel = 0;
+      for (let i = 0; i < 8; i++) { const [x, y] = i % 2 ? a : b; await s.tap(x, y); await sleep(125); if ((await s.st()).sel === (i % 2 ? m1 : m2)) okSel++; }
+      ok(okSel === 8, 'alternating taps on two marbles at 8/s each picked the tapped marble (' + okSel + '/8)');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+      const s2 = await open({ width: 390, height: 844 }, { settings: SET({ zoom: false }) });
+      ok((await s2.page.getAttribute('#oZoom', 'aria-checked')) === 'false', '選子後放大 switch shows the saved setting');
+      await s2.tapSel('#bStart'); await s2.humanReady(); g = await s2.st(); const [f2] = stepMove(g); p = await s2.xy(f2); await s2.tap(p[0], p[1]);
+      await s2.page.waitForFunction(f => window.__game.state().sel === f, f2); await sleep(300);
+      g = await s2.st(); ok(g.zoom === 1, '選子後放大 off: no zoom'); await s2.close();
     });
   } finally { await browser.close(); }
 }
