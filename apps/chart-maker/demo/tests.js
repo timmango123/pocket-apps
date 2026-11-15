@@ -389,6 +389,62 @@ const MOB = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: t
     await t.ctx.close();
   }
 
+  // 13. CI 的 Chromium 141：觸控後瀏覽器補發的 click 是 detail 0、沒有 pointerType（看起來像鍵盤），不能再觸發一次。
+  //     本機 Chromium 不會這樣，所以在真實 tap 之後立刻補發一個 detail 0 的 click 重現。
+  {
+    const t = await open();
+    const cdp = await t.ctx.newCDPSession(t.p);
+    const send = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const center = async sel => t.p.$eval(sel, e => { e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    const echo = sel => t.p.$eval(sel, e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window })));
+    const tapEcho = async (q, sel) => { await send('touchStart', [{ x: q[0], y: q[1], id: 1 }]); await send('touchEnd', [{ x: q[0], y: q[1], id: 1 }]); await echo(sel); await t.frames(); };
+    await t.p.evaluate(() => { window.__n = 0; document.getElementById('types').addEventListener('click', () => window.__n++); });
+    let c = await center('#type-area'); await t.frames();
+    await tapEcho(c, '#type-area');
+    eq([await t.p.evaluate(() => window.__n), await t.p.evaluate(() => window.__cm.opts.type)], [1, 'area'], 'detail 0 補發 click：按鈕只觸發一次');
+    // 換畫面：補發的 click 落在新按鈕上也不觸發
+    await t.p.evaluate(() => {
+      const g = Object.assign(document.createElement('button'), { id: 'ghost', textContent: 'G' }); g.style.cssText = 'position:fixed;inset:0;z-index:99;display:none'; window.__g = 0; g.addEventListener('click', () => window.__g++); document.body.append(g);
+      document.getElementById('type-pie').addEventListener('click', () => { g.style.display = 'block'; }, { once: true });
+    });
+    c = await center('#type-pie'); await tapEcho(c, '#ghost');
+    eq([await t.p.evaluate(() => window.__g), await t.p.evaluate(() => window.__cm.opts.type)], [0, 'pie'], 'detail 0 補發 click：換畫面後的新按鈕不觸發');
+    await t.p.evaluate(() => document.getElementById('ghost').remove());
+    // 勾選框：補發的 click 落在 label 或 input 上，都只切換一次（原生 change 也只一次）
+    await t.setData('月份\t2023\t2024\n一月\t10\t12\n二月\t11\t14');
+    await t.p.evaluate(() => { window.__ch = 0; document.getElementById('o-header').addEventListener('change', () => window.__ch++); });
+    const hb = await t.p.$eval('#hdr-row', e => { e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.left + 30, r.top + r.height / 2]; });
+    await t.frames();
+    await t.p.waitForTimeout(850);
+    await tapEcho(hb, '#hdr-row');
+    eq([await t.p.isChecked('#o-header'), await t.p.evaluate(() => window.__ch), await t.p.evaluate(() => JSON.parse(localStorage.getItem('chart-maker:v1:opts')).header)], [false, 1, 'no'], 'detail 0 補發 click 在 label 上：只切換一次');
+    await t.p.waitForTimeout(850);
+    await tapEcho(hb, '#o-header');
+    eq([await t.p.isChecked('#o-header'), await t.p.evaluate(() => window.__ch), await t.p.evaluate(() => window.__cm.opts.header)], [true, 2, 'auto'], 'detail 0 補發 click 在 input 上：只切換一次');
+    // 樣式面板的勾選框（直接點在方框上）
+    await t.p.evaluate(() => { document.getElementById('style-panel').open = true; });
+    const lab0 = await t.p.isChecked('#o-legend');
+    c = await center('#o-legend'); await t.frames(); await t.p.waitForTimeout(850);
+    await tapEcho(c, '#o-legend');
+    eq(await t.p.isChecked('#o-legend'), !lab0, 'detail 0 補發 click：點在方框上只切換一次');
+    // 鍵盤 Enter／空白鍵照常（就算剛點過）
+    await t.p.waitForTimeout(850);
+    await t.p.focus('#type-hbar'); await t.p.keyboard.press('Enter');
+    eq(await t.p.evaluate(() => window.__cm.opts.type), 'hbar', '鍵盤 Enter 仍可切換類型');
+    await t.p.focus('#type-line'); await t.p.keyboard.press('Space');
+    eq(await t.p.evaluate(() => window.__cm.opts.type), 'line', '鍵盤空白鍵仍可按按鈕');
+    const lg = await t.p.isChecked('#o-legend');
+    await t.p.focus('#o-legend'); await t.p.keyboard.press('Space');
+    eq(await t.p.isChecked('#o-legend'), !lg, '鍵盤空白鍵仍可勾選');
+    // 點過按鈕後馬上用鍵盤按另一個遠處的按鈕也照常
+    c = await center('#type-bar'); await send('touchStart', [{ x: c[0], y: c[1], id: 1 }]); await send('touchEnd', [{ x: c[0], y: c[1], id: 1 }]);
+    await t.p.waitForFunction(() => window.__cm.opts.type === 'bar');
+    await t.p.focus('#btn-sample'); await t.p.evaluate(() => { window.__s = 0; document.getElementById('btn-sample').addEventListener('click', () => window.__s++); });
+    await t.p.keyboard.press('Enter');
+    eq(await t.p.evaluate(() => window.__s), 1, '點按鈕後立刻按 Enter：遠處的按鈕照常觸發一次');
+    await t.ctx.close();
+  }
+
   eq(errors, [], '沒有頁面錯誤或主控台錯誤');
   await browser.close(); srv.close();
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

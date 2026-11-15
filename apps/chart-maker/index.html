@@ -921,7 +921,9 @@ document.addEventListener('pointerdown', e => { if (!$('pwrap').contains(e.targe
 
 /* ---------- 觸控：放開時才觸發 ----------
    每個 pointerId 各自記錄按下的控制項，在同一個控制項上放開（移動 < 10px，或在外擴 16px 的範圍內）才觸發一次。
-   瀏覽器自己產生的 click（detail > 0）一律在捕獲階段吞掉，避免換畫面後「幽靈點擊」打到新的按鈕；鍵盤觸發的 click（detail 0）照常。
+   瀏覽器自己產生的 click 一律在捕獲階段吞掉，避免重複觸發或換畫面後「幽靈點擊」打到新的按鈕。
+   CI 的 Chromium 141 在 pointerdown 被 preventDefault 後補發的 click 是 detail 0、沒有 pointerType，看起來像鍵盤，
+   所以「detail 0」不等於鍵盤：只有剛按下 Enter／空白鍵的 click 才算鍵盤；剛放開手指（800ms 內）或落在剛觸發的控制項附近的 click 一律吞掉。
    另一指放在畫面上時 Chrome 不產生 click，改用 pointerup 才點得到。 */
 const TAP_SEL = 'button, summary, label, #chart';
 const downs = new Map();
@@ -944,12 +946,31 @@ document.addEventListener('pointerup', e => {
   // 擋掉 pointerdown 的預設動作後原生 blur 不會發生，自己收起鍵盤
   const a = document.activeElement;
   if (a && a !== el && !el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio)$/.test(a.type)))) a.blur();
+  fired = { el, t: performance.now() };
   if (el.id === 'chart') chartTap(d.target, d.x, d.y);
   else if (el.tagName === 'LABEL' && el.control && !/^(checkbox|radio)$/.test(el.control.type)) el.control.focus();
-  else el.click();
+  else { firing = true; try { el.click(); } finally { firing = false; } }
 });
 document.addEventListener('pointercancel', e => downs.delete(e.pointerId));
-addEventListener('click', e => { if (e.isTrusted && e.detail > 0 && !(e.target.closest && e.target.closest('select, input[type=text], textarea'))) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+let fired = null, firing = false, lastUp = -1e9, lastKey = -1e9;
+addEventListener('pointerup', () => { lastUp = performance.now(); }, true);
+addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') lastKey = performance.now(); }, true);
+addEventListener('keyup', e => { if (e.key === ' ') lastKey = performance.now(); }, true); // 空白鍵的 click 在放開時才來
+const nearFired = t => {
+  if (!fired || performance.now() - fired.t > 800 || !(t instanceof Element)) return false;
+  const f = fired.el; if (f.contains(t) || t.contains(f)) return true;
+  const a = f.getBoundingClientRect(), b = t.getBoundingClientRect(), m = 16;
+  return b.right >= a.left - m && b.left <= a.right + m && b.bottom >= a.top - m && b.top <= a.bottom + m;
+};
+addEventListener('click', e => {
+  if (firing) return; // 觸控層自己呼叫的 el.click()
+  const t = e.target;
+  if (!(t instanceof Element) || t.closest('select, input[type=text], textarea')) return;
+  const now = performance.now(), keyed = now - lastKey < 600;
+  // 程式碼呼叫的 click（例如下載用的 <a>.click()）照常；只擋掉落在剛觸發的控制項上的重複
+  if (!e.isTrusted) { if (!keyed && t.closest(TAP_SEL + ', input') && nearFired(t)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+  if (e.detail > 0 || e.pointerType || nearFired(t) || (!keyed && now - lastUp < 800)) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
 document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('button, summary, label')) e.preventDefault(); });
 
 /* ---------- 匯出 ---------- */
