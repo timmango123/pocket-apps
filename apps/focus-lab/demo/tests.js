@@ -4,17 +4,22 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const SRC = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
 const WRAP = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'focus-lab-')), 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + SRC + '</body></html>');
-const URL = 'file://' + WRAP;
+let URL = '';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [], external = [];
 const OBJU = [3000, 45, 22, 15, 10, 7, 3.2, 1.6, 0.55];
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, ...opt });
-    await ctx.route(u => !u.href.startsWith('file:'), r => { external.push(r.request().url()); r.abort(); });
+    await ctx.route(u => !u.href.startsWith(URL), r => { external.push(r.request().url()); r.abort(); });
     const p = await ctx.newPage();
     p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); p.on('pageerror', e => errors.push(e.message));
     await p.goto(URL); await ready(p); await fresh(p);
