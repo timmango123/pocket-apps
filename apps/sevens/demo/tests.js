@@ -1,7 +1,10 @@
 // Rule tests for 排七 (sevens). Extracts the engine between the CORE markers of ../index.html,
 // checks every rule in the spec, then runs 5000 AI-vs-AI rounds checking legality, the forced-play rule
 // and card / point conservation after every move.
-// Usage: node tests.js [--rounds N]
+// Part 2 drives the real page in mobile Chromium with CDP touch, served over http: the tap layer (resting finger, holds,
+// detail-0 click replays), per-finger canvas presses, damaged storage, the match result banked before its results sheet,
+// 提示 / 改蓋牌 reachable by touch, and labels that fit (also with a wide fallback font).
+// Usage: node tests.js [--rounds N] [--no-browser]
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const SV = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return SV;')();
@@ -183,5 +186,226 @@ function st(hands, rows, o) {
   console.log(`高手 think (page settings, 100 samples cap, 80 ms budget): median ${times[30]}ms, max ${times[59]}ms; samples median ${smp[smp.length >> 1]}, min ${smp[0]}`);
   ok(times[59] < 120, '高手 stays within its time budget');
 }
-console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+
+// ================= real page in mobile Chromium (CDP touch), served over http =================
+const http = require('http');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let browser, server, base, tid = 1;
+const WIDE = '*{font-family:"DejaVu Sans","WenQuanYi Zen Hei",sans-serif !important;letter-spacing:.12em !important}';
+function serve() {
+  return new Promise(res => {
+    server = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(path.resolve(__dirname, '..', 'index.html'))); });
+    server.listen(0, '127.0.0.1', () => { server.unref(); base = 'http://127.0.0.1:' + server.address().port + '/'; res(); });
+  });
+}
+async function at(name, fn) {
+  const t0 = Date.now(); let tm;
+  try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 90 s')), 90000); })]); clearTimeout(tm); console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); }
+  catch (e) { clearTimeout(tm); fail++; console.log('FAIL', name, '-', String(e.message || e).split('\n')[0]); }
+}
+// saved states built with the page's own engine, in the shape the page saves (old saves load the same way)
+function roundTo(M, stop) { const S = SV.startRound(M); while (!S.done && !stop(S)) SV.step(S, SV.rulePlay(S, S.turn, SV.PERS[S.turn])); return S; }
+const saveOf = (M, S, level = 1) => JSON.stringify({ v: 1, M, S, level, daily: null, flags: { rows: 0 } });
+function findState(len, opts, want) { for (let seed = 1; seed < 3000; seed++) { const M = SV.newMatch(seed, opts, len), S = roundTo(M, want); if (!S.done) return { M, S }; } throw new Error('no state'); }
+// one-round match where you (seat 0, who opens) have just played your 13th card: three computer moves end it
+function nearEnd() {
+  for (let seed = 1; ; seed++) { const M = SV.newMatch(seed, {}, 1), S = SV.startRound(M); if (S.start !== 0) continue; const T = roundTo(M, X => X.moves === 49); return { M, S: T }; }
+}
+const SETS = o => JSON.stringify(Object.assign({ fast: true, snd: false, vib: false, len: 1, level: 1 }, o));
+async function open(vp, ls, o = {}) {
+  const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  const page = await ctx.newPage(), errors = [];
+  page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto(base); await page.waitForFunction(() => window.__sevens);
+  if (ls) { await page.evaluate(ls => { localStorage.clear(); for (const k in ls) localStorage.setItem('sevens:' + k, ls[k]); }, ls); await page.reload(); await page.waitForFunction(() => window.__sevens); }
+  if (o.wide) await page.addStyleTag({ content: WIDE });
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+  const tap = async (x, y, hold = 40) => { const id = ++tid; await touch('touchStart', [{ x, y, id }]); await sleep(hold); await touch('touchEnd', [{ x, y, id }]); };
+  const info = () => page.evaluate(() => window.__sevens.info());
+  const mid = async sel => { const b = await page.evaluate(sel => { const r = document.querySelector(sel).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, sel); return b; };
+  const settle = () => page.waitForFunction(() => [...document.querySelectorAll('.ov:not([hidden]) .sheet')].every(c => c.getAnimations().every(a => a.playState !== 'running')), null, { timeout: 10000 }).catch(() => {});
+  const tapSel = async (sel, hold) => { await settle(); const [x, y] = await mid(sel); await tap(x, y, hold); };
+  const until = (fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { timeout: ms });
+  const myTurn = () => until(() => { const i = window.__sevens.info(); return i.wait && !i.ov.length; });
+  const resume = async () => { await tapSel('#bResume'); await until(() => !window.__sevens.info().ov.length); };
+  const stats = () => page.evaluate(() => window.__sevens.stats());
+  return { ctx, page, errors, touch, tap, tapSel, info, mid, until, myTurn, resume, stats, settle, close: () => ctx.close() };
+}
+async function browserTests() {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  await serve(); browser = await chromium.launch();
+  console.log('Page (mobile Chromium, touch, http)');
+  try {
+    await at('buttons fire from pointerup with a finger resting on the table; holds fire once; a detail-0 click after a tap adds nothing', async () => {
+      const cov = findState(3, {}, S => S.turn === 0 && S.moves > 0 && !SV.canPlay(S, 0));
+      const s = await open({ width: 390, height: 844 }, { settings: SETS({ len: 3 }), match: saveOf(cov.M, cov.S) });
+      await s.resume(); await s.myTurn();
+      const rest = ++tid, R = { x: 200, y: 330 };
+      const restDown = () => s.touch('touchStart', [{ ...R, id: rest }]);
+      const tap2 = async (sel, ms = 50) => { const [x, y] = await s.mid(sel), id = ++tid; await s.touch('touchStart', [{ ...R, id: rest }, { x, y, id }]); await sleep(ms); await s.touch('touchEnd', [{ x, y, id }]); await sleep(150); };
+      await restDown(); await sleep(60);
+      const snd0 = (await s.page.evaluate(() => window.__sevens.set())).snd;
+      await tap2('#bSnd'); ok((await s.page.evaluate(() => window.__sevens.set())).snd === !snd0, '音效 toggles with another finger resting on the table');
+      await tap2('#bSheet'); ok((await s.info()).ov.includes('ovSheet'), '計分表 opens with another finger resting on the table');
+      await s.touch('touchEnd', [{ ...R, id: rest }]); await sleep(100);
+      await s.tapSel('#ovSheet [data-close]'); await s.until(() => !window.__sevens.info().ov.length);
+      // select a card to cover, then 蓋掉 with the resting finger down
+      const c = SV.hand(cov.S, 0)[0], pt = await s.page.evaluate(c => window.__sevens.cardPt(c), c);
+      await s.tap(pt.x, pt.y); await s.until(c => window.__sevens.info().sel === c, c, 5000);
+      const m0 = (await s.info()).moves;
+      await restDown(); await sleep(60); await tap2('#act');
+      await s.until(m0 => window.__sevens.info().moves > m0, m0, 5000).catch(() => {});
+      ok((await s.info()).moves === m0 + 1, '蓋掉 covers once with another finger resting on the table');
+      await s.touch('touchEnd', [{ ...R, id: rest }]); await sleep(100);
+      // holds of 0.6 s and 1 s on 音效 fire exactly once each
+      let v = (await s.page.evaluate(() => window.__sevens.set())).snd, [x, y] = await s.mid('#bSnd');
+      await s.tap(x, y, 600); await sleep(150); ok((await s.page.evaluate(() => window.__sevens.set())).snd === !v, '0.6 s hold on 音效 toggles once');
+      await s.tap(x, y, 1000); await sleep(150); ok((await s.page.evaluate(() => window.__sevens.set())).snd === v, '1 s hold on 音效 toggles once');
+      // a tap, then the detail-0 click Chromium 141 may send: on the control, on its edge and on whatever is under the finger
+      const replay = sel => s.page.evaluate(sel => {
+        const el = document.querySelector(sel), r = el.getBoundingClientRect(), mk = () => new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 });
+        el.dispatchEvent(mk()); (document.elementFromPoint(r.right - 2, r.bottom - 2) || el).dispatchEvent(mk());
+        (document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) || el).dispatchEvent(mk());
+      }, sel);
+      const f0 = (await s.page.evaluate(() => window.__sevens.tap())).fired;
+      v = (await s.page.evaluate(() => window.__sevens.set())).snd; await s.tap(x, y); await replay('#bSnd'); await sleep(150);
+      ok((await s.page.evaluate(() => window.__sevens.set())).snd === !v && (await s.page.evaluate(() => window.__sevens.tap())).fired === f0 + 1, '音效: tap + detail-0 clicks toggled once');
+      // a tap that opens a sheet: the click that follows lands on the new screen and does nothing there
+      [x, y] = await s.mid('#bSheet'); await s.tap(x, y);
+      await s.page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); e && e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); }, [x, y]);
+      await sleep(150); ok((await s.info()).ov.includes('ovSheet'), 'the click after the tap that opened 計分表 did nothing on the sheet');
+      await s.tapSel('#ovSheet [data-close]'); await s.until(() => !window.__sevens.info().ov.length);
+      await sleep(900); v = (await s.page.evaluate(() => window.__sevens.set())).snd;
+      await s.page.evaluate(() => document.querySelector('#bSnd').click()); await sleep(100);
+      ok((await s.page.evaluate(() => window.__sevens.set())).snd === !v, 'a lone detail-0 click (no tap in the last 800 ms) acts once');
+      await s.page.focus('#bSnd'); await s.page.keyboard.press('Enter'); await sleep(100);
+      ok((await s.page.evaluate(() => window.__sevens.set())).snd === v, 'Enter on the focused 音效 key acts once');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+
+    await at('two fingers on two cards: lifting the first plays the first finger\'s card, never the second\'s; 下一局 works with a resting finger', async () => {
+      const st = findState(3, {}, S => S.turn === 0 && S.moves > 0 && SV.legal(S, 0).length >= 2);
+      const s = await open({ width: 390, height: 844 }, { settings: SETS({ len: 3 }), match: saveOf(st.M, st.S) });
+      await s.resume(); await s.myTurn(); await sleep(400);
+      const [a, b] = SV.legal(st.S, 0), pa = await s.page.evaluate(c => window.__sevens.cardPt(c), a), pb = await s.page.evaluate(c => window.__sevens.cardPt(c), b);
+      const A = { x: pa.x, y: pa.y, id: ++tid }, B = { x: pb.x, y: pb.y, id: ++tid };
+      await s.touch('touchStart', [A]); await sleep(60); await s.touch('touchStart', [A, B]); await sleep(60);
+      await s.touch('touchEnd', [A]); await sleep(300);
+      let V = await s.page.evaluate(() => window.__sevens.view());
+      const has = (V, c) => !!(V.played[SV.suit(c)] >> SV.rank(c) & 1);
+      ok(has(V, a) && !has(V, b), 'finger 1 up: ' + SV.name(a) + ' played, ' + SV.name(b) + ' not');
+      await s.touch('touchEnd', [B]); await sleep(300);
+      V = await s.page.evaluate(() => window.__sevens.view());
+      ok(!has(V, b), 'finger 2 up after the turn passed: ' + SV.name(b) + ' still in hand');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+      // 下一局 / 查看最終結果 with a finger resting on the sheet's backdrop
+      const ne = nearEnd(), t = await open({ width: 390, height: 844 }, { settings: SETS(), match: saveOf(ne.M, ne.S) });
+      await t.resume(); await t.until(() => window.__sevens.info().ov.includes('ovRound')); await t.settle();
+      const [x, y] = await t.mid('#bNext'), rest = { x: 30, y: 300, id: ++tid }, f = { x, y, id: ++tid };
+      await t.touch('touchStart', [rest]); await sleep(80); await t.touch('touchStart', [rest, f]); await sleep(50); await t.touch('touchEnd', [f]); await sleep(300);
+      ok((await t.info()).ov.includes('ovEnd'), '查看最終結果 works with another finger down');
+      await t.touch('touchEnd', [rest]);
+      ok(!t.errors.length, 'no page errors ' + t.errors.join(' | ')); await t.close();
+    });
+
+    await at('damaged storage boots to the menu and rounds still finish, with no page error', async () => {
+      const ne = nearEnd(), good = saveOf(ne.M, ne.S);
+      const cases = [['settings', '{'], ['settings', 'null'], ['settings', '5'], ['settings', '[]'], ['settings', '{"level":9,"len":1}'], ['settings', '{"level":"2","len":1}'], ['settings', '{"skin":"zzz","len":1}'], ['settings', '{"len":"x"}'], ['settings', '{"len":0}'],
+        ['stats', '{'], ['stats', '{"lv":5}'], ['stats', '{"lv":[[1],null,"x"]}'], ['stats', '{"suitCov":null}'], ['stats', '{"suitCov":[1,"a"]}'], ['stats', '{"ach":null}'], ['stats', '{"daily":null}'], ['stats', '{"daily":[3]}'], ['stats', '{"best":5,"games":"x"}'], ['stats', '[1,2]'],
+        ['match', '{'], ['match', '{"v":1,"M":{}}'], ['match', '{"v":1,"M":{"over":false},"S":{}}'], ['match', '{"v":1,"M":{"seed":1,"len":5,"round":0,"totals":[0,0,0,0],"rounds":[],"over":false,"opts":{}},"S":{"hm":[1]}}'],
+        ['match', '{"v":1,"M":{"seed":1,"len":5,"round":0,"totals":[0,0,0,0],"rounds":[],"over":false,"opts":{}},"S":null,"level":7}'], ['match', '{"v":1,"M":{"seed":1,"len":5,"round":2,"totals":[0,0,0,0],"rounds":[],"over":false,"opts":{}},"S":null}'],
+        ['match', '{"v":1,"M":{"seed":1,"len":3,"round":0,"totals":[0,0,0,0],"rounds":[],"over":false,"opts":{}},"S":{"hist":[999,"x"]}}']];
+      const lanes = await Promise.all([0, 1, 2, 3, 4].map(() => open({ width: 390, height: 844 })));
+      const one = async (s, k, v) => {
+        s.errors.length = 0;
+        const ls = { settings: SETS(), [k]: v }; if (k !== 'match') ls.match = good;
+        await s.page.evaluate(ls => { localStorage.clear(); for (const k in ls) localStorage.setItem('sevens:' + k, ls[k]); }, ls);
+        await s.page.reload(); await s.page.waitForFunction(() => window.__sevens);
+        const boot = await s.info(); s.last = boot;
+        let done = false;
+        if (k !== 'match') { // the saved near-finished match plays out: round results, then the final results
+          await s.resume(); await s.until(() => window.__sevens.info().ov.includes('ovRound'));
+          await s.tapSel('#bNext'); await s.until(() => window.__sevens.info().ov.includes('ovEnd'), null, 5000);
+          done = (await s.stats()).games >= 1;
+        } else { // the bad match is dropped: a new match deals and reaches your turn or a computer move
+          await s.tapSel('#bNew'); await s.until(() => { const i = window.__sevens.info(); return !i.ov.length && (i.wait || i.moves >= 1); });
+          done = true;
+        }
+        ok(boot.ov.includes('ovMenu') && done && !s.errors.length, `${k}=${v}: menu at boot, play went on (${done}) ` + s.errors.join(' | '));
+      };
+      await Promise.all(lanes.map(async (s, i) => { for (let j = i; j < cases.length; j += lanes.length) await one(s, ...cases[j]).catch(e => ok(false, cases[j].join('=') + ': ' + String(e.message).split('\n')[0] + ' ' + JSON.stringify(s.last))); }));
+      const s = lanes[0]; await Promise.all(lanes.slice(1).map(x => x.close()));
+      // old saves in the page's own shape still load exactly (hand, board, turn)
+      const mid = findState(5, { wrap: true }, S => S.moves === 23 && S.turn === 0);
+      await s.page.evaluate(ls => { localStorage.clear(); for (const k in ls) localStorage.setItem('sevens:' + k, ls[k]); }, { settings: SETS(), match: saveOf(mid.M, mid.S), stats: JSON.stringify({ games: 4, wins: 2, rounds: 9, pen: 80, zero: 1, suitCov: [1, 2, 3, 4], best: { v: 30, len: 3 }, lv: [[1, 1], [2, 1], [1, 0]], ach: { first: 5 }, daily: { '2026-11-01': 12 } }) });
+      await s.page.reload(); await s.page.waitForFunction(() => window.__sevens);
+      const V = await s.page.evaluate(() => window.__sevens.view()), st = await s.stats();
+      ok(JSON.stringify(V.hm.slice(0, 4)) === JSON.stringify(mid.S.hm.slice(0, 4)) && JSON.stringify(V.played) === JSON.stringify(mid.S.played) && V.turn === 0 && V.opts.wrap === true, 'a valid saved round loads exactly');
+      ok(st.games === 4 && st.wins === 2 && st.best.v === 30 && st.daily['2026-11-01'] === 12 && st.ach.first === 5 && st.lv[1][1] === 1, 'valid stats load unchanged');
+      await s.close();
+    });
+
+    await at('the match result is banked when the last round is scored: a reload on its results sheet keeps it, and it counts once', async () => {
+      const ne = nearEnd();
+      const s = await open({ width: 390, height: 844 }, { settings: SETS(), match: saveOf(ne.M, ne.S) });
+      await s.resume(); await s.until(() => window.__sevens.info().ov.includes('ovRound'));
+      const st1 = await s.stats();
+      ok(st1.games === 1 && st1.rounds === 1, 'stats hold the match as soon as the final round results show (games ' + st1.games + ')');
+      await s.page.reload(); await s.page.waitForFunction(() => window.__sevens);
+      const st2 = await s.stats(), i2 = await s.info(), resume = await s.page.evaluate(() => !document.getElementById('bResume').hidden);
+      ok(st2.games === 1 && st2.rounds === 1 && i2.ov.includes('ovMenu') && !resume && !(await s.page.evaluate(() => localStorage.getItem('sevens:match'))), 'after a reload the result is still there, no stale match to resume');
+      // the same match once more without a reload: 查看最終結果 does not count it again
+      await s.page.evaluate(m => localStorage.setItem('sevens:match', m), saveOf(ne.M, ne.S)); await s.page.reload(); await s.page.waitForFunction(() => window.__sevens);
+      await s.resume(); await s.until(() => window.__sevens.info().ov.includes('ovRound'));
+      await s.tapSel('#bNext'); await s.until(() => window.__sevens.info().ov.includes('ovEnd'), null, 5000);
+      ok((await s.stats()).games === 2, 'a second match counts once, showing its final results adds nothing (' + (await s.stats()).games + ')');
+      // a reload in the moment between the last card and the round results scores the round on load
+      const full = SV.newMatch(ne.M.seed, {}, 1), F = roundTo(full, () => false);
+      await s.page.evaluate(m => { localStorage.setItem('sevens:match', m); }, saveOf(full, F)); await s.page.reload(); await s.page.waitForFunction(() => window.__sevens);
+      await s.resume(); await s.until(() => window.__sevens.info().ov.includes('ovRound'));
+      ok((await s.stats()).games === 3, 'a finished but unscored round is scored after a reload');
+      ok(!s.errors.length, 'no page errors ' + s.errors.join(' | ')); await s.close();
+    });
+
+    await at('提示 and 改蓋牌 sit above the table and work by touch; labels fit (also with a wide font); the chosen card stays clear of 蓋掉', async () => {
+      const st = findState(5, { free: true }, S => S.turn === 0 && S.moves > 0 && SV.canPlay(S, 0) && S.n[0] >= 9 && SV.hand(S, 0).some(c => SV.rank(c) === 9));
+      for (const [w, h, wide] of [[360, 640, false], [390, 844, false], [844, 390, false], [360, 640, true], [844, 390, true]]) {
+        const s = await open({ width: w, height: h }, { settings: SETS(), match: saveOf(st.M, st.S) }, { wide });
+        const tag = `${w}x${h}${wide ? ' wide font' : ''}`;
+        if (w === 360) { // the start menu fits a 360x640 screen without scrolling
+          const m = await s.page.evaluate(() => { const o = document.getElementById('ovMenu'), b = o.querySelector('.sheet').getBoundingClientRect(); return { fit: o.scrollHeight <= o.clientHeight && b.top >= 0 && b.bottom <= innerHeight, h: Math.round(b.height) }; });
+          ok(m.fit, tag + ': menu fits without scrolling (' + m.h + 'px)');
+        }
+        await s.resume(); await s.myTurn();
+        const top = await s.page.evaluate(() => ['bHint', 'bMode'].map(id => { const e = document.getElementById(id), r = e.getBoundingClientRect(), t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { id, on: !!t && t.closest('button') === e, r: [r.left, r.top, r.right, r.bottom] }; }));
+        const [hb, mb] = top.map(t => t.r), apart = hb[0] >= mb[2] || mb[0] >= hb[2] || hb[1] >= mb[3] || mb[1] >= hb[3];
+        ok(top.every(t => t.on) && apart, tag + ': 提示 and 改蓋牌 are on top and apart ' + JSON.stringify(top));
+        await s.tapSel('#bMode'); await s.until(() => window.__sevens.info().cover, null, 3000).catch(() => {});
+        ok((await s.info()).cover, tag + ': 改蓋牌 by touch enters free cover');
+        const c = SV.hand(st.S, 0).find(c => SV.rank(c) === 9), pt = await s.page.evaluate(c => window.__sevens.cardPt(c), c);
+        await s.tap(pt.x, pt.y); await s.until(c => window.__sevens.info().sel === c, c, 3000); await sleep(500);
+        const r = await s.page.evaluate(c => {
+          const fit = id => { const e = document.getElementById(id); return e.scrollWidth <= e.clientWidth + 1 && parseFloat(getComputedStyle(e).fontSize) >= 9; };
+          const a = document.getElementById('act').getBoundingClientRect();
+          return { act: fit('act'), label: document.getElementById('act').textContent, sub: fit('tSub'), round: fit('tRound'), mode: fit('bMode'), gap: window.__sevens.cardTop(c) - a.bottom, land: innerWidth > innerHeight, sub2: document.getElementById('tSub').textContent };
+        }, c);
+        ok(r.act && r.mode && r.sub && r.round, tag + ': 蓋掉 label, 改出牌 and the title lines fit uncut ' + JSON.stringify(r));
+        ok(r.land || r.gap >= 3, tag + ': the chosen card\'s corner stays below 蓋掉 (gap ' + r.gap.toFixed(1) + 'px)');
+        const m0 = (await s.info()).moves; await s.tapSel('#act'); await s.until(m0 => window.__sevens.info().moves > m0, m0, 3000).catch(() => {});
+        ok((await s.info()).moves === m0 + 1, tag + ': free cover played by touch');
+        if (w === 390) { // 提示 by touch shows a suggestion instead of tapping the hand behind it
+          await s.myTurn(); await s.tapSel('#bHint');
+          await s.page.waitForFunction(() => /建議/.test(document.getElementById('toast').textContent), null, { timeout: 5000 }).catch(() => {});
+          ok(/建議/.test(await s.page.textContent('#toast')), tag + ': 提示 by touch gives a suggestion');
+        }
+        ok(!s.errors.length, tag + ': no page errors ' + s.errors.join(' | ')); await s.close();
+      }
+    });
+  } finally { await browser.close(); }
+}
+(async () => {
+  if (!process.argv.includes('--no-browser')) await browserTests();
+  console.log(`${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})();
