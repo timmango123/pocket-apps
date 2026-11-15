@@ -622,6 +622,19 @@ const GB = Buffer.from('c6b7c3fb2cb3c7cad02cbdf0b6ee0d0ad1e0c2f3c4c3ccfa2cb1b1be
     await ctx.close();
   }
 
+  // 12. 標題在比較寬的字型下也完整（CI 的字型比本機寬）：故意換成 DejaVu Sans 加字距
+  for (const w of [320, 360, 390]) {
+    const { ctx, p } = await open({ viewport: { width: w, height: 700 } });
+    for (const css of ['', '.brand h1{font-family:"DejaVu Sans","Noto Sans CJK TC",sans-serif!important;letter-spacing:1.5px!important}', '.brand h1{font-family:"DejaVu Sans",sans-serif!important;letter-spacing:3px!important}']) {
+      if (css) await p.addStyleTag({ content: css });
+      await p.evaluate(() => dispatchEvent(new Event('resize')));
+      const r = await p.evaluate(() => { const h = document.querySelector('h1'), b = h.getBoundingClientRect(), o = document.getElementById('openBtn').getBoundingClientRect();
+        return { cut: h.scrollWidth > h.clientWidth, gap: Math.round(o.left - b.right), fs: parseFloat(getComputedStyle(h).fontSize) }; });
+      assert(!r.cut && r.gap >= 0 && r.fs >= 13, `${w}px${css ? '（加寬字型 ' + css.match(/letter-spacing:([\d.]+px)/)[1] + '）' : ''}：標題完整、沒被按鈕蓋住 ${J(r)}`);
+    }
+    await ctx.close();
+  }
+
   await browser.close();
   fs.rmSync(TMP, { recursive: true, force: true });
   assert(errors.length === 0, '沒有頁面或主控台錯誤 ' + errors.slice(0, 3).join(' | '));
