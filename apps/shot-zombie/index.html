@@ -25,11 +25,12 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .hudbtns{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:calc(env(safe-area-inset-right,0px) + 8px);display:flex;gap:8px;z-index:3}
 .hb{width:44px;height:44px;border-radius:12px;background:rgba(30,20,44,.75);border:2px solid #4b3b62;display:grid;place-items:center;font-size:20px;line-height:1}
-.hb:active{transform:translateY(2px)}
-.overlay{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;
+.hb:active{filter:brightness(1.35);box-shadow:inset 0 0 0 2px rgba(255,255,255,.25)}
+.overlay{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
   padding:calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 16px);
   background:radial-gradient(ellipse at 50% 35%,rgba(40,18,40,.55),rgba(8,5,14,.88));text-align:center;overflow-y:auto}
-.card{width:100%;max-width:380px}
+.card{width:100%;max-width:380px;flex-shrink:0;margin:auto}
+/* margin:auto centres the card when it fits and lets it start at the top (scrollable) when it does not, so the title is never clipped */
 .logo{font-size:clamp(46px,15vw,72px);font-weight:900;letter-spacing:.04em;line-height:1;color:#c8f26a;
   text-shadow:0 3px 0 #2c5418,0 6px 0 #1a3010,0 0 24px rgba(155,224,90,.45);transform:rotate(-3deg)}
 .logo .drip{display:inline-block}
@@ -43,7 +44,7 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
 .mbtn.primary .ic{font-size:34px}
 .mbtn.alt2{background:linear-gradient(#4f6fa8,#2a3f6e);border-color:#121c33;box-shadow:0 5px 0 #121c33,inset 0 2px 0 rgba(255,255,255,.25)}
 .mbtn.alt{background:linear-gradient(#5f8f2f,#2f5516);border-color:#14260a;box-shadow:0 5px 0 #14260a,inset 0 2px 0 rgba(255,255,255,.25)}
-.mbtn:active{transform:translateY(4px);box-shadow:0 1px 0 #3a0d0a}
+.mbtn:active{filter:brightness(1.2);box-shadow:0 1px 0 #3a0d0a,inset 0 3px 8px rgba(0,0,0,.35)}
 .mbtn .ic{font-size:30px;width:38px;text-align:center}
 .mbtn b{display:block;font-size:21px;font-weight:900}
 .mbtn small{display:block;font-size:13px;opacity:.9;margin-top:2px}
@@ -113,8 +114,8 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
       </div>
       <ul class="how">
         <li>點<b>最近那隻</b>殭屍所在的道路（或下方按鈕）開槍。</li>
-        <li><b>速射</b>：打倒一隻，後面的就往前補上。打錯會<b>暈 0.5 秒</b>，30 秒內射越多越好！</li>
-        <li><b>生存／計時</b>：殭屍會逼近，點錯扣心或加 1 秒（生存模式開局 15 秒不扣心，連殺 25 隻回一顆心）；<b>裝甲殭屍</b>打兩槍，<b>倖存者</b>別打。</li>
+        <li><b>速射</b>：打倒一隻，後面的就往前補上。打錯<b>扣 0.5 秒</b>時間，30 秒內射越多越好！</li>
+        <li><b>生存／計時</b>：殭屍會逼近，生存點錯扣一顆心（開局 15 秒不扣，扣心後 2 秒內不再扣，少心時每擊倒 10 隻回一顆），計時點錯加 1 秒；<b>裝甲殭屍</b>打兩槍，<b>倖存者</b>別打。</li>
         <li>鍵盤：<b>1–4</b> 或 <b>J K L ;</b>，P 暫停，M 靜音。</li>
       </ul>
       <button class="hb" id="btnMute2" style="margin:14px auto 0" aria-label="靜音切換">🔊</button>
@@ -143,7 +144,9 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 const ID='shot-zombie';
 const store={
   get(k,d){try{const v=localStorage.getItem(ID+':'+k);return v==null?d:JSON.parse(v);}catch(e){return d;}},
-  set(k,v){try{localStorage.setItem(ID+':'+k,JSON.stringify(v));}catch(e){}}
+  set(k,v){try{localStorage.setItem(ID+':'+k,JSON.stringify(v));}catch(e){}},
+  // best values: a damaged or hand-edited save ("abc", {}, [1,2], -5, NaN) counts as "no record yet"
+  num(k){const v=this.get(k,0);return typeof v==='number'&&Number.isFinite(v)&&v>0&&v<1e7?v:0;}
 };
 const $=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d');
@@ -158,7 +161,7 @@ const LANE_SEP=0.16;     // min distance between two entities in the same lane (
 const SKINS=['#93c75a','#7cae6c','#a9bd5c','#72b38e'];
 const SHIRTS=['#6b4f8a','#8a4646','#46668a','#7a6a3f','#4f7a4a','#8a5a2f'];
 const TUNE={d0:0.5,d1:0.022,d2:0.0001};
-const RQ={n:7,near:0.97,anim:0.07,dur:30,stun:0.4,pen:0.5,grace:0.08};  // 速射: queue size, front slot, advance ease, run length, wrong-tap flash, wrong-tap time penalty
+const RQ={n:7,near:0.97,anim:0.07,dur:30,stun:0.4,pen:0.5,grace:0.08,gap:0.05,hold:2};  // 速射: queue size, front slot, advance ease, run length, wrong-tap flash, wrong-tap time penalty
 const slotY=i=>RQ.near-i*Lt.gapN;
 const KEYS={'1':0,'2':1,'3':2,'4':3,'j':0,'k':1,'l':2,';':3};
 
@@ -166,7 +169,7 @@ const KEYS={'1':0,'2':1,'3':2,'4':3,'j':0,'k':1,'l':2,';':3};
 let W=0,H=0,DPR=1,ins={t:0,r:0,b:0,l:0};
 const Lt={};
 const bg=document.createElement('canvas');
-let muted=!!store.get('mute',false);
+let muted=store.get('mute',false)===true;
 const S={phase:'title',mode:'surv',ents:[],lanes:3,kills:0,score:0,combo:0,maxCombo:0,hearts:3,time:0,penalty:0,
   rescued:0,shots:0,hits:0,wrong:0,stun:0,started:false,tailY:0.3,spawnedZ:0,blockedLane:-1,sinceSurv:0,v:0,nid:1,announced:{},endT:0,endReason:'',demoT:0,lastHitT:0};
 const parts=[],decals=[],floats=[],tracers=[],flashes=[];
@@ -413,17 +416,18 @@ const easeOut=t=>1-(1-t)*(1-t)*(1-t);
 /* ---------- game flow ---------- */
 function resetRun(mode){
   S.mode=mode;S.ents.length=0;S.kills=0;S.score=0;S.combo=0;S.maxCombo=0;S.hearts=3;S.time=0;S.penalty=0;S.rescued=0;
-  S.shots=0;S.hits=0;S.wrong=0;S.stun=0;S.started=false;S.spawnedZ=0;S.blockedLane=-1;S.sinceSurv=0;S.announced={};S.endT=0;
-  pendTaps.length=0;parts.length=0;decals.length=0;floats.length=0;tracers.length=0;flashes.length=0;arrow=null;banner=null;redFlash=0;hurtFlash=0;
+  S.shots=0;S.hits=0;S.wrong=0;S.stun=0;S.started=false;S.spawnedZ=0;S.blockedLane=-1;S.sinceSurv=0;S.announced={};S.endT=0;S.safeT=0;S.heal=0;
+  pendTaps.length=0;rqWait.length=0;rqLast=-1e9;parts.length=0;decals.length=0;floats.length=0;tracers.length=0;flashes.length=0;arrow=null;banner=null;redFlash=0;hurtFlash=0;
 }
+let runs=0;
 function startGame(mode){
-  ensureAudio();
+  ensureAudio();runs++;
   resetRun(mode);
   S.phase='play';
   if(mode==='rapid'){
     setLanes(3);
     while(S.ents.length<RQ.n)rapidSpawn(false);
-    showOverlay(null);$('hudbtns').hidden=false;
+    showOverlay(null);showHud();
     showBanner('速射模式','開第一槍就開始計時・30 秒');
     sfx.level();return;
   }
@@ -431,10 +435,11 @@ function startGame(mode){
   setLanes(mode==='ta'?4:3);
   const p=params();while(S.tailY>-0.02)spawnOne(p);
   for(const e of S.ents)e.x=laneX(e.lane);
-  showOverlay(null);$('hudbtns').hidden=false;
-  showBanner(mode==='ta'?'擊倒 30 隻！':'先打最近的！',mode==='ta'?'裝甲要兩槍・別打倖存者':'點錯扣 0.5 秒');
+  showOverlay(null);showHud();
+  showBanner(mode==='ta'?'擊倒 30 隻！':'先打最近的！',mode==='ta'?'裝甲要兩槍・別打倖存者':'點錯扣心・前 15 秒不扣');
   sfx.level();
 }
+function showHud(){const h=$('hudbtns');if(h.hidden){h._shownAt=performance.now();h.hidden=false;}}
 function goTitle(){
   resetRun('surv');S.phase='title';S.tailY=0.4;setLanes(3);
   const p=params();while(S.tailY>-0.02)spawnOne(p);for(const e of S.ents)e.x=laneX(e.lane);
@@ -442,7 +447,7 @@ function goTitle(){
 }
 function pauseGame(){if(S.phase!=='play')return;S.phase='pause';showOverlay('pause');}
 function resumeGame(){if(S.phase!=='pause')return;S.phase='play';showOverlay(null);last=performance.now();}
-function showOverlay(id){for(const o of ['title','pause','result'])$(o).hidden=o!==id;
+function showOverlay(id){for(const o of ['title','pause','result']){const el=$(o),h=o!==id;if(el.hidden&&!h)el._shownAt=performance.now();el.hidden=h;}
   const el=id&&$(id).querySelector('button');if(el)try{el.focus({preventScroll:true});}catch(e){}}
 
 function endGame(reason,who){
@@ -459,7 +464,7 @@ function finishResults(){
   const acc=S.shots?Math.round(S.hits/S.shots*100):100;
   let html='';
   if(S.mode==='rapid'){
-    const best=store.get('bestRapid',0),nb=S.kills>best;if(nb)store.set('bestRapid',S.kills);
+    const best=store.num('bestRapid'),nb=S.kills>best;if(nb)store.set('bestRapid',S.kills);
     const kps=(S.kills/RQ.dur).toFixed(2);
     html=`<div class="res-title win">時間到！</div>
       <div class="big" style="margin-top:10px">${S.kills}<span style="font-size:20px"> 隻</span></div><div class="tag" style="margin:2px 0 0">30 秒擊倒數</div>
@@ -467,7 +472,7 @@ function finishResults(){
       <div class="stats"><div class="stat"><span>擊倒</span><b>${S.kills}</b></div><div class="stat"><span>打錯</span><b>${S.wrong}</b></div>
       <div class="stat"><span>每秒擊倒</span><b>${kps}</b></div><div class="stat"><span>最高連擊</span><b>${S.maxCombo}</b></div></div>`;
   }else if(S.mode==='surv'){
-    const best=store.get('bestScore',0),bestK=store.get('bestKills',0);
+    const best=store.num('bestScore'),bestK=store.num('bestKills');
     const nb=S.score>best;if(nb)store.set('bestScore',S.score);if(S.kills>bestK)store.set('bestKills',S.kills);
     html=`<div class="res-title">${S.endReason==='overrun'?'路障被突破！':'心都碎了！'}</div>
       <div class="big" style="margin-top:10px">${S.score}</div><div class="tag" style="margin:2px 0 0">分數</div>
@@ -477,7 +482,7 @@ function finishResults(){
   }else{
     const total=S.time+S.penalty;
     if(S.endReason==='clear'){
-      const best=store.get('bestTime',0);const nb=!best||total<best;if(nb)store.set('bestTime',+total.toFixed(2));
+      const best=store.num('bestTime');const nb=!best||total<best;if(nb)store.set('bestTime',+total.toFixed(2));
       html=`<div class="res-title win">30 隻全滅！</div>
         <div class="big" style="margin-top:10px">${total.toFixed(2)}<span style="font-size:20px"> 秒</span></div>
         ${nb?'<div class="newbest">新紀錄！</div>':`<div class="hint">最佳：${best.toFixed(2)} 秒</div>`}
@@ -500,24 +505,51 @@ function finishResults(){
 }
 let resultAt=0;
 function refreshTitle(){
-  const b=store.get('bestScore',0),k=store.get('bestKills',0),t=store.get('bestTime',0),r=store.get('bestRapid',0);
-  $('bestRapid').textContent=r?`最佳 ${r} 隻・30 秒`:'30 秒內能射倒幾隻？';
-  $('bestSurv').textContent=b?`最佳 ${b} 分・${k} 隻`:'撐到被突破為止';
+  const b=store.num('bestScore'),k=store.num('bestKills'),t=store.num('bestTime'),r=store.num('bestRapid');
+  $('bestRapid').textContent=r?`最佳 ${Math.round(r)} 隻・30 秒`:'30 秒內能射倒幾隻？';
+  $('bestSurv').textContent=b?`最佳 ${Math.round(b)} 分・${Math.round(k)} 隻`:'撐到被突破為止';
   $('bestTA').textContent=t?`最佳 ${(+t).toFixed(2)} 秒`:'最快擊倒 30 隻';
 }
 function showBanner(a,b){banner={a,b:b||'',t:0,life:1.6};}
+// 速射: the banner sits above the head of the 4th zombie in the queue, so the next ones stay in view
+function bannerY(){
+  const mid=Lt.fieldTop+Lt.fieldH*0.38;
+  if(S.mode!=='rapid')return mid;
+  return Math.max(Lt.fieldTop+46,Math.min(mid,yPx(slotY(3))-Lt.rs*1.5-48));
+}
 
 /* ---------- shooting ---------- */
 function press(lane){
   ensureAudio();
   if(S.phase!=='play'||lane<0||lane>=S.lanes)return;
-  if(S.mode==='rapid'){pressRapid(lane);return;}
+  if(S.mode==='rapid'){gateRapid(lane);return;}
   btnAnim[lane]=1;
   const Z=closestZombie();
   if(!Z){sfx.dry();return;}
   const T=firstInLane(lane);
   S.shots++;
   if(T===Z)hit(Z);else wrongTap(lane,T,Z);
+}
+/* 速射 rate gate: at most one shot every RQ.gap seconds (20/s, about twice a world-class roll). A tap that comes sooner
+   (two thumbs landing almost together) is not dropped: it waits its turn (at most RQ.hold taps wait). Only a burst no
+   human can make (an auto-clicker firing every frame) loses taps. */
+const rqWait=[];let rqLast=-1e9,rqTimer=0;
+function gateRapid(lane){
+  const now=performance.now();
+  if(!rqWait.length&&now-rqLast>=RQ.gap*1000-0.5){rqLast=now;pressRapid(lane);return;}
+  if(rqWait.length<RQ.hold)rqWait.push(lane);
+  drainRapid();
+}
+function drainRapid(){
+  while(rqWait.length&&S.phase==='play'&&S.mode==='rapid'){
+    const now=performance.now();
+    if(now-rqLast<RQ.gap*1000-0.5){ // due soon: run it right on time, not at the next frame
+      if(!rqTimer)rqTimer=setTimeout(()=>{rqTimer=0;drainRapid();},Math.max(1,rqLast+RQ.gap*1000-now+1));
+      return;
+    }
+    rqLast=Math.max(now-RQ.gap*1000*0.5,rqLast+RQ.gap*1000);pressRapid(rqWait.shift());
+  }
+  if(S.phase!=='play'||S.mode!=='rapid')rqWait.length=0;
 }
 function pressRapid(lane){
   btnAnim[lane]=1;
@@ -584,7 +616,8 @@ function hit(Z){
   }
   splat(Z,s,zy);
   removeEnt(Z);
-  if(S.mode==='surv'&&S.combo%25===0&&S.hearts<3){S.hearts++;sfx.level();floats.push({x:W/2,y:Lt.hudH+40,text:'+♥ 回復！',c:'#ff7aa8',t:1,max:1,size:24});}
+  if(S.mode==='surv'){if(S.hearts<3)S.heal++;else S.heal=0;}
+  if(S.mode==='surv'&&S.hearts<3&&S.heal>=SURV_REGEN){S.heal=0;S.hearts++;sfx.level();floats.push({x:W/2,y:Lt.hudH+40,text:'+♥ 回復！',c:'#ff7aa8',t:1,max:1,size:24});}
   floats.push({x:Z.x,y:zy-s*1.5,text:S.mode==='surv'?'+'+pts:S.mode==='rapid'?String(S.kills):S.kills+'/30',c:'#c8f26a',t:0.6,max:0.6,size:20});
   if(S.mode==='rapid')S.score=S.kills;
   if(S.combo>0&&S.combo%10===0)floats.push({x:Z.x,y:zy-s*2.1,text:S.combo+' 連擊！',c:'#ffcf3f',t:0.9,max:0.9,size:26});
@@ -602,7 +635,7 @@ function splat(Z,s,zy){
   decals.push({x:cx+(rnd()-.5)*10,y:zy-2,r:s*0.35*(0.8+rnd()*.5),a:0.55,seed:(rnd()*1000)|0});
   if(decals.length>28)decals.shift();
 }
-const SURV_GRACE=15;
+const SURV_GRACE=15,SURV_SAFE=2,SURV_REGEN=10;  // 生存: no heart loss for the first 15 s and for 2 s after each lost heart; while a heart is missing, every 10 kills heal one (misses do not reset the count)
 function wrongTap(lane,T,Z){
   S.wrong++;S.combo=0;
   btnBad[lane]=1;shake=Math.max(shake,8);hurtFlash=0.35;
@@ -625,8 +658,10 @@ function wrongTap(lane,T,Z){
   arrow={e:Z,t:0.7};
   if(S.mode==='surv'&&S.time<SURV_GRACE){
     floats.push({x:W/2,y:Lt.hudH+40,text:'小心！開局前 15 秒不扣心',c:'#ffcf4a',t:1,max:1,size:20});
+  }else if(S.mode==='surv'&&S.time<S.safeT){
+    floats.push({x:W/2,y:Lt.hudH+40,text:'保護中，不扣心',c:'#ffcf4a',t:0.8,max:0.8,size:20});
   }else if(S.mode==='surv'){
-    S.hearts--;
+    S.hearts--;S.safeT=S.time+SURV_SAFE;
     if(S.hearts<=0){endGame('hearts');return;}
   }else{S.penalty+=1;floats.push({x:W/2,y:Lt.hudH+40,text:'+1 秒',c:'#ff6b5b',t:0.8,max:0.8,size:24});}
 }
@@ -667,6 +702,7 @@ function update(dt){
     // zombies shuffle in place; nobody walks forward on their own in this mode
     for(const e of S.ents)e.t+=dt*0.8;
     if(S.started){S.time+=dt;if(S.time>=RQ.dur){S.time=RQ.dur;endGame('time');}}
+    drainRapid();
     return;
   }
   const p=params();
@@ -943,7 +979,7 @@ function draw(){
   if(banner&&S.phase!=='title'){
     const t=banner.t,life=banner.life;const inA=Math.min(1,t/0.15),outA=Math.min(1,(life-t)/0.3);const a=Math.min(inA,outA);
     const sc=t<0.15?0.6+0.4*(t/0.15)+0.1*Math.sin(t/0.15*Math.PI):1;
-    c.save();c.globalAlpha=a;c.translate(W/2,Lt.fieldTop+Lt.fieldH*0.38);c.scale(sc,sc);c.rotate(-0.04);
+    c.save();c.globalAlpha=a;c.translate(W/2,bannerY());c.scale(sc,sc);c.rotate(-0.04);
     c.fillStyle='rgba(15,8,20,.78)';rr(c,-170,-44,340,banner.b?88:64,16);c.fill();
     c.textAlign='center';c.textBaseline='middle';c.font='900 34px '+FONT;c.lineWidth=6;c.strokeStyle='#3b0c08';
     c.strokeText(banner.a,0,banner.b?-16:-12);c.fillStyle='#ffcf3f';c.fillText(banner.a,0,banner.b?-16:-12);
@@ -1020,6 +1056,57 @@ window.addEventListener('keydown',e=>{
   if(S.phase==='over'&&(k===' '||k==='r'||k==='enter')&&performance.now()-resultAt>700){e.preventDefault();startGame(S.mode);return;}
   if(S.phase==='title'&&(k==='1'||k===' '||k==='enter')&&document.activeElement===document.body){e.preventDefault();startGame('rapid');}
 });
+/* ---------- tap layer (DOM buttons) ----------
+   Buttons act on pointerup of the finger that pressed them, tracked per pointerId, so a tap still counts while another
+   finger rests on the screen or holds a lane, and two buttons tapped with overlapping fingers both act. A tap counts when
+   that finger moved < 10 px or was released inside the button's box grown by 16 px. A button whose screen (overlay or HUD)
+   appeared after the finger went down does not act. The action runs through el.click() under `firing`; any other click
+   within 800 ms of a tap-layer pointerup is swallowed (whatever its detail, target or coordinates) unless an Enter/Space
+   keydown came after that tap, and pointer-made clicks (detail > 0) never act on their own. Lanes (canvas) keep their
+   own touchstart handling. */
+const taps={};let lastTapUp=-1e9,lastKey=-1e9,firing=false;
+function okBtn(b){return b&&!b.disabled&&b.getClientRects().length?b:null;}
+function tapBtn(t,x,y){
+  const b=t&&t.closest?t.closest('button'):null;
+  if(b)return okBtn(b);
+  if(!t||t===cv||!t.closest||!t.closest('.overlay,.hudbtns'))return null;
+  // a touch a few px outside a button's edge belongs to the nearest button within 6 px (a tie: none)
+  let hit=null,hd=7,tie=false;
+  for(const el of document.querySelectorAll('.overlay:not([hidden]) button,.hudbtns:not([hidden]) button')){
+    const r=el.getBoundingClientRect();if(!r.width)continue;
+    const d=Math.hypot(Math.max(r.left-x,0,x-r.right),Math.max(r.top-y,0,y-r.bottom));
+    if(d<hd-0.5&&okBtn(el)){hit=el;hd=d;tie=false;}else if(Math.abs(d-hd)<=0.5&&okBtn(el))tie=true;
+  }
+  return tie?null:hit;
+}
+document.addEventListener('pointerdown',e=>{
+  const b=tapBtn(e.target,e.clientX,e.clientY);
+  if(!b||(e.pointerType==='mouse'&&e.button!==0))return;
+  e.preventDefault(); // no compatibility mousedown / focus after a tap that acts on pointerup
+  const a=document.activeElement;if(a&&a.blur&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))a.blur();
+  ensureAudio();
+  taps[e.pointerId]={el:b,id:b.id,x:e.clientX,y:e.clientY,r:b.getBoundingClientRect(),at:performance.now()};
+},true);
+document.addEventListener('pointercancel',e=>{delete taps[e.pointerId];},true);
+document.addEventListener('pointerup',e=>{
+  const t=taps[e.pointerId];delete taps[e.pointerId];
+  if(!t)return;
+  const r=t.r,M=16,moved=Math.hypot(e.clientX-t.x,e.clientY-t.y);
+  const inside=e.clientX>=r.left-M&&e.clientX<=r.right+M&&e.clientY>=r.top-M&&e.clientY<=r.bottom+M;
+  if(!(moved<10||inside))return;
+  let el=t.el;if(!el.isConnected&&t.id)el=$(t.id); // a re-rendered button is found again by id
+  if(!el||!el.isConnected||el.disabled||!el.getClientRects().length)return;
+  const box=el.closest('.overlay,.hudbtns');if(box&&box._shownAt>t.at)return; // pressed before this screen appeared
+  if(box&&getComputedStyle(box).pointerEvents==='none')return;
+  lastTapUp=performance.now();
+  firing=true;try{el.click();}finally{firing=false;}
+},true);
+document.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '||e.key==='Spacebar')lastKey=performance.now();},true);
+document.addEventListener('click',e=>{
+  if(firing)return;
+  if(e.detail>0||(performance.now()-lastTapUp<800&&!(lastKey>lastTapUp))){e.preventDefault();e.stopImmediatePropagation();}
+},true);
+
 $('mRapid').onclick=()=>{startGame('rapid');};
 $('mSurv').onclick=()=>{startGame('surv');};
 $('mTA').onclick=()=>{startGame('ta');};
@@ -1041,6 +1128,11 @@ window.__game={
     slots:S.mode==='rapid'?S.ents.map(e=>e.lane):null,slotIdx:S.mode==='rapid'?S.ents.map(e=>e.slot):null,stun:S.stun,started:S.started,timeLeft:S.mode==='rapid'?Math.max(0,RQ.dur-S.time):null,lanes:S.lanes,kills:S.kills,score:S.score,hearts:S.hearts,time:S.time,penalty:S.penalty,wrong:S.wrong,rescued:S.rescued,v:S.v,
     ents:S.ents.map(e=>({id:e.id,type:e.type,lane:e.lane,y:e.y,hp:e.hp,armor:e.armor}))}),
   layout:()=>({...Lt,W,H}),
+  runs:()=>runs,
+  warp:t=>{if(S.phase==='play')S.time=t;},  // tests: jump the run clock (e.g. past the 生存 grace period)
+  safeT:()=>S.safeT,
+  // tests: where the opening banner and the queue's 2nd–4th zombies are drawn (px, top/bottom)
+  rapidView:()=>({banner:[bannerY()-44*1.1,bannerY()+44*1.1],zombies:[1,2,3].map(i=>{const f=yPx(slotY(i));return[f-Lt.rs*1.45,f+Lt.rs*0.09];})}),
   VIS,MIN_GAP,TUNE,RQ
 };
 
