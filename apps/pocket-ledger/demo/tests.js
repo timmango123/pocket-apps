@@ -1,10 +1,11 @@
 // 記帳本：上架評分 toFix 的回歸測試（node tests.js，約 30–60 秒）
 // 觸控用真正的 CDP Input.dispatchTouchEvent；CDP 的 touchEnd 只放開它列出的手指。
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const path = require('path'), fs = require('fs'), os = require('os');
-const WRAP = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pocket-ledger-')), 'index.html');
-fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>');
-const URL = 'file://' + WRAP;
+const path = require('path'), fs = require('fs');
+// Served over http, not opened as a file:// page: under CPU load Chromium sometimes drops a file:// page's localStorage
+// (and sessionStorage) writes across a reload, which no real visitor (the app is served over https) can hit.
+const PAGE = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '</body></html>';
+let URL;
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
@@ -15,6 +16,9 @@ const T0 = Date.now();
 const PROBE = () => { window.__clicks = 0; addEventListener('click', e => { if (e.isTrusted && e.detail > 0) window.__clicks++; }, true); };
 
 (async () => {
+  const srv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(PAGE); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  URL = `http://127.0.0.1:${srv.address().port}/`;
   const browser = await chromium.launch();
   async function open(o = {}) {
     const ctx = await browser.newContext({ viewport: { width: o.w || 390, height: o.h || 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, acceptDownloads: true, colorScheme: o.dark ? 'dark' : 'light' });
@@ -341,7 +345,7 @@ const PROBE = () => { window.__clicks = 0; addEventListener('click', e => { if (
     await ctx.close();
   }
 
-  await browser.close();
+  await browser.close(); srv.close();
   assert(errors.length === 0, '無 console error / pageerror ' + errors.slice(0, 3).join(' | '));
   console.log(fails ? `FAIL ${fails} 項失敗` : `全部通過（${((Date.now() - T0) / 1000).toFixed(1)} 秒）`);
   process.exit(fails ? 1 : 0);

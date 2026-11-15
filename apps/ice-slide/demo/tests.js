@@ -3,7 +3,7 @@
 const fs = require('fs'), path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const APP = path.resolve(__dirname, '..', 'index.html');
-const URL = 'file://' + APP;
+let URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {parseLevel, initState, doMove, solve, stateKey};')();
 const LEVELS = JSON.parse(html.match(/var LEVELS = (\[[\s\S]*?\n\]);/)[1]);
@@ -56,6 +56,11 @@ const st = page => page.evaluate(() => window.__game.state());
   for (let n = 1; n <= 12; n++) { const r = core.solve(LV(n), 200000); if (!r || r.len !== LEVELS[n - 1][1]) solvable = false; }
   ok(solvable, 'L1–L12 solvable with the embedded optimum');
 
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(opts = {}) {
