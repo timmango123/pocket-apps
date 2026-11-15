@@ -173,7 +173,8 @@ function serve() {
   {
     const t = await open();
     await t.tap('#mSurv'); await t.waitPhase('play');
-    const wrong = () => t.p.evaluate(() => { const g = window.__game, s = g.state(); const z = s.ents.filter(e => e.type === 'z' && e.y > g.VIS).sort((a, b) => b.y - a.y)[0]; g.press(z ? (z.lane + 1) % s.lanes : 0); return g.state().hearts; });
+    // a wrong tap only counts while a zombie is on screen (with none it is a dry shot); CI's slower runner can start empty
+    const wrong = async () => { await t.p.waitForFunction(() => { const g = window.__game; return g.state().ents.some(e => e.type === 'z' && e.y > g.VIS); }, null, { timeout: 10000, polling: 20 }); return t.p.evaluate(() => { const g = window.__game, s = g.state(); const z = s.ents.filter(e => e.type === 'z' && e.y > g.VIS).sort((a, b) => b.y - a.y)[0]; g.press(z ? (z.lane + 1) % s.lanes : 0); return g.state().hearts; }); };
     eq(await wrong(), 3, '開局 15 秒內點錯不扣心');
     await t.p.evaluate(() => window.__game.warp(20));
     const h1 = await wrong(), h2 = await wrong();
