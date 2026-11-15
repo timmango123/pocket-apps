@@ -1,7 +1,8 @@
 // 幾何霓虹磚：上架評分修正的回歸測試（node tests.js，約 40 秒）。觸控用真實 CDP Input.dispatchTouchEvent。
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path');
-const URL = 'file://' + path.resolve(__dirname, '../index.html');
+const PAGE_FILE = path.resolve(__dirname, '../index.html');
+let URL = '';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const eq = (a, b, m) => { const A = JSON.stringify(a), B = JSON.stringify(b); assert(A === B, A === B ? m : `${m}: ${A} != ${B}`); };
@@ -9,6 +10,11 @@ const errors = [];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(PAGE_FILE)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, opt = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, ...opt });
