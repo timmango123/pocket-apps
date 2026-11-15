@@ -1,13 +1,14 @@
 // Regression tests for 像素法師 (pixel-wizard): the real page in mobile Chromium with CDP touch, one check per
 // release-review finding (2026-11-08). Usage: node tests.js
-const fs = require('fs'), path = require('path'), os = require('os');
+const fs = require('fs'), path = require('path'), http = require('http');
 const APP = path.resolve(__dirname, '..', 'index.html');
 const html = fs.readFileSync(APP, 'utf8');
 // same skeleton the lobby / Artifact host wraps the page in (doctype + viewport)
 const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style></head><body>';
-const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-tests-'));
-const PAGE = path.join(TMP, 'index.html');
-fs.writeFileSync(PAGE, SKELETON + html + '</body></html>');
+// Served over http, not opened as a file:// page: under CPU load Chromium sometimes drops a file:// page's localStorage
+// and sessionStorage writes across a reload (the saved stage, the robe, and the tests' seed-once flag, so the seed ran
+// again), which no real player (the game is served over https) can hit.
+const PAGE = SKELETON + html + '</body></html>';
 
 let pass = 0, fail = 0;
 async function t(name, fn) { try { await fn(); pass++; console.log('  ok  ', name); } catch (e) { fail++; console.log('  FAIL', name, '-', String(e.message || e).split('\n')[0]); } }
@@ -25,6 +26,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   console.log('Page (CDP touch)');
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const srv = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(PAGE); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const URL = `http://127.0.0.1:${srv.address().port}/`;
   const browser = await chromium.launch();
   const errors = [], requests = [];
   async function open(o = {}) {
@@ -33,8 +37,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (o.init) await ctx.addInitScript(o.init);
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-    page.on('request', r => { if (!r.url().startsWith('file:') && !r.url().startsWith('data:')) requests.push(r.url()); });
-    await page.goto('file://' + PAGE);
+    page.on('request', r => { if (!r.url().startsWith(URL) && !r.url().startsWith('data:')) requests.push(r.url()); });
+    await page.goto(URL);
     await page.waitForFunction(() => window.__pw && __pw.wiz, null, { timeout: 30000 });
     const cdp = await ctx.newCDPSession(page);
     const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
@@ -198,7 +202,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   });
   await t('after clearing stage 1 the save continues at stage 2', async () => {
     eq(await P.ev(() => ({ last: __pw.prog.last, un: __pw.prog.unlocked, st: __pw.prog.stars[0] })), { last: 2, un: 2, st: 3 });
-    await sleep(600); await P.page.reload();  // let Chromium commit localStorage to its storage service before the reload await P.until(() => window.__pw && __pw.wiz);
+    await P.page.reload(); await P.until(() => window.__pw && __pw.wiz);
     eq(await P.ev(() => __pw.wave), 2, 'reload resumes at 2');
     await P.tapAt({ x: 195, y: 380 }); await P.safe();
   });
@@ -251,7 +255,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const box = await Q.page.locator('.robe[data-r="1"]').boundingBox(); ok(box.width >= 44 && box.height >= 44, 'robe button size');
     await Q.tap('.robe[data-r="1"]');
     eq(await Q.ev(() => __pw.robe), 1);
-    await sleep(600); await Q.page.reload();  // (same: localStorage commit is asynchronous across a reload) await Q.until(() => window.__pw && __pw.wiz);
+    await Q.page.reload(); await Q.until(() => window.__pw && __pw.wiz);
     eq(await Q.ev(() => __pw.robe), 1, 'robe kept after reload');
     await Q.ctx.close();
   });
@@ -271,8 +275,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await t('no page / console errors and no network requests in any of the above', () => {
     eq(errors, [], 'errors'); eq(requests, [], 'requests');
   });
-  await browser.close();
-  fs.rmSync(TMP, { recursive: true, force: true });
+  await browser.close(); srv.close();
   console.log(`${fail ? 'FAIL' : 'PASS'} ${pass}/${pass + fail}`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.log('FAIL harness', e); process.exit(1); });

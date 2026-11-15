@@ -7,6 +7,9 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
 const PAGE = SKELETON + fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8') + '</body></html>';
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } }
+// Every main-frame navigation the test did not ask for (and a renderer crash) is logged, checked, and named on
+// the one FAIL line qa/smoke shows, so a CI-only failure says which call failed and what the page was doing.
+const navs = [];
 const T = { timeout: 60000 };
 
 // In-page helpers: make images with a canvas and feed them through the real drop handler.
@@ -39,9 +42,13 @@ function serve() {
   const page = await ctx.newPage();
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push(String(e)));
+  let wantNav = 0;
+  page.on('framenavigated', f => { if (f !== page.mainFrame()) return; if (wantNav > 0) wantNav--; else navs.push(`page navigated itself to ${f.url().replace(URL_, '/')} after check ${pass + fail}`); });
+  page.on('crash', () => navs.push(`renderer crashed after check ${pass + fail}`));
+  const reload = () => { wantNav++; return page.reload(); };
   const ev = (f, a) => page.evaluate(f, a);
   const waitFor = (f, a) => page.waitForFunction(f, a, T);
-  await page.goto(URL_);
+  wantNav++; await page.goto(URL_);
   await waitFor(() => window.__sq && window.__sq.items.length === 3 && window.__settled());
 
   // ---------- pure helpers ----------
@@ -147,7 +154,7 @@ function serve() {
   // ---------- toFix 1 (veto): list and outputs survive a reload ----------
   {
     const before = await ev(async () => { await window.__sq.flush(); return window.__sq.items.map(i => [i.name, i.status, i.outBlob ? i.outBlob.size : 0, i.outName || ''].join('|')); });
-    await page.reload();
+    await reload();
     await waitFor(n => window.__sq && window.__sq.items.length === n && window.__settled(), before.length);
     const after = await ev(() => window.__sq.items.map(i => [i.name, i.status, i.outBlob ? i.outBlob.size : 0, i.outName || ''].join('|')));
     ok(JSON.stringify(before) === JSON.stringify(after), 'items, statuses and outputs restored after reload');
@@ -169,7 +176,7 @@ function serve() {
     ok(/已移除 2 張/.test(tt), 'second remove stacks in the same undo toast ' + tt);
     await page.click('#toast .act');
     ok((await names()) === n0, 'undo puts both rows back in their places');
-    await ev(() => window.__sq.flush()); await page.reload();
+    await ev(() => window.__sq.flush()); await reload();
     await waitFor(n => window.__sq && window.__sq.items.length === n && window.__settled(), n0.split(',').length);
     ok((await names()) === n0, 'undone rows are saved again');
   }
@@ -180,7 +187,7 @@ function serve() {
     await page.selectOption('#sizeMode', 'long');
     await page.fill('#sizeVal', '777');
     await page.check('#targetOn'); await page.fill('#targetKB', '123');
-    await page.reload();
+    await reload();
     await waitFor(() => window.__sq && window.__sq.items.length > 0);
     const r = await ev(() => [window.__sq.settings.sizeVal, window.__sq.settings.targetKB, document.querySelector('#sizeVal').value]);
     ok(r[0] === 777 && r[1] === 123 && r[2] === '777', 'typed size and target KB survive a reload ' + r);
@@ -229,7 +236,7 @@ function serve() {
     await page.click('#clearBtn'); await page.click('#clearBtn');
     await ev(() => window.__sq.flush());
     ok(await ev(() => window.__sq.items.length === 0), 'clear all empties the list');
-    await page.reload();
+    await reload();
     await waitFor(() => window.__sq && window.__sq.items.length === 3 && window.__sq.items.every(i => i.sample));
     ok(true, 'after clear all, a reload shows the samples again');
     const sw = await ev(() => document.documentElement.scrollWidth);
@@ -237,7 +244,12 @@ function serve() {
   }
 
   await browser.close(); srv.close();
+  ok(!navs.length, 'page only navigated when the test loaded or reloaded it' + (navs.length ? ': ' + navs.join(' | ') : ''));
   ok(!errors.length, 'no page or console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   console.log(`${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
-})().catch(e => { console.log('FAIL', e && e.stack || e); console.log(`${pass} passed, ${fail + 1} failed`); process.exit(1); });
+})().catch(async e => {
+  await new Promise(r => setTimeout(r, 500)); // let a navigation or crash event that caused the error arrive before it is reported
+  const at = [...String(e && e.stack).matchAll(/tests\.js:(\d+)/g)].map(m => m[1]).pop(); // outermost frame: the await in the test body
+  console.log('FAIL', String(e && e.message || e).split('\n')[0], `[tests.js:${at || '?'}, after check ${pass + fail}; ${navs.length ? navs.join('; ') : 'no navigation or crash seen'}]`);
+  console.log(e && e.stack || e); console.log(`${pass} passed, ${fail + 1} failed`); process.exit(1); });
