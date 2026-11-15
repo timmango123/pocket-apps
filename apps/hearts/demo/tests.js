@@ -204,7 +204,11 @@ ok(/#tip button\{[^}]*min-height:44px/.test(html), 'tutorial tip button is 44px 
 // --- browser checks (real CDP touch, phone contexts) ---
 (async () => {
   let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('playwright missing: browser checks skipped'); return; }
-  const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(path.resolve(__dirname, '..', 'index.html'))); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  const URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   async function open(w, h, init) {
