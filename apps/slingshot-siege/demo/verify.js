@@ -30,7 +30,8 @@ function nodeVerify(){
     const A = sol.shots.length + P.slack;
     const D = 0.4*P.T + 0.03*P.B + 4*cover + 2*(1 - P.slack/A);
     if (!cleared){ ok = false; console.log('LEVEL', n, 'NOT CLEARED by replay', rp.W.gobAlive, 'goblins left'); }
-    if (ammo !== A){ ok = false; console.log('LEVEL', n, 'ammo', ammo, '!= best+slack', A); }
+    const SPARE = Math.max(0, (n >= 50 ? (n < 60 ? 3 : Math.max(n >= 80 ? 4 : 2, Math.ceil(sol.shots.length / 2))) : 0) - P.slack); // R2 review: spare shots >= 3 on L50-59, >= max(2, ceil(best/2)) on L60-79, >= max(4, ceil(best/2)) from L80 (stars +10000 per added shot)
+    if (ammo !== A + SPARE){ ok = false; console.log('LEVEL', n, 'ammo', ammo, '!= best+slack+spare', A + SPARE); }
     if (spec.gobs.length !== P.T || spec.blocks.length !== P.B){ ok = false; console.log('LEVEL', n, 'T/B mismatch', spec.gobs.length, P.T, spec.blocks.length, P.B); }
     // robustness: +-1px on the final shot from the same pre-state
     if (n % 5 === 0 || n >= 96 || n === 50 || n === 75 || n === 99){
