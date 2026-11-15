@@ -52,12 +52,18 @@ t('solver solves deal #1 and the move list replays to a win', r3.ok && !!core.ex
 t('deal #11982 is not solved with 1 free cell quickly (sanity: solver can fail)', !core.solve(core.newState(core.msDeal(11982), 1), { limit: 3000 }).ok);
 // ---- in-page regression tests (Chromium, real CDP touch) for the release-review findings ----
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const APPURL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+const PAGE_FILE = path.resolve(__dirname, '..', 'index.html');
+let APPURL = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function until(page, fn, arg, ms = 15000) { // wait on a page condition (no fixed sleeps)
   const t0 = Date.now(); for (;;) { const v = await page.evaluate(fn, arg).catch(() => null); if (v) return v; if (Date.now() - t0 > ms) return v; await sleep(25); }
 }
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(PAGE_FILE)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  APPURL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(vp, init) {
