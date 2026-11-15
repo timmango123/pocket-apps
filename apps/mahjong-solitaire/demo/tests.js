@@ -3,6 +3,7 @@
 // with real CDP touch events at phone size. Every wait polls a condition (no timing-sensitive sleeps).
 const fs = require('fs'), path = require('path');
 const APPF = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APPF, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {makeLevel,levelParams,replayCheck,newCounts,freeGroups,countPairs,SHUF_AT,UNDO_AT};')();
@@ -35,6 +36,11 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const t0 = Date.now();
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APPF)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   const page = await ctx.newPage();
@@ -50,7 +56,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const di = CanvasRenderingContext2D.prototype.drawImage; window.__draws = 0;
     CanvasRenderingContext2D.prototype.drawImage = function () { if (this.canvas && this.canvas.id === 'cv') window.__draws++; return di.apply(this, arguments); };
   });
-  await page.goto('file://' + APPF);
+  await page.goto(PAGE_URL);
   const cdp = await ctx.newCDPSession(page);
   const T = (type, touchPoints) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
   const wf = (fn, arg, ms = 20000) => page.waitForFunction(fn, arg, { timeout: ms, polling: 20 });

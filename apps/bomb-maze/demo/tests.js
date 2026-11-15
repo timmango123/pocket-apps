@@ -405,6 +405,11 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
   fs.writeFileSync(WRAP, '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>' + html + '</body></html>');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const errors = [];
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  const PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
@@ -415,7 +420,7 @@ const run = (sim, sec) => { for (let t = 0; t < sec; t += 1 / 60) { BM.tick(sim,
   const center = sel => p.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
   const tap = async sel => { const c = await center(sel); await touch('touchStart', [c]); await touch('touchEnd', []); await frames(); };
   const open = async (store) => {
-    await p.goto('file://' + WRAP);
+    await p.goto(PAGE_URL);
     await p.evaluate(st => { localStorage.clear(); for (const k in st || {}) localStorage.setItem('bomb-maze:v1:' + k, JSON.stringify(st[k])); }, store);
     await p.reload(); await p.waitForFunction(() => window.__game && window.__game.sim()); await frames();
   };
