@@ -71,6 +71,11 @@ header.top h1{margin:0;font-size:20px;font-weight:800;flex:1;min-width:140px;let
 .chip.mono{font:650 13.5px var(--mono)}
 .chip.mono small{font:600 11px var(--sans);color:var(--muted);margin-left:6px}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:12px 0 2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+/* scroll hint: the row fades out on the side that has more chips */
+.chips.more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 40px),transparent)}
+.chips.more-l{-webkit-mask-image:linear-gradient(to right,transparent,#000 40px);mask-image:linear-gradient(to right,transparent,#000 40px)}
+.chips.more-l.more-r{-webkit-mask-image:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to right,transparent,#000 40px,#000 calc(100% - 40px),transparent)}
+.chiphint{font-size:12px;color:var(--faint);margin:4px 0 0;text-align:right}
 .chip{flex:none;min-height:44px;padding:0 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);cursor:pointer;font-size:13.5px;font-weight:650;white-space:nowrap}
 .grid{display:grid;gap:14px;margin-top:14px}
 @media (min-width:760px){.grid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);align-items:start}}
@@ -92,6 +97,8 @@ select:focus,input[type=number]:focus{outline:none;border-color:var(--accent);bo
 .runs li.gap .tm{text-decoration:line-through;text-decoration-thickness:1.5px}
 .runs li.gap .tm .dup{text-decoration:none;display:block}
 .empty{color:var(--muted);font-size:14px;padding:10px 0}
+.runs li.empty{counter-increment:none}
+.runs li.empty::before{content:none}
 details.ve summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:800;font-size:15px;list-style:none;gap:8px}
 details.ve summary::-webkit-details-marker{display:none}
 details.ve summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:rotate(-45deg);transition:transform .15s}
@@ -109,7 +116,8 @@ details.ve[open] summary::before{transform:rotate(45deg)}
 .cells button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
 .cells.wide{grid-template-columns:repeat(auto-fill,minmax(60px,1fr))}
 .vnote{font-size:13px;color:var(--muted);margin:8px 0 0}
-.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:4px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:4px;font-size:14px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px);width:max-content;display:flex;align-items:center;gap:12px}
+.toast button{flex:none;min-height:44px;min-width:56px;padding:0 12px;border:1px solid var(--surface);border-radius:3px;background:transparent;color:var(--surface);font-weight:800;cursor:pointer}
 @media (max-width:400px){.runs .tm{font-size:14px}.runs .tm em{margin:0 4px}.runs li{gap:8px;grid-template-columns:22px minmax(0,1fr) auto}.say{font-size:19px}.expr{font-size:21px}.seg button{padding:0 9px;font-size:13px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -132,6 +140,7 @@ details.ve[open] summary::before{transform:rotate(45deg)}
   <p class="say" id="say" aria-live="polite"></p>
   <div class="errbox" id="err" hidden></div>
   <div class="chips" id="examples" role="group" aria-label="常用範例"></div>
+  <p class="chiphint" id="exHint" hidden>左右滑動看更多範例 →</p>
   <div class="chips hist" id="hist" role="group" aria-label="最近使用" hidden></div>
 </section>
 
@@ -169,7 +178,13 @@ const store = {
   set(k, v){ try { localStorage.setItem("cron-reader:v1:" + k, JSON.stringify(v)); } catch (e) {} }
 };
 let toastT;
-function toast(msg){ const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, 2000); }
+// toast(msg) or toast(msg, { label: "復原", fn }) — an action keeps the toast up for 6 s
+function toast(msg, act){
+  const h = $("toastHost"); h.innerHTML = ""; const d = document.createElement("div"); d.className = "toast";
+  const sp = document.createElement("span"); sp.textContent = msg; d.appendChild(sp);
+  if (act){ const b = document.createElement("button"); b.type = "button"; b.id = "toastAct"; b.textContent = act.label; b.onclick = () => { h.innerHTML = ""; clearTimeout(toastT); act.fn(); }; d.appendChild(b); }
+  h.appendChild(d); clearTimeout(toastT); toastT = setTimeout(() => { h.innerHTML = ""; }, act ? 6000 : 2000);
+}
 const pad = n => String(n).padStart(2, "0");
 const WD = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -239,7 +254,9 @@ function parseField(tok, key, mode, pos){
     }
     if (step != null && step > (hi - lo + 1)) throw new CronError(`${label}：間隔 ${step} 超過欄位範圍`, pos);
     for (let v = a; v <= b; v += (step || 1)) f.set[toInt(v)] = true;
-    f.parts.push(m[1] === "*" ? (step ? { t: "step", a: null, step } : { t: "all" }) : step ? { t: "step", a: toInt(a), b: m[2] != null ? toInt(b) : null, step } : m[2] != null ? { t: "range", a: toInt(a), b: toInt(b) } : { t: "val", a: toInt(a) });
+    // a step over the whole field (0-59/20, 0/20) means the same as */20; describe it the same way
+    const whole = step != null && a === lo && (m[2] == null || b >= (key === "dow" ? (mode === "q" ? 7 : 6) : hi));
+    f.parts.push(m[1] === "*" || whole ? (step ? { t: "step", a: null, step } : { t: "all" }) : step ? { t: "step", a: toInt(a), b: m[2] != null ? toInt(b) : null, step } : m[2] != null ? { t: "range", a: toInt(a), b: toInt(b) } : { t: "val", a: toInt(a) });
   }
   return f;
 }
@@ -452,9 +469,11 @@ function timeDesc(c, show6){
   const tail = (show6 && sOne) ? ":" + pad(sOne) : "";
   const hr = runs(hv), hRange = hr.length === 1 && hv.length > 1 && hv.length < 24;
   const atMin = mOne === 0 && !tail ? "整點" : `的第 ${mOne} 分${tail ? " " + sOne + " 秒" : ""}`;
-  if (isAll(c.min) && isAll(c.hour)){ t = "每分鐘"; freq = true; }
-  else if (mEvery && 60 % mEvery){ t = `${isAll(c.hour) ? "每小時" : hourDesc(c.hour) + "，每小時"}的第 ${mv.join("、")} 分（*/${mEvery} 到整點會重新計算，不是固定每 ${mEvery} 分鐘）`; freq = true; }
-  else if (mEvery && isAll(c.hour)){ t = `每 ${mEvery} 分鐘`; freq = true; }
+  // a fixed second other than 0 when the minute isn't a single value: 30 * * * * * → 每分鐘的第 30 秒
+  const atSec = tail ? `的第 ${sOne} 秒` : "";
+  if (isAll(c.min) && isAll(c.hour)){ t = "每分鐘" + atSec; freq = true; }
+  else if (mEvery && 60 % mEvery){ t = `${isAll(c.hour) ? "每小時" : hourDesc(c.hour) + "，每小時"}的第 ${mv.join("、")} 分${tail ? " " + sOne + " 秒" : ""}（*/${mEvery} 到整點會重新計算，不是固定每 ${mEvery} 分鐘）`; freq = true; }
+  else if (mEvery && isAll(c.hour)){ t = `每 ${mEvery} 分鐘${atSec}`; freq = true; }
   else if (mOne != null && isAll(c.hour)){ t = `每小時${atMin}`; freq = true; }
   else if (!secPart && hv.length * mv.length <= 8){
     const times = []; for (const h of hv) for (const m of mv) times.push(pad(h) + ":" + pad(m) + tail);
@@ -466,9 +485,9 @@ function timeDesc(c, show6){
     t = `${pad(hr[0][0])}:${pad(mv[0])}${tail} 至 ${pad(hr[0][1])}:${pad(mv[mv.length - 1])}${tail}，${mEvery ? `每 ${mEvery} 分鐘` : "每分鐘"}`; freq = true;
   }
   else if (mOne != null){ t = `${hourDesc(c.hour)}，每小時${atMin}`; freq = true; }
-  else if (isAll(c.min)) { t = `${hourDesc(c.hour)}的每分鐘`; freq = true; }
-  else if (mEvery){ t = `${hourDesc(c.hour)}，每 ${mEvery} 分鐘`; freq = true; }
-  else { t = `${hourDesc(c.hour)}的${genericDesc(c.min, "分", "每分鐘")}`; freq = true; }
+  else if (isAll(c.min)) { t = `${hourDesc(c.hour)}的每分鐘${tail ? "第 " + sOne + " 秒" : ""}`; freq = true; }
+  else if (mEvery){ t = `${hourDesc(c.hour)}，每 ${mEvery} 分鐘${atSec}`; freq = true; }
+  else { t = `${hourDesc(c.hour)}的${genericDesc(c.min, "分", "每分鐘")}${atSec}`; freq = true; }
   if (secPart) t += `的${secPart}`;
   return { t, freq };
 }
@@ -580,19 +599,57 @@ const DEFAULT = { "5": "0 9,18 * * 1-5", "6": "0 */15 9-17 * * 1-5", "q": "0 0 9
 function renderExamples(){
   const host = $("examples"); host.innerHTML = "";
   EX[S.mode].forEach(([label, ex], i) => { const b = document.createElement("button"); b.className = "chip"; b.id = "ex-" + i; b.textContent = label; b.title = ex; b.onclick = () => { rememberNow(); setExpr(ex); }; host.appendChild(b); });
+  host.scrollLeft = 0; chipHint(host);
   renderKeys();
 }
 function setExpr(v){ $("expr").value = v; update(); }
 function setMode(m, convert){
-  const old = S.mode; rememberNow();
+  const old = S.mode, src = $("expr").value; rememberNow();
   S.mode = m; store.set("mode", m);
   ["5", "6", "q"].forEach(x => $("mode-" + x).setAttribute("aria-pressed", x === m));
+  let msg = null;
   if (convert && old !== m){
-    const src = $("expr").value, r = convertExpr(src, old, m);
+    const r = convertExpr(src, old, m);
+    // the expression last used in the target format is about to be replaced: keep it in 最近
+    const prev = store.get("last:" + m, null);
+    let kept = false;
+    if (typeof prev === "string" && normExpr(prev) && normExpr(prev) !== normExpr(r)) kept = addHist(m, normExpr(prev));
     $("expr").value = r;
-    if (r === DEFAULT[m] && normExpr(src) && normExpr(src) !== DEFAULT[old]) toast(`這個表達式無法直接轉成${MODE_NAME[m]}，已換成範例` + (isExample(src, old) ? "。" : "；原本的可在「最近」找回。"));
+    const undo = { label: "復原", fn: () => setModeBack(old, src) };
+    const keptNote = kept ? `上次的${MODE_NAME[m]}式子已放進「最近」。` : "";
+    if (r === DEFAULT[m] && normExpr(src) && normExpr(src) !== DEFAULT[old]) msg = [`這個表達式無法直接轉成${MODE_NAME[m]}，已換成範例。` + keptNote, undo];
+    else {
+      const lost = conversionLoss(src, old, m);
+      if (lost.length) msg = [`${MODE_NAME[m]}沒有${lost.map(x => x[0]).join("和")}欄，已拿掉 ${lost.map(x => "「" + x[1] + "」").join("、")}，意思會改變。` + keptNote, undo];
+      else if (kept) msg = [keptNote, undo];
+    }
   }
   renderExamples(); renderHist(); S.veField = null; update();
+  if (msg) toast(msg[0], msg[1]);
+}
+function setModeBack(m, src){ setMode(m, false); setExpr(src); }
+// what a format switch throws away: [[欄名, token], …]
+function conversionLoss(src, from, to){
+  let c; try { c = parse(src, from); } catch (e) { return []; }
+  if (c.reboot || c.macro) return [];
+  const out = [];
+  if (from !== "5" && to === "5" && c.toks[0] !== "0") out.push(["秒", c.toks[0]]);
+  if (from === "q" && to !== "q" && c.toks[6] && c.toks[6] !== "*") out.push(["年份", c.toks[6]]);
+  return out;
+}
+// standard day-of-week (0–7, 0 and 7 = 週日) → Quartz (1–7, 1 = 週日); a range that ends on 7 wraps, so 5-7 → 6-7,1
+function dowToQuartz(tok){
+  return tok.split(",").map(part => {
+    const m = /^(\d+)-(\d+)(?:\/(\d+))?$/.exec(part);
+    if (m && +m[2] >= +m[1]){
+      const a = +m[1], b = +m[2], st = m[3] ? +m[3] : 1, set = new Set();
+      for (let v = a; v <= b; v += st) set.add((v % 7) + 1);
+      const qa = (a % 7) + 1, qb = (b % 7) + 1;
+      if (b < 7) return qa + "-" + qb + (m[3] ? "/" + st : "");
+      return runs([...set].sort((x, y) => x - y)).map(([x, y]) => y - x >= 2 ? x + "-" + y : x === y ? String(x) : x + "," + y).join(",");
+    }
+    return part.replace(/^(\d+)/, (_, n) => String((+n % 7) + 1)).replace(/-(\d+)/, (_, n) => "-" + ((+n % 7) + 1));
+  }).join(",");
 }
 function convertExpr(src, from, to){
   let c; try { c = parse(src, from); } catch (e) { return DEFAULT[to]; }
@@ -603,7 +660,7 @@ function convertExpr(src, from, to){
   if (from === "q") t = t.slice(0, 6);
   // t: sec min hour dom mon dow
   if (to === "q" && from !== "q"){
-    t[5] = t[5].replace(/(^|[,\-])(\d+)/g, (_, p, n) => p + ((+n % 7) + 1));
+    t[5] = dowToQuartz(t[5]);
     if (t[5] === "*" || t[5] === "?") t[5] = "?"; else if (t[3] === "*" || t[3] === "?") t[3] = "?";
     else return DEFAULT.q;
     if (t[3] === "?" && t[5] === "?") t[3] = "*";
@@ -716,9 +773,16 @@ function rememberNow(){
   if (!e || isExample(e, m) || histSkip === m + " " + e) return;
   try { parse(e, m); } catch (_) { return; }
   histSkip = m + " " + e;
-  if (HIST[0] && HIST[0].e === e && HIST[0].m === m) return;
+  addHist(m, e);
+}
+// put a valid, non-example expression at the front of 最近; true if it is there now
+function addHist(m, e){
+  if (!e || e.length > 200 || isExample(e, m)) return false;
+  try { parse(e, m); } catch (_) { return false; }
+  if (HIST[0] && HIST[0].e === e && HIST[0].m === m) return true;
   HIST = [{ m, e }].concat(HIST.filter(h => !(h.e === e && h.m === m))).slice(0, HIST_MAX);
   store.set("hist", HIST); renderHist();
+  return true;
 }
 function rememberSoon(){ clearTimeout(histT); histT = setTimeout(rememberNow, 1500); }
 function renderHist(){
@@ -732,8 +796,20 @@ function renderHist(){
     host.appendChild(b);
   });
   const x = document.createElement("button"); x.className = "chip"; x.id = "histClear"; x.type = "button"; x.textContent = "清除";
-  x.onclick = () => { HIST = []; store.set("hist", HIST); histSkip = S.mode + " " + normExpr($("expr").value); renderHist(); toast("已清除最近使用"); };
+  x.onclick = () => {
+    const before = HIST.slice(), skip0 = histSkip;
+    HIST = []; store.set("hist", HIST); histSkip = S.mode + " " + normExpr($("expr").value); renderHist();
+    toast("已清除最近使用", { label: "復原", fn: () => { HIST = before.concat(HIST.filter(h => !before.some(b => b.e === h.e && b.m === h.m))).slice(0, HIST_MAX); histSkip = skip0; store.set("hist", HIST); renderHist(); toast("已復原最近使用"); } });
+  };
   host.appendChild(x);
+  chipHint(host);
+}
+// fade the side of a chip row that has more to scroll to; the examples row also says so in words
+function chipHint(host){
+  const more = host.scrollWidth - host.clientWidth > 2;
+  host.classList.toggle("more-l", more && host.scrollLeft > 2);
+  host.classList.toggle("more-r", more && host.scrollLeft + host.clientWidth < host.scrollWidth - 2);
+  if (host.id === "examples") $("exHint").hidden = !more;
 }
 
 // ---------- phone keyboard helpers ----------
@@ -799,7 +875,6 @@ function setTok(k, tok){
   if (S.parsed && S.parsed.macro) S.parsed = null;
   $("expr").value = t.join(" "); update(); rememberSoon();
 }
-let cellUpAt = -1e9;   // global: a tap rebuilds the grid, and the click that follows lands on the new one
 function renderVE(){
   const fields = veFields();
   if (!S.veField || !fields.includes(S.veField)) S.veField = fields.includes("min") ? (S.mode === "5" ? "hour" : "min") : fields[0];
@@ -875,13 +950,18 @@ function renderVE(){
     });
     grid.addEventListener("pointerup", e => {
       if (!st || e.pointerId !== st.id) return;
-      const s0 = st; st = null; cellUpAt = performance.now();
+      const s0 = st; st = null; lastTapUp = performance.now();   // the click that follows (on the rebuilt grid) is swallowed by the tap layer
       if (!s0.painting){ const v = +s0.b.dataset.v; set[v] = !set[v]; commit(); }
       else if (s0.changed) commit();
     });
     grid.addEventListener("pointercancel", e => { if (!st || e.pointerId !== st.id) return; const s0 = st; st = null; if (s0.painting && s0.changed) commit(); });
     // keyboard / screen reader activation (pointer taps were handled on pointerup)
-    grid.addEventListener("click", e => { if (performance.now() - cellUpAt < 800) return; const b = e.target.closest("button"); if (!b) return; const v = +b.dataset.v; set[v] = !set[v]; commit(); const nb = $("ve-cell-" + v); if (nb) nb.focus(); });
+    grid.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const v = +b.dataset.v; set[v] = !set[v]; commit(); const nb = $("ve-cell-" + v); if (nb) nb.focus(); });
+  }
+  if (!S.parsed && normExpr($("expr").value)){
+    const p = document.createElement("p"); p.className = "vnote"; p.id = "veErr"; p.style.marginTop = "0";
+    p.textContent = `表達式有誤：這裡編輯的是第 ${order.indexOf(k) + 1} 欄（${d.name}），目前是「${tok}」${f ? "" : "（無法解讀，點選會改寫這一欄）"}。`;
+    body.insertBefore(p, body.firstChild);
   }
 }
 ["all", "step", "list", "range"].forEach(m => $("vm-" + m).onclick = () => {
@@ -914,6 +994,59 @@ $("share").onclick = () => {
   if (navigator.share){ navigator.share({ title: "Cron 解讀器", text }).catch(e => { if (!e || e.name !== "AbortError") copyText(text, "已複製表達式與說明"); }); }
   else copyText(text, "已複製表達式與說明");
 };
+$("examples").addEventListener("scroll", () => chipHint($("examples")), { passive: true });
+$("hist").addEventListener("scroll", () => chipHint($("hist")), { passive: true });
+addEventListener("resize", () => { chipHint($("examples")); chipHint($("hist")); });
+
+/* ---------- touch: act on release ----------
+   Each pointerId remembers the control it went down on; releasing on that control (moved < 10 px, or inside its box grown
+   by 16 px) runs it once with el.click() under `firing`, so a tap still works while another finger rests on the page (Chrome
+   makes no click then). pointerdown's default is prevented: buttons don't take focus from the expression box (symbol keys
+   keep the keyboard up) and nothing on a re-rendered screen gets focused. The visual-editor cells run their own pointer
+   handler and stamp lastTapUp the same way. The browser's own click afterwards (Chromium 141: detail 0, no pointerType) is
+   swallowed in the capture phase: any click within 800 ms of lastTapUp, unless Enter/Space was pressed after that tap.
+   A lone detail-0 click (keyboard, screen reader) runs once. */
+const TAP_SEL = "button, summary";
+const downs = new Map();
+let firing = false, lastTapUp = -1e9, lastKey = -1e9;
+addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") lastKey = performance.now(); }, true);
+addEventListener("keyup", e => { if (e.key === " ") lastKey = performance.now(); }, true);
+document.addEventListener("pointerdown", e => {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  const el = e.target.closest && e.target.closest(TAP_SEL);
+  if (!el || el.disabled || el.closest(".cells")) return;
+  downs.set(e.pointerId, { el, x: e.clientX, y: e.clientY });
+  e.preventDefault();
+});
+document.addEventListener("pointerup", e => {
+  const d = downs.get(e.pointerId); if (!d) return;
+  downs.delete(e.pointerId);
+  lastTapUp = performance.now();
+  const el = d.el;
+  if (!el.isConnected || el.disabled || !el.getClientRects().length) return;
+  const r = el.getBoundingClientRect(), m = 16;
+  const still = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 10;
+  const inBox = e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
+  if (!still && !inBox) return;
+  // symbol keys type into the box, so they leave its focus (and the phone keyboard) alone
+  if (!el.closest("#keys")){
+    const a = document.activeElement;
+    if (a && a !== el && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) a.blur();
+    if (a !== el) try { el.focus({ preventScroll: true }); } catch (_) {}
+  }
+  firing = true; try { el.click(); } finally { firing = false; }
+});
+document.addEventListener("pointercancel", e => downs.delete(e.pointerId));
+addEventListener("click", e => {
+  if (firing) return;
+  const t = e.target;
+  // text boxes, selects and labels: their click only places the caret or opens a picker, never runs an action twice
+  if (t instanceof Element && t.matches("input, select, textarea, option, label")) return;
+  const recentTap = performance.now() - lastTapUp < 800 && !(lastKey > lastTapUp);
+  if (recentTap || (e.isTrusted && (e.detail > 0 || e.pointerType))){ e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+document.addEventListener("contextmenu", e => { if (e.target.closest && e.target.closest("button, summary")) e.preventDefault(); });
+
 addEventListener("pagehide", rememberNow);
 document.addEventListener("visibilitychange", () => { if (document.hidden) rememberNow(); });
 
