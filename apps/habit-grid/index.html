@@ -460,10 +460,15 @@ function buildGrid(W,start){
 function updateLabels(){if(!mlabs.length)return;const left=$('#scroller').getBoundingClientRect().left-.5;
   let fv=mlabs.findIndex(m=>m.first.getBoundingClientRect().left>=left);if(fv<0)fv=0;
   mlabs.forEach((m,w)=>{let t=w<fv?'':m.base;if(w===fv&&!t&&!mlabs.slice(fv+1,fv+3).some(x=>x.base))t=m.month;if(m.el.textContent!==t)m.el.textContent=t})}
-/* the newest week stays in view: if the heatmap was scrolled to its right end, keep it there when its width changes */
-let hmAtEnd=true;const scEnd=sc=>sc.scrollWidth-sc.clientWidth-sc.scrollLeft<2;
-let labRaf=0;$('#scroller').addEventListener('scroll',()=>{hmAtEnd=scEnd($('#scroller'));if(!labRaf)labRaf=requestAnimationFrame(()=>{labRaf=0;updateLabels()})},{passive:true});
-if(window.ResizeObserver)new ResizeObserver(()=>{const sc=$('#scroller');if(hmAtEnd&&!scEnd(sc))sc.scrollLeft=sc.scrollWidth;updateLabels()}).observe($('#scroller'));
+/* the newest week stays in view: if the heatmap was scrolled to its right end, keep it there when its width changes.
+   A scroll event is dispatched up to a frame after the scroll, and the handler reads the layout of that later moment:
+   if the heatmap narrowed in between (the resize the ResizeObserver handles right after), the scroll that reached the
+   end would look like one that left it, and the heatmap would stay off the newest week. So while a resize is pending,
+   a scroll is also "at the end" if it is at the end of the width the observer last saw. */
+let hmAtEnd=true,hmSeen=null;const scEnd=sc=>sc.scrollWidth-sc.clientWidth-sc.scrollLeft<2;
+let labRaf=0;$('#scroller').addEventListener('scroll',()=>{const sc=$('#scroller');
+  hmAtEnd=scEnd(sc)||!!hmSeen&&sc.clientWidth!==hmSeen.w&&hmSeen.max-sc.scrollLeft<2;if(!labRaf)labRaf=requestAnimationFrame(()=>{labRaf=0;updateLabels()})},{passive:true});
+if(window.ResizeObserver)new ResizeObserver(()=>{const sc=$('#scroller');if(hmAtEnd&&!scEnd(sc))sc.scrollLeft=sc.scrollWidth;hmSeen={w:sc.clientWidth,max:sc.scrollWidth-sc.clientWidth};updateLabels()}).observe($('#scroller'));
 function renderHeatmap(){
   const W=wide()?53:22;const end=monday(today);const start=addDays(end,-(W-1)*7);
   const key=W+'|'+end,rebuild=key!==gridKey;
