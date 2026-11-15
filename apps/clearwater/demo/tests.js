@@ -252,19 +252,28 @@ const QUIET = () => {
   {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
     await ctx.addInitScript(QUIET);
-    await ctx.addInitScript(() => { window.__pu = 0; document.addEventListener('pointerup', () => window.__pu++, true); });
+    await ctx.addInitScript(() => {
+      window.__pu = 0; document.addEventListener('pointerup', () => window.__pu++, true);
+      window.__pdT = null; document.addEventListener('pointerdown', e => { window.__pdT = e.target; }, true);
+    });
     let t = await open(0, 0, { ctx });
     const box = id => t.ev(id => { const r = document.getElementById(id).getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, cx: r.left + r.width / 2, cy: r.top + r.height / 2 }; }, id);
     const st = () => t.ev(() => { const g = window.__clearwater; return { acts: g.acts, added: g.added, rip: g.tapRipples, rain: g.rain, orbit: g.orbit, pu: window.__pu }; });
     const settle = () => t.p.waitForTimeout(80);
     // a finger lifted at (x,y) while `rest` fingers stay down; waits until the page has seen the pointerup
-    const tap2 = async (x, y, rest = [], radius) => {
+    const tap2 = async (x, y, rest = [], radius, replay = true) => {
       const pu = (await st()).pu;
       const pt = { x, y, id: 9 }; if (radius) { pt.radiusX = pt.radiusY = radius; }
       const restPts = rest.map((q, i) => ({ x: q[0], y: q[1], id: i + 1 }));
       await t.cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [...restPts, pt] });
       await t.cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [pt] });
       await t.p.waitForFunction(pu => window.__pu > pu, pu, { timeout: 5000 });
+      // Chromium 141 (CI) follows a tap whose pointerdown was preventDefault'ed with a click of detail 0 and no
+      // pointerType; local Chromium does not, so replay it: on the pointerdown target and at the touch point
+      if (replay) await t.ev(([x, y]) => {
+        const fire = el => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: x, clientY: y }));
+        fire(window.__pdT); fire(document.elementFromPoint(x, y));
+      }, [x, y]);
       await settle();
     };
     const rain = await box('bRain'), orbit = await box('bOrbit'), calmB = await box('bCalm');
@@ -306,12 +315,28 @@ const QUIET = () => {
       await t.p.keyboard.press('Space'); await settle();
       ok((await st()).rain === s2.rain && (await st()).acts === s3.acts + 1, 'Space on a focused 下雨 toggles it once');
       await t.ev(() => document.activeElement.blur());
+      // Enter/Space just before a tap on another button: the tap's own follow-up click must still be swallowed
+      for (const key of ['Enter', 'Space']) {
+        await t.ev(() => document.getElementById('bCalm').focus());
+        await t.p.keyboard.press(key); await settle();
+        await t.ev(() => document.activeElement.blur());
+        const k0 = await st();
+        await tap2(rain.cx, rain.cy);
+        const k1 = await st();
+        ok(k1.acts === k0.acts + 1 && k1.rain === !k0.rain, `${key} on 平靜, then within 1 s a tap on 下雨 + its detail-0 click: acts once (+${k1.acts - k0.acts})`);
+      }
+      if ((await st()).rain) await tap2(rain.cx, rain.cy);
     }
 
     // (c) touches 1-8 px outside each button edge: either the button acts once or the water ripples once, never neither or both
     {
       const bad = [];
       let n = 0;
+      // as on CI: the first touches land inside the keyboard window of a Space press, and every touch is followed
+      // by the replayed detail-0 click (tap2), so a keyboard window that overrides a fresh tap makes them act twice
+      await t.ev(() => document.getElementById('bCalm').focus());
+      await t.p.keyboard.press('Space');
+      await t.ev(() => document.activeElement.blur());
       for (const [id, b] of [['bRain', rain], ['bOrbit', orbit], ['bCalm', calmB]]) {
         const pts = [];
         for (const d of [1, 6]) pts.push([b.l - d, b.cy], [b.r + d, b.cy], [b.cx, b.t - d], [b.cx, b.b + d]);

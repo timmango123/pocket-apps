@@ -1131,8 +1131,8 @@ act(bCalm, calm);
 act(bSound, () => sfx.set(!sfx.on));
 act(reloadBtn, () => location.reload());
 const taps = new Map();          // pointerId -> { el, x, y }
-const tapEnd = new WeakMap();    // button -> when a pointer last ended on it
-let keyAt = -1e9;
+let lastUp = -1e9;               // when any finger or mouse button was last released
+let keyAt = -1e9;                // when Enter/Space last went down (or up, for a press that began after lastUp)
 function actOf(t) { const b = t && t.closest ? t.closest('button') : null; return b && acts.has(b) ? b : null; }
 function runAct(b, viaTap) {
   actRuns++;
@@ -1153,21 +1153,25 @@ document.addEventListener('pointerup', e => {
   const t = taps.get(e.pointerId);
   if (!t) return;
   taps.delete(e.pointerId);
-  tapEnd.set(t.el, performance.now());
   const r = t.el.getBoundingClientRect(), G = 16;
   const moved = Math.hypot(e.clientX - t.x, e.clientY - t.y);
   const near = e.clientX >= r.left - G && e.clientX <= r.right + G && e.clientY >= r.top - G && e.clientY <= r.bottom + G;
   if (moved < 10 || near) { dismissHint(); runAct(t.el, true); }
 }, true);
-document.addEventListener('pointercancel', e => { const t = taps.get(e.pointerId); if (t) { tapEnd.set(t.el, performance.now()); taps.delete(e.pointerId); } }, true);
-['keydown', 'keyup'].forEach(type => document.addEventListener(type, e => { if (e.key === 'Enter' || e.key === ' ') keyAt = performance.now(); }, true));
+document.addEventListener('pointercancel', e => { lastUp = performance.now(); taps.delete(e.pointerId); }, true);
+document.addEventListener('pointerup', () => { lastUp = performance.now(); }, true);
+let keyDownAt = -1e9;
+document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') keyAt = keyDownAt = performance.now(); }, true);
+// Space clicks on keyup: a long press keeps counting as keyboard, but only if the key went down after the last release
+document.addEventListener('keyup', e => { if ((e.key === 'Enter' || e.key === ' ') && keyDownAt > lastUp) keyAt = performance.now(); }, true);
 document.addEventListener('click', e => {
   const b = actOf(e.target);
   if (e.detail > 0 || !b) { if (b || e.detail > 0) { e.preventDefault(); e.stopPropagation(); } return; }   // pointer-made: the tap layer had it
   e.preventDefault(); e.stopPropagation();
-  const now = performance.now(), byKey = now - keyAt < 1000;
-  // Chromium sends the click after a handled tap with detail 0: that is not a keyboard press
-  if (!byKey && now - (tapEnd.get(b) || -1e9) < 800) return;
+  const now = performance.now();
+  // Chromium 141 follows a handled tap with a click of detail 0 and no pointerType: within 800 ms of any release it
+  // is the tap's echo, unless Enter/Space went down after that release. A click with no recent release acts once.
+  if (now - lastUp < 800 && !(keyDownAt > lastUp && now - keyAt < 1000)) return;
   runAct(b, false);
 }, true);
 window.addEventListener('keydown', e => {
