@@ -1,12 +1,14 @@
 // Offline level generator for 蜘蛛接龍 (spider-solitaire). Uses the game's own core (CORE-START/END in ../index.html).
 //   node gen.js cand <suits> <strict 0|1> <firstSeedIndex> <count> <out.jsonl>   -> solve candidate deals, write metrics
 //   node gen.js pick <dir-with-jsonl>                                         -> choose 100 levels + daily pool, write into index.html
-// Difficulty S = ln(expanded nodes) + solution length/50 + mean reveal delay of the 44 face-down cards/10 + suit term (1->0, 2->3, 4->6)
+// Difficulty S = ln(expanded nodes) + solution length/50 + mean reveal delay of the 44 face-down cards/10 + suit term (1->0, 2->1.5, 4->2)
+//   + 6 under strict dealing. (Round 2: levels 41-100 were re-picked from bot-tested pools; see Sof.)
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {makeGame, initState, cloneState, applyCode, isWon, solve, solveLadder, NCOL};')();
-const SUITTERM = { 1: 0, 2: 3, 4: 6 };
+const SUITTERM = { 1: 0, 2: 1.5, 4: 2 }, STRICTTERM = 6;
+function Sof(c) { return Math.log(c.nodes) + c.len / 50 + c.delay / 10 + SUITTERM[c.suits] + (c.strict ? STRICTTERM : 0); }
 function seedFor(suits, strict, i) { return ((suits * 1000003 + strict * 7777777 + i * 2654435761) >>> 0) % 4000000000 + 1; }
 function metrics(seed, suits, strict, opts) {
   const G = core.makeGame(seed, suits, strict), s0 = core.initState(G);
@@ -22,10 +24,10 @@ function metrics(seed, suits, strict, opts) {
   if (!core.isWon(s)) throw new Error('solution does not win ' + seed);
   let sum = 0; for (const v of hidden.values()) sum += v < 0 ? r.moves.length : v;
   const delay = sum / hidden.size;
-  const S = Math.log(r.nodes) + r.moves.length / 50 + delay / 10 + SUITTERM[suits];
+  const S = Sof({ nodes: r.nodes, len: r.moves.length, delay, suits, strict });
   return { seed, suits, strict, ok: true, nodes: r.nodes, len: r.moves.length, delay: +delay.toFixed(2), S: +S.toFixed(4), moves: r.moves };
 }
-module.exports = { metrics, seedFor, core };
+module.exports = { metrics, seedFor, core, Sof };
 if (require.main === module) {
   const [mode, ...a] = process.argv.slice(2);
   if (mode === 'cand') {

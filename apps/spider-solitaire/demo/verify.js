@@ -10,13 +10,14 @@ const OUT = __dirname, APP = path.resolve(__dirname, '..', 'index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const { metrics } = require('./gen.js');
 const LEVELS = JSON.parse(html.match(/var LEVELS = (\[[^\n]*\]);/)[1]);
+const levelRules = new Function(html.match(/(var STRICT_FROM[^\n]*\n[^\n]*levelRules[^\n]*)/)[1] + '\nreturn levelRules;')();
 
 function solveAll(only) {
   const res = []; let ok = true, prevS = -1, t0 = Date.now();
   for (let n = 1; n <= LEVELS.length; n++) {
     const [seed, suits, S100, len, nodes] = LEVELS[n - 1];
     if (only && !only.includes(n) && n !== 1) { res.push(null); continue; }
-    const m = metrics(seed, suits, n >= 61);
+    const m = metrics(seed, suits, levelRules(n).strict);
     const good = m.ok && Math.round(m.S * 100) === S100 && m.len === len && m.nodes === nodes && S100 > prevS;
     if (!good) { ok = false; console.log('LEVEL', n, 'PROBLEM', JSON.stringify({ ok: m.ok, S: m.S, len: m.len, nodes: m.nodes }), 'embedded', LEVELS[n - 1]); }
     prevS = S100; res.push(m);
