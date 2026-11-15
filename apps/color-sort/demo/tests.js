@@ -2,6 +2,9 @@
 // 1) Node：死路偵測不會誤判（有限搜尋說「無解」時，照遊戲規則的完整搜尋也必須無解）；解題器不再剪掉「整管倒進較小空管」
 // 2) 頁面：點選→倒水、倒水動畫中連點、試管間的空隙吸附、提示不重複扣、走到一半重新整理接續（含 pagehide）、
 //    重來要按兩次、死路提醒、無限悔棋關掉後仍限 ★★、過關當下就記錄、壞掉的存檔、各尺寸點擊間距 ≥ 44px
+// 3) R1 修正：點按後 detail 0 click 只算一次（悔棋／下一關／重來／開關，在按鈕本身、邊緣、elementFromPoint）、單獨的 detail 0 與 Enter
+//    照常；另一指按著時按鈕照常（兩種放開順序）；任何關卡第一步都不會致死、71 關起隱藏比例降低；隱藏層關卡 ★★★ 拿得到；
+//    選單→玩法說明→知道了回到遊戲中選單；844×390 選單按鈕都在畫面內；「解不開了」說明是哪一步；背景不再每幀畫全螢幕漸層
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const fs = require('fs'), path = require('path'), http = require('http');
 const APP = path.resolve(__dirname, '..', 'index.html');
@@ -13,7 +16,7 @@ const errors = [];
 
 // ---------- 1. core (node) ----------
 const html = fs.readFileSync(APP, 'utf8');
-const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {csInit, csSolve, csPour, csWon, csMoves};')();
+const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {csInit, csSolve, csPour, csWon, csMoves, csParams};')();
 const LEVELS = JSON.parse(html.match(/\/\*LEVELS-START\*\/([\s\S]*?)\/\*LEVELS-END\*\//)[1]);
 const ld = L => ({ tubes: L.t.split('/'), caps: L.c.split('').map(Number), hid: L.h.split(',').map(x => parseInt(x, 36) || 0), fz: L.f.split('').map(Number) });
 // plain search with the game's own move rules (no pruning): can this position still be won?
@@ -42,6 +45,21 @@ function winnable(S0, max) {
   const D = { tubes: ['b', 'ba', 'aa'], caps: [3, 4, 2], hid: [], fz: [] };
   const r = core.csSolve(core.csInit(D), { limit: 100000 });
   eq([!!(r && r.len > 0), winnable(core.csInit(D), 100000)], [true, true], '解題器會「整管倒進較小的空管」：這個局面算得出解（以前算成無解）');
+}
+// R1#3: no level can be lost on its first move (true state; hidden layers don't change which pours are fatal, only whether
+// the player can see it). Exhaustion (null) proves a dead end; the weighted searches find a solution fast otherwise.
+const solvable = S => { if (core.csWon(S)) return 1; for (const [w, limit] of [[5, 20000], [2, 100000], [1, 400000]]) { const r = core.csSolve(S, { limit, w }); if (r === null) return 0; if (r.len >= 0) return 1; } return -1; };
+{
+  const t0 = Date.now(), bad = [];
+  for (let n = 1; n <= LEVELS.length; n++) { const S0 = core.csInit(ld(LEVELS[n - 1])); for (const [a, b] of core.csMoves(S0)) if (solvable(core.csPour(S0, a, b).S) !== 1) bad.push(n + ':' + a + '>' + b); }
+  assert(!bad.length, `R1#3：全部 100 關的每一種開局倒法都還解得開（${((Date.now() - t0) / 1000).toFixed(1)} 秒）` + (bad.length ? ' 致死：' + bad.slice(0, 8).join(' ') : ''));
+  const hr = n => core.csParams(n).hid;
+  assert(hr(71) < hr(70) - 0.1 && hr(100) <= 0.36 && hr(72) > hr(71), `R1#3：71 關起隱藏比例降回 ${hr(71).toFixed(2)}（70 關 ${hr(70).toFixed(2)}），到 100 關 ${hr(100).toFixed(2)}`);
+  const sl = n => { const P = core.csParams(n); return P.colCaps.reduce((a, b) => a + b, 0) - P.K * P.n; };
+  assert(sl(71) >= 7 && sl(81) >= 8, `R1#3：單一空管的關卡試管內空位變多（71 關 ${sl(71)} 格、81 關 ${sl(81)} 格）`);
+  const hid = LEVELS.map((L, i) => [i + 1, L]).filter(([, L]) => L.h.split(',').some(x => parseInt(x, 36)));
+  const loose = hid.filter(([, L]) => L.s > L.p + 2).length;
+  assert(hid.every(([, L]) => !L.s || L.s > L.p + 2) && loose >= hid.length / 2, `R1#4：隱藏層關卡的 ★★★ 門檻用「看不到隱藏層」的步數：${loose}/${hid.length} 關放寬（例如 99 關 ${LEVELS[98].p}+2 → ${LEVELS[98].s || LEVELS[98].p + 2}）`);
 }
 
 function serve() {
@@ -157,19 +175,29 @@ function serve() {
     await t.ctx.close();
   }
 
-  // 6. 死路：還有合法步但已經解不開 → 提醒；「先看看」可關掉，悔棋可救回
+  // 6. 死路：還有合法步但已經解不開 → 提醒，並說明是哪一步（R1#7）；「先看看」可關掉並標出那一步，悔棋可救回
   {
+    // a random walk on level 75 (in Node, the game's own rules) until the game's dead-end check fires
+    let seed = 5, seq = null; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+    for (let g = 0; g < 200 && !seq; g++) {
+      let S = core.csInit(ld(LEVELS[74])); const m = [];
+      for (let k = 0; k < 60; k++) { const ms = core.csMoves(S); if (!ms.length) break; const mv = ms[Math.floor(rnd() * ms.length)]; S = core.csPour(S, mv[0], mv[1]).S; m.push(mv); if (core.csWon(S)) break;
+        if (core.csSolve(S, { limit: 3000, w: 3 }) === null) { if (core.csMoves(S).length && m.length >= 3) seq = m; break; } }
+    }
     const t = await open();
-    await t.level(71);
-    await t.pour([1, 10]);
+    await t.level(75);
+    await t.p.evaluate(m => __game.setMoves(m), seq.slice(0, -1)); await t.idle();
+    await t.pour(seq[seq.length - 1]);
     await t.until(() => __game.state().status === 'stuck' && !document.getElementById('stuck').classList.contains('hidden'));
-    const s = await t.st();
+    const s = await t.st(), msg = await t.p.textContent('#kMsg'), last = seq[seq.length - 1];
     eq([s.dead, await t.p.textContent('#kTitle'), (await t.p.evaluate(() => __game.legal())).length > 0], ['dead', '這局解不開了', true],
-      '第 71 關第一步把第 2 支倒進唯一的空管：還能倒，但提醒「這局解不開了」');
+      `第 75 關亂倒 ${seq.length} 步走進死路：還能倒，但提醒「這局解不開了」`);
+    assert(s.fatal && s.fatal.k === seq.length && msg.includes(`第 ${seq.length} 步（第 ${last[0] + 1} 支 → 第 ${last[1] + 1} 支）之後就解不開了`) && /空管|空位|隱藏層/.test(msg) && msg.includes('悔棋一步就能回到那之前'),
+      'R1#7：卡片說明是哪一步讓局面無解、為什麼（' + msg.replace(/\s+/g, '') + '）');
     await t.tap('#kLook'); await t.until(() => __game.state().status === 'play');
     await t.p.waitForTimeout(700);
     eq([(await t.st()).status, await t.p.isVisible('#stuck')], ['play', false], '按「先看看局面」：關掉提醒，同一局面不會一直跳出來');
-    await t.tap('#bUndo'); await t.until(() => __game.state().moves === 0);
+    await t.tap('#bUndo'); await t.until(n => __game.state().moves === n, seq.length - 1);
     await t.p.waitForTimeout(300);
     eq([(await t.st()).status, (await t.st()).undos], ['play', 4], '悔棋回去：不再提醒');
     await t.ctx.close();
@@ -230,6 +258,122 @@ function serve() {
       }
     }
     assert(worst >= 44 && inside, `${w}×${h}：第 40／70／100 關（含加小試管）相鄰試管間距最小 ${worst.toFixed(0)}px，全部在畫面內`);
+    await t.ctx.close();
+  }
+
+  // ---------- R1 touch checks ----------
+  const box = (t, sel) => t.p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2, b: r.bottom, r: r.right }; }, sel);
+  const settled = (t, sel) => t.until(s => { const e = document.querySelector(s); if (!e || e.disabled || e.closest('.hidden')) return false; const r = e.getBoundingClientRect(); if (!r.width) return false;
+    const ov = e.closest('.ov'); return !(ov && ov.getAnimations({ subtree: true }).some(a => a.playState === 'running')); }, sel);
+  const T = (t, type, pts) => t.cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] || 1 })) });
+  // a real tap, then right away a detail-0 click (what CI Chromium 141 sends) on the element, its 1 px edge and elementFromPoint
+  const tapD0 = async (t, sel) => {
+    await settled(t, sel); await sleep(40); const b = await box(t, sel);
+    await T(t, 'touchStart', [[b.cx, b.cy]]); await sleep(40); await T(t, 'touchEnd', [[b.cx, b.cy]]);
+    await t.p.evaluate(([s, x, y, l]) => { const e = document.querySelector(s);
+      const fire = (tg, cx) => tg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: cx, clientY: y, view: window }));
+      fire(e, x); fire(document.elementFromPoint(l + 1, y) || document.body, l + 1); fire(document.elementFromPoint(x, y) || document.body, x); }, [sel, b.cx, b.cy, b.x]);
+    await sleep(120);
+  };
+  const d0only = (t, sel) => t.p.evaluate(s => document.querySelector(s).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window })), sel);
+  const aria = (t, sel) => t.p.getAttribute(sel, 'aria-checked');
+  {
+    const t = await open(); t.cdp = await t.ctx.newCDPSession(t.p);
+    // 悔棋: 5 -> 4, one move back
+    await t.level(5); const sol = await t.solve();
+    await t.p.evaluate(m => __game.setMoves(m), sol.slice(0, 3));
+    await tapD0(t, '#bUndo'); let s = await t.st();
+    eq([s.moves, s.undos], [2, 4], 'R1#1：點「悔棋」+ 三個 detail 0 click：只退一步，悔棋 5→4');
+    // 重來: the first tap only arms it (toast); the follow-up detail-0 clicks must not confirm it
+    await tapD0(t, '#bRestart'); s = await t.st();
+    eq(s.moves, 2, 'R1#1：點「重來」+ detail 0 click：仍要再按一次確認，步數還在');
+    await sleep(2700);
+    // 下一關: level 3 -> 4, and the new level's controls under the finger are not hit
+    await t.level(3); const s3 = await t.solve();
+    await t.p.evaluate(m => __game.setMoves(m), s3.slice(0, -1)); await t.pour(s3[s3.length - 1]);
+    await t.until(() => !document.getElementById('win').classList.contains('hidden'));
+    await tapD0(t, '#wNext'); await sleep(300); s = await t.st();
+    eq([s.level, s.status, s.moves], [4, 'play', 0], 'R1#1：點「下一關」+ detail 0 click：只到第 4 關（不會跳到第 5 關），新畫面也沒被點到');
+    // switches in the menu flip once each
+    await t.tap('#bMenu');
+    const flips = [];
+    for (const id of ['#swSound', '#swPattern', '#swInf', '#swVib']) { const a0 = await aria(t, id); await tapD0(t, id); flips.push(await aria(t, id) !== a0); await sleep(850); }
+    await tapD0(t, '#swInf'); await sleep(850);   // infinite undo back off (it caps the stars)
+    assert(flips.every(Boolean), 'R1#1：音效／色盲／無限悔棋／震動各點一下 + detail 0 click：每個都只切換一次（' + flips.join() + '）');
+    // a lone detail-0 click (no tap in the last 800 ms: keyboard / assistive tech) acts once; Enter on a focused button acts
+    const a1 = await aria(t, '#swVib'); await d0only(t, '#swVib');
+    assert(await aria(t, '#swVib') !== a1, 'R1#1：單獨的 detail 0 click（800 ms 內沒有點按）照常執行一次');
+    const a2 = await aria(t, '#swPattern'); await t.p.focus('#swPattern'); await t.p.keyboard.press('Enter'); await sleep(100);
+    assert(await aria(t, '#swPattern') !== a2, 'R1#1：鍵盤 Enter 照常切換');
+    await tapD0(t, '#swPattern'); await tapD0(t, '#mResume'); s = await t.st();
+    eq(s.status, 'play', 'R1#1：「繼續」+ detail 0 click：回到遊戲，選單鈕沒有被再點開');
+
+    // R1#2: another finger resting on the HUD middle, the shelf background or a card background; both release orders
+    const fails = [];
+    const rest = async (sel, pt, order) => {
+      await settled(t, sel); await sleep(40); const b = await box(t, sel);
+      await T(t, 'touchStart', [[pt[0], pt[1], 7]]); await sleep(80);
+      await T(t, 'touchStart', [[pt[0], pt[1], 7], [b.cx, b.cy, 1]]); await sleep(60);
+      if (order === 'tapFirst') { await T(t, 'touchEnd', [[b.cx, b.cy, 1]]); await sleep(80); await T(t, 'touchEnd', [[pt[0], pt[1], 7]]); }
+      else { await T(t, 'touchEnd', [[pt[0], pt[1], 7]]); await sleep(40); await T(t, 'touchEnd', [[b.cx, b.cy, 1]]); }
+      await sleep(150);
+    };
+    for (const order of ['tapFirst', 'restFirst']) {
+      await t.p.evaluate(() => __game.startLevel(12, true)); await t.until(() => __game.state().level === 12 && __game.state().status === 'play'); const s12 = await t.solve(); await t.p.evaluate(m => __game.setMoves(m), s12.slice(0, 2));
+      await rest('#bUndo', [195, 30], order); if ((await t.st()).moves !== 1) fails.push('undo/' + order);
+      await rest('#bHint', [195, 30], order); if (!(await t.st()).hint) fails.push('hint/' + order);
+      await rest('#bMenu', [195, 30], order); if ((await t.st()).status !== 'paused') fails.push('menu/' + order);
+      await rest('#mResume', [20, 820], order); if ((await t.st()).status !== 'play') fails.push('resume/' + order);
+      await t.p.evaluate(() => __game.startLevel(3, true)); await t.until(() => __game.state().level === 3); const q = await t.solve(); await t.p.evaluate(m => __game.setMoves(m), q.slice(0, -1)); await t.pour(q[q.length - 1]);
+      await t.until(() => !document.getElementById('win').classList.contains('hidden'));
+      await rest('#wNext', [20, 820], order); if ((await t.st()).level !== 4) fails.push('next/' + order);
+      await t.p.evaluate(() => { __game.toTitle(); });
+      await rest('#tPlay', [195, 30], order); if ((await t.st()).status !== 'play') fails.push('play/' + order);
+    }
+    assert(!fails.length, 'R1#2：另一指按在 HUD 中間／畫面空白處／卡片背景時，悔棋、提示、選單、繼續、下一關、開始調配都只作用一次（兩種放開順序）' + (fails.length ? '（失敗：' + fails.join(' ') + '）' : ''));
+    // tube taps on the canvas still work with a finger resting elsewhere
+    await t.p.evaluate(() => __game.startLevel(5, true)); await t.until(() => __game.state().level === 5 && __game.state().moves === 0); const s5 = await t.solve(); const ca = await t.tube(s5[0][0]), cb = await t.tube(s5[0][1]);
+    await T(t, 'touchStart', [[195, 30, 7]]); await sleep(60);
+    await T(t, 'touchStart', [[195, 30, 7], [ca.x, ca.y, 1]]); await sleep(40); await T(t, 'touchEnd', [[ca.x, ca.y, 1]]); await sleep(80);
+    await T(t, 'touchStart', [[195, 30, 7], [cb.x, cb.y, 2]]); await sleep(40); await T(t, 'touchEnd', [[cb.x, cb.y, 2]]); await sleep(60);
+    await T(t, 'touchEnd', [[195, 30, 7]]); await t.idle();
+    eq((await t.st()).mv, [s5[0]], 'R1#2：另一指按著時點試管照常倒水');
+    // no :active transform on any button (it moved the hit box under the finger)
+    const tf = await t.p.evaluate(() => { const out = []; for (const sh of document.styleSheets) for (const r of sh.cssRules) if (r.selectorText && /:active|\.press/.test(r.selectorText) && r.style.transform) out.push(r.selectorText); return out; });
+    eq(tf, [], 'R1：按下回饋不用 transform（不縮放或移動按鈕）');
+
+    // R1#5: 選單 → 玩法說明 → 知道了 returns to the in-game menu, then 繼續 to the level
+    await t.level(7); await t.tap('#bMenu'); await t.tap('#mHelp'); await t.tap('#hOk');
+    const m = [await t.p.textContent('#mTitle'), await t.p.isVisible('#mSelect'), await t.p.textContent('#mResume')];
+    await t.tap('#mResume'); s = await t.st();
+    eq([m, s.status, s.level], [['暫停・第 7 關', true, '繼續'], 'play', 7], 'R1#5：選單 → 玩法說明 → 知道了：回到遊戲中的選單，按「繼續」回到第 7 關');
+
+    // R1#4: on a hidden level a run a few moves over par + 2 but within the hidden-information limit is ★★★
+    // a non-optimal solution (weighted search, Node) that is longer than par + 2 but within the level's ★★★ limit
+    let L4 = 0, seq = null;
+    for (let n = 99; n > 40 && !seq; n--) { const Lv = LEVELS[n - 1]; if (!Lv.s || Lv.s < Lv.p + 3) continue;
+      for (const w of [1.5, 2, 3, 5]) { const r = core.csSolve(core.csInit(ld(Lv)), { limit: 200000, w }); if (r && r.len > Lv.p + 2 && r.len <= Lv.s) { L4 = n; seq = r.sol; break; } } }
+    await t.p.evaluate(n => __game.startLevel(n, true), L4); await t.until(n => __game.state().level === n && __game.state().moves === 0, L4);
+    await t.p.evaluate(m => __game.setMoves(m), seq.slice(0, -1)); await t.pour(seq[seq.length - 1]);
+    await t.until(() => __game.state().status === 'won'); s = await t.st();
+    eq([s.moves, s.stars], [seq.length, 3], `R1#4：第 ${L4} 關（有隱藏層）用 ${seq.length} 步過關（目標 ${LEVELS[L4 - 1].p}，以前 ★★★ 只到 ${LEVELS[L4 - 1].p + 2}）：★★★（門檻 ${s.s3} 步）`);
+    await t.until(() => !document.getElementById('win').classList.contains('hidden'));
+    assert((await t.p.textContent('#wMsg')).includes(String(s.s3)), '結算卡寫出 ★★★ 的步數門檻');
+
+    // R1#8: the background (wood, vignette, candle glow, shelves) is one cached blit: no gradient is built per frame while pouring
+    await t.level(66); const s66 = await t.solve();
+    await t.p.evaluate(() => { const C = CanvasRenderingContext2D.prototype; window.__grad = 0; for (const k of ['createRadialGradient']) { const o = C[k]; C[k] = function () { if (this.canvas.id === 'cv') __grad++; return o.apply(this, arguments); }; } });
+    await t.pour(s66[0]); await t.pour(s66[1]); await t.idle();
+    eq(await t.p.evaluate(() => __grad), 0, 'R1#8：連續倒水時主畫布每幀不再畫全螢幕的燭光漸層（背景、燭光、木架都預先畫好）');
+    await t.ctx.close();
+  }
+  // R1#6: 844x390 landscape: the pause menu fits, every button on screen
+  {
+    const t = await open(844, 390);
+    await t.level(5); await t.tap('#bMenu');
+    const bs = await t.p.evaluate(() => ['mResume', 'mSelect', 'mHelp', 'swSound', 'swVib'].map(id => { const r = document.getElementById(id).getBoundingClientRect(); return [id, Math.round(r.top), Math.round(r.bottom)]; }));
+    assert(bs.every(([, top, b]) => top >= 0 && b <= 390), 'R1#6：844×390 暫停選單的 繼續／選擇關卡／玩法說明 與開關都在畫面內（' + bs.map(x => x[0] + ' ' + x[2]).join('，') + '）');
+    await t.tap('#mSelect'); eq((await t.st()).status, 'select', 'R1#6：橫式選單點「選擇關卡」可用');
     await t.ctx.close();
   }
 
