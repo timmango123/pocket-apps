@@ -5,6 +5,7 @@
 //    hole, old save keys, hole 61 intro, daily hole and 10-hole round totals, landscape cards that fit, no errors.
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {buildLevel, initState, cloneState, simShot, solveLevel, solveIter, replay, PULLMAX, HOLE_VMAX: HOLE_VMAX};')();
@@ -70,7 +71,7 @@ async function open(browser, W, H, o = {}) {
   // frame callback durations (the game does all its work in requestAnimationFrame, including the sliced hint search)
   await page.addInitScript(() => { window.__rf = []; const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = cb => raf(ts => { const a = performance.now(); cb(ts); window.__rf.push(performance.now() - a); if (window.__rf.length > 5000) window.__rf.shift(); }); });
   // deviceScaleFactor 1: the canvas is redrawn every frame and several pages run at once; no check depends on DPR
-  await page.goto('file://' + APP);
+  await page.goto(PAGE_URL);
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(p => ({ x: p[0], y: p[1], id: p[2] || 0 })) });
   return { ctx, page, cdp, touch, errors, W, H };
@@ -301,6 +302,11 @@ async function landscape(browser, all, W, H) {
 }
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const all = [], t0 = Date.now();
   try {
