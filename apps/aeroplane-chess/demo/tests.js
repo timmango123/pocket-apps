@@ -179,6 +179,7 @@ t('hint explains its choice', () => { const st = G(); st.pos[0] = [5, -1, -1, -1
 
 // ---------------- in the real page (mobile Chromium, real CDP touch): one regression check per review finding ----------------
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let browser = null, tid = 1;
 async function at(name, fn) { if (process.env.ONLY && !name.includes(process.env.ONLY)) return; const t0 = Date.now(); let tm; try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 60 s')), 60000); })]); clearTimeout(tm); pass++; console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); } catch (e) { clearTimeout(tm); fail++; console.log('  FAIL', name, '-', String(e.message || e).split('\n')[0]); } }
@@ -188,7 +189,7 @@ async function open(vp, o = {}) {
   await ctx.addInitScript(() => { window.__clears = 0; const f = CanvasRenderingContext2D.prototype.clearRect; CanvasRenderingContext2D.prototype.clearRect = function (...a) { window.__clears++; return f.apply(this, a); }; });
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + APP); await sleep(500);
+  await page.goto(PAGE_URL); await sleep(500);
   const cdp = await ctx.newCDPSession(page);
   const tap = async (x, y, hold = 40) => { const id = tid++; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id }] }); await sleep(hold); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
   const box = async sel => { await page.locator(sel).scrollIntoViewIfNeeded(); return page.locator(sel).boundingBox(); };
@@ -213,6 +214,11 @@ async function open(vp, o = {}) {
 const PLAY = { tut: true, speed: 4 };   // skip the auto tutorial, computers at 4x
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, touch)');
   try {

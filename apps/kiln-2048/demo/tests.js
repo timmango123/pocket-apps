@@ -211,7 +211,8 @@ const G = { undosLeft: 3, history: [], won: false, keepGoing: false, timeLeft: 0
     await c.page.keyboard.press('ArrowLeft'); s = await S(c.page); ok(s.rec === true, 'beating the best not marked'); await c.ctx.close();
   });
   await t('result card celebrates a tier this mode never reached before', async () => {
-    const { ctx, page } = await open(390, 844, setGame('classic', { ...G, mode: 'classic', cells: [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 64, 64]], score: 10 }, { 'kiln2048-stats': JSON.stringify({ classic: { games: 3, top: 64 } }) }));
+    // ArrowLeft leaves one empty cell (3,3) for the random spawn; its neighbours are 8 and 128, so a 2 or a 4 there both end the game
+    const { ctx, page } = await open(390, 844, setGame('classic', { ...G, mode: 'classic', cells: [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 8], [4, 2, 64, 64]], score: 10 }, { 'kiln2048-stats': JSON.stringify({ classic: { games: 3, top: 64 } }) }));
     await page.keyboard.press('ArrowLeft');
     await page.waitForSelector('.overlay h2');
     ok(/第一次合成「霽藍」/.test(await page.textContent('.overlay')), 'no celebration: ' + await page.textContent('.overlay')); await ctx.close();
