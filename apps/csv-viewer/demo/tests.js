@@ -288,6 +288,340 @@ const GB = Buffer.from('c6b7c3fb2cb3c7cad02cbdf0b6ee0d0ad1e0c2f3c4c3ccfa2cb1b1be
     await ctx.close();
   }
 
+  // 8. 上架重審 R1 toFix 回歸
+  // CDP touch: touchEnd releases only the points it lists, so a resting finger stays down
+  const touchKit = async p => {
+    const cdp = await p.context().newCDPSession(p);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2], radiusX: 1, radiusY: 1, force: 1 })) });
+    const ctr = sel => p.$eval(sel, e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    let id = 10;
+    const tapAt = async (q, hold = 40, rest) => {
+      const f = [q[0], q[1], ++id];
+      if (rest) { const r = [rest[0], rest[1], ++id]; await T('touchStart', [r]); await p.waitForTimeout(300); await T('touchStart', [r, f]); if (hold > 40) await p.waitForTimeout(hold); await T('touchEnd', [f]); await p.waitForTimeout(60); await T('touchEnd', [r]); }
+      else { await T('touchStart', [f]); if (hold > 40) await p.waitForTimeout(hold); await T('touchEnd', [f]); }
+    };
+    return { T, ctr, tapAt, tap: async (sel, hold, rest) => tapAt(await ctr(sel), hold, rest) };
+  };
+  {
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    const settle = () => p.waitForTimeout(900); // past the 800 ms tap window, so the next step starts clean
+    // 8a. JSON keeps unsafe integers and percentages as text
+    await p.evaluate(() => window.__cv.loadText('id,name,qty,rate,amt\n12345678901234567,a,1,12%,"1,280"\n12345678901234568,b,2,5%,-3\n12345678901234566,c,3,0.5%,0.10\n', { name: 'ids.csv' }));
+    const js = JSON.parse(await p.evaluate(() => window.__cv.toJSON()));
+    assert(js[0].id === '12345678901234567' && js[1].id === '12345678901234568' && js[2].id === '12345678901234566', 'JSON：17 位整數 ID 保留原字串，不被改成別的數字 ' + J(js.map(o => o.id)));
+    assert(js[0].rate === '12%' && js[2].rate === '0.5%', 'JSON：12% 保留成 "12%"');
+    assert(js[0].qty === 1 && js[0].amt === 1280 && js[1].amt === -3 && js[2].amt === 0.1, 'JSON：一般數字（含千分位、小數）仍是數字 ' + J(js[2]));
+    await p.evaluate(() => window.__cv.loadText('n\n9007199254740993\n1\n', { name: 'n.csv' }));
+    assert(JSON.parse(await p.evaluate(() => window.__cv.toJSON()))[0].n === '9007199254740993', 'JSON：超過安全整數的值不轉成 number');
+    // 8b. delimiter tie prefers Tab, and warns with a one-tap switch
+    await p.evaluate(() => window.__cv.loadText('a\tb, c\n1\t2, 3\n4\t5, 6\n', { name: 'tie.tsv' }));
+    const tie = await p.evaluate(() => ({ r: window.__cv.rows[0], w: document.getElementById('warnChip').textContent, fix: !document.getElementById('delimFix').hidden }));
+    assert(J(tie.r) === J(['1', '2, 3']) && /分隔符可能不對/.test(tie.w) && tie.fix, 'Tab 與逗號同分：選 Tab，並提示可改用逗號 ' + J(tie));
+    await k.tap('#delimFix'); await p.waitForFunction(() => window.__cv.rows[0] && window.__cv.rows[0][0] === '1\t2');
+    assert(true, '按「改用逗號」就用逗號重新解析');
+    await settle();
+    // 8c. short GB18030 / Big5 files
+    await openFile(p, file('gb.csv', Buffer.from('c3fbb3c62cb3c7cad00d0ad5c5c8fd2cb1b1bea90d0a', 'hex')));
+    await p.waitForFunction(() => document.getElementById('fname').textContent === 'gb.csv');
+    const gb = await p.evaluate(() => [window.__cv.columns.map(c => c.name).join(), window.__cv.rows[0].join(), document.getElementById('encSel').options[0].textContent]);
+    assert(gb[0] === '名称,城市' && gb[1] === '张三,北京', '很短的 GB18030 檔（4 個字）認成 GB18030 ' + J(gb));
+    await openFile(p, file('b5.csv', Buffer.from('a6572cad c80d0aac4f2c310d0a'.replace(' ', ''), 'hex'))); // '名,值\r\n是,1' in Big5
+    await p.waitForFunction(() => document.getElementById('fname').textContent === 'b5.csv');
+    const b5 = await p.evaluate(() => [window.__cv.columns.map(c => c.name).join(), document.getElementById('encSel').options[0].textContent]);
+    assert(b5[0] === '名,值' && /Big5/.test(b5[1]), '很短的 Big5 檔仍是 Big5 ' + J(b5));
+    // two characters only: a close call is shown with a switch button
+    await openFile(p, file('two.csv', Buffer.from('bcd72cd2d20d0a312c320d0a', 'hex'))); // '甲,乙\r\n1,2' in GB2312
+    await p.waitForFunction(() => document.getElementById('fname').textContent === 'two.csv');
+    const two = await p.evaluate(() => ({ w: document.getElementById('warnChip').textContent, fix: document.getElementById('encFix').hidden ? '' : document.getElementById('encFix').textContent, h: window.__cv.columns.map(c => c.name).join() }));
+    assert(/編碼可能不對/.test(two.w) && /^改用 (Big5|GB18030)$/.test(two.fix), '分不出 Big5／GB18030 時顯示提示和切換按鈕 ' + J(two));
+    const before = two.h; await k.tap('#encFix');
+    await p.waitForFunction(b => window.__cv.columns.map(c => c.name).join() !== b, before);
+    assert(await p.evaluate(() => document.getElementById('encSel').value !== 'auto'), '按切換按鈕後改用另一種編碼');
+    await settle();
+    await ctx.close();
+  }
+  {
+    // 8d. touch: taps with another finger resting, holds, detail-0 replay after a tap
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    const st = () => p.evaluate(() => ({ clip: window.__clip.length, fs: getComputedStyle(document.documentElement).getPropertyValue('--fs').trim(), sort: JSON.stringify(window.__cv.sort), fo: !document.getElementById('filterBg').hidden,
+      sheets: [...document.querySelectorAll('.sheet-bg:not(#filterBg)')].filter(s => !s.hidden).map(s => s.id).join(','), hdr: document.getElementById('hdrChk').checked, stat: document.getElementById('statCol').value }));
+    const reset = async () => { await p.evaluate(() => { document.querySelectorAll('.sheet-bg').forEach(s => { s.hidden = true; }); document.getElementById('filterBtn').classList.remove('on'); }); };
+    const T = [
+      ['複製', '#copyBtn', s => s.clip, (a, b) => b === a + 1],
+      ['欄標題排序', '#hd .c[data-col="1"]', s => s.sort, (a, b) => { const o = JSON.parse(a), nx = o.col !== 1 ? { col: 1, dir: 1 } : o.dir === 1 ? { col: 1, dir: -1 } : { col: -1, dir: 0 }; return b === J(nx); }],
+      ['首列為標題', 'label.tog', s => s.hdr, (a, b) => a !== b],
+      ['儲存格', '#rows .r:nth-child(3) .c[data-col="2"]', s => s.sheets, (a, b) => b === 'cellBg'],
+      ['匯出', '#exportBtn', s => s.sheets, (a, b) => b === 'exportBg'],
+    ];
+    const rest = await k.ctr('h1');
+    for (const [name, sel, val, ok] of T) {
+      for (const mode of ['single', 'resting', 'hold600', 'hold1000']) {
+        const a = await st();
+        await k.tap(sel, mode === 'hold600' ? 600 : mode === 'hold1000' ? 1000 : 40, mode === 'resting' ? rest : null);
+        await p.waitForTimeout(450); // lets the browser's own click (if any) arrive
+        const b = await st();
+        // a long press on a header picks the stats column instead of sorting (by design)
+        const good = sel.startsWith('#hd') && mode.startsWith('hold') ? b.sort === a.sort && b.stat === '1' : ok(val(a), val(b));
+        assert(good, `${name}：${mode === 'resting' ? '另一指按著時點' : mode === 'single' ? '單點' : '按住 ' + mode.slice(4) + 'ms'} 剛好一次 ${J([val(a), val(b)])}`);
+        if (b.hdr !== true) { await k.tap('label.tog'); await p.waitForFunction(() => document.getElementById('hdrChk').checked && window.__cv.columns[0].name === '訂單編號'); }
+        await reset();
+      }
+    }
+    // detail-0 click right after a tap (Chromium 141): on the control, on its edge, and on whatever is under the finger now
+    const d0 = (x, y, sel) => p.evaluate(([x, y, sel]) => { const e = sel ? document.querySelector(sel) : document.elementFromPoint(x, y); e && e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window, clientX: x, clientY: y })); }, [x, y, sel]);
+    for (const [name, sel, val, ok, prep] of [...T, ['字級＋', '#fsUp', s => s.fs, (a, b) => parseInt(b) === parseInt(a) + 1, async () => { await p.evaluate(() => document.getElementById('colsBtn').click()); await p.waitForTimeout(900); }],
+      ['欄位篩選', '#filterBtn', s => s.fo, (a, b) => b === true]]) {
+      if (prep) await prep();
+      const box = await p.$eval(sel, e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+      const a = await st();
+      await k.tap(sel); await p.waitForTimeout(30);
+      await d0(0, 0, sel); await d0(box[0] + 1, box[1] + box[3] / 2, null); await d0(box[0] + box[2] / 2, box[1] + box[3] / 2, null);
+      await p.waitForTimeout(400); const b = await st();
+      assert(ok(val(a), val(b)) && (b.sheets === a.sheets || ok(a.sheets, b.sheets) || (prep && b.sheets === 'colsBg')), `${name}：點一下後再來 detail-0 click（控制項、邊緣、手指下的新畫面）只執行一次 ${J([val(a), val(b), b.sheets])}`);
+      if (sel === '#filterBtn') { await p.waitForTimeout(900); await d0(0, 0, sel); await p.waitForTimeout(200); assert(!(await st()).fo, '沒有點擊在前的單獨 detail-0 click（鍵盤）執行一次'); }
+      if (b.hdr !== true) { await p.waitForTimeout(900); await k.tap('label.tog'); await p.waitForFunction(() => document.getElementById('hdrChk').checked && window.__cv.columns[0].name === '訂單編號'); }
+      await reset();
+    }
+    // Enter on a focused button right after a tap still works (keyboard is never blocked by an older tap)
+    await k.tap('#copyBtn'); await p.waitForTimeout(100); const c0 = (await st()).clip;
+    await p.focus('#copyBtn'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
+    assert((await st()).clip === c0 + 1, 'Enter 在點擊後 800ms 內仍然有效');
+    // a tap on 開啟 doesn't hand focus to the search box under the sheet etc.; a tap on the search box still focuses it
+    await p.waitForTimeout(900); await k.tap('#q'); await p.waitForTimeout(200);
+    assert(await p.evaluate(() => document.activeElement.id === 'q'), '直接點搜尋框仍會聚焦');
+    await ctx.close();
+  }
+  {
+    // 8e. paste draft survives reload; dismissing keeps it; loading clears it; 範例 over pasted data can be undone
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    await k.tap('#pasteBtn'); await p.waitForFunction(() => !document.getElementById('pasteBg').hidden);
+    await p.fill('#pasteIn', 'x,y\n9,9\n8,7');
+    await p.reload(); await p.waitForFunction(() => window.__cvReady);
+    await p.waitForTimeout(900); await k.tap('#pasteBtn'); await p.waitForFunction(() => !document.getElementById('pasteBg').hidden);
+    assert(await p.inputValue('#pasteIn') === 'x,y\n9,9\n8,7', '貼上面板的草稿重新整理後還在');
+    await p.waitForTimeout(900); await k.tap('#pasteBg [data-close]'); await p.waitForTimeout(300);
+    assert(/草稿已保留/.test(await p.textContent('#toastHost')), '取消貼上面板：提示草稿已保留');
+    await p.waitForTimeout(900); await k.tapAt([195, 60]); // nothing
+    await k.tap('#pasteBtn'); await p.waitForFunction(() => !document.getElementById('pasteBg').hidden);
+    assert(await p.inputValue('#pasteIn') === 'x,y\n9,9\n8,7', '取消後再開，草稿還在');
+    await p.waitForTimeout(900); await k.tap('#pasteGo');
+    await p.waitForFunction(() => document.getElementById('fname').textContent === '貼上的資料' && window.__cv.rows.length === 2);
+    assert(await p.evaluate(() => !localStorage.getItem('csv-viewer:v1:pasteDraft')), '載入表格後才清掉草稿');
+    await p.waitForTimeout(900); await k.tap('#sampleBtn');
+    await p.waitForFunction(() => !document.getElementById('sampleChip').hidden);
+    assert(await p.isVisible('#toastAct'), '範例蓋掉貼上的資料時，吐司有「復原」');
+    await p.waitForTimeout(900); await k.tap('#toastAct');
+    await p.waitForFunction(() => document.getElementById('fname').textContent === '貼上的資料' && window.__cv.rows.length === 2);
+    await p.evaluate(() => window.__cv.saved());
+    await p.reload(); await p.waitForFunction(() => window.__cvReady);
+    assert(await p.textContent('#fname') === '貼上的資料', '按復原後拿回貼上的資料，重新整理後也還在');
+    // encoding select explains why it is disabled for pasted text
+    assert(await p.evaluate(() => document.getElementById('encSel').disabled && /不需要選編碼/.test(document.getElementById('encLab').title) && document.getElementById('encSel').options[0].textContent === '文字免選'), '編碼停用時說明原因');
+    await p.waitForTimeout(900); await k.tap('#encLab'); await p.waitForTimeout(200);
+    assert(/不需要選編碼/.test(await p.textContent('#toastHost')), '點停用的編碼選單會說明原因');
+    // big export shows progress
+    await p.evaluate(() => { const a = ['id,name,v']; for (let i = 0; i < 60000; i++) a.push(i + ',n' + i + ',' + (i % 97)); return window.__cv.loadText(a.join('\n'), { name: 'big.csv' }); });
+    await p.waitForTimeout(900); await k.tap('#exportBtn'); await p.waitForFunction(() => !document.getElementById('exportBg').hidden);
+    await p.evaluate(() => { window.__prog = []; new MutationObserver(() => { const t = document.getElementById('eBusyTxt').textContent; if (t) window.__prog.push(t); }).observe(document.getElementById('eBusy'), { subtree: true, childList: true, characterData: true }); });
+    await p.$eval('#exp-copy-json', e => e.scrollIntoView({ block: 'center' }));
+    await p.waitForTimeout(900); await k.tap('#exp-copy-json');
+    await p.waitForFunction(() => window.__clip.length && window.__clip[window.__clip.length - 1].length > 1e6, null, { timeout: 20000 });
+    const prog = await p.evaluate(() => window.__prog);
+    assert(prog.length >= 1 && /正在產生 JSON/.test(prog[0]), '6 萬列匯出時顯示進度 ' + J(prog.slice(0, 3)));
+    await ctx.close();
+  }
+  {
+    // 8f. layout: title not covered at 320/360; controls in one row; more rows at 360×640
+    for (const [w, h] of [[320, 568], [360, 640], [390, 844]]) {
+      const { ctx, p } = await open({ viewport: { width: w, height: h } });
+      const r = await p.evaluate(() => { const h1 = document.querySelector('h1'), o = document.getElementById('openBtn').getBoundingClientRect(), b = h1.getBoundingClientRect();
+        const tops = [...document.querySelectorAll('.ctl > *')].map(e => Math.round(e.getBoundingClientRect().top));
+        return { gap: o.left - b.right, cut: h1.scrollWidth > h1.clientWidth, oneRow: new Set(tops).size === 1, sc: document.getElementById('sc').clientHeight, rh: document.querySelector('#rows .r').getBoundingClientRect().height }; });
+      assert(r.gap >= 0 && !r.cut, `${w}px：標題沒有被按鈕蓋住，也沒被截斷 ${J(r)}`);
+      assert(r.oneRow, `${w}px：分隔符、編碼、首列為標題在同一行`);
+      if (w === 360) assert(Math.floor((r.sc - 44) / r.rh) >= 6, '360×640：表格一次至少看到 6 列 ' + r.sc);
+      await ctx.close();
+    }
+  }
+
+  // 9. 上架重審 R2 toFix 回歸
+  {
+    // 9a. a finger resting on the table (row, row number, header) does not swallow a second finger's tap; real pinch still zooms
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    const st = () => p.evaluate(() => ({ sort: JSON.stringify(window.__cv.sort), sheets: [...document.querySelectorAll('.sheet-bg')].filter(s => !s.hidden).map(s => s.id).join(','), fs: getComputedStyle(document.documentElement).getPropertyValue('--fs').trim() }));
+    for (const [rn, rsel] of [['第 7 列儲存格', '#rows .r:nth-child(7) .c[data-col="0"]'], ['第 7 列列號', '#rows .r:nth-child(7) .rn'], ['標題列 #', '#hd .rn']]) {
+      const rest = await k.ctr(rsel);
+      const a = await st();
+      await k.tap('#hd .c[data-col="1"]', 40, rest); await p.waitForTimeout(450);
+      const b = await st();
+      assert(b.sort !== a.sort && JSON.parse(b.sort).col === 1 && b.sheets === '', `一指放在${rn}，另一指點「下單日期」會排序，放開的那指不算點擊 ${b.sort}`);
+      await p.evaluate(() => window.__cv.cycleSort(1)); await p.evaluate(() => window.__cv.sort.col >= 0 && window.__cv.cycleSort(1));
+      await k.tap('#rows .r:nth-child(2) .c[data-col="2"]', 40, rest); await p.waitForTimeout(450);
+      const c = await st();
+      assert(c.sheets === 'cellBg', `一指放在${rn}，另一指點第 2 列儲存格會打開儲存格面板 ${c.sheets}`);
+      await p.evaluate(() => { document.getElementById('cellBg').hidden = true; });
+    }
+    const box = await p.$eval('#sc', e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    const a = await st();
+    await k.T('touchStart', [[box[0] - 30, box[1], 91], [box[0] + 30, box[1], 92]]);
+    for (let i = 1; i <= 10; i++) { await k.T('touchMove', [[box[0] - 30 - i * 8, box[1], 91], [box[0] + 30 + i * 8, box[1], 92]]); await p.waitForTimeout(16); }
+    await k.T('touchEnd', [[box[0] - 110, box[1], 91], [box[0] + 110, box[1], 92]]); await p.waitForTimeout(400);
+    const b = await st();
+    assert(parseInt(b.fs) > parseInt(a.fs) && b.sheets === '', `兩指拉開仍會放大字級，且不會打開儲存格 ${a.fs}→${b.fs}`);
+    await ctx.close();
+  }
+  {
+    // 9b. 復原 still works after a reload (previous data kept in IndexedDB)
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    await p.evaluate(() => window.__cv.loadText('p,q\n1,2\n3,4\n5,6\n', { name: '貼上的資料' }));
+    await k.tap('#sampleBtn'); await p.waitForFunction(() => !document.getElementById('sampleChip').hidden);
+    await p.evaluate(() => window.__cv.saved());
+    await p.reload(); await p.waitForFunction(() => window.__cvReady);
+    assert(await p.isVisible('#undoBtn'), '重新整理後仍有「復原上一份」');
+    await k.tap('#undoBtn');
+    await p.waitForFunction(() => document.getElementById('fname').textContent === '貼上的資料' && window.__cv.rows.length === 3);
+    await p.evaluate(() => window.__cv.saved());
+    assert(await p.isHidden('#undoBtn'), '重新整理後按復原拿回貼上的資料，按鈕收起');
+    // 9c. big exports are built in chunks: a download is a Blob of parts, no single giant join
+    await p.evaluate(() => { const a = ['id,name,v']; for (let i = 0; i < 60000; i++) a.push(i + ',n' + i + ',' + (i % 97)); return window.__cv.loadText(a.join('\n'), { name: 'big.csv' }); });
+    await p.waitForTimeout(900); await k.tap('#exportBtn'); await p.waitForFunction(() => !document.getElementById('exportBg').hidden);
+    await p.$eval('#exp-dl-json', e => e.scrollIntoView({ block: 'center' })); await p.waitForTimeout(900);
+    const [dl] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), k.tap('#exp-dl-json')]);
+    const arr = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+    assert(arr.length === 60000 && arr[59999].id === 59999 && arr[123].name === 'n123', '6 萬列 JSON 分段組成檔案，下載內容完整');
+    await ctx.close();
+  }
+  {
+    // 9d. narrow menus carry a visible label; stats bar hints that it scrolls; desktop toolbar does not cover the stats bar
+    const { ctx, p } = await open({ viewport: { width: 360, height: 640 } });
+    const r = await p.evaluate(() => [...document.querySelectorAll('.info .pick .lb')].map(l => { const b = l.getBoundingClientRect(); return [l.textContent, b.width > 10 && b.height > 6]; }));
+    assert(/^分隔符/.test(r[0][0]) && r[0][1] && /^編碼/.test(r[1][0]) && r[1][1], '360 寬：分隔符、編碼選單上有看得到的標籤 ' + J(r));
+    assert(await p.evaluate(() => document.getElementById('statVals').classList.contains('more')), '360 寬：統計值超出時右邊有漸層提示');
+    await ctx.close();
+    const d = await open({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false });
+    const g = await d.p.evaluate(() => document.querySelector('.dock').getBoundingClientRect().top - document.getElementById('stats').getBoundingClientRect().bottom);
+    assert(g >= 0, '1280×800：工具列沒有蓋住統計列 ' + g);
+    await d.ctx.close();
+  }
+
+  // 10. 上架重審 R3 toFix 回歸
+  {
+    const { ctx, p } = await open();
+    const cons = []; p.on('console', m => cons.push(m.type() + ': ' + m.text()));
+    const k = await touchKit(p);
+    await p.evaluate(() => { window.__toasts = []; new MutationObserver(() => { const t = document.getElementById('toastHost').textContent; if (t) window.__toasts.push(t); }).observe(document.getElementById('toastHost'), { childList: true, subtree: true }); });
+    const st = () => p.evaluate(() => ({ clip: window.__clip.length, sort: JSON.stringify(window.__cv.sort), sheets: [...document.querySelectorAll('.sheet-bg')].filter(s => !s.hidden).map(s => s.id).join(','), fs: getComputedStyle(document.documentElement).getPropertyValue('--fs').trim() }));
+    const clean = async () => { await p.evaluate(async () => { document.querySelectorAll('.sheet-bg').forEach(s => s.hidden = true); while (window.__cv.sort.col >= 0) await window.__cv.cycleSort(window.__cv.sort.col); window.__toasts = []; }); };
+    // 10a. two overlapping quick taps (A down, B down 50 ms later, each ~100 ms): both fire, in either release order
+    const pair = async (selA, selB, aFirst) => {
+      const A = await k.ctr(selA), B = await k.ctr(selB), a = [A[0], A[1], 201], b = [B[0], B[1], 202];
+      await k.T('touchStart', [a]); await p.waitForTimeout(50); await k.T('touchStart', [a, b]); await p.waitForTimeout(60);
+      if (aFirst) { await k.T('touchEnd', [a]); await p.waitForTimeout(40); await k.T('touchEnd', [b]); }
+      else { await k.T('touchEnd', [b]); await p.waitForTimeout(40); await k.T('touchEnd', [a]); }
+      await p.waitForTimeout(450);
+    };
+    for (const aFirst of [true, false]) {
+      const ord = aFirst ? 'A 先放開' : 'B 先放開';
+      await clean();
+      await pair('#hd .c[data-col="0"]', '#hd .c[data-col="1"]', aFirst);
+      const t = await p.evaluate(() => window.__toasts.join('|'));
+      assert(/訂單編號/.test(t) && /下單日期/.test(t), `兩指快點兩個欄標題（${ord}）：兩個都排序 ${t}`);
+      await clean(); let a = await st();
+      await pair('#copyBtn', '#rows .r:nth-child(2) .c[data-col="2"]', aFirst); let b = await st();
+      assert(b.clip === a.clip + 1 && b.sheets === 'cellBg', `兩指快點複製＋儲存格（${ord}）：都執行 ${J([a.clip, b.clip, b.sheets])}`);
+      await clean(); a = await st();
+      await pair('#copyBtn', '#hd .c[data-col="1"]', aFirst); b = await st();
+      assert(b.clip === a.clip + 1 && JSON.parse(b.sort).col === 1, `兩指快點複製＋欄標題（${ord}）：都執行 ${J([b.clip - a.clip, b.sort])}`);
+    }
+    // a finger that rested on a row while another tapped is not a tap when it lifts (held 150 ms before the other finger)
+    await clean(); { const R = await k.ctr('#rows .r:nth-child(7) .c[data-col="0"]'), H = await k.ctr('#hd .c[data-col="1"]'), r = [R[0], R[1], 211], h = [H[0], H[1], 212];
+      await k.T('touchStart', [r]); await p.waitForTimeout(150); await k.T('touchStart', [r, h]); await p.waitForTimeout(60); await k.T('touchEnd', [h]); await p.waitForTimeout(300); await k.T('touchEnd', [r]); await p.waitForTimeout(450);
+      const s2 = await st(); assert(JSON.parse(s2.sort).col === 1 && s2.sheets === '', '一指放在第 7 列 150ms 後另一指點欄標題：排序，放開的那指不打開儲存格 ' + J(s2)); }
+    // 10b. pinch: spread 50→150 reaches 20, squeeze back reaches 12, no console messages at all
+    await clean(); cons.length = 0;
+    const sc = await p.$eval('#sc', e => { const r = e.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+    const pinch = async (from, to) => {
+      const seq = []; await k.T('touchStart', [[sc[0] - from / 2, sc[1], 301], [sc[0] + from / 2, sc[1], 302]]);
+      for (let i = 1; i <= 20; i++) { const d = from + (to - from) * i / 20; await k.T('touchMove', [[sc[0] - d / 2, sc[1], 301], [sc[0] + d / 2, sc[1], 302]]); await p.waitForTimeout(16); seq.push((await st()).fs); }
+      await k.T('touchEnd', [[sc[0] - to / 2, sc[1], 301]]); await p.waitForTimeout(30); await k.T('touchEnd', [[sc[0] + to / 2, sc[1], 302]]); await p.waitForTimeout(300);
+      return seq;
+    };
+    const up = await pinch(50, 150), down = await pinch(150, 50);
+    assert(up[up.length - 1] === '20px' && new Set(up).size >= 4, '兩指 50→150px：字級連續放大到 20 ' + up.join(','));
+    assert(down[down.length - 1] === '12px', '兩指 150→50px：字級縮回 12 ' + down.slice(-3).join(','));
+    assert(cons.length === 0 && (await st()).sheets === '', '縮放時主控台沒有任何訊息，也沒誤開面板 ' + cons.slice(0, 2).join(' | '));
+    assert(await p.evaluate(() => { const v = JSON.parse(localStorage.getItem('csv-viewer:v1:prefs')); return v.fs === 12; }), '縮放後的字級有存起來');
+    // 10c. ↶ swaps: back to the previous data, and the current one can be swapped back
+    await p.evaluate(async () => { await window.__cv.loadText('p\n1\n', { name: '資料A.csv' }); await window.__cv.loadText('q\n2\n3\n', { name: '資料B.csv' }); });
+    assert(/資料A/.test(await p.textContent('#undoBtn')), '換回按鈕上顯示上一份的檔名 ' + await p.textContent('#undoBtn'));
+    await p.waitForTimeout(900); await k.tap('#undoBtn');
+    await p.waitForFunction(() => document.getElementById('fname').textContent === '資料A.csv');
+    assert(/資料B/.test(await p.textContent('#undoBtn')), '換回 A 之後，按鈕變成可以換回 B');
+    await p.evaluate(() => window.__cv.saved()); await p.reload(); await p.waitForFunction(() => window.__cvReady);
+    await p.waitForTimeout(300); await k.tap('#undoBtn');
+    await p.waitForFunction(() => document.getElementById('fname').textContent === '資料B.csv' && window.__cv.rows.length === 2);
+    assert(true, '重新整理後再按一次換回 B');
+    await ctx.close();
+    // 10d. a long file name and the swap button stay on one line at 320–430
+    for (const w of [320, 390, 430]) {
+      const o = await open({ viewport: { width: w, height: 700 } });
+      await o.p.evaluate(async () => { await window.__cv.loadText('a\n1\n', { name: '一個名字很長很長的銷售報表2026年第三季.csv' }); await window.__cv.loadText('b\n2\n', { name: '另一份也很長的檔案名稱.csv' }); });
+      const h = await o.p.evaluate(() => [document.querySelector('.irow').getBoundingClientRect().height, document.documentElement.scrollWidth - innerWidth]);
+      assert(h[0] <= 46 && h[1] <= 0, `${w}px：長檔名加換回按鈕仍在同一行 ${J(h)}`);
+      await o.ctx.close();
+    }
+  }
+
+  // 11. 上架重審 R4：窄螢幕選單值完整、↶ 檔名、title 正確、標題列不換行、重疊點按門檻
+  {
+    const u16 = Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from('名稱\t值\r\n甲\t1\r\n', 'utf16le')]);
+    const files = [['a.tsv', u16], ['gb.csv', Buffer.from('c3fbb3c62cb3c7cad00d0ad5c5c8fd2cb1b1bea90d0a', 'hex')], ['b5.txt', Buffer.from('a6572cadc80d0aac4f2c310d0a', 'hex')], ['s.csv', Buffer.from('a;b\n1;2\n')]];
+    for (const w of [320, 360, 390]) {
+      const { ctx, p } = await open({ viewport: { width: w, height: 700 } });
+      const bad = [];
+      for (const [n, b] of files) {
+        await openFile(p, file(n, b)); await p.waitForFunction(n => document.getElementById('fname').textContent === n, n);
+        bad.push(...await p.evaluate(() => {
+          const out = [], cv = document.createElement('canvas').getContext('2d');
+          for (const id of ['delimSel', 'encSel']) {
+            const s = document.getElementById(id), cs = getComputedStyle(s), keep = s.selectedIndex;
+            cv.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+            const avail = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            for (let i = 0; i < s.options.length; i++) { s.selectedIndex = i; const t = s.options[i].textContent, tw = cv.measureText(t).width; if (tw > avail + 0.5) out.push(`${id}:${t} ${Math.round(tw)}>${Math.round(avail)}`); }
+            s.selectedIndex = keep;
+          }
+          const tog = document.querySelector('.info .tog').getBoundingClientRect().height;
+          if (tog > 46) out.push('標題列換行 ' + tog);
+          return out;
+        }));
+      }
+      const lbs = await p.evaluate(() => [...document.querySelectorAll('.info .lb')].map(l => l.textContent).join(','));
+      assert(!bad.length, `${w}px：分隔符／編碼每個選項的值都完整顯示，標題列不換行 ${J(bad.slice(0, 4))}`);
+      assert(w > 479 || lbs === '分隔符・自動,編碼・自動', `${w}px：自動偵測時標籤寫「・自動」 ${lbs}`);
+      // the swap button: a readable name, and its title names the right current file
+      await p.evaluate(async () => { await window.__cv.loadText('a\n1\n', { name: 'report_2026.csv' }); await window.__cv.loadText('b\n2\n', { name: '2026年10月銷售明細.csv' }); });
+      const ub = await p.evaluate(() => { const b = document.getElementById('undoBtn'); return { t: b.textContent, cut: b.scrollWidth > b.clientWidth + 1, title: b.title, row: document.querySelector('.irow').getBoundingClientRect().height }; });
+      assert(ub.t === '↶ report_2…' && !ub.cut && /換回「report_2026\.csv」.*目前的「2026年10月銷售明細\.csv」/.test(ub.title) && ub.row <= 46, `${w}px：↶ 按鈕顯示可辨認的檔名，title 寫對目前的檔案 ${J(ub)}`);
+      await ctx.close();
+    }
+  }
+  {
+    // a finger that landed 60 ms before another and is held 300 ms is still a tap (quick overlap), one resting 150 ms is not
+    const { ctx, p } = await open();
+    const k = await touchKit(p);
+    const C = await k.ctr('#rows .r:nth-child(5) .c[data-col="2"]'), H = await k.ctr('#hd .c[data-col="1"]');
+    await k.T('touchStart', [[C[0], C[1], 401]]); await p.waitForTimeout(60); await k.T('touchStart', [[C[0], C[1], 401], [H[0], H[1], 402]]); await p.waitForTimeout(60);
+    await k.T('touchEnd', [[H[0], H[1], 402]]); await p.waitForTimeout(150); await k.T('touchEnd', [[C[0], C[1], 401]]); await p.waitForTimeout(450);
+    const r = await p.evaluate(() => [JSON.parse(JSON.stringify(window.__cv.sort)).col, document.getElementById('cellBg').hidden]);
+    assert(r[0] === 1 && r[1] === false, '先按 60ms 的手指按了約 300ms 才放開：仍算點擊（排序和儲存格都執行） ' + J(r));
+    await ctx.close();
+  }
+
   await browser.close();
   fs.rmSync(TMP, { recursive: true, force: true });
   assert(errors.length === 0, '沒有頁面或主控台錯誤 ' + errors.slice(0, 3).join(' | '));
