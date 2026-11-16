@@ -271,11 +271,14 @@ for (const [season, seed] of [[0, 11], [1, 12], [2, 13], [3, 14]]) {
     ok(await until(() => __shop.view === 'market' && __shop.run.price.noodle === 16, null, 5000), 'refresh keeps the market and prices');
     at('open the shop'); await page.tap('#bOpen');
     ok(await until(() => __shop.view === 'day' && __shop.run.phase === 'day'), 'open starts the day');
-    // freeze the clock so nobody is served on their own between filling the queue and the tap
+    // freeze the clock so nobody is served on their own between a customer reaching the counter and the tap.
+    // Wait for the first customer, not for a queue of 3: the season's seed is random, and on about 1 seed in 30
+    // (mostly a rainy day 1) the queue never reaches 3, so the loop ran to closing time and the day ended under the test.
     at('serve tap');
-    const before = await page.evaluate(() => { __shop.lockstep(true); const r = __shop.run; while (r.ds.q.length < 3 && !SHOP.dayDone(r)) SHOP.tick(r); return r.ds.served; });
+    const before = await page.evaluate(() => { __shop.lockstep(true); const r = __shop.run; while (r.ds.q.length < 1 && !SHOP.dayDone(r)) SHOP.tick(r); return { served: r.ds.served, t: r.ds.t, seed: r.seed }; });
+    ok(before.t < CLOSE - 60, `a customer reaches the counter well before closing (t ${before.t}, seed ${before.seed})`);
     await page.tap('#bServe');
-    ok(await until(n => __shop.run.ds.served === n && __shop.run.ds.taps === 1, before + 1, 5000), 'touching 結帳 serves the counter');
+    ok(await until(n => __shop.run.ds.served === n && __shop.run.ds.taps === 1, before.served + 1, 5000), 'touching 結帳 serves the counter');
     // let the day run on its own for a while (it autosaves as it goes), then freeze it and refresh
     at('day runs');
     const tRun = await page.evaluate(() => { __shop.lockstep(false); return __shop.run.ds.t; });
