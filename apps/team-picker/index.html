@@ -72,6 +72,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .cols { display: grid; gap: 16px; }
 @media (max-width: 899px) { .app.on-draw .main { order: -1; } .app.on-draw .roster textarea { height: 110px; } }
+/* phones: 開始分組 sits right under the header and stays pinned to the top while scrolling (it covers nothing at the top of the page) */
+.go-row { position: sticky; top: 0; z-index: 30; background: var(--bg); padding: 4px 0 10px; margin: -6px 0 6px; }
+.go-row:empty, .app.on-draw .go-row { display: none; }
+.go-row .go { margin: 0; box-shadow: var(--shadow); }
+.go-row { box-shadow: 0 8px 8px -8px rgba(0,0,0,.28); }
+@media (max-height: 499px) { .go-row { position: static; box-shadow: none; } html { scroll-padding-top: 0 !important; } }
+@media (max-width: 899px) { html { scroll-padding-top: 80px; } .roster textarea { height: 104px; } }
 @media (min-width: 900px) { .cols { grid-template-columns: 360px 1fr; align-items: start; } .roster { position: sticky; top: 10px; } }
 
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
@@ -143,6 +150,8 @@ details.rules[open] summary::before { content: "－"; }
 .bib .no { font-size: 34px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; min-width: 1.2em; }
 .bib input { flex: 1; min-width: 0; min-height: 44px; border: 0; background: transparent; font-weight: 800; font-size: 17px; color: var(--bib-ink); border-radius: 8px; padding: 0 6px; }
 .bib input:focus { background: rgba(255,255,255,.4); outline: none; }
+.bib input { border-bottom: 2px dashed rgba(18,22,20,.45); border-radius: 8px 8px 0 0; cursor: text; }
+.bib .pen { font-size: 15px; opacity: .7; margin-left: -6px; pointer-events: none; }
 .bib .n { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .members { list-style: none; margin: 0; padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 56px; }
 .member { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 600; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: grab; }
@@ -179,7 +188,14 @@ h2.sec { font-size: 15px; margin: 16px 0 8px; display: flex; align-items: center
 .sheet input { min-height: 44px; border: 1.5px solid var(--line-strong); border-radius: 10px; padding: 0 10px; background: var(--surface-2); }
 .tag-quick { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (min-width: 600px) { .scrim { align-items: center; } }
-.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; z-index: 60; max-width: calc(100% - 32px); text-align: center; font-size: 14px; }
+.toast { position: fixed; left: 16px; top: 0; background: var(--ink); color: var(--bg); padding: 4px 6px 4px 16px; min-height: 44px; border-radius: 10px; font-weight: 600; z-index: 60; max-width: calc(100% - 32px); font-size: 14px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.toast[hidden] { display: none; }
+.toast #toast-act { pointer-events: auto; min-height: 44px; min-width: 64px; border: 0; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 800; cursor: pointer; padding: 0 12px; }
+.toast #toast-act[hidden] { display: none; }
+.mlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 40vh; overflow: auto; }
+.mlist li { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 8px; padding-left: 10px; }
+.mlist li span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.mlist .empty { padding: 10px 0; }
 .copybox { width: 100%; height: 140px; }
 @media (hover: hover) {
   .btn:not(:disabled):hover, .chip:hover, .member:hover { border-color: var(--ink); }
@@ -197,6 +213,7 @@ h2.sec { font-size: 15px; margin: 16px 0 8px; display: flex; align-items: center
     </div>
     <button class="icon-btn" id="theme-btn" aria-label="切換主題：跟隨系統" title="主題"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
   </header>
+  <div class="go-row" id="go-row"></div>
 
   <div class="cols">
     <section class="panel roster" aria-label="名單">
@@ -209,6 +226,7 @@ h2.sec { font-size: 15px; margin: 16px 0 8px; display: flex; align-items: center
       <div class="btnrow">
         <select class="btn" id="roster-load" aria-label="載入名單"><option value="">載入名單</option></select>
         <button class="btn" id="roster-save">儲存名單</button>
+        <button class="btn" id="roster-manage">管理／備份</button>
         <button class="btn danger" id="roster-clear">清空</button>
       </div>
       <div class="inline-form" id="save-form" hidden>
@@ -253,7 +271,7 @@ h2.sec { font-size: 15px; margin: 16px 0 8px; display: flex; align-items: center
               <button class="btn" id="rule-add">加入規則</button>
             </div>
           </details>
-          <button class="go" id="go">開始分組</button>
+          <div id="go-slot"><button class="go" id="go">開始分組</button></div>
         </div>
         <p class="msg" id="go-msg" role="status"></p>
         <div id="result" hidden>
@@ -300,7 +318,16 @@ h2.sec { font-size: 15px; margin: 16px 0 8px; display: flex; align-items: center
     <button class="btn" id="copy-close">關閉</button>
   </div>
 </div>
-<div class="toast" id="toast" role="status" hidden></div>
+<div class="scrim" id="manage-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="manage-title">
+    <h3 id="manage-title">名單管理與備份</h3>
+    <ul class="mlist" id="manage-list"></ul>
+    <p class="hint" style="margin:0">備份檔包含目前名單、已儲存名單、規則、分組結果與抽人順序，可存到別台裝置再匯入。</p>
+    <div class="btnrow"><button class="btn" id="backup-export">匯出備份</button><button class="btn" id="backup-import">匯入備份</button><button class="btn" id="manage-close">關閉</button></div>
+    <input type="file" id="backup-file" accept=".json,application/json" hidden>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden><span id="toast-text"></span><button id="toast-act" hidden>復原</button></div>
 
 <script>
 (() => {
@@ -314,8 +341,52 @@ const store = {
     if (raw == null) return d;
     try { return JSON.parse(raw); } catch (e) { try { localStorage.setItem(P + 'corrupt', raw); } catch (_) {} return d; }
   },
-  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} }
+  set(k, v) { try { localStorage.setItem(P + k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(P + k); } catch (e) {} }
 };
+
+// ---------- stored-data validation: anything of the wrong type or shape falls back to defaults ----------
+const MAX = 1000, ROSTER_CAP = 100;
+const SAMPLE = ['王小明,男', '李大華,男', '陳怡君,女', '林志豪,男', '張雅婷,女', '黃冠宇,男', '吳佩珊,女', '劉家豪,男', '蔡宜蓁,女', '楊承恩,男', '許詩涵,女', '鄭宇翔,男'].join('\n');
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const str = (v, d = '') => typeof v === 'string' ? v : d;
+const strArr = v => Array.isArray(v) ? v.filter(x => typeof x === 'string') : [];
+const posInt = (v, d) => Number.isInteger(v) && v >= 1 && v <= MAX ? v : d;
+const THEMES = ['num', 'animal', 'color'];
+function cleanCurrent(v) {
+  if (!isObj(v)) v = {};
+  return {
+    text: str(v.text, SAMPLE), absent: strArr(v.absent), mode: v.mode === 'size' ? 'size' : 'count',
+    kCount: posInt(v.kCount, 3), kSize: posInt(v.kSize, 4), optTag: v.optTag === true, optAvoid: v.optAvoid === true,
+    nameTheme: THEMES.includes(v.nameTheme) ? v.nameTheme : 'num', tab: v.tab === 'draw' ? 'draw' : 'group'
+  };
+}
+function cleanResult(v) {
+  if (!isObj(v) || !Array.isArray(v.groups) || !v.groups.length || !v.groups.every(Array.isArray)) return null;
+  const groups = v.groups.map(g => g.filter(p => isObj(p) && typeof p.name === 'string').map(p => ({ name: p.name, tag: str(p.tag) })));
+  const names = groups.map((_, i) => Array.isArray(v.names) && typeof v.names[i] === 'string' ? v.names[i] : '');
+  return { groups, names };
+}
+function cleanRosters(v) {
+  if (!Array.isArray(v)) return [];
+  return v.filter(r => isObj(r) && typeof r.name === 'string' && Array.isArray(r.people)).map((r, i) => ({
+    id: typeof r.id === 'string' && r.id ? r.id : 'r' + Date.now().toString(36) + i, name: r.name,
+    people: r.people.filter(p => isObj(p) && typeof p.name === 'string').map(p => ({ name: p.name, tag: str(p.tag), absent: p.absent === true }))
+  }));
+}
+const pairOk = r => Array.isArray(r) && r.length === 2 && typeof r[0] === 'string' && typeof r[1] === 'string' && r[0] !== r[1];
+function cleanRules(v) {
+  if (!isObj(v)) return { together: [], apart: [] };
+  return { together: Array.isArray(v.together) ? v.together.filter(pairOk).map(r => [r[0], r[1]]) : [], apart: Array.isArray(v.apart) ? v.apart.filter(pairOk).map(r => [r[0], r[1]]) : [] };
+}
+function cleanDraw(v) {
+  if (!isObj(v)) return { order: [], norepeat: true };
+  return { order: strArr(v.order), norepeat: v.norepeat !== false };
+}
+function cleanLast(v) {
+  if (!Array.isArray(v) || !v.every(Array.isArray)) return null;
+  return v.map(strArr);
+}
 
 // ---------- secure random (rejection sampling, buffered) ----------
 const hasCrypto = !!(window.crypto && crypto.getRandomValues);
@@ -330,37 +401,112 @@ function randInt(n) {
 }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = randInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
-// ---------- toast / copy ----------
-let toastT;
-function toast(s) { const t = $('#toast'); t.textContent = s; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+// ---------- toast (optionally with 復原) / copy ----------
+let toastT, toastUndo = null;
+function toast(s, undo, ms) {
+  const t = $('#toast'); $('#toast-text').textContent = s; t.hidden = false;
+  toastUndo = undo || null; $('#toast-act').hidden = !undo;
+  placeToast(); setTimeout(placeToast, 60); setTimeout(placeToast, 450);
+  clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; toastUndo = null; }, ms || (undo ? 6000 : 2200));
+}
+/* The toast never covers a control: with a sheet open it sits just above the sheet (or below it); otherwise it takes the
+   lowest free spot of the viewport (centre, then left / right) that touches no button, field, chip or member, and moves
+   again whenever the page scrolls or the layout changes. */
+const CTRL_SEL = 'button, input:not([type=file]), select, textarea, summary, label.check, .member, #draw-order li[data-i]';
+function placeToast() {
+  const t = $('#toast'); if (t.hidden) return;
+  const W = document.documentElement.clientWidth, H = innerHeight, edge = 12, m = 1;
+  t.style.left = edge + 'px'; t.style.top = '0px';
+  const tw = Math.min(t.offsetWidth, W - 2 * edge), th = t.offsetHeight;
+  const sheet = [...document.querySelectorAll('.scrim')].find(x => !x.hidden);
+  let rects, soft = [];
+  if (sheet) {
+    const r = sheet.firstElementChild.getBoundingClientRect();
+    rects = [r];
+  } else {
+    rects = [];
+    const cb = $('#chips').getBoundingClientRect();   // chips scroll inside their box: only the visible part counts
+    document.querySelectorAll(CTRL_SEL).forEach(el => {
+      if (t.contains(el)) return;
+      let r = el.getBoundingClientRect();
+      if (el.classList.contains('chip')) {
+        if (r.bottom > 0 && r.top < H) soft.push(r);   // the scrolled-away part of a chip: avoid it too when there is room
+        r = { left: Math.max(r.left, cb.left), right: Math.min(r.right, cb.right), top: Math.max(r.top, cb.top), bottom: Math.min(r.bottom, cb.bottom) };
+        r.width = r.right - r.left; r.height = r.bottom - r.top; if (r.width <= 0 || r.height <= 0) return;
+      }
+      if (r.width && r.height && r.bottom > 0 && r.top < H && r.right > 0 && r.left < W) rects.push(r);
+    });
+  }
+  const hits = (x, y, list = rects) => { let a = 0; for (const r of list) { const w = Math.min(x + tw + m, r.right) - Math.max(x - m, r.left), h = Math.min(y + th + m, r.bottom) - Math.max(y - m, r.top); if (w > 0.5 && h > 0.5) a += w * h; } return a; };
+  const xs = [...new Set([Math.round((W - tw) / 2), edge, Math.round(W - edge - tw)])].filter(x => x >= edge - 0.5);
+  const bottom = H - th - 16;
+  let best = null, clean = null;
+  for (let y = bottom; y >= edge && !clean; y -= 2) {
+    for (const x of xs) {
+      const a = hits(x, y); if (!best || a < best.a) best = { x, y, a };
+      if (!a && !hits(x, y, soft)) { clean = { x, y, a: 0 }; break; }
+    }
+  }
+  if (clean) best = clean;
+  if (!best || best.a > 0) {
+    // no clear spot (e.g. a long draw order): always the same place, at the top under the header / pinned 開始分組 row.
+    // The toast body lets taps through (pointer-events: none), so only 復原 itself can take a tap.
+    let y = edge; const gr = $('#go-row');
+    if (!sheet && gr && gr.getClientRects().length) { const r = gr.getBoundingClientRect(); if (r.bottom > 0 && r.top < H) y = Math.max(y, Math.round(r.bottom) + 6); }
+    y = Math.min(y, Math.max(edge, H - th - edge));
+    // of centre / left / right, take the one where 復原 (the only part that takes taps) is over the fewest controls
+    const act = $('#toast-act'), ax = act.hidden ? 0 : act.offsetLeft, aw = act.hidden ? 0 : act.offsetWidth;
+    const actHits = (x, y) => { if (!aw) return 0; let a = 0; for (const r of rects) { const w = Math.min(x + ax + aw + m, r.right) - Math.max(x + ax - m, r.left), h = Math.min(y + th + m, r.bottom) - Math.max(y - m, r.top); if (w > 0.5 && h > 0.5) a += w * h; } return a; };
+    best = { x: xs[0], y, a: actHits(xs[0], y) };
+    for (const x of xs.slice(1)) { const a = actHits(x, y); if (a < best.a) best = { x, y, a }; }
+    // 復原 would still sit on a control there: move to the lowest spot where it doesn't
+    if (best.a > 0) for (let yy = bottom; yy >= edge && best.a > 0; yy -= 4) for (const x of xs) { const a = actHits(x, yy); if (a < best.a) { best = { x, y: yy, a }; if (!a) break; } }
+  }
+  t.style.left = best.x + 'px'; t.style.top = best.y + 'px';
+}
+let toastRaf = 0;
+const toastSoon = () => { if (!toastRaf && !$('#toast').hidden) toastRaf = requestAnimationFrame(() => { toastRaf = 0; placeToast(); }); };
+addEventListener('scroll', toastSoon, { capture: true, passive: true });
+addEventListener('resize', toastSoon);
+// in-place layout changes (rules expanded, save form opened, roster rebuilt, results re-rendered) move the toast too
+document.addEventListener('toggle', toastSoon, true);
+if (window.ResizeObserver) { const ro = new ResizeObserver(toastSoon); ro.observe(document.querySelector('.app')); ro.observe(document.body); }
+if (window.MutationObserver) new MutationObserver(toastSoon).observe(document.querySelector('.app'), { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'open', 'class'] });
+$('#toast-act').addEventListener('click', () => { const u = toastUndo; toastUndo = null; $('#toast').hidden = true; clearTimeout(toastT); if (u) { u(); toast('已復原'); } });
 function copyText(text) {
   const fallback = () => {
     const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;top:0';
     document.body.appendChild(ta); ta.select(); let ok = false;
     try { ok = document.execCommand('copy'); } catch (e) {}
     ta.remove();
-    if (ok) toast('已複製'); else { $('#copy-area').value = text; $('#copy-sheet').hidden = false; $('#copy-area').focus(); $('#copy-area').select(); }
+    if (ok) toast('已複製'); else { $('#copy-area').value = text; showSheet('#copy-sheet'); $('#copy-area').focus(); $('#copy-area').select(); }
   };
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('已複製'), fallback);
     else fallback();
   } catch (e) { fallback(); }
 }
-$('#copy-close').onclick = () => $('#copy-sheet').hidden = true;
+// sheets: remember when each was shown, so only a press that started after it appeared can close it from the backdrop
+let screenGen = 0;
+function showSheet(sel) { const s = $(sel); s.hidden = false; s.dataset.shown = performance.now(); screenGen++; placeToast(); }
+function hideSheet(sel) { const s = typeof sel === 'string' ? $(sel) : sel; if (!s.hidden) { s.hidden = true; screenGen++; placeToast(); } }
+$('#copy-close').onclick = () => hideSheet('#copy-sheet');
 
-// two-tap confirmation instead of confirm()
+// two-tap confirmation instead of confirm(); the tap layer swallows the browser's own click after a tap, so only a second real tap (or key press) confirms
 function armed(btn, label, action) {
   const orig = btn.textContent; let t;
+  const disarm = () => { clearTimeout(t); btn.classList.remove('armed'); btn.textContent = orig; };
   btn.addEventListener('click', () => {
-    if (btn.classList.contains('armed')) { clearTimeout(t); btn.classList.remove('armed'); btn.textContent = orig; action(); return; }
+    if (btn.classList.contains('armed')) { disarm(); action(); return; }
     btn.classList.add('armed'); btn.textContent = label;
-    t = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = orig; }, 3000);
+    t = setTimeout(disarm, 3000);
   });
 }
 
 // ---------- theme ----------
 const themes = ['auto', 'light', 'dark'], themeName = { auto: '跟隨系統', light: '淺色', dark: '深色' };
 let theme = store.get('theme', 'auto');
+if (!themes.includes(theme)) theme = 'auto';
 function applyTheme() {
   if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
   $('#theme-btn').setAttribute('aria-label', '切換主題：' + themeName[theme]);
@@ -369,37 +515,48 @@ $('#theme-btn').onclick = () => { theme = themes[(themes.indexOf(theme) + 1) % 3
 applyTheme();
 
 // ---------- roster ----------
-const SAMPLE = ['王小明,男', '李大華,男', '陳怡君,女', '林志豪,男', '張雅婷,女', '黃冠宇,男', '吳佩珊,女', '劉家豪,男', '蔡宜蓁,女', '楊承恩,男', '許詩涵,女', '鄭宇翔,男'].join('\n');
-const MAX = 1000;
-let cur = store.get('current', null) || { text: SAMPLE, absent: [] };
-let absent = new Set(cur.absent || []);
+let cur = cleanCurrent(store.get('current', null));
+let absent = new Set(cur.absent);
 let people = [];   // [{name, base, tag, line}]
 let parseInfo = { dups: 0, over: 0 };
 
+/** Each line "name,tag". Repeated names get the next free "(n)" suffix that is not also a name typed in the list. */
 function parse(text) {
-  const out = [], seen = new Map(); let dups = 0, over = 0;
+  const rows = []; let over = 0;
   text.split(/\r?\n/).forEach((raw, line) => {
     const s = raw.trim(); if (!s) return;
     const m = s.split(/[,\t，]/);
     const base = m[0].trim(); if (!base) return;
-    const tag = (m[1] || '').trim();
-    if (out.length >= MAX) { over++; return; }
-    const c = (seen.get(base) || 0) + 1; seen.set(base, c);
-    if (c > 1) dups++;
-    out.push({ name: c > 1 ? `${base}(${c})` : base, base, tag, line });
+    if (rows.length >= MAX) { over++; return; }
+    rows.push({ base, tag: (m[1] || '').trim(), line });
+  });
+  const typed = new Set(rows.map(r => r.base)), used = new Set(), next = new Map(); let dups = 0;
+  const out = rows.map(r => {
+    let name = r.base;
+    if (used.has(name)) {
+      dups++; let c = next.get(r.base) || 2;
+      while (typed.has(`${r.base}(${c})`) || used.has(`${r.base}(${c})`)) c++;
+      name = `${r.base}(${c})`; next.set(r.base, c + 1);
+    }
+    used.add(name);
+    return { name, base: r.base, tag: r.tag, line: r.line };
   });
   return { list: out, dups, over };
 }
 const present = () => people.filter(p => !absent.has(p.name));
 function saveCurrent() { cur.text = $('#roster-text').value; cur.absent = [...absent]; store.set('current', cur); }
 
+function setCount() {
+  const n = present().length;
+  $('#count').innerHTML = `共 <b>${people.length}</b> 人` + (people.length !== n ? `，出席 <b>${n}</b>` : '');
+}
 function refreshRoster() {
+  clearTimeout(inputT); inputT = null;
   const r = parse($('#roster-text').value);
   people = r.list; parseInfo = r;
   const names = new Set(people.map(p => p.name));
   absent.forEach(n => { if (!names.has(n)) absent.delete(n); });
-  const n = present().length;
-  $('#count').innerHTML = `共 <b>${people.length}</b> 人` + (people.length !== n ? `，出席 <b>${n}</b>` : '');
+  setCount();
   $('#sample-badge').hidden = $('#roster-text').value !== SAMPLE;
   const notes = [];
   if (r.dups) notes.push(`有 ${r.dups} 個同名，已自動加上 (2)、(3) 區分`);
@@ -416,30 +573,38 @@ function refreshRoster() {
   chips.appendChild(frag);
   refreshRuleSelects(); updateGoState(); refreshDraw(); saveCurrent();
 }
-let inputT;
+let inputT = null;
 $('#roster-text').addEventListener('input', () => { clearTimeout(inputT); inputT = setTimeout(refreshRoster, 150); });
+// never lose the last keystrokes: save right away when the page is hidden or unloaded
+function flush() { if (inputT) refreshRoster(); else saveCurrent(); }
+addEventListener('pagehide', flush);
+addEventListener('beforeunload', flush);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
-// chips: tap toggles attendance, long-press edits tag
-let lpTimer = null, lpFired = false, lpIndex = -1;
+// chips: tap toggles attendance (via the tap layer), long-press edits tag
+let lpTimer = null;
 $('#chips').addEventListener('pointerdown', e => {
   const c = e.target.closest('.chip'); if (!c) return;
-  lpFired = false; lpIndex = +c.dataset.i;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const i = +c.dataset.i, id = e.pointerId;
   const sx = e.clientX, sy = e.clientY;
-  lpTimer = setTimeout(() => { lpFired = true; openTag(lpIndex); }, 500);
-  const mv = ev => { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) clearTimeout(lpTimer); };
-  const up = () => { clearTimeout(lpTimer); removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    // the long-press consumes this press: its release must not toggle the chip or land on the sheet's backdrop
+    const d = downs.get(id); if (d) d.used = true;
+    openTag(i);
+  }, 500);
+  const mv = ev => { if (ev.pointerId === id && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) clearTimeout(lpTimer); };
+  const up = ev => { if (ev.pointerId !== id) return; clearTimeout(lpTimer); removeEventListener('pointermove', mv); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
   addEventListener('pointermove', mv); addEventListener('pointerup', up); addEventListener('pointercancel', up);
 });
 $('#chips').addEventListener('contextmenu', e => { if (e.target.closest('.chip')) e.preventDefault(); });
 $('#chips').addEventListener('click', e => {
   const c = e.target.closest('.chip'); if (!c) return;
-  if (lpFired) { lpFired = false; return; }
   const p = people[+c.dataset.i]; if (!p) return;
   if (absent.has(p.name)) absent.delete(p.name); else absent.add(p.name);
   c.classList.toggle('absent', absent.has(p.name)); c.setAttribute('aria-pressed', String(!absent.has(p.name)));
-  const n = present().length;
-  $('#count').innerHTML = `共 <b>${people.length}</b> 人` + (people.length !== n ? `，出席 <b>${n}</b>` : '');
-  updateGoState(); refreshDraw(); saveCurrent();
+  setCount(); updateGoState(); refreshDraw(); saveCurrent();
 });
 
 // tag sheet
@@ -451,10 +616,10 @@ function openTag(i) {
   const tags = [...new Set(people.map(q => q.tag).filter(Boolean).concat(['男', '女']))].slice(0, 8);
   $('#tag-quick').innerHTML = '';
   tags.forEach(t => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = t; b.onclick = () => setTag(t); $('#tag-quick').appendChild(b); });
-  $('#tag-sheet').hidden = false; $('#tag-input').focus();
+  showSheet('#tag-sheet'); $('#tag-input').focus();
 }
 function setTag(t) {
-  const p = people[tagFor]; $('#tag-sheet').hidden = true; if (!p) return;
+  const p = people[tagFor]; hideSheet('#tag-sheet'); if (!p) return;
   const lines = $('#roster-text').value.split(/\r?\n/);
   t = t.replace(/[,\t，]/g, ' ').trim();
   lines[p.line] = p.base + (t ? ',' + t : '');
@@ -462,27 +627,29 @@ function setTag(t) {
 }
 $('#tag-ok').onclick = () => setTag($('#tag-input').value);
 $('#tag-clear').onclick = () => setTag('');
-$('#tag-cancel').onclick = () => $('#tag-sheet').hidden = true;
+$('#tag-cancel').onclick = () => hideSheet('#tag-sheet');
 $('#tag-input').addEventListener('keydown', e => { if (e.key === 'Enter') setTag($('#tag-input').value); });
-document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s) s.hidden = true; }));
-addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.scrim').forEach(s => s.hidden = true); });
+document.querySelectorAll('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s) hideSheet(s); }));
+addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.scrim').forEach(s => hideSheet(s)); });
 
 // saved rosters
-let rosters = store.get('rosters', []);
-if (!Array.isArray(rosters)) rosters = [];
+let rosters = cleanRosters(store.get('rosters', []));
 function refreshRosterSelect() {
   const sel = $('#roster-load'); sel.innerHTML = '<option value="">載入名單</option><option value="__sample">範例：12 人（男女標籤）</option>';
   rosters.forEach(r => { const o = document.createElement('option'); o.value = r.id; o.textContent = `${r.name}（${r.people.length} 人）`; sel.appendChild(o); });
+  if (!$('#manage-sheet').hidden) renderManage();
 }
-$('#roster-load').addEventListener('change', e => {
-  const v = e.target.value; e.target.value = ''; if (!v) return;
-  if (v === '__sample') { $('#roster-text').value = SAMPLE; absent.clear(); refreshRoster(); toast('已載入範例名單'); return; }
-  const r = rosters.find(x => x.id === v); if (!r) return;
+function loadRoster(r) {
   $('#roster-text').value = r.people.map(p => p.name + (p.tag ? ',' + p.tag : '')).join('\n');
   absent = new Set(); refreshRoster();
   // names after parse may have (2) suffixes; map absent flags by order
   r.people.forEach((p, i) => { if (p.absent && people[i]) absent.add(people[i].name); });
   refreshRoster(); toast(`已載入「${r.name}」`);
+}
+$('#roster-load').addEventListener('change', e => {
+  const v = e.target.value; e.target.value = ''; if (!v) return;
+  if (v === '__sample') { $('#roster-text').value = SAMPLE; absent.clear(); refreshRoster(); toast('已載入範例名單'); return; }
+  const r = rosters.find(x => x.id === v); if (r) loadRoster(r);
 });
 $('#roster-save').onclick = () => { const f = $('#save-form'); f.hidden = !f.hidden; if (!f.hidden) $('#roster-name').focus(); };
 function doSave() {
@@ -490,17 +657,90 @@ function doSave() {
   if (!people.length) { toast('名單是空的'); return; }
   const data = { id: Date.now().toString(36), name, people: people.map(p => ({ name: p.base, tag: p.tag, absent: absent.has(p.name) })) };
   const ex = rosters.findIndex(r => r.name === name);
-  if (ex >= 0) { data.id = rosters[ex].id; rosters[ex] = data; } else rosters.unshift(data);
-  rosters = rosters.slice(0, 30); store.set('rosters', rosters); refreshRosterSelect();
+  if (ex >= 0) { data.id = rosters[ex].id; rosters[ex] = data; }
+  else if (rosters.length >= ROSTER_CAP) { toast(`已儲存 ${rosters.length} 份名單（上限 ${ROSTER_CAP}），請先在「管理／備份」刪除不用的名單`, null, 5000); return; }
+  else rosters.unshift(data);
+  store.set('rosters', rosters); refreshRosterSelect();
   $('#save-form').hidden = true; $('#roster-name').value = ''; toast(`已儲存「${name}」`);
 }
 $('#roster-save-ok').onclick = doSave;
 $('#roster-name').addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
-armed($('#roster-clear'), '確定清空？', () => { $('#roster-text').value = ''; absent.clear(); refreshRoster(); $('#roster-text').focus(); });
+armed($('#roster-clear'), '確定清空？', () => {
+  const text = $('#roster-text').value, ab = [...absent];
+  $('#roster-text').value = ''; absent.clear(); refreshRoster();
+  toast('已清空名單', () => { $('#roster-text').value = text; absent = new Set(ab); refreshRoster(); });
+});
+
+// manage sheet: delete saved rosters, backup export / import
+function renderManage() {
+  const ul = $('#manage-list'); ul.innerHTML = '';
+  if (!rosters.length) { ul.innerHTML = '<li class="empty" style="background:none">還沒有儲存的名單。輸入名單後按「儲存名單」。</li>'; return; }
+  rosters.forEach(r => {
+    const li = document.createElement('li');
+    li.innerHTML = '<span></span><button class="btn" data-act="load">載入</button><button class="btn danger" data-act="del">刪除</button>';
+    li.querySelector('span').textContent = `${r.name}（${r.people.length} 人）`;
+    li.querySelector('[data-act=load]').id = 'mload-' + r.id; li.querySelector('[data-act=del]').id = 'mdel-' + r.id;
+    li.querySelector('[data-act=load]').onclick = () => { hideSheet('#manage-sheet'); loadRoster(r); };
+    li.querySelector('[data-act=del]').onclick = () => {
+      const at = rosters.indexOf(r); if (at < 0) return;
+      rosters.splice(at, 1); store.set('rosters', rosters); refreshRosterSelect();
+      toast(`已刪除「${r.name}」`, () => { if (!rosters.includes(r)) { rosters.splice(Math.min(at, rosters.length), 0, r); store.set('rosters', rosters); refreshRosterSelect(); } });
+    };
+    ul.appendChild(li);
+  });
+}
+$('#roster-manage').onclick = () => { renderManage(); showSheet('#manage-sheet'); };
+$('#manage-close').onclick = () => hideSheet('#manage-sheet');
+function snapshot() {
+  saveCurrent();
+  return { app: 'team-picker', version: 1, exportedAt: new Date().toISOString(), current: JSON.parse(JSON.stringify(cur)), rosters: JSON.parse(JSON.stringify(rosters)), rules: JSON.parse(JSON.stringify(rules)), result: result ? JSON.parse(JSON.stringify(result)) : null, drawState: JSON.parse(JSON.stringify(draw)), lastGroups: cleanLast(store.get('lastGroups', null)) };
+}
+function applyState(b, mergeRosters) {
+  cur = cleanCurrent(b.current); absent = new Set(cur.absent);
+  mode = cur.mode; kVal = { count: cur.kCount, size: cur.kSize };
+  opt.tag = cur.optTag; opt.avoid = cur.optAvoid; opt.theme = cur.nameTheme;
+  $('#opt-tag').checked = opt.tag; $('#opt-avoid').checked = opt.avoid; $('#name-theme').value = opt.theme;
+  const rs = cleanRosters(b.rosters);
+  const replaced = [];
+  if (mergeRosters) { const byName = new Map(rosters.map(r => [r.name, r])); rs.forEach(r => { if (byName.has(r.name) && !replaced.includes(r.name)) replaced.push(r.name); byName.set(r.name, r); }); rosters = [...byName.values()]; } else rosters = rs;
+  store.set('rosters', rosters);
+  rules = cleanRules(b.rules); store.set('rules', rules);
+  result = cleanResult(b.result); if (result) result.names = result.names.map((n, i) => n || defaultName(i)); saveResult();
+  draw = cleanDraw(b.drawState); $('#draw-norepeat').checked = draw.norepeat; saveDraw();
+  const lg = cleanLast(b.lastGroups); if (lg) store.set('lastGroups', lg); else store.del('lastGroups');
+  $('#roster-text').value = cur.text;
+  refreshRosterSelect(); refreshRoster(); setMode(mode); setTab(cur.tab);
+  lastResultShown = !!result; renderResult(); updateGoState();
+  if (result) { const s = result.groups.map(g => g.length); $('#go-msg').className = 'msg'; $('#go-msg').textContent = `上次結果：${s.length} 組（${s.join('／')}）`; }
+  return replaced;
+}
+let downloads = null;
+(async () => { try { downloads = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { downloads = null; } })();
+$('#backup-export').onclick = () => {
+  const d = new Date(), pad = x => String(x).padStart(2, '0');
+  const name = `team-picker-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.json`;
+  const data = JSON.stringify(snapshot(), null, 1);
+  if (downloads) { downloads.save({ filename: name, data }).then(() => toast('已匯出備份'), () => copyText(data)); return; }
+  try {
+    const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast('已匯出備份：' + name);
+  } catch (e) { copyText(data); }
+};
+$('#backup-import').onclick = () => { $('#backup-file').value = ''; $('#backup-file').click(); };
+$('#backup-file').addEventListener('change', async () => {
+  const f = $('#backup-file').files[0]; if (!f) return;
+  let j = null;
+  try { j = JSON.parse(await f.text()); } catch (e) { j = null; }
+  if (!isObj(j) || j.app !== 'team-picker' || !isObj(j.current)) { toast('這不是分組與抽人的備份檔'); return; }
+  const before = snapshot();
+  const replaced = applyState(j, true); hideSheet('#manage-sheet');
+  const rp = replaced.length ? `；已用備份覆蓋同名名單：${replaced.slice(0, 5).map(x => '「' + x + '」').join('、')}${replaced.length > 5 ? ` 等 ${replaced.length} 份` : ''}` : '';
+  toast(`已匯入備份（名單 ${people.length} 人、已儲存 ${rosters.length} 份）${rp}`, () => applyState(before, false), replaced.length ? 9000 : 0);
+});
 
 // ---------- rules ----------
-let rules = store.get('rules', { together: [], apart: [] });
-if (!rules || !Array.isArray(rules.together) || !Array.isArray(rules.apart)) rules = { together: [], apart: [] };
+let rules = cleanRules(store.get('rules', null));
 function refreshRuleSelects() {
   ['#rule-a', '#rule-b'].forEach((s, k) => {
     const sel = $(s), prev = sel.value; sel.innerHTML = '';
@@ -513,12 +753,16 @@ function renderRules() {
   const ul = $('#rule-list'); ul.innerHTML = '';
   const names = new Set(people.map(p => p.name));
   const all = [...rules.together.map(r => ['together', r]), ...rules.apart.map(r => ['apart', r])];
-  all.forEach(([type, pair]) => {
+  all.forEach(([type, pair], k) => {
     const li = document.createElement('li');
     const ok = names.has(pair[0]) && names.has(pair[1]);
-    li.innerHTML = `<b class="${type === 'together' ? 't' : 'a'}">${type === 'together' ? '同組' : '分開'}</b><span></span><button aria-label="刪除規則">×</button>`;
+    li.innerHTML = `<b class="${type === 'together' ? 't' : 'a'}">${type === 'together' ? '同組' : '分開'}</b><span></span><button aria-label="刪除規則" id="rule-del-${k}">×</button>`;
     li.querySelector('span').textContent = `${pair[0]} ＋ ${pair[1]}` + (ok ? '' : '（不在名單，忽略）');
-    li.querySelector('button').onclick = () => { rules[type] = rules[type].filter(r => r !== pair); store.set('rules', rules); renderRules(); };
+    li.querySelector('button').onclick = () => {
+      const at = rules[type].indexOf(pair); if (at < 0) return;
+      rules[type].splice(at, 1); store.set('rules', rules); renderRules();
+      toast('已刪除規則', () => { rules[type].splice(Math.min(at, rules[type].length), 0, pair); store.set('rules', rules); renderRules(); });
+    };
     ul.appendChild(li);
   });
   $('#rules-sum').textContent = `同組規則（${all.length}）`;
@@ -532,9 +776,9 @@ $('#rule-add').onclick = () => {
 };
 
 // ---------- grouping ----------
-let mode = cur.mode || 'count';
-let kVal = { count: cur.kCount || 3, size: cur.kSize || 4 };
-const opt = { tag: !!cur.optTag, avoid: !!cur.optAvoid, theme: cur.nameTheme || 'num' };
+let mode = cur.mode;
+let kVal = { count: cur.kCount, size: cur.kSize };
+const opt = { tag: cur.optTag, avoid: cur.optAvoid, theme: cur.nameTheme };
 $('#opt-tag').checked = opt.tag; $('#opt-avoid').checked = opt.avoid; $('#name-theme').value = opt.theme;
 
 function planK(n, md, v) {
@@ -582,7 +826,7 @@ function defaultName(i) {
   return `第 ${i + 1} 組`;
 }
 
-/** Pure grouping. ppl: [{name, tag}], o: {K, tag, together, apart, last} */
+/** Pure grouping. ppl: [{name, tag}], o: {K, tag, together, apart, last}. Larger groups come first. */
 function makeGroups(ppl, o) {
   const K = o.K, n = ppl.length;
   const idx = new Map(ppl.map((p, i) => [p.name, i]));
@@ -590,24 +834,27 @@ function makeGroups(ppl, o) {
   const par = ppl.map((_, i) => i);
   const find = i => par[i] === i ? i : (par[i] = find(par[i]));
   (o.together || []).forEach(([a, b]) => { if (idx.has(a) && idx.has(b)) par[find(idx.get(a))] = find(idx.get(b)); });
-  const um = new Map(); ppl.forEach((p, i) => { const r = find(i); if (!um.has(r)) um.set(r, []); um.get(r).push(p); });
+  const um = new Map(); ppl.forEach((p, i) => { const r = find(i); if (!um.has(r)) um.set(r, []); um.get(r).push(i); });
   const units = [...um.values()];
   const cap = Math.ceil(n / K);
   const big = units.find(u => u.length > cap);
-  if (big) return { error: `「${big.map(p => p.name).join('、')}」綁定在一起共 ${big.length} 人，超過每組上限 ${cap} 人` };
-  const apart = (o.apart || []).filter(([a, b]) => idx.has(a) && idx.has(b));
-  const lastPair = new Set();
-  if (o.last) o.last.forEach(g => { for (let i = 0; i < g.length; i++) for (let j = i + 1; j < g.length; j++) lastPair.add(g[i] < g[j] ? g[i] + '\u0000' + g[j] : g[j] + '\u0000' + g[i]); });
+  if (big) return { error: `「${big.map(i => ppl[i].name).join('、')}」綁定在一起共 ${big.length} 人，超過每組上限 ${cap} 人` };
+  const apart = (o.apart || []).filter(([a, b]) => idx.has(a) && idx.has(b)).map(([a, b]) => [idx.get(a), idx.get(b)]);
+  // last grouping as a group number per person: overlap = pairs sharing both last and new group (O(n) per try)
+  const lastG = new Int32Array(n).fill(-1); let hasLast = false;
+  if (Array.isArray(o.last)) o.last.forEach((g, gi) => Array.isArray(g) && g.forEach(nm => { const i = idx.get(nm); if (i !== undefined && lastG[i] < 0) { lastG[i] = gi; hasLast = true; } }));
   const singles = units.every(u => u.length === 1);
+  const tagOf = ppl.map(p => p.tag || '');
+  const where = new Int32Array(n);
 
   function once() {
     const groups = Array.from({ length: K }, () => []);
     if (singles) {
       let seq;
       if (o.tag) {
-        const buckets = new Map(); ppl.forEach(p => { const t = p.tag || ''; if (!buckets.has(t)) buckets.set(t, []); buckets.get(t).push(p); });
+        const buckets = new Map(); ppl.forEach((p, i) => { const t = tagOf[i]; if (!buckets.has(t)) buckets.set(t, []); buckets.get(t).push(i); });
         seq = [].concat(...[...buckets.values()].map(b => shuffle(b.slice())));
-      } else seq = shuffle(ppl.slice());
+      } else seq = shuffle(ppl.map((_, i) => i));
       // continuous round-robin over a shuffled group order: sizes and per-tag counts differ by <= 1
       const order = shuffle(Array.from({ length: K }, (_, i) => i));
       seq.forEach((p, i) => groups[order[i % K]].push(p));
@@ -619,58 +866,159 @@ function makeGroups(ppl, o) {
         const cand = shuffle(Array.from({ length: K }, (_, i) => i));
         for (const g of cand) {
           const fits = groups[g].length + u.length <= cap ? 0 : 1;
-          const tc = o.tag ? u.reduce((s, p) => s + (tagCount[g].get(p.tag || '') || 0), 0) : 0;
+          const tc = o.tag ? u.reduce((s, i) => s + (tagCount[g].get(tagOf[i]) || 0), 0) : 0;
           const key = [fits, groups[g].length, tc];
           if (!bestKey || key[0] < bestKey[0] || (key[0] === bestKey[0] && (key[1] < bestKey[1] || (key[1] === bestKey[1] && key[2] < bestKey[2])))) { best = g; bestKey = key; }
         }
-        u.forEach(p => { groups[best].push(p); const t = p.tag || ''; tagCount[best].set(t, (tagCount[best].get(t) || 0) + 1); });
+        u.forEach(i => { groups[best].push(i); tagCount[best].set(tagOf[i], (tagCount[best].get(tagOf[i]) || 0) + 1); });
       });
       groups.forEach(g => shuffle(g));
     }
-    const where = new Map(); groups.forEach((g, gi) => g.forEach(p => where.set(p.name, gi)));
-    const conflicts = apart.filter(([a, b]) => where.get(a) === where.get(b)).length;
+    groups.forEach((g, gi) => g.forEach(i => { where[i] = gi; }));
+    let conflicts = 0; for (const [a, b] of apart) if (where[a] === where[b]) conflicts++;
     let overlap = 0;
-    if (lastPair.size) groups.forEach(g => { const ns = g.map(p => p.name); for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) if (lastPair.has(ns[i] < ns[j] ? ns[i] + '\u0000' + ns[j] : ns[j] + '\u0000' + ns[i])) overlap++; });
+    if (hasLast) groups.forEach(g => { const c = new Map(); for (const i of g) { const l = lastG[i]; if (l >= 0) { const k = c.get(l) || 0; overlap += k; c.set(l, k + 1); } } });
     return { groups, conflicts, overlap };
   }
-  const tries = Math.max(apart.length ? 200 : 1, lastPair.size ? 50 : 1);
+  const tries = Math.max(apart.length ? 200 : 1, hasLast ? 50 : 1);
   let best = null, attempts = 0;
   for (let t = 0; t < tries; t++) {
     const r = once(); attempts++;
     if (!best || r.conflicts * 1e6 + r.overlap < best.conflicts * 1e6 + best.overlap) best = r;
-    if (best.conflicts === 0 && (!lastPair.size || best.overlap === 0 || t >= 49)) break;
+    if (best.conflicts === 0 && (!hasLast || best.overlap === 0 || t >= 49)) break;
   }
-  best.attempts = attempts;
-  return best;
+  // 不可同組 still violated after the random tries: repair with min-conflicts swaps (equal-size units, same tags when
+  // balancing tags, so group sizes and tag balance stay as they are), then an exact backtracking search that either finds
+  // an arrangement or proves that none exists.
+  let proven = false, tagRelaxed = false;
+  if (best.conflicts > 0) {
+    const fixed = repairApart(best.groups);
+    if (fixed.groups) {
+      best = { groups: fixed.groups, conflicts: 0, overlap: overlapOf(fixed.groups) };
+      // the exact search ignores tags: say so if that left a tag unevenly spread (counts differing by more than 1)
+      if (o.tag && fixed.search) {
+        const tags = [...new Set(tagOf)];
+        tagRelaxed = tags.some(tg => { const c = fixed.groups.map(g => g.reduce((s, i) => s + (tagOf[i] === tg ? 1 : 0), 0)); return Math.max(...c) - Math.min(...c) > 1; });
+      }
+    }
+    proven = fixed.proven;
+  }
+  // stable: bigger groups first, so "多 1 人的組在前面" is true
+  const groups = best.groups.map((g, i) => [g, i]).sort((a, b) => b[0].length - a[0].length || a[1] - b[1]).map(x => x[0].map(i => ppl[i]));
+  return { groups, conflicts: best.conflicts, overlap: best.overlap, attempts, proven: best.conflicts > 0 && proven, tagRelaxed };
+
+  function overlapOf(groups) {
+    let overlap = 0;
+    if (hasLast) groups.forEach(g => { const c = new Map(); for (const i of g) { const l = lastG[i]; if (l >= 0) { const k = c.get(l) || 0; overlap += k; c.set(l, k + 1); } } });
+    return overlap;
+  }
+  /** groups: arrays of person indices. Returns { groups } with no apart conflict, or { proven } when none can exist. */
+  function repairApart(start) {
+    const U = units.length, uOf = new Int32Array(n);
+    units.forEach((u, k) => u.forEach(i => { uOf[i] = k; }));
+    const adj = Array.from({ length: U }, () => []), edges = [];
+    let self = 0;
+    for (const [a, b] of apart) { const ua = uOf[a], ub = uOf[b]; if (ua === ub) self++; else { adj[ua].push(ub); adj[ub].push(ua); edges.push([ua, ub]); } }
+    if (self) return { proven: true };                 // two people tied by 固定同組 but also 不可同組
+    const gOf = new Int32Array(U);
+    start.forEach((g, gi) => g.forEach(i => { gOf[uOf[i]] = gi; }));
+    const size = units.map(u => u.length);
+    const sig = units.map(u => u.length + (o.tag ? '|' + u.map(i => tagOf[i]).sort().join('\u0001') : ''));
+    const bySig = new Map(); sig.forEach((k, u) => { if (!bySig.has(k)) bySig.set(k, []); bySig.get(k).push(u); });
+    const conf = (u, g, skip) => { let c = 0; for (const v of adj[u]) if (v !== skip && gOf[v] === g) c++; return c; };
+    const total = () => { let c = 0; for (const [a, b] of edges) if (gOf[a] === gOf[b]) c++; return c; };
+    const toGroups = g => { const out = Array.from({ length: K }, () => []); units.forEach((u, k) => u.forEach(i => out[g[k]].push(i))); out.forEach(x => shuffle(x)); return out; };
+    // 1) min-conflicts local search with a little random noise, about 40 ms at most
+    let cur = total();
+    const t0 = performance.now();
+    for (let it = 0; cur > 0 && it < 200000; it++) {
+      if ((it & 127) === 0 && performance.now() - t0 > 40) break;
+      const bad = []; for (const [a, b] of edges) if (gOf[a] === gOf[b]) bad.push(a, b);
+      const u = bad[randInt(bad.length)], gu = gOf[u];
+      let bestW = -1, bestD = Infinity, ties = 0;
+      for (const w of bySig.get(sig[u])) {
+        const gw = gOf[w]; if (gw === gu) continue;
+        const d = conf(u, gw, w) + conf(w, gu, u) - conf(u, gu, -1) - conf(w, gw, -1);
+        if (d < bestD) { bestD = d; bestW = w; ties = 1; } else if (d === bestD && randInt(++ties) === 0) bestW = w;
+      }
+      if (bestW < 0) continue;
+      if (bestD <= 0 || randInt(10) === 0) { const gw = gOf[bestW]; gOf[bestW] = gu; gOf[u] = gw; cur += bestD; }
+    }
+    if (cur === 0) return { groups: toGroups(gOf) };
+    // 2) exact search over the units that have 不可同組 partners; the others fill the remaining seats
+    const cons = []; for (let u = 0; u < U; u++) if (adj[u].length) cons.push(u);
+    cons.sort((a, b) => adj[b].length - adj[a].length || size[b] - size[a]);
+    const singlesOnly = size.every(x => x === 1);
+    // seats per group: with only single people the sizes are forced (they differ by at most 1); otherwise at most cap each
+    const caps = singlesOnly ? start.map(g => g.length) : Array(K).fill(cap);
+    const load = new Array(K).fill(0), as = new Int32Array(U).fill(-1);
+    let nodes = 0, aborted = false;
+    const order = shuffle(Array.from({ length: K }, (_, i) => i));
+    function bt(k) {
+      if (k === cons.length) return true;
+      if (++nodes > 300000) { aborted = true; return false; }
+      const u = cons[k], tried = new Set();
+      for (const g of order) {
+        if (load[g] + size[u] > caps[g]) continue;
+        if (load[g] === 0) { const key = caps[g]; if (tried.has(key)) continue; tried.add(key); }   // empty groups of one size are interchangeable
+        let ok = true; for (const v of adj[u]) if (as[v] === g) { ok = false; break; }
+        if (!ok) continue;
+        as[u] = g; load[g] += size[u];
+        if (bt(k + 1)) return true;
+        as[u] = -1; load[g] -= size[u];
+        if (aborted) return false;
+      }
+      return false;
+    }
+    if (!bt(0)) return { proven: !aborted };
+    // place everyone else: largest unit first into the group with the most free seats
+    const rest = []; for (let u = 0; u < U; u++) if (!adj[u].length) rest.push(u);
+    shuffle(rest).sort((a, b) => size[b] - size[a]);
+    const goal = start.map(g => g.length);
+    for (const u of rest) {
+      let g = -1, room = -Infinity;
+      for (let x = 0; x < K; x++) { const r = (singlesOnly ? caps[x] : goal[x]) - load[x]; if (r > room) { room = r; g = x; } }
+      as[u] = g; load[g] += size[u];
+    }
+    if (load.some((l, x) => l > cap)) return { proven: false };
+    return { groups: toGroups(as), search: true };
+  }
 }
 
-let result = store.get('result', null);
+let result = cleanResult(store.get('result', null));
+if (result) result.names = result.names.map((n, i) => n || defaultName(i));
 let lastResultShown = !!result;
-function saveResult() { store.set('result', result); }
+function saveResult() { if (result) store.set('result', result); else store.del('result'); }
 function runGrouping() {
   const err = validate(); if (err) { updateGoState(); return; }
   const ppl = present().map(p => ({ name: p.name, tag: p.tag }));
   const n = ppl.length, plan = planK(n, mode, kVal[mode]);
-  const last = opt.avoid ? store.get('lastGroups', null) : null;
+  const last = opt.avoid ? cleanLast(store.get('lastGroups', null)) : null;
   const t0 = performance.now();
   const r = makeGroups(ppl, { K: plan.K, tag: opt.tag, together: rules.together, apart: rules.apart, last });
   const ms = performance.now() - t0;
   const m = $('#go-msg');
   if (r.error) { m.className = 'msg err'; m.textContent = r.error; lastResultShown = false; return; }
+  const prev = result ? { result: JSON.parse(JSON.stringify(result)), last: store.get('lastGroups', null), msg: m.textContent, cls: m.className } : null;
   // previous result becomes "last" for avoid-overlap next time
   store.set('lastGroups', r.groups.map(g => g.map(p => p.name)));
   result = { groups: r.groups.map(g => g.map(p => ({ name: p.name, tag: p.tag }))), names: r.groups.map((_, i) => defaultName(i)) };
   saveResult(); lastResultShown = true;
   const sizes = result.groups.map(g => g.length);
   const parts = [`${n} 人分成 ${plan.K} 組（${sizes.join('／')}）`];
-  if (mode === 'size' && sizes.some(s => s !== plan.M)) parts.push(plan.extra ? `每組 ${plan.M} 人無法整除，餘數分散到前面，部分組別多 1 人` : `每組 ${plan.M} 人無法整除，部分組別少 1 人`);
-  if (r.conflicts) { m.className = 'msg err'; parts.unshift(`條件無法同時滿足：以下是最接近的結果，仍有 ${r.conflicts} 組「不可同組」衝突`); }
+  if (mode === 'size' && sizes.some(s => s !== plan.M)) parts.push(plan.extra ? `每組 ${plan.M} 人無法整除，多出的人分給前面幾組（各多 1 人）` : `每組 ${plan.M} 人無法整除，最後幾組少 1 人`);
+  if (r.conflicts) { m.className = 'msg err'; parts.unshift(r.proven ? `條件無法同時滿足：以下是最接近的結果，仍有 ${r.conflicts} 組「不可同組」衝突` : `找不到符合條件的分法：以下是最接近的結果，仍有 ${r.conflicts} 組「不可同組」衝突`); }
   else m.className = 'msg';
+  if (r.tagRelaxed) parts.push('為了讓「不可同組」都成立，標籤平衡已放寬（部分標籤在各組人數差超過 1）');
   if (last && !r.conflicts) parts.push(`與上次同組的配對 ${r.overlap} 對`);
   m.textContent = parts.join('。');
   m.dataset.ms = ms.toFixed(1);
   renderResult();
-  if (!matchMedia('(min-width: 900px)').matches) $('#result').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  if (prev) toast('已重新分組', () => {
+    result = prev.result; saveResult(); if (prev.last) store.set('lastGroups', prev.last); else store.del('lastGroups');
+    renderResult(); m.className = prev.cls; m.textContent = prev.msg; lastResultShown = true;
+  });
+  if (!matchMedia('(min-width: 900px)').matches) $('#go-msg').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 }
 $('#go').onclick = runGrouping;
 $('#regroup').onclick = runGrouping;
@@ -683,7 +1031,7 @@ function renderResult() {
   result.groups.forEach((g, gi) => {
     const card = document.createElement('div'); card.className = 'group'; card.dataset.g = gi;
     card.style.setProperty('--bib', `var(--b${gi % 12})`);
-    card.innerHTML = `<div class="bib"><span class="no">${gi + 1}</span><input id="gname-${gi}" aria-label="第 ${gi + 1} 組名稱" maxlength="20"><span class="n">${g.length} 人</span></div><ul class="members"></ul>`;
+    card.innerHTML = `<div class="bib"><span class="no">${gi + 1}</span><input id="gname-${gi}" aria-label="第 ${gi + 1} 組名稱（點一下可改名）" title="點一下可改組名" maxlength="20"><span class="pen" aria-hidden="true">✎</span><span class="n">${g.length} 人</span></div><ul class="members"></ul>`;
     const inp = card.querySelector('input'); inp.value = result.names[gi] || defaultName(gi);
     inp.addEventListener('change', () => { result.names[gi] = inp.value.trim() || defaultName(gi); inp.value = result.names[gi]; saveResult(); });
     const ul = card.querySelector('ul');
@@ -696,7 +1044,8 @@ function renderResult() {
   });
 }
 function resultText() { return result.groups.map((g, i) => `【${result.names[i]}】${g.map(p => p.name).join('、')}`).join('\n'); }
-function csvCell(s) { return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+// spreadsheet-safe: a cell starting with = + - @ (or tab / CR) is prefixed with ' so it is never run as a formula
+function csvCell(s) { s = String(s); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function resultCSV() { return '組別,姓名\n' + result.groups.map((g, i) => g.map(p => csvCell(result.names[i]) + ',' + csvCell(p.name)).join('\n')).join('\n'); }
 $('#copy-text').onclick = () => result && copyText(resultText());
 $('#copy-csv').onclick = () => result && copyText(resultCSV());
@@ -707,6 +1056,7 @@ function enableDrag(container, itemSel, onOver, onDrop) {
   container.addEventListener('contextmenu', e => { if (e.target.closest(itemSel)) e.preventDefault(); });
   container.addEventListener('pointerdown', e => {
     const it = e.target.closest(itemSel); if (!it || e.button > 0) return;
+    if (st) { clearTimeout(st.timer); if (st.on) return; }
     st = { it, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY, on: false, id: e.pointerId };
     st.timer = setTimeout(() => {
       if (!st) return;
@@ -744,11 +1094,10 @@ enableDrag($('#groups'), '.member', el => {
 });
 
 // ---------- draw ----------
-let draw = store.get('drawState', null) || { order: [], norepeat: true };
-if (!Array.isArray(draw.order)) draw.order = [];
-$('#draw-norepeat').checked = draw.norepeat !== false;
+let draw = cleanDraw(store.get('drawState', null));
+$('#draw-norepeat').checked = draw.norepeat;
 let rolling = false;
-const attendees = () => present().map(p => p.name);
+function attendees() { return present().map(p => p.name); }
 function pool() { const used = new Set(draw.order); return draw.norepeat ? attendees().filter(n => !used.has(n)) : attendees(); }
 function saveDraw() { store.set('drawState', draw); }
 function refreshDraw() {
@@ -791,7 +1140,11 @@ function drawNext() {
 $('#draw-next').onclick = drawNext;
 $('#draw-big').onclick = drawNext;
 $('#draw-norepeat').onchange = e => { draw.norepeat = e.target.checked; saveDraw(); refreshDraw(); };
-armed($('#draw-reset'), '確定重置？', () => { draw.order = []; saveDraw(); refreshDraw(); toast('已重置抽人順序'); });
+armed($('#draw-reset'), '確定重置？', () => {
+  const old = draw.order.slice();
+  draw.order = []; saveDraw(); refreshDraw();
+  toast('已重置抽人順序', () => { draw.order = old; saveDraw(); refreshDraw(); });
+});
 $('#draw-copy').onclick = () => { if (!draw.order.length) { toast('還沒有抽出任何人'); return; } copyText(draw.order.map((n, i) => `${i + 1}. ${n}`).join('\n')); };
 enableDrag($('#draw-order'), 'li[data-i]', el => {
   document.querySelectorAll('.order li.drop').forEach(c => c.classList.remove('drop'));
@@ -805,22 +1158,97 @@ enableDrag($('#draw-order'), 'li[data-i]', el => {
 // ---------- tabs ----------
 function setTab(t) {
   const g = t === 'group';
+  if (cur.tab !== t) screenGen++;
   $('#tab-group').setAttribute('aria-selected', String(g)); $('#tab-draw').setAttribute('aria-selected', String(!g));
-  $('#pane-group').hidden = !g; $('#pane-draw').hidden = g; $('.app').classList.toggle('on-draw', !g); cur.tab = t; saveCurrent();
+  $('#pane-group').hidden = !g; $('#pane-draw').hidden = g; $('.app').classList.toggle('on-draw', !g);
+  cur.tab = t; saveCurrent();
 }
 $('#tab-group').onclick = () => setTab('group');
 $('#tab-draw').onclick = () => setTab('draw');
 $('.tabs').addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const t = cur.tab === 'draw' ? 'group' : 'draw'; setTab(t); $('#tab-' + t).focus(); } });
+
+/* ---------- touch: act on release ----------
+   Every control runs on pointerup of the pointer that went down on it (tracked per pointerId), only if it was released on that
+   control (moved < 10 px, or inside its box grown by 16 px). So a tap still works while another finger rests on the page
+   (Chromium sends no click then), two overlapping taps both act, and a control that appears under the finger can't fire.
+   The action runs as el.click() under `firing`. pointerdown's default is prevented (no focus jump / keyboard on the next
+   screen), so a focused text field is blurred by hand. The browser's own click that follows (Chromium 141: detail 0, no
+   pointerType) is swallowed in the capture phase: any click within 800 ms of the last tap, unless Enter/Space was pressed
+   after that tap. A lone detail-0 click (keyboard, screen reader) still acts once. A chip held long enough to open the tag
+   sheet is consumed by that (its release does nothing), and a sheet's backdrop only closes from a press that began on it. */
+const TAP_SEL = 'button, summary, label.check, label.check input';
+const downs = new Map();
+let firing = false, lastTapUp = -1e9, lastKey = -1e9;
+addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') lastKey = performance.now(); }, true);
+addEventListener('keyup', e => { if (e.key === ' ') lastKey = performance.now(); }, true);
+function tapTarget(t) {
+  if (!(t instanceof Element)) return null;
+  if (t.classList.contains('scrim')) return t;
+  let el = t.closest(TAP_SEL);
+  if (el && el.tagName === 'LABEL') el = el.querySelector('input') || el;
+  return el;
+}
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const el = tapTarget(e.target);
+  if (!el || el.disabled) return;
+  downs.set(e.pointerId, { el, id: el.id, chip: el.classList.contains('chip') ? el.dataset.i : null, gen: screenGen, t0: performance.now(), x: e.clientX, y: e.clientY });
+  e.preventDefault();
+});
+document.addEventListener('pointerup', e => {
+  const d = downs.get(e.pointerId); if (!d) return;
+  downs.delete(e.pointerId);
+  lastTapUp = performance.now();
+  if (d.used) return;                       // a long-press already acted
+  let el = d.el;
+  // the same screen may have re-rendered (chips, rule list): find the control again; a real screen / sheet change cancels
+  if (!el.isConnected) {
+    if (d.gen !== screenGen) return;
+    el = d.id ? document.getElementById(d.id) : d.chip != null ? document.querySelector(`#chips .chip[data-i="${d.chip}"]`) : null;
+    if (!el) return;
+  }
+  if (el.disabled) return;
+  if (d.gen !== screenGen && !el.closest('.scrim:not([hidden])') && !el.closest('.toast')) {
+    // a sheet opened or the tab changed while this finger was down: only controls inside the now-visible sheet may act
+    if (document.querySelector('.scrim:not([hidden])')) return;
+  }
+  const box = (el.closest('label') || el).getBoundingClientRect(), m = 16;
+  if (!box.width && !box.height) return;
+  const still = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 10;
+  const inBox = e.clientX >= box.left - m && e.clientX <= box.right + m && e.clientY >= box.top - m && e.clientY <= box.bottom + m;
+  if (!still && !inBox) return;
+  if (el.classList.contains('scrim') && !(d.t0 > (+el.dataset.shown || 0))) return;
+  const a = document.activeElement;
+  if (a && a !== el && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.type !== 'checkbox') a.blur();
+  if (!el.classList.contains('scrim') && a !== el) try { el.focus({ preventScroll: true, focusVisible: false }); } catch (_) {}
+  firing = true; try { el.click(); } finally { firing = false; }
+});
+document.addEventListener('pointercancel', e => downs.delete(e.pointerId));
+addEventListener('click', e => {
+  if (firing) return;
+  const t = e.target;
+  // a click on a text box or select only places the caret / opens the picker; let it through
+  if (t instanceof Element && (t.matches('textarea, select, option, input:not([type=radio]):not([type=checkbox])') || (t.closest('label') && !t.closest('.check')))) return;
+  const recentTap = performance.now() - lastTapUp < 800 && !(lastKey > lastTapUp);
+  if (recentTap || (e.isTrusted && (e.detail > 0 || e.pointerType))) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('button, summary')) e.preventDefault(); });
+
+// ---------- 開始分組: pinned under the header on phones, inside the settings panel on wide screens ----------
+const wideMq = matchMedia('(min-width: 900px)');
+function placeGo() { const host = wideMq.matches ? $('#go-slot') : $('#go-row'); if ($('#go').parentElement !== host) host.appendChild($('#go')); }
+if (wideMq.addEventListener) wideMq.addEventListener('change', placeGo); else if (wideMq.addListener) wideMq.addListener(placeGo);
+placeGo();
 
 // ---------- init ----------
 $('#roster-text').value = cur.text;
 refreshRosterSelect();
 refreshRoster();
 setMode(mode);
-setTab(cur.tab || 'group');
+setTab(cur.tab);
 renderResult();
 if (result) { const s = result.groups.map(g => g.length); $('#go-msg').textContent = `上次結果：${s.length} 組（${s.join('／')}）`; }
 
-window.__tp = { makeGroups, planK, parse, randInt, get result() { return result; }, get draw() { return draw; } };
+window.__tp = { placeToast, makeGroups, planK, parse, randInt, csvCell, resultCSV: () => result && resultCSV(), snapshot, applyState, get result() { return result; }, get draw() { return draw; }, get rosters() { return rosters; }, get rules() { return rules; }, get people() { return people; }, get absent() { return [...absent]; }, get theme() { return theme; }, get k() { return kVal[mode]; } };
 })();
 </script>
