@@ -164,8 +164,11 @@ function mk(hands, o, turn) { // a state built from explicit hands
   const browser = await chromium.launch();
   async function open(o = {}) {
     const ctx = await browser.newContext({ viewport: o.vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: 'dark', timezoneId: 'Asia/Taipei' });
+    // 7-round matches: c)–h) play up to four rounds (more when my hand empties early and toPick moves on to the next deal),
+    // and i) needs the match still saved; with 3 rounds the result in h) could be the final one, whose 看比賽結果 ends the
+    // match and clears the save
     await ctx.addInitScript(st => { try { if (!sessionStorage.getItem('init')) { sessionStorage.setItem('init', '1'); localStorage.clear(); for (const k in st) localStorage.setItem('oldmaid:' + k, JSON.stringify(st[k])); } } catch (e) {} },
-      Object.assign({ settings: { lvl: 2, rounds: 3, speed: 1.8, quick: true, draw: 'slide', start: 'most', sound: false, vib: false, theme: 'auto' }, stats: { rounds: 3 } }, o.store || {}));
+      Object.assign({ settings: { lvl: 2, rounds: 7, speed: 1.8, quick: true, draw: 'slide', start: 'most', sound: false, vib: false, theme: 'auto' }, stats: { rounds: 3 } }, o.store || {}));
     await ctx.addInitScript(() => { window.__clicks = []; document.addEventListener('click', e => window.__clicks.push((e.target.closest('[id]') || e.target).id), true); });
     await ctx.route('**/*', r => r.request().url().split('#')[0] === URL ? r.fulfill({ status: 200, contentType: 'text/html', body: html }) : r.abort());
     const page = await ctx.newPage(), errors = [];
@@ -174,16 +177,20 @@ function mk(hands, o, turn) { // a state built from explicit hands
     const cdp = await ctx.newCDPSession(page);
     const st = () => page.evaluate(() => Object.assign(window.__om.info(), { paused: window.__om.paused(), fast: window.__om.fast(), stage: window.__om.stage() }));
     const until = async (fn, what, ms = 40000) => { const t = Date.now(); for (;;) { const s = await st(); if (fn(s)) return s; if (Date.now() - t > ms) throw new Error('timeout waiting for ' + what + ' ' + JSON.stringify(s).slice(0, 300)); await sleep(30); } };
-    const center = async sel => { await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {}); const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(sel + ' not visible'); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+    // measure only once the element has stopped moving: a result panel pops in (scale .88 → 1 over 0.35 s), and a box
+    // read mid-animation put the finger beside 下一局 once the panel had settled (the tap then did nothing)
+    const settled = sel => page.locator(sel).first().evaluate(el => Promise.all(document.getAnimations().filter(a => { const t = a.effect && a.effect.target; return t && t.contains && t.contains(el) && isFinite(a.effect.getComputedTiming().endTime); }).map(a => a.finished.catch(() => {})))).catch(() => {});
+    const center = async sel => { await page.locator(sel).first().scrollIntoViewIfNeeded().catch(() => {}); await settled(sel); const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error(sel + ' not visible'); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
     const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
     const tap = async (sel, hold = 40, id = 7) => { const c = typeof sel === 'string' ? await center(sel) : sel; await touch('touchStart', [{ x: c.x, y: c.y, id }]); await sleep(hold); await touch('touchEnd', [{ x: c.x, y: c.y, id }]); };
     const fan = i => page.evaluate(i => window.__om.fanPt(i), i), hand = i => page.evaluate(i => window.__om.handPt(i), i);
     // play on until it is my turn to draw (speeding through the computers' turns, answering round results)
-    const toPick = async () => { for (let k = 0; k < 400; k++) { const s = await st();
+    // bounded by time, not by a count of polls: on a slow runner each poll takes longer while the computers' turns do not get shorter
+    const toPick = async (ms = 120000) => { let s; for (const t0 = Date.now(); Date.now() - t0 < ms;) { s = await st();
       if (s.phase === 'pick' && !s.paused) return s;
       if (s.ov.includes('ovRound')) { await tap('#bNext'); await sleep(150); continue; }
       if (!s.fast && ['ai', 'aiPick', 'idle'].includes(s.phase) && !s.ov.length) { await tap('#bSkip'); await sleep(60); continue; }
-      await sleep(50); } throw new Error('never my turn'); };
+      await sleep(50); } throw new Error('never my turn ' + JSON.stringify(s).slice(0, 300)); };
     return { ctx, page, errors, st, until, center, touch, tap, fan, hand, toPick };
   }
   try {
@@ -224,7 +231,10 @@ function mk(hands, o, turn) { // a state built from explicit hands
     s = await P.st(); ok(s.phase === 'pick', 'two fingers: another finger\'s release does not draw the held card');
     await P.touch('touchEnd', [{ x: f.x, y: f.y, id: 1 }]); await sleep(120);
     s = await P.st(); ok(s.phase !== 'pick', '…and the fan finger\'s own release does');
-    // e) buttons fire for a second finger (no click from the browser) and exactly once for single / slow taps
+    // e) buttons fire for a second finger (no click from the browser) and exactly once for single / slow taps.
+    // Start on my turn, where the round waits for me: after d) the computers play on, and when my hand was already
+    // empty they finished the round during these taps, so the result panel covered 音效 / 選單 (more likely on a slow runner)
+    s = await P.toPick();
     const snd = () => P.page.evaluate(() => JSON.parse(localStorage.getItem('oldmaid:settings')).sound);
     const two = async sel => { const c = await P.center(sel); await P.touch('touchStart', [{ x: E.x, y: E.y, id: 1 }]); await sleep(60);
       await P.touch('touchStart', [{ x: E.x, y: E.y, id: 1 }, { x: c.x, y: c.y, id: 2 }]); await sleep(60); await P.touch('touchEnd', [{ x: c.x, y: c.y, id: 2 }]); await sleep(100);

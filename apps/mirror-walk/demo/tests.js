@@ -6,6 +6,7 @@
 // Every wait polls a condition (no fixed sleeps for timing-sensitive values).
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
   '\nreturn {parseLevel, initState, step, analyze, diffScore, levelKinds};')();
@@ -31,6 +32,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(o = {}) {
@@ -38,7 +44,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push('' + e)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     const init = Object.assign({ 'mirrorwalk.intro': JSON.stringify({ rule1: 1, rule40: 1, rule75: 1, spike: 1, door: 1, ice: 1, tele: 1, guard: 1, frag: 1 }) }, o.storage || {});
-    await page.goto('file://' + APP);
+    await page.goto(PAGE_URL);
     await page.evaluate(s => { localStorage.clear(); for (const k in s) localStorage.setItem(k, s[k]); }, init);
     await page.reload();
     await page.waitForFunction(() => window.__game && document.getElementById('tPlay'));

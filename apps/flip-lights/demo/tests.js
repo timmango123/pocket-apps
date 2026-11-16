@@ -2,8 +2,10 @@
 // 只等條件、不靠固定延遲；不從牆鐘幀間隔算任何時間敏感的值。
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs');
-const URL = 'file://' + path.resolve(__dirname, '../index.html');
 const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+// Served over http, not opened as a file:// page: under CPU load Chromium sometimes drops a file:// page's localStorage
+// writes across a reload (section 10's daily save came back null), which no visitor of the https site can hit.
+let URL;
 const LEVELS = JSON.parse(html.match(/var LEVELS = (\[[\s\S]*?\n\]);/)[1]);
 let fails = 0;
 // the page's own chase-guide code (computeGuide), run in Node over every chaseable level: following it must solve the board
@@ -31,6 +33,9 @@ const dk = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()
 
 (async () => {
   { const r = guideSweep(); assert(r.levels === 55 && !r.bad.length, `追燈導引：照著點能解完全部 ${r.levels} 個方格十字關（含三色），最多 ${r.worst.toFixed(1)}× 最少步數` + (r.bad.length ? ' 失敗 ' + r.bad : '')); }
+  const srv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(html); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  URL = `http://127.0.0.1:${srv.address().port}/`;
   const browser = await chromium.launch();
   async function open(o = {}) {
     const ctx = await browser.newContext({ viewport: { width: o.w || 390, height: o.h || 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, colorScheme: o.scheme || 'dark' });
@@ -46,7 +51,11 @@ const dk = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()
     const tapXY = async (x, y) => { await touch('touchStart', [[x, y]]); await touch('touchEnd', []); };
     const tapCell = async i => { const c = await cell(i); await tapXY(c.x, c.y); };
     const allCells = () => p.evaluate(() => { const a = []; for (let i = 0; i < __game.n(); i++) a.push(__game.cell(i)); return a; });
-    const tapEl = async sel => { const b = await p.locator(sel).boundingBox(); await tapXY(b.x + b.width / 2, b.y + b.height / 2); };
+    // Cards pop in (scale .86 → 1.04 → 1 over 0.35 s): a box read on the pop's first frame is off by up to ~20 px by the time a
+    // slow runner delivers the touch, which can put it on the button's top edge. Measure once nothing that moves it is animating.
+    const settled = sel => p.waitForFunction(sel => { const e = document.querySelector(sel);
+      return e && !document.getAnimations().some(a => a.playState === 'running' && a.effect && a.effect.target && a.effect.target.contains(e)); }, sel);
+    const tapEl = async sel => { await settled(sel); const b = await p.locator(sel).boundingBox(); await tapXY(b.x + b.width / 2, b.y + b.height / 2); };
     const vis = sel => p.isVisible(sel);
     const level = async n => {
       if (!(await vis('#select'))) { if (await vis('#title')) await tapEl('#tSelect'); else await p.evaluate(() => document.getElementById('pSelect').click()); }
@@ -250,7 +259,7 @@ const dk = d => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()
   }
 
   assert(errors.length === 0, 'console/page error：' + (errors.join(' | ') || '無'));
-  await browser.close();
+  await browser.close(); srv.close();
   console.log(fails ? `FAIL ${fails} 項` : '全部通過');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('FAIL ' + e.stack); process.exit(1); });

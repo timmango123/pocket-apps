@@ -134,7 +134,7 @@ const dec = s => { const o = []; for (let i = 0; i + 1 < s.length; i += 2) o.pus
 { // level 1: a1 sits 4 points from an open-four point that was already there -> still "no threat"
   const P = PZ[0]; C.setup(15, P[4]); dec(P[0]).forEach(q => C.play(q, 1)); dec(P[1]).forEach(q => C.play(q, 2)); C.play(210, P[2]);
   ok(!C.moveThreat(210, P[2]), 'moveThreat: level 1 a1 (existing threat on its diagonal) is not this move\'s threat'); }
-let browser = null, tid = 1;
+let browser = null, tid = 1, URL = '';
 async function at(name, fn) { if (process.env.ONLY && !name.includes(process.env.ONLY)) return; const t0 = Date.now(); let tm; try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 60 s')), 60000); })]); clearTimeout(tm); pass++; console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); } catch (e) { clearTimeout(tm); fail++; console.log('  FAIL', name, '-', String(e.message || e).split('\n')[0]); } }
 async function open(vp, seed = {}) {
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 1, hasTouch: true, isMobile: true, colorScheme: 'light' });
@@ -142,7 +142,7 @@ async function open(vp, seed = {}) {
   await ctx.addInitScript(seed => { if (!localStorage.getItem('test.seeded')) { localStorage.clear(); localStorage.setItem('test.seeded', '1'); for (const k in seed) localStorage.setItem('gomoku.' + k, JSON.stringify(seed[k])); } }, seed);
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('file://' + FILE);
+  await page.goto(URL);
   const cdp = await ctx.newCDPSession(page);
   const tap = async (x, y) => { const id = tid++; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id }] }); await sleep(40); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); };
   const tapSel = async sel => { await page.waitForSelector(sel, { state: 'visible' }).catch(e => { throw new Error('waiting for ' + sel + ': ' + e.message.split('\n')[0]); }); const l = page.locator(sel).first(); await l.scrollIntoViewIfNeeded(); const b = await l.boundingBox(); await tap(b.x + b.width / 2, b.y + b.height / 2); };
@@ -155,6 +155,12 @@ async function open(vp, seed = {}) {
 const P390 = { width: 390, height: 844 };
 async function browserTests() {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second tab) sometimes gets a different, empty localStorage from the one the first page wrote to, so
+  // "[1] continues after a reload" failed now and then. The site is served over https, where this cannot happen.
+  const srv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(HTML); });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r)); srv.unref();
+  URL = 'http://127.0.0.1:' + srv.address().port + '/';
   browser = await chromium.launch();
   console.log('Page (mobile Chromium, touch)');
   try {
@@ -213,9 +219,8 @@ async function browserTests() {
       await s.tapSel('#tPz'); await s.tapSel('.lt[data-n="16"]'); await s.until(n => __gomoku.state().mode === 'pz' && __gomoku.state().pz.n === n, n);
       await s.place(first); await s.until(() => { const g = __gomoku.state(); return g.moves.length === 2 && !g.thinking && !g.over; });
       const before = await s.ls('pzGame');
-      // Chromium hands localStorage writes to the browser process in batches; under heavy load a reload can come first.
       // Wait until a second tab of the same origin sees the save (a real condition, not a sleep), then reload.
-      { const p2 = await s.ctx.newPage(); await p2.goto('file://' + FILE); await p2.waitForFunction(() => !!localStorage.getItem('gomoku.pzGame'), null, { timeout: 30000, polling: 50 }); await p2.close(); }
+      { const p2 = await s.ctx.newPage(); await p2.goto(URL); await p2.waitForFunction(() => !!localStorage.getItem('gomoku.pzGame'), null, { timeout: 30000, polling: 50 }); await p2.close(); }
       await s.page.reload(); await s.page.waitForSelector('#tResume', { state: 'visible' }).catch(async e => { throw new Error('no resume button, before=' + JSON.stringify(before) + ' pzGame=' + JSON.stringify(await s.ls('pzGame')) + ' screen=' + await s.page.evaluate(() => [...document.querySelectorAll('.scr')].filter(x => !x.classList.contains('hidden')).map(x => x.id))); });
       ok(/第 16 關/.test(await s.page.textContent('#tResume')), 'title offers to continue level 16');
       await s.tapSel('#tResume'); await s.until(() => __gomoku.state().mode === 'pz');
