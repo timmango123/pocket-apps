@@ -8,6 +8,7 @@
 // centred on their islands, the L100 win animation draws at most 14 beams and no per-island glow gradient.
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const core = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
 const C = new Function(core + '\nreturn {parseLevel, logicSolve, levelParams, makeCandidate};')();
@@ -74,6 +75,11 @@ async function browser() {
   let chromium; try { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); } catch (e) { console.log('  (playwright missing, browser tests skipped)'); return; }
   console.log('Browser (CDP touch)');
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const br = await chromium.launch({ args: ['--disable-gpu'] });
   const errors = [];
   const ctx = await br.newContext({ viewport: { width: 360, height: 640 }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
@@ -89,7 +95,7 @@ async function browser() {
   const drag = (a, b, n = 6) => touch([...Array(n + 1)].map((_, i) => [a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n]));
   const G = (f, ...a) => page.evaluate(f, ...a);
   const seen = { zoom: 1 }; for (const n of [1, 2, 3, 20, 40, 60, 85]) seen['i' + n] = 1;
-  await page.goto('file://' + APP);
+  await page.goto(PAGE_URL);
   await G(s => { localStorage.clear(); localStorage.setItem('hashi.unlockAll', 'true'); localStorage.setItem('hashi.seen', JSON.stringify(s)); }, seen);
   const open = async n => { await page.reload(); await sleep(300); await page.click('#tSelect'); await sleep(150); await page.click('.lt[data-n="' + n + '"]'); await sleep(250); };
   // geometry helper: all edges with island screen positions
