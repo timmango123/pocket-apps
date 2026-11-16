@@ -3,6 +3,7 @@
 // Usage: node tests.js
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 let pass = 0, fail = 0;
@@ -12,6 +13,11 @@ function eq(a, b, m) { const A = JSON.stringify(a), B = JSON.stringify(b); if (A
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   let nid = 1;
@@ -20,7 +26,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (o.init) await ctx.addInitScript(o.init);
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-    await page.goto('file://' + APP);
+    await page.goto(PAGE_URL);
     await page.waitForFunction(() => window.__game && __game.state().mode === 'title', null, { timeout: 30000 });
     const cdp = await ctx.newCDPSession(page);
     const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
