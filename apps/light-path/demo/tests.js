@@ -2,7 +2,8 @@
 // Each block is a check for one release-review finding; waits are on conditions, not wall-clock deltas.
 const fs = require('fs'), path = require('path');
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-const HTML = path.join(__dirname, '..', 'index.html'), URL = 'file://' + HTML;
+const HTML = path.join(__dirname, '..', 'index.html');
+let URL = '';
 const src = fs.readFileSync(HTML, 'utf8');
 const C = new Function(src.slice(src.indexOf('// ===CORE-START==='), src.indexOf('// ===CORE-END===')) + '\nreturn LPCore;')();
 const LEVELS = JSON.parse(src.match(/var LEVELS = (\[\[.*?\]\]);/)[1]);
@@ -27,6 +28,11 @@ function check(name, ok, info) {
 }
 
 (async () => {
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(HTML)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const T0 = Date.now();
   async function open(w = 390, h = 844, storage) {
