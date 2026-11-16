@@ -3,13 +3,18 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
 const path = require('path'), fs = require('fs'), os = require('os');
 const WRAP = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'led-banner-')), 'index.html');
 fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>\n' + fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8') + '\n</body></html>');
-const URL = 'file://' + WRAP;
+// Served over http, not file://: Chromium gives a file:// page an opaque origin, and now and then a reload of one comes back
+// with brand-new, empty localStorage and sessionStorage (other pages still see the saved data), which made section 3 flaky.
+let URL = '';
 const KEY = 'led-banner:v1:';
 let fails = 0;
 const assert = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 const errors = [];
 
 (async () => {
+  const server = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(WRAP)); });
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  URL = 'http://127.0.0.1:' + server.address().port + '/';
   const browser = await chromium.launch();
   async function open(w = 390, h = 844, { dpr = 2, init, hash = '' } = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: dpr, acceptDownloads: true });
@@ -57,7 +62,9 @@ const errors = [];
     const { ctx, p, cdp } = await open(844, 390);
     await p.click('#btnPlay'); await playerOpen(p);
     const [x, y] = await center(p, target);
-    await p.evaluate(() => document.querySelector('#pctl').classList.add('hide'));
+    // let the app hide the controls itself (3 s auto-hide) instead of adding .hide by hand: on a slow machine a hand-hidden bar
+    // could still be auto-hidden after the tap was queued, and the app rightly takes that tap as a press on the bar it saw
+    await p.waitForFunction(() => document.querySelector('#pctl').classList.contains('hide'), null, { timeout: 15000 });
     const before = await p.evaluate(() => __led.cfg.speed);
     await tap(cdp, x, y);
     await p.waitForFunction(() => !document.querySelector('#pctl').classList.contains('hide'));
