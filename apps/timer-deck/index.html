@@ -105,7 +105,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .card.dragging { z-index: 5; box-shadow: 0 10px 30px rgba(0,0,0,.18); transform: scale(1.02); transition: none; }
 .card.swiping { transition: none; }
 .card-head { display: flex; align-items: center; gap: 4px; min-height: 44px; }
-.grip { width: 32px; height: 44px; display: grid; place-items: center; color: var(--muted); cursor: grab; touch-action: none; flex: none; margin-left: -6px; }
+.grip { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); cursor: grab; touch-action: none; flex: none; margin-left: -10px; margin-right: -4px; }
 .grip svg { width: 16px; height: 16px; }
 .tag { flex: none; font: 600 11px/1 var(--mono); padding: 4px 6px; border-radius: 4px; border: 1px solid var(--line-strong); color: var(--ink-2); letter-spacing: .04em; }
 .name { flex: 1; min-width: 0; text-align: left; font-weight: 600; font-size: 15px; min-height: 44px; padding: 0 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -150,6 +150,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .slot { position: relative; z-index: 0; }
 .slot:has(.card.swiping) .del-reveal, .slot.removing .del-reveal { opacity: 1; }
 .empty { padding: 40px 12px; text-align: center; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; }
+.hint { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 6px 6px 6px 12px; border: 1px solid var(--line-strong); border-left: 3px solid var(--accent); border-radius: 6px; background: var(--surface); font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.hint p { margin: 0; flex: 1; min-width: 0; }
+.hint b { color: var(--ink); }
+.hint .btn { flex: none; min-height: 44px; padding: 0 12px; }
 .note { margin-top: 18px; font-size: 12px; color: var(--muted); line-height: 1.6; }
 
 /* Sheet */
@@ -177,7 +181,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .grid2 .input { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .tpls { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .tpl { display: inline-flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 22px; background: var(--surface-2); }
-.tpl button { min-height: 40px; padding: 0 12px; font-size: 13px; font-weight: 600; position: relative; }
+.tpl button { min-height: 44px; padding: 0 12px; font-size: 13px; font-weight: 600; position: relative; }
 .tpl button::after { content: ""; position: absolute; inset: -2px 0; }
 .tpl .x { padding: 0 10px 0 4px; color: var(--muted); }
 .summary { font: 13px/1.5 var(--mono); color: var(--ink-2); background: var(--surface-2); border-radius: 6px; padding: 8px 10px; margin-bottom: 12px; }
@@ -256,13 +260,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
     <button class="chip" type="button" data-min="30">30<small>分</small></button>
   </nav>
 
+  <div class="hint" id="hint" hidden><p><b>小技巧</b>：倒數暫停時，在時間數字上<b>上下滑動</b>可 ±1 分鐘；按住卡片左上的 <b>⋮⋮ 握把</b>拖曳可排序；<b>左滑</b>卡片可刪除。</p><button class="btn btn-ghost" type="button" id="hintOk">知道了</button></div>
   <main class="grid" id="list" aria-live="off"></main>
   <div class="empty" id="empty" hidden>還沒有計時器。點「新增」或上方快速按鈕建立。</div>
   <p class="note">提示：左滑卡片可刪除；倒數暫停時，在時間數字上下滑動可 ±1 分鐘；按住左側握把拖曳可排序。頁面重新整理後計時會依時間戳接續。手機鎖屏或切到背景時瀏覽器可能暫停頁面，屆時無法發出提示音，回到畫面後會補算並標示結束時間。若沒有聲音，請關閉手機靜音模式。</p>
 </div>
 
 <div class="scrim" id="addScrim" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+  <div class="sheet" id="addSheet" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="addTitle">
     <h2 id="addTitle">新增計時器</h2>
     <div class="seg" role="group" aria-label="類型" id="typeSeg">
       <button type="button" id="typeCountdown" data-type="countdown" aria-pressed="true">倒數</button>
@@ -363,12 +368,71 @@ const PHASE_LABEL = { prep: '準備', work: '運動', rest: '休息', setrest: '
 const DEFAULT_IV = { prep: 10, work: 20, rest: 10, rounds: 8, sets: 1, setRest: 60 };
 
 // ---------- state ----------
-let settings = Object.assign({ sound: true, vibrate: true, wake: true, theme: 'auto' }, store.get(K.settings, {}));
-let presets = store.get(K.presets, null);
-if (!Array.isArray(presets)) presets = [];
+// Everything read from storage is checked field by field: anything malformed is repaired to a default or dropped,
+// so a hand-edited or half-written save can never throw later (render, logic tick, sheet).
+const IV_LIM = { prep: [0, 600], work: [1, 3600], rest: [0, 3600], rounds: [1, 99], sets: [1, 20], setRest: [0, 3600] };
+const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+const fin = (v, d, lo = 0, hi = Infinity) => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi) ? v : d;
+function cleanCfg(c, strict) {
+  if (!isObj(c)) return strict ? null : Object.assign({}, DEFAULT_IV);
+  const o = {};
+  for (const k in IV_LIM) {
+    const v = c[k];
+    if (Number.isInteger(v) && v >= IV_LIM[k][0] && v <= IV_LIM[k][1]) o[k] = v;
+    else if (strict) return null; else o[k] = DEFAULT_IV[k];
+  }
+  if (phasesOf(o).total > MAX_MS) return strict ? null : Object.assign({}, DEFAULT_IV);
+  return o;
+}
+function cleanName(v) { return typeof v === 'string' && v.trim() ? v.trim().slice(0, 20) : ''; }
+function cleanTimer(t, seen) {
+  if (!isObj(t) || !TYPE_LABEL[t.type]) return null;
+  const type = t.type;
+  let id = typeof t.id === 'string' && t.id && t.id.length <= 64 ? t.id : uid();
+  while (seen.has(id)) id = uid();
+  seen.add(id);
+  const o = { id, type, name: cleanName(t.name) || TYPE_LABEL[type], status: ['idle', 'running', 'paused', 'done'].includes(t.status) ? t.status : 'idle',
+    startAt: fin(t.startAt, 0), pausedElapsed: fin(t.pausedElapsed, 0, 0, MAX_MS * 2), duration: 0, laps: [], doneAt: fin(t.doneAt, 0), ack: t.ack === true };
+  if (type === 'countdown') o.duration = Math.round(fin(t.duration, 300000, 1000, MAX_MS));
+  if (type === 'interval') { o.cfg = cleanCfg(t.cfg, false); o.duration = phasesOf(o.cfg).total; }
+  if (type === 'stopwatch') {
+    if (Array.isArray(t.laps)) {
+      for (const l of t.laps) {
+        if (o.laps.length >= 999) break;
+        if (!isObj(l)) continue;
+        const total = fin(l.total, NaN), split = fin(l.split, NaN);
+        if (Number.isNaN(total) || Number.isNaN(split)) continue;
+        const prev = o.laps.length ? o.laps[o.laps.length - 1].total : 0;
+        if (total < prev) continue;
+        o.laps.push({ lap: o.laps.length + 1, split: total - prev, total });
+      }
+    }
+    if (o.status === 'done') o.status = 'paused';
+  } else {
+    o.pausedElapsed = Math.min(o.pausedElapsed, o.duration);
+    if (o.status === 'done') { o.pausedElapsed = o.duration; if (!o.doneAt) o.doneAt = Date.now(); }
+  }
+  if (o.status === 'running' && !o.startAt) o.status = o.pausedElapsed ? 'paused' : 'idle';
+  if (o.status === 'idle') { o.pausedElapsed = 0; o.startAt = 0; if (type === 'stopwatch') o.laps = []; }
+  return o;
+}
+function cleanTimers(arr) { const seen = new Set(), out = []; for (const t of arr) { if (out.length >= MAX_TIMERS) break; const c = cleanTimer(t, seen); if (c) out.push(c); } return out; }
+function cleanPresets(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const p of arr) {
+    if (out.length >= 20 || !isObj(p)) continue;
+    const name = cleanName(p.name), cfg = cleanCfg(p.cfg, true);
+    if (name && cfg && !out.some(q => q.name === name)) out.push({ name, cfg });
+  }
+  return out;
+}
+let settings = { sound: true, vibrate: true, wake: true, theme: 'auto', hintSeen: false };
+{ const s = store.get(K.settings, {}); if (isObj(s)) for (const k in settings) if (typeof s[k] === typeof settings[k]) settings[k] = s[k]; }
+if (!['auto', 'light', 'dark'].includes(settings.theme)) settings.theme = 'auto';
+let presets = cleanPresets(store.get(K.presets, null));
 let timers = store.get(K.timers, null);
-function validTimer(t) { return t && typeof t.id === 'string' && TYPE_LABEL[t.type] && ['idle','running','paused','done'].includes(t.status); }
-if (!Array.isArray(timers)) timers = null; else timers = timers.filter(validTimer).slice(0, MAX_TIMERS);
+if (!Array.isArray(timers)) timers = null; else timers = cleanTimers(timers);
 const rt = new Map(); // runtime-only per timer: lastSec, lastIdx, lastAlarm
 
 function uid() { const a = new Uint32Array(2); crypto.getRandomValues(a); return a[0].toString(36) + a[1].toString(36); }
@@ -566,9 +630,9 @@ function buildCard(t) {
     <article class="card" aria-label="${TYPE_LABEL[t.type]}計時器">
       <div class="card-head">
         <span class="grip" aria-hidden="true">${ICON.grip}</span>
-        <button class="name" type="button" title="點擊改名"></button>
+        <button class="name" type="button" title="點擊改名" data-tap="${t.id}:name"></button>
         <span class="tag">${TYPE_LABEL[t.type]}</span>
-        <button class="icon-btn del" type="button" aria-label="刪除">${ICON.x}</button>
+        <button class="icon-btn del" type="button" aria-label="刪除" data-tap="${t.id}:del">${ICON.x}</button>
       </div>
       <div class="card-body">
         <div class="ring">
@@ -577,10 +641,10 @@ function buildCard(t) {
             <circle class="track" cx="38" cy="38" r="${RING_R}" fill="none" stroke-width="3"/>
             <circle class="prog" cx="38" cy="38" r="${RING_R}" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="${RING_C}" stroke-dashoffset="0"/>
           </svg>
-          <button class="play" type="button" aria-label="開始"></button>
+          <button class="play" type="button" aria-label="開始" data-tap="${t.id}:play"></button>
         </div>
         <div class="readout">
-          <button class="time" type="button" aria-label="時間"></button>
+          <button class="time" type="button" aria-label="時間" data-tap="${t.id}:time"></button>
           <div class="sub"></div>
         </div>
       </div>
@@ -605,25 +669,29 @@ function buildCard(t) {
   els.set(t.id, e);
   return e;
 }
+// The footer is rebuilt only when its set of buttons changes, so a finger resting on 計圈 or 重設 keeps the same element.
+// Each button also carries data-tap="<timer id>:<kind>" so the tap layer can re-find it if it was rebuilt mid-press.
 function buildFoot(t, e) {
-  const f = e.foot; f.innerHTML = '';
-  const mk = (cls, html, label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; if (label) b.setAttribute('aria-label', label); b.addEventListener('click', fn); f.appendChild(b); return b; };
-  if (t.status === 'done' && !t.ack) {
-    mk('stop-btn', '停止', '停止提示', () => ack(t));
-    return;
+  const f = e.foot, alarm = t.status === 'done' && !t.ack;
+  const key = alarm ? 'alarm' : 'normal';
+  if (e.footKey !== key) {
+    e.footKey = key; f.innerHTML = '';
+    const mk = (kind, cls, html, label, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.innerHTML = html; b.dataset.tap = t.id + ':' + kind; if (label) b.setAttribute('aria-label', label); b.addEventListener('click', fn); f.appendChild(b); return b; };
+    if (alarm) mk('stop', 'stop-btn', '停止', '停止提示', () => ack(t));
+    else {
+      mk('reset', 'btn btn-ghost', ICON.reset + '重設', null, () => reset(t));
+      if (t.type === 'stopwatch') mk('lap', 'btn btn-ghost lap-btn', ICON.lap + '計圈', null, () => lap(t));
+      mk('full', 'btn btn-ghost', ICON.full + '全螢幕', null, () => openFs(t));
+    }
   }
-  mk('btn btn-ghost', ICON.reset + '重設', null, () => reset(t));
-  if (t.type === 'stopwatch') {
-    const b = mk('btn btn-ghost', ICON.lap + '計圈', null, () => lap(t));
-    b.disabled = t.status !== 'running'; b.style.opacity = b.disabled ? .45 : 1;
-  }
-  mk('btn btn-ghost', ICON.full + '全螢幕', null, () => openFs(t));
+  const lb = f.querySelector('.lap-btn');
+  if (lb) { lb.disabled = t.status !== 'running'; lb.style.opacity = lb.disabled ? .45 : 1; }
 }
 function refreshCard(t) {
   const e = els.get(t.id); if (!e) return;
   e.name.textContent = t.name;
-  e.play.innerHTML = t.status === 'running' ? ICON.pause : ICON.play;
-  e.play.setAttribute('aria-label', t.status === 'running' ? '暫停' : '開始');
+  const pk = t.status === 'running' ? 'pause' : t.status === 'done' ? 'reset' : 'play';
+  if (e.playKind !== pk) { e.playKind = pk; e.play.innerHTML = ICON[pk]; e.play.setAttribute('aria-label', pk === 'pause' ? '暫停' : pk === 'reset' ? '重新開始' : '開始'); }
   e.card.classList.toggle('is-done', t.status === 'done');
   e.card.classList.toggle('acked', t.status === 'done' && t.ack);
   e.card.classList.toggle('adjustable', t.type === 'countdown' && (t.status === 'idle' || t.status === 'paused'));
@@ -727,23 +795,39 @@ function startRename(t, e) {
 }
 
 // ---------- delete + undo ----------
-let undoBuf = null, toastTimer = 0;
+// Every deletion while the toast is up joins one group: 復原 brings all of them back to their old places,
+// so deleting two (or more) in a row never loses the earlier ones.
+let undoStack = [], toastTimer = 0;
 function removeTimer(id) {
   const i = timers.findIndex(t => t.id === id); if (i < 0) return;
   const [t] = timers.splice(i, 1);
-  undoBuf = { t, i };
-  if (fsId === id) closeFs();
+  undoStack.push({ t, i });
+  if (fsId === id) closeFs(false);
   save(); renderAll(); syncWake();
-  toast(`已刪除「${t.name}」`, true);
+  toast(undoStack.length > 1 ? `已刪除 ${undoStack.length} 個計時器` : `已刪除「${t.name}」`, true);
 }
 function toast(msg, undo) {
-  $('#toastMsg').textContent = msg; $('#toastUndo').hidden = !undo; $('#toast').hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; undoBuf = null; }, undo ? 5000 : 2600);
+  const el = $('#toast');
+  $('#toastMsg').textContent = msg; $('#toastUndo').hidden = !undo;
+  $('#toastUndo').textContent = undo && undoStack.length > 1 ? `全部復原（${undoStack.length}）` : '復原';
+  if (el.hidden) markShown(el);
+  el.hidden = false;
+  if (!undo) undoStack = [];
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; undoStack = []; }, undo ? 6000 : 2600);
 }
 $('#toastUndo').addEventListener('click', () => {
-  if (!undoBuf) return;
-  timers.splice(Math.min(undoBuf.i, timers.length), 0, undoBuf.t); undoBuf = null;
-  save(); renderAll(); syncWake(); $('#toast').hidden = true;
+  if (!undoStack.length) return;
+  let first = null;
+  // newest first: each stored index was taken right after the earlier deletions, so reversing restores the old order
+  while (undoStack.length) {
+    const u = undoStack.pop();
+    if (timers.length >= MAX_TIMERS) break;
+    timers.splice(Math.min(u.i, timers.length), 0, u.t); first = u.t;
+  }
+  undoStack = [];
+  save(); renderAll(); syncWake();
+  clearTimeout(toastTimer); $('#toast').hidden = true;
+  const e = first && els.get(first.id); if (e) e.slot.scrollIntoView({ block: 'nearest' });
 });
 
 // ---------- gestures ----------
@@ -761,7 +845,7 @@ function attachGestures(t, e) {
     const mx = ev.clientX - sx, my = ev.clientY - sy;
     if (!sw) {
       if (Math.abs(my) > 12 && Math.abs(my) > Math.abs(mx)) { pid = null; return; }
-      if (mx < -12 && Math.abs(mx) > Math.abs(my) * 1.5) { sw = true; card.classList.add('swiping'); try { card.setPointerCapture(ev.pointerId); } catch {} }
+      if (mx < -12 && Math.abs(mx) > Math.abs(my) * 1.5) { sw = true; claimed.add(ev.pointerId); card.classList.add('swiping'); try { card.setPointerCapture(ev.pointerId); } catch {} }
     }
     if (sw) { dx = Math.min(0, mx); card.style.transform = `translateX(${dx}px)`; }
   });
@@ -772,10 +856,6 @@ function attachGestures(t, e) {
     const w = card.offsetWidth;
     if (dx < -w * 0.4) { e.slot.classList.add('removing'); card.style.transform = `translateX(${-w - 20}px)`; card.style.opacity = 0; setTimeout(() => { card.style.transform = ''; card.style.opacity = ''; removeTimer(t.id); }, 180); }
     else card.style.transform = '';
-    // swallow the click following a swipe
-    const stop = c => { c.stopPropagation(); c.preventDefault(); };
-    card.addEventListener('click', stop, { capture: true, once: true });
-    setTimeout(() => card.removeEventListener('click', stop, { capture: true }), 50);
   };
   card.addEventListener('pointerup', end);
   card.addEventListener('pointercancel', ev => { if (pid === ev.pointerId) { pid = null; card.classList.remove('swiping'); card.style.transform = ''; } });
@@ -793,6 +873,7 @@ function attachGestures(t, e) {
     if (steps) {
       tAcc += steps;
       const nd = Math.min(MAX_MS, Math.max(t.pausedElapsed + 1000, t.duration + steps * 60000));
+      claimed.add(ev.pointerId);
       if (nd !== t.duration) { t.duration = nd; e.suppressClick = true; updateCard(t, Date.now()); }
     }
   });
@@ -804,7 +885,7 @@ function attachGestures(t, e) {
   const grip = card.querySelector('.grip');
   let gid = null, gy0 = 0;
   grip.addEventListener('pointerdown', ev => {
-    gid = ev.pointerId; gy0 = ev.clientY; try { grip.setPointerCapture(ev.pointerId); } catch {}
+    gid = ev.pointerId; gy0 = ev.clientY; claimed.add(ev.pointerId); try { grip.setPointerCapture(ev.pointerId); } catch {}
     card.classList.add('dragging'); ev.preventDefault();
   });
   grip.addEventListener('pointermove', ev => {
@@ -918,10 +999,12 @@ function openAdd(t) {
     if (editing.type === 'countdown') { const s = Math.round(editing.duration / 1000); $('#hInput').value = Math.floor(s / 3600); $('#mInput').value = Math.floor(s % 3600 / 60); $('#sInput').value = s % 60; }
     if (editing.type === 'interval') fillIv(editing.cfg);
   } else if (!$('#ivPrep').value) fillIv(DEFAULT_IV);
-  $('#addScrim').hidden = false;
-  setTimeout(() => (addType === 'countdown' ? $('#mInput') : $('#nameInput')).focus(), 30);
+  $('#addScrim').hidden = false; screenChanged($('#addScrim'));
+  // Only a keyboard user gets the 分 field focused; on touch that would pop the on-screen keyboard over half the sheet.
+  if (viaKeyboard()) setTimeout(() => (addType === 'countdown' ? $('#mInput') : $('#nameInput')).focus(), 30);
+  else $('#addSheet').focus({ preventScroll: true });
 }
-function closeAdd() { $('#addScrim').hidden = true; editing = null; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+function closeAdd() { $('#addScrim').hidden = true; screenChanged(null); editing = null; if (lastFocus && lastFocus.focus && lastFocus.isConnected) lastFocus.focus({ preventScroll: true }); }
 function readCountdown() {
   const vals = ['hInput', 'mInput', 'sInput'].map(id => $('#' + id).value.trim());
   const nums = vals.map(v => v === '' ? 0 : Number(v));
@@ -974,14 +1057,14 @@ $('#settingsBtn').addEventListener('click', () => {
   lastFocus = document.activeElement;
   $('#optSound').checked = settings.sound; $('#optVibrate').checked = settings.vibrate; $('#optWake').checked = settings.wake;
   $('#wakeNote').textContent = navigator.wakeLock ? '計時中避免螢幕自動關閉' : '此瀏覽器不支援，請手動關閉自動鎖定';
-  $('#setScrim').hidden = false; $('#optSound').focus();
+  $('#setScrim').hidden = false; screenChanged($('#setScrim')); $('#optSound').focus({ preventScroll: true });
 });
 $('#optSound').addEventListener('change', e => { settings.sound = e.target.checked; saveSettings(); });
 $('#optVibrate').addEventListener('change', e => { settings.vibrate = e.target.checked; saveSettings(); });
 $('#optWake').addEventListener('change', e => { settings.wake = e.target.checked; saveSettings(); syncWake(); });
 document.querySelectorAll('#themeSeg button').forEach(b => b.addEventListener('click', () => { settings.theme = b.dataset.themeVal; saveSettings(); applyTheme(); }));
 $('#testSound').addEventListener('click', () => { audio(); setTimeout(sndEnd, 30); });
-const closeSet = () => { $('#setScrim').hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); };
+const closeSet = () => { $('#setScrim').hidden = true; screenChanged(null); if (lastFocus && lastFocus.focus) lastFocus.focus(); };
 $('#setClose').addEventListener('click', closeSet);
 $('#setScrim').addEventListener('click', ev => { if (ev.target === ev.currentTarget) closeSet(); });
 $('#setScrim').addEventListener('keydown', ev => { if (ev.key === 'Escape') closeSet(); });
@@ -994,11 +1077,18 @@ function openFs(t) {
   fsId = t.id; fs.hidden = false; fs.classList.remove('hide-ctl'); fsLen = 0;
   $('#fsName').textContent = t.name;
   if (fs.requestFullscreen && !document.fullscreenElement) fs.requestFullscreen().catch(() => {});
-  updateFs(true); $('#fsPause').focus();
+  screenChanged(fs); updateFs(true); $('#fsPause').focus({ preventScroll: true });
 }
-function closeFs() {
-  fsId = null; fs.hidden = true;
-  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+// returnFocus: put focus back on the card's play button (the 全螢幕 button it came from may have been rebuilt)
+function closeFs(returnFocus = true) {
+  const id = fsId;
+  fsId = null; fs.hidden = true; screenChanged(null);
+  const e = returnFocus && els.get(id);
+  const back = () => { if (!e || fsId) return; const b = e.foot.querySelector('[data-tap$=":full"]') || e.play; if (b.isConnected && document.activeElement !== b) b.focus({ preventScroll: true }); };
+  back();
+  // leaving browser fullscreen resets focus to body, so put it back once that has finished
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().then(back, back);
+  else requestAnimationFrame(back);
 }
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && fsId) { /* stay in pseudo fullscreen */ } });
 function fitFs(len) {
@@ -1013,7 +1103,7 @@ function fitFs(len) {
 }
 addEventListener('resize', () => { fsLen = 0; if (fsId) updateFs(true); });
 function updateFs(force) {
-  const t = fsTimer(); if (!t) { if (fsId) closeFs(); return; }
+  const t = fsTimer(); if (!t) { if (fsId) closeFs(false); return; }
   const now = Date.now(), el = elapsedOf(t, now);
   let phase = '', round = '', ph = null, html, len;
   if (t.type === 'countdown') { const s = fmtCountdown(t.duration - el); html = s; len = s.length; phase = t.status === 'done' ? '時間到' : ''; }
@@ -1040,13 +1130,81 @@ $('#fsPause').addEventListener('click', ev => { ev.stopPropagation(); const t = 
 $('#fsReset').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) reset(t); });
 $('#fsLap').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) lap(t); });
 $('#fsStop').addEventListener('click', ev => { ev.stopPropagation(); const t = fsTimer(); if (t) ack(t); });
-$('#fsExit').addEventListener('click', ev => { ev.stopPropagation(); const id = fsId; closeFs(); const e = els.get(id); if (e) e.play.focus(); });
+$('#fsExit').addEventListener('click', ev => { ev.stopPropagation(); closeFs(true); });
 fs.addEventListener('click', ev => { if (!ev.target.closest('button')) fs.classList.toggle('hide-ctl'); });
 document.addEventListener('keydown', ev => {
   if (!fsId) return;
   if (ev.key === 'Escape') { closeFs(); }
   else if (ev.key === ' ' && ev.target === document.body) { ev.preventDefault(); const t = fsTimer(); if (t) toggle(t); }
 });
+
+// ---------- first-use hint for the gestures ----------
+$('#hint').hidden = settings.hintSeen;
+$('#hintOk').addEventListener('click', () => { settings.hintSeen = true; saveSettings(); $('#hint').hidden = true; const b = $('#addBtn'); if (b) b.focus({ preventScroll: true }); });
+
+// ---------- touch: act on release ----------
+/* Every button (and label, summary, sheet backdrop, fullscreen backdrop) acts at pointerup of the same pointerId, if that
+   pointer moved < 10 px or was released inside the control's box grown by 16 px. So a tap still works while another
+   finger rests on the screen (Chrome then sends no click) and two overlapping taps both act. pointerdown is
+   preventDefault'ed so no compat mousedown/focus lands on whatever replaces the control. The action runs as el.click()
+   under `firing`; any other click within 800 ms of a tap-layer pointerup is swallowed (whatever its detail, target or
+   point) unless Enter/Space was pressed after that tap. Pointer-made clicks are always swallowed. A lone detail-0
+   click (keyboard, assistive tech) acts once. Swipe-to-delete, the ±1 min drag and the grip drag claim their pointer. */
+const TAP_SEL = 'button, label, summary, .scrim, .fs';
+const downs = new Map(), claimed = new Set(), shownAt = new WeakMap();
+let firing = false, lastTapUp = -1e9, lastKey = -1e9, screenAt = -1e9, guardUntil = -1e9, lastDownType = '';
+function markShown(el) { shownAt.set(el, performance.now()); }
+// a real screen/dialog change: presses that began before it don't count, and presses in the next 150 ms (a double tap) are ignored
+function screenChanged(layer) { const n = performance.now(); screenAt = n; guardUntil = n + 150; if (layer) markShown(layer); }
+function viaKeyboard() { return lastKey > lastTapUp || lastDownType === 'mouse'; }
+addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') lastKey = performance.now(); }, true);
+addEventListener('keyup', e => { if (e.key === ' ') lastKey = performance.now(); }, true);
+const TEXTY = 'input:not([type="checkbox"]):not([type="radio"]), textarea, select';
+function openModal() { return [$('#fs'), $('#addScrim'), $('#setScrim')].find(m => !m.hidden) || null; }
+document.addEventListener('pointerdown', e => { claimed.delete(e.pointerId); lastDownType = e.pointerType; }, true);
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const tg = e.target;
+  if (!(tg instanceof Element) || tg.closest(TEXTY) || tg.closest('.grip')) return;
+  let el = tg.closest(TAP_SEL);
+  if (!el) return;
+  if (el.matches('.scrim') && tg !== el) return; // blank sheet area is not the backdrop
+  e.preventDefault();
+  if (performance.now() < guardUntil) return;
+  if (el.disabled) return;
+  downs.set(e.pointerId, { el, key: el.dataset.tap || el.id || '', x: e.clientX, y: e.clientY, t: performance.now() });
+});
+document.addEventListener('pointerup', e => {
+  const d = downs.get(e.pointerId); if (!d) return;
+  downs.delete(e.pointerId);
+  lastTapUp = performance.now();
+  if (claimed.has(e.pointerId)) { claimed.delete(e.pointerId); return; }
+  let el = d.el;
+  if (!el.isConnected && d.key) el = document.querySelector(`[data-tap="${CSS.escape(d.key)}"]`) || document.getElementById(d.key);
+  if (!el || !el.isConnected || el.disabled || !el.getClientRects().length) return;
+  if (d.t < screenAt) return; // the screen changed while this finger was down
+  const modal = openModal();
+  if (modal && !modal.contains(el) && !el.closest('.toast')) return;
+  const layer = el.closest('.scrim, .fs, .toast');
+  if (layer && (shownAt.get(layer) || 0) > d.t) return; // pressed before this layer appeared
+  const r = el.getBoundingClientRect(), m = 16;
+  const still = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 10;
+  const inBox = e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
+  if (!still && !inBox) return;
+  const a = document.activeElement;
+  if (a && a !== el && !el.contains(a) && a.matches && a.matches(TEXTY)) a.blur();
+  if (el.tagName === 'BUTTON' && a !== el) el.focus({ preventScroll: true });
+  firing = true; try { el.click(); } finally { firing = false; }
+});
+document.addEventListener('pointercancel', e => { downs.delete(e.pointerId); claimed.delete(e.pointerId); });
+addEventListener('click', e => {
+  if (firing) return;
+  const t = e.target;
+  if (t instanceof Element && t.matches(TEXTY)) return;
+  const recentTap = performance.now() - lastTapUp < 800 && !(lastKey > lastTapUp);
+  if (recentTap || (e.isTrusted && (e.detail > 0 || e.pointerType))) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('button, label, .grip')) e.preventDefault(); });
 
 // ---------- main loop ----------
 function frame() {
@@ -1069,7 +1227,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('storage', ev => { if (ev.key === K.timers) { const v = store.get(K.timers, null); if (Array.isArray(v)) {
   // update the existing objects in place: each card's listeners close over its timer object
   const old = new Map(timers.map(t => [t.id, t]));
-  timers = v.filter(validTimer).map(n => { const o = old.get(n.id); if (!o) return n; for (const k of Object.keys(o)) if (!(k in n)) delete o[k]; return Object.assign(o, n); });
+  timers = cleanTimers(v).map(n => { const o = old.get(n.id); if (!o) return n; for (const k of Object.keys(o)) if (!(k in n)) delete o[k]; return Object.assign(o, n); });
   renderAll(); } } });
 
 // Initial: settle anything that finished while the page was closed (no sound for stale ones)
@@ -1083,6 +1241,6 @@ addEventListener('storage', ev => { if (ev.key === K.timers) { const v = store.g
 })();
 
 // test hook for automated verification
-window.__timerDeck = { get timers() { return timers; }, phasesOf, locate, fmtCountdown, fmtSW, readCountdown };
+window.__timerDeck = { get timers() { return timers; }, get presets() { return presets; }, get guardUntil() { return guardUntil; }, get undoCount() { return undoStack.length; }, phasesOf, locate, fmtCountdown, fmtSW, readCountdown };
 })();
 </script>
