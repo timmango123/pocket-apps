@@ -116,12 +116,17 @@ const titles = b => b.cols.map(l => l.map(c => c.id).join('')).join('|');
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
   const WRAP = path.resolve(__dirname, '_wrapped.html');
   fs.writeFileSync(WRAP, '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style></head><body>' + html + '</body></html>');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(WRAP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  const PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   const ctx = await browser.newContext({viewport:{width:390, height:610}, isMobile:true, hasTouch:true, deviceScaleFactor:2});
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await p.goto('file://' + WRAP); await p.waitForSelector('html[data-ready="1"]');
+  await p.goto(PAGE_URL); await p.waitForSelector('html[data-ready="1"]');
   const cdp = await ctx.newCDPSession(p);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{x, y, id:1}]});
   const wait = ms => p.waitForTimeout(ms);
@@ -254,7 +259,7 @@ const titles = b => b.cols.map(l => l.map(c => c.id).join('')).join('|');
   {
     await p.evaluate(() => { __kb.board().cols[0].unshift({id:'two', title:'兩分頁', note:'', due:null, color:null, created:1, doneAt:null}); __kb.render(); __kb.goCol(0, true); });
     const p2 = await ctx.newPage(); p2.on('pageerror', e => errors.push(e.message));
-    await p2.goto('file://' + WRAP); await p2.waitForSelector('html[data-ready="1"]');
+    await p2.goto(PAGE_URL); await p2.waitForSelector('html[data-ready="1"]');
     await p2.click('#col0 .card .adv'); await wait(200);
     ok(!(await p2.isDisabled('#undoBtn')), 'tab B has an undo step');
     await p.bringToFront(); if (await p.isVisible('#col0 [data-add]')) await p.click('#col0 [data-add]'); else await p.focus('#col0 .composer textarea'); await p.keyboard.type('A 分頁新增'); await p.keyboard.press('Enter'); await wait(300);
@@ -273,7 +278,7 @@ const titles = b => b.cols.map(l => l.map(c => c.id).join('')).join('|');
   {
     const c2 = await browser.newContext({viewport:{width:844, height:390}, isMobile:true, hasTouch:true});
     const q = await c2.newPage(); q.on('pageerror', e => errors.push(e.message));
-    await q.goto('file://' + WRAP); await q.waitForSelector('html[data-ready="1"]');
+    await q.goto(PAGE_URL); await q.waitForSelector('html[data-ready="1"]');
     const cd = await c2.newCDPSession(q);
     const T = (type, x, y) => cd.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{x, y, id:1}]});
     const ttl = await q.evaluate(() => __kb.board().cols[0][0].title);
