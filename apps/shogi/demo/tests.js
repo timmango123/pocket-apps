@@ -2,7 +2,10 @@
 // position against the published values, every special rule of the spec (forced/optional promotion, drops and their three
 // restrictions incl. 打步詰, self-check, 千日手 / 連續王手千日手, 入玉宣言 27-point rule, handicaps, SFEN/USI/KIF, notation),
 // the opening book, and re-verifies all built-in 詰將棋 puzzles (mate length exact, first move unique).
-// Usage: node tests.js [--perft5]
+// Part 2 (release review r1): the SPEC bots vs 十級/八級/五級, then the real page in mobile Chromium over http with CDP touch:
+// the pointerup tap layer (resting finger, overlapping two-finger taps in both lift orders, detail-0 click replays, holds),
+// first launch, corrupt storage, 詰將棋 vs a saved game, reload mid-puzzle, daily puzzle, toast/kifu/promo/landscape layout.
+// Usage: node tests.js [--perft5] [--no-browser]
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const SG = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return SG;')();
@@ -149,7 +152,7 @@ function playU(g, list) { list.split(' ').forEach(u => { const m = SG.fromUSI(g.
 {
   ok(SG.buildBook() === SG.BOOK_LINES.length, `opening book: all ${SG.BOOK_LINES.length} lines legal`);
   const p = SG.fromSfen('4k4/9/4P4/9/9/9/9/9/4K4 b G 1');
-  for (let lv = 0; lv < 5; lv++) { const r = SG.think(p.clone(), lv, { time: 600 }); ok(U(r.move) === 'G*5b', `${SG.LEVELS[lv].name} finds the mate in 1 (${U(r.move)})`); }
+  for (let lv = 0; lv < SG.LEVELS.length; lv++) { const r = SG.think(p.clone(), lv, { time: 600 }); ok(U(r.move) === 'G*5b', `${SG.LEVELS[lv].name} finds the mate in 1 (${U(r.move)})`); }
   const hang = SG.fromSfen('4k4/9/9/9/7r1/9/9/4B4/4K4 b - 1'), r2 = SG.think(hang, 2, { time: 500 });
   ok(U(r2.move) === '5h2e', 'captures a hanging rook (' + U(r2.move) + ')');
 }
@@ -163,8 +166,249 @@ function playU(g, list) { list.split(' ').forEach(u => { const m = SG.fromUSI(g.
     if (!good) { bad++; console.log('  puzzle', i + 1, 'problem', f && f.n, mm.moves.map(U)); }
     lens[pz.n] = (lens[pz.n] || 0) + 1;
   });
-  ok(!bad && TSUME.length === 30, '30 tsume puzzles: shortest mate exactly as labelled and unique first move');
+  ok(!bad && TSUME.length === 60, TSUME.length + ' tsume puzzles: shortest mate exactly as labelled and unique first move');
+  const seen = new Set(TSUME.map(z => z.sfen.split(' ')[0])); ok(seen.size === TSUME.length, 'no duplicate puzzle positions');
   console.log('tsume puzzles verified:', JSON.stringify(lens), bad ? bad + ' bad' : 'all OK');
 }
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exitCode = fail ? 1 : 0;
+/* ---- difficulty ladder (release review r1 item 5): SPEC bots vs the computer levels ---- */
+{
+  let seed = 4242; const R = () => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 4294967296; };
+  const greedy = p => { const ms = p.legalMoves(); let best = ms[0], bs = -1e9; for (const m of ms) { p.make(m); const v = p.legalMoves().length ? -SG.evaluate(p) + R() * 5 : 1e8; p.unmake(); if (v > bs) { bs = v; best = m; } } return best; };
+  const POL = {
+    clumsy: p => { const ms = p.legalMoves(); if (R() < 0.5 || R() < 0.15) return ms[Math.floor(R() * ms.length)]; return greedy(p); },
+    casual: p => { const ms = p.legalMoves(); return R() < 0.15 ? ms[Math.floor(R() * ms.length)] : greedy(p); },
+    casualQ: p => SG.think(p, { depth: 1, time: 100, mistake: 0.15, k: 4, temp: 150, mate: 0, book: false }).move };
+  const series = (tier, lv, n, s0) => { let w = 0; for (let i = 0; i < n; i++) { SG.setSeed(s0 + i); const g = new SG.Game(); while (!g.result && g.moves.length < 300) { const m = g.pos.side === 0 ? POL[tier](g.pos) : SG.think(g.pos, lv).move; if (!m) break; g.play(m); } if (g.result && g.result.winner === 0) w++; } return w; };
+  const t0 = Date.now();
+  ok(SG.LEVELS.length === 7 && SG.ORDER.join() === '0,5,6,1,2,3,4' && SG.ORDER.map(i => SG.LEVELS[i].name).join('') === '十級八級六級五級初段三段五段', 'seven levels, weakest to strongest: ' + SG.ORDER.map(i => SG.LEVELS[i].name).join(' '));
+  const cas = series('casual', 0, 16, 100), clu = series('clumsy', 0, 24, 200);
+  ok(cas >= 5, `十級 is beatable by a casual (1-step greedy) bot: ${cas}/16`);
+  ok(clu >= 1, `... and now and then by a clumsy (mostly random) bot: ${clu}/24`);
+  const q8 = series('casualQ', 5, 8, 300), q5 = series('casualQ', 1, 8, 400);
+  ok(q8 >= 2 && q8 <= 7 && q5 <= 3 && q8 > q5, `八級 sits between 十級 and 五級 for a trade-aware casual bot: 八級 ${q8}/8, 五級 ${q5}/8`);
+  console.log(`ladder: casual vs 十級 ${cas}/16, clumsy vs 十級 ${clu}/24, casualQ vs 八級 ${q8}/8, vs 五級 ${q5}/8 (${Date.now() - t0} ms)`);
+}
+
+if (process.argv.includes('--no-browser')) { console.log(`\n${pass} passed, ${fail} failed`); process.exitCode = fail ? 1 : 0; }
+else uiTests(ok).then(() => { console.log(`\n${pass} passed, ${fail} failed`); process.exitCode = fail ? 1 : 0; }, e => { console.log('FAIL browser tests crashed: ' + (e && e.stack || e)); fail++; console.log(`\n${pass} passed, ${fail} failed`); process.exitCode = 1; });
+
+/* ================= Part 2: the real page (release review r1 toFix 1-9) ================= */
+async function uiTests(ok) {
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const server = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(html); });
+  await new Promise(res => server.listen(0, '127.0.0.1', res)); server.unref();
+  const URL = 'http://127.0.0.1:' + server.address().port + '/';
+  const browser = await chromium.launch();
+  const errors = [], T0 = Date.now();
+  const BASE = { 'shogi.tutDone': '1', 'shogi.settings': JSON.stringify({ sound: false, level: 0, color: 'sente', mode: 'ai', hc: 0 }) };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function open(o = {}) {
+    const ctx = o.ctx || await browser.newContext({ viewport: { width: o.w || 390, height: o.h || 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+    if (!o.ctx) await ctx.addInitScript(ls => { if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1'); localStorage.clear(); for (const k in ls) localStorage.setItem(k, ls[k]); }, o.ls || BASE);
+    const p = await ctx.newPage();
+    p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); p.on('pageerror', e => errors.push(e.message));
+    await p.goto(URL); await p.waitForFunction(() => window.__shogi);
+    const cdp = await ctx.newCDPSession(p);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] || 1 })) });
+    const center = sel => p.$eval(sel, e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+    const tapAt = async (q, hold = 40) => { await T('touchStart', [q]); await sleep(hold); await T('touchEnd', []); };
+    const tap = async (sel, hold) => tapAt(await center(sel), hold);
+    const st = () => p.evaluate(() => window.__shogi.state());
+    const wait = (fn, arg, ms = 4000) => p.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
+    const d0 = (x, y) => p.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); if (e) e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window, clientX: x, clientY: y })); return e ? (e.id || e.tagName) : null; }, [x, y]);
+    const d0sel = sel => p.$eval(sel, e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, view: window })));
+    const sq = u => p.evaluate(u => window.__shogi.sqClient(u), u);
+    const play = async u => {   // one USI move with taps (piece or piece-stand, then target, then 成/不成 if asked)
+      const n0 = (await st()).moves.length;
+      await tapAt(u[1] === '*' ? await p.evaluate(a => window.__shogi.handClient(window.__shogi.state().side, a), u[0]) : await sq(u.slice(0, 2)));
+      await sleep(60); await tapAt(await sq(u.slice(2, 4))); await sleep(120);
+      if ((await st()).promo) await tap(u.endsWith('+') ? '#pYes' : '#pNo');
+      return wait(n => window.__shogi.state().moves.length > n, n0);
+    };
+    const playing = () => wait(() => { const s = window.__shogi.state(); return s.phase === 'play' && !s.overlays.length; });
+    return { ctx, p, T, tap, tapAt, center, st, wait, d0, d0sel, sq, play, playing };
+  }
+  const quiet = () => sleep(850);   // let the 800 ms tap guard pass (for lone detail-0 clicks)
+
+  /* ---- 1. [veto] the tap layer ---- */
+  {
+    const P = await open(); const { p, T, tap, center, st, wait, d0, d0sel } = P;
+    await tap('#bStart'); ok(await P.playing(), 'menu 開始對局 by tap starts a game');
+    let s0 = await st(), f0 = s0.flip, n0 = s0.tapFired;
+    await tap('#bFlip'); await sleep(150); let s = await st();
+    ok(s.flip !== f0 && s.tapFired === n0 + 1, 'single tap on 翻轉 flips once');
+    for (const hold of [600, 1000]) { const a = (await st()).flip; await tap('#bFlip', hold); await sleep(150); ok((await st()).flip !== a, `held ${hold} ms: 翻轉 fires once`); }
+    // a finger resting on the HUD, on the board, below the board: a second finger's tap still fires each button once
+    const rests = [await center('#mvNo'), await P.sq('5e'), [195, (await p.$eval('#cv', e => e.getBoundingClientRect().bottom)) - 8]];
+    let restOK = 0, restN = 0;
+    for (const r of rests) for (const sel of ['#bFlip', '#bLabel']) {
+      const a = await st(), q = await center(sel), rest = [r[0], r[1], 1];
+      await T('touchStart', [rest]); await sleep(200);
+      await T('touchStart', [rest, [q[0], q[1], 2]]); await sleep(50); await T('touchEnd', [[q[0], q[1], 2]]); await sleep(150);
+      const b = await st(); await T('touchEnd', [rest]); await sleep(120);
+      const c = await st(); restN++;
+      if ((sel === '#bFlip' ? b.flip !== a.flip : b.label !== a.label) && b.tapFired === a.tapFired + 1 && c.tapFired === b.tapFired) restOK++;
+    }
+    ok(restOK === restN, `resting finger (HUD, board, below board): second-finger taps fire once each ${restOK}/${restN}`);
+    { // resting finger + 選單 opens the menu
+      const r = await center('#mvNo'), q = await center('#bMenu');
+      await T('touchStart', [[r[0], r[1], 1]]); await sleep(200); await T('touchStart', [[r[0], r[1], 1], [q[0], q[1], 2]]); await sleep(50); await T('touchEnd', [[q[0], q[1], 2]]); await sleep(150); await T('touchEnd', [[r[0], r[1], 1]]);
+      ok(await wait(() => window.__shogi.state().overlays.includes('menu')), 'resting finger: 選單 opens the menu');
+      await quiet(); await tap('#menuX'); ok(await P.playing(), 'menu × back to the game');
+    }
+    // overlapping taps: finger 2 lands 50 ms after finger 1 on another button; both act, in both lift orders
+    for (const order of ['first', 'second']) {
+      const a = await st(), A = await center('#bFlip'), B = await center('#bLabel');
+      await T('touchStart', [[A[0], A[1], 1]]); await sleep(50); await T('touchStart', [[A[0], A[1], 1], [B[0], B[1], 2]]); await sleep(50);
+      if (order === 'first') { await T('touchEnd', [[A[0], A[1], 1]]); await sleep(40); await T('touchEnd', [[B[0], B[1], 2]]); }
+      else { await T('touchEnd', [[B[0], B[1], 2]]); await sleep(40); await T('touchEnd', [[A[0], A[1], 1]]); }
+      await sleep(150); const b = await st();
+      ok(b.flip !== a.flip && b.label !== a.label && b.tapFired === a.tapFired + 2, `overlapping taps 翻轉 + 標示, ${order} finger lifts first: both act once`);
+    }
+    // a tap then a detail-0 click on the same button, on its edge, and on elementFromPoint: the action runs once
+    await quiet();
+    { const a = await st(), bb = await p.$eval('#bFlip', e => { const r = e.getBoundingClientRect(); return [r.right - 1, r.top + r.height / 2, r.left + r.width / 2]; });
+      await tap('#bFlip'); await d0sel('#bFlip'); await d0(bb[0], bb[1]); await d0(bb[2], bb[1]); await sleep(150);
+      const b = await st(); ok(b.flip !== a.flip && b.tapFired === a.tapFired + 1, 'tap + detail-0 click replays (button, edge, elementFromPoint): 翻轉 flipped once'); }
+    for (const dt of [120, 400]) { await quiet(); const a = await st(); await tap('#bFlip'); await sleep(dt); await d0sel('#bFlip'); await sleep(80); ok((await st()).flip !== a.flip, `detail-0 click ${dt} ms after a tap is swallowed`); }
+    // a tap that opens the menu: the replayed click under the finger does nothing on the new screen
+    await quiet();
+    { const before = await p.evaluate(() => localStorage.getItem('shogi.settings')), q = await center('#bMenu');
+      await tap('#bMenu'); await wait(() => window.__shogi.state().overlays.includes('menu')); const hit = await d0(q[0], q[1]); await sleep(150);
+      ok((await st()).overlays.join() === 'menu' && await p.evaluate(() => localStorage.getItem('shogi.settings')) === before, `tap 選單 + detail-0 click on the new screen (${hit}): nothing there ran`);
+      await quiet(); await tap('#menuX'); await P.playing(); }
+    // a lone detail-0 click (screen reader / keyboard) acts once; Enter on a focused button acts once
+    await quiet(); { const a = await st(); await d0sel('#bFlip'); await sleep(80); ok((await st()).flip !== a.flip, 'lone detail-0 click acts once'); }
+    await quiet(); { const a = await st(); await p.focus('#bFlip'); await p.keyboard.press('Enter'); await sleep(80); ok((await st()).flip !== a.flip, 'Enter on a focused button acts once'); }
+    // a pointer-made click with no tap-layer press (detail 1) never acts on its own
+    await quiet(); { const a = await st(); await p.$eval('#bFlip', e => e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, view: window }))); await sleep(80); ok((await st()).flip === a.flip, 'stray pointer click (detail 1) without a press is ignored'); }
+    // toast sits on the header, not the board (item 7); kifu bar is a 44 px target (item 8)
+    await quiet(); await tap('#bLabel'); await sleep(250);
+    const geo = await p.evaluate(() => { const r = e => document.getElementById(e).getBoundingClientRect(); return { t: r('toast'), bar: r('bar'), cv: r('cv'), main: r('main'), op: getComputedStyle(document.getElementById('toast')).opacity, kh: r('kifu').height }; });
+    ok(+geo.op > 0.5 && geo.t.top >= geo.bar.top - 1 && geo.t.bottom <= geo.bar.bottom + 1 && geo.t.bottom <= geo.cv.top, `toast shows on the header, clear of the board (toast ${Math.round(geo.t.top)}-${Math.round(geo.t.bottom)}, board from ${Math.round(geo.cv.top)})`);
+    ok(geo.kh >= 44, `#kifu tap target ${geo.kh} px >= 44`);
+    ok(geo.cv.height >= geo.main.height * 0.8, `portrait 390x844: board + bigger piece stands use the space (${Math.round(geo.cv.height)} of ${Math.round(geo.main.height)} px)`);
+    // play a real move by touch: board input unchanged
+    ok(await P.play('7g7f'), 'board tap-tap move still works');
+    await P.ctx.close();
+  }
+
+  /* ---- 1b/9. promotion box and resign confirm under a resting finger; the box closes only on a full tap ---- */
+  {
+    const P = await open(); const { p, T, tap, center, st, wait } = P;
+    await tap('#bStart'); await P.playing();
+    const loadPos = async sf => { await tap('#kifu'); await wait(() => window.__shogi.state().overlays.includes('kif')); await p.fill('#kifText', sf); await p.evaluate(() => document.activeElement && document.activeElement.blur()); await sleep(200); await tap('#kifLoad'); return wait(s => window.__shogi.state().sfen === s && window.__shogi.state().phase === 'play', sf + ' 1'); };
+    const SF = 'k8/9/9/4S4/9/9/9/9/4K4 b -';
+    ok(await loadPos(SF), 'SFEN position loaded through the 棋譜 card');
+    const openPromo = async () => { await P.tapAt(await P.sq('5d')); await sleep(80); await P.tapAt(await P.sq('5c')); return wait(() => window.__shogi.state().promo); };
+    ok(await openPromo(), 'silver into the zone asks 成／不成');
+    { const a = await P.sq('1i'); await T('touchStart', [[a[0], a[1], 1]]); await sleep(30); await T('touchMove', [[a[0] - 30, a[1] - 30, 1]]); await sleep(30); await T('touchEnd', [[a[0] - 30, a[1] - 30, 1]]); await sleep(120);
+      ok((await st()).promo, 'a swipe / brush on the board does not cancel the promotion box'); }
+    { const r = await P.sq('1h'); await T('touchStart', [[r[0], r[1], 1]]); await sleep(200); ok((await st()).promo, 'a finger resting on the board does not cancel it');
+      const q = await center('#pYes'); await T('touchStart', [[r[0], r[1], 1], [q[0], q[1], 2]]); await sleep(50); await T('touchEnd', [[q[0], q[1], 2]]); await sleep(150);
+      const s = await st(); await T('touchEnd', [[r[0], r[1], 1]]); await sleep(150);
+      ok(s.moves[0] === '5d5c+' && (await st()).moves.length === 1, 'resting finger + tap 成: promotes once (' + s.moves.join() + ')'); }
+    await sleep(500);
+    ok(await loadPos(SF), 'position reloaded'); ok(await openPromo(), 'promotion box again');
+    await P.tapAt(await P.sq('1i')); await sleep(150); { const s = await st(); ok(!s.promo && s.moves.length === 0, 'a full tap outside closes the box without moving'); }
+    // resign → confirm → 確定 with a finger resting on the HUD
+    await sleep(200); await tap('#bResign'); ok(await wait(() => window.__shogi.state().overlays.includes('confirm')), 'resign asks to confirm');
+    { const r = await center('#mvNo'), q = await center('#cfYes'); await sleep(300);
+      await T('touchStart', [[r[0], r[1], 1]]); await sleep(200); await T('touchStart', [[r[0], r[1], 1], [q[0], q[1], 2]]); await sleep(50); await T('touchEnd', [[q[0], q[1], 2]]); await sleep(100); await T('touchEnd', [[r[0], r[1], 1]]);
+      ok(await wait(() => window.__shogi.state().phase === 'over'), 'resting finger + 確定 resigns'); ok(await wait(() => window.__shogi.state().resultVisible, null, 4000), 'result card appears'); }
+    await P.ctx.close();
+  }
+
+  /* ---- 2. first launch: closing the tutorial with × leaves a playable game ---- */
+  {
+    const P = await open({ ls: {} }); const { st, wait } = P;
+    ok(await wait(() => window.__shogi.state().overlays.includes('tut')), 'first launch opens the tutorial');
+    await P.tap('#tut .x'); ok(await P.playing(), 'tutorial × starts a game (phase play, no card)');
+    ok(await P.play('7g7f'), 'and a piece can be moved right away');
+    await P.ctx.close();
+  }
+
+  /* ---- 3. corrupt storage: defaults, no errors, the result card still appears ---- */
+  {
+    const START = 'lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1';
+    const cases = [
+      ['stats lv null, settings level 7 / hc 99', { 'shogi.tutDone': '1', 'shogi.stats': '{"lv":null,"pvp":"x","ts":[5]}', 'shogi.settings': '{"level":7,"hc":99,"mode":"zz","label":5,"sound":false}' }],
+      ['stats lv [1,2], ach array', { 'shogi.tutDone': '1', 'shogi.stats': '{"lv":[1,2]}', 'shogi.ach': '[1]', 'shogi.settings': '{"level":-1,"hc":"2","sound":false}' }],
+      ['saved game level 9', { 'shogi.tutDone': '1', 'shogi.settings': '{"sound":false}', 'shogi.game': JSON.stringify({ sfen: START, moves: ['7g7f', '3c3d'], mode: 'ai', human: 0, level: 9, hc: 99, evals: [1], think: 'x' }) }],
+      ['saved game level 9, sound on, computer to move (no vibrate before a tap)', { 'shogi.tutDone': '1', 'shogi.game': JSON.stringify({ sfen: START, moves: ['7g7f'], mode: 'ai', human: 0, level: 9 }) }],
+      ['saved game junk', { 'shogi.tutDone': '1', 'shogi.settings': '{"sound":false}', 'shogi.game': '{"sfen":5,"moves":"7g7f","mode":"ai"}', 'shogi.tsCur': '{"i":999}' }]];
+    for (const [name, ls] of cases) {
+      const e0 = errors.length, P = await open({ ls }); const { st, wait } = P;
+      await sleep(300); let s = await st();
+      if (s.phase === 'idle' || s.overlays.includes('menu')) { await P.tap('#bStart'); await P.playing(); s = await st(); }
+      const lvOK = s.level >= 0 && s.level <= 6;
+      await sleep(200); await P.tap('#bResign'); await wait(() => window.__shogi.state().overlays.includes('confirm')); await sleep(300); await P.tap('#cfYes');
+      const shown = await wait(() => window.__shogi.state().resultVisible, null, 4000);
+      ok(shown && lvOK && errors.length === e0, `corrupt storage (${name}): game plays at a valid level, result card shows, 0 errors`);
+      await P.ctx.close();
+    }
+  }
+
+  /* ---- 4/6/9. 詰將棋 keeps a game in progress; solving keeps shogi.game; reload mid-puzzle; daily puzzle ---- */
+  {
+    const key = i => { const p = SG.fromSfen(TSUME[i].sfen); return U(SG.matingMoves(p, TSUME[i].n, 4000000).moves[0]); };
+    const P = await open(); const { p, tap, st, wait } = P;
+    await tap('#bStart'); await P.playing(); await P.play('7g7f');
+    ok(await wait(() => { const s = window.__shogi.state(); return s.moves.length === 2 && s.phase === 'play'; }, null, 8000), 'computer replied');
+    await sleep(200); await tap('#bMenu'); await wait(() => window.__shogi.state().overlays.includes('menu'));
+    await sleep(200); await tap('#sgMode [data-v="tsume"]'); await sleep(200); await tap('#bStart');
+    ok(await wait(() => window.__shogi.state().overlays.includes('tsumeList')), 'menu → 詰將棋 → puzzle list');
+    ok(await p.$$eval('#ts1 button, #ts3 button, #ts5 button', b => b.length) === 60, 'puzzle list shows 60 puzzles');
+    await sleep(200); await tap('#ts1 button');
+    ok(await wait(() => window.__shogi.state().mode === 'tsume' && window.__shogi.state().tsume === 0), 'puzzle 1 open');
+    const g = await p.evaluate(() => JSON.parse(localStorage.getItem('shogi.game') || 'null'));
+    ok(g && g.moves.length === 2, 'the game in progress stays saved while a puzzle is open');
+    ok(await P.play(key(0)), 'puzzle 1 key move played by touch');
+    ok(await wait(() => window.__shogi.state().resultVisible, null, 5000), 'puzzle solved: result card');
+    const g2 = await p.evaluate(() => JSON.parse(localStorage.getItem('shogi.game') || 'null'));
+    ok(g2 && g2.moves.length === 2, 'solving a puzzle does not delete shogi.game');
+    await p.reload(); await p.waitForFunction(() => window.__shogi);
+    ok(await wait(() => { const s = window.__shogi.state(); return s.mode === 'ai' && s.moves.length === 2; }), 'after a reload the saved game is back');
+    // reload in the middle of a 3-move puzzle returns to it
+    await sleep(200); await tap('#bMenu'); await wait(() => window.__shogi.state().overlays.includes('menu'));
+    await sleep(200); await tap('#bStart'); await wait(() => window.__shogi.state().overlays.includes('tsumeList'));
+    await sleep(200); await tap('#ts3 button'); await wait(() => window.__shogi.state().tsume === 10);
+    await P.play(key(10));
+    ok(await wait(() => { const s = window.__shogi.state(); return s.moves.length === 2 && s.phase === 'play'; }, null, 8000), '3-move puzzle: defender replied');
+    await p.reload(); await p.waitForFunction(() => window.__shogi);
+    ok(await wait(() => { const s = window.__shogi.state(); return s.mode === 'tsume' && s.tsume === 10 && s.moves.length === 2 && s.phase === 'play'; }), 'reload mid-puzzle returns to the same puzzle and moves');
+    // menu → 繼續對局 goes back to the saved game
+    await sleep(200); await tap('#tsList'); await wait(() => window.__shogi.state().overlays.includes('tsumeList')); await sleep(200); await tap('#tsumeList .x');
+    await sleep(200); await tap('#tsMenu'); ok(await wait(() => window.__shogi.state().overlays.includes('menu')), '詰將棋 toolbar 選單 opens the menu');
+    ok(!(await p.$eval('#bContinue', b => b.disabled)), '繼續對局 is offered while a game is saved');
+    await sleep(200); await tap('#bContinue');
+    ok(await wait(() => { const s = window.__shogi.state(); return s.mode === 'ai' && s.moves.length === 2 && !s.overlays.length; }), '繼續對局 from a puzzle restores the game');
+    // daily puzzle
+    await sleep(200); await tap('#bMenu'); await wait(() => window.__shogi.state().overlays.includes('menu'));
+    await sleep(200); await tap('#bStart'); await wait(() => window.__shogi.state().overlays.includes('tsumeList'));
+    const di = await p.evaluate(() => { const d = new Date(), k = Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5); return (k * 7) % 60; });
+    ok(/每日一題/.test(await p.textContent('#tsDaily')) && (await p.textContent('#tsDaily')).includes('第 ' + (di + 1) + ' 題'), 'daily puzzle button names today\'s puzzle');
+    await sleep(200); await tap('#tsDaily');
+    ok(await wait(t => window.__shogi.state().mode === 'tsume' && window.__shogi.state().tsume === t, di), 'daily puzzle opens');
+    await P.ctx.close();
+  }
+
+  /* ---- 9. landscape: tutorial × is 44x44, HUD names are not cut ---- */
+  {
+    const P = await open({ w: 844, h: 390, ls: {} }); const { p, st, wait } = P;
+    await wait(() => window.__shogi.state().overlays.includes('tut')); await sleep(400);
+    const xb = await p.$eval('#tut .x', e => { const r = e.getBoundingClientRect(); return [r.width, r.height]; });
+    ok(xb[0] >= 44 && xb[1] >= 44, `landscape tutorial × ${xb.join('x')} >= 44x44`);
+    await P.tap('#tut .x'); await P.playing();
+    const cut = () => p.evaluate(() => ['nmT', 'nmB', 'sbT', 'sbB'].filter(id => { const e = document.getElementById(id); return e.scrollWidth > e.clientWidth + 1; }));
+    ok((await cut()).length === 0, 'landscape HUD names fit (game): ' + (await cut()).join());
+    await sleep(200); await P.tap('#bMenu'); await wait(() => window.__shogi.state().overlays.includes('menu'));
+    await sleep(200); await P.tap('#sgMode [data-v="tsume"]'); await sleep(200); await P.tap('#bStart'); await wait(() => window.__shogi.state().overlays.includes('tsumeList'));
+    await sleep(200); await P.tap('#ts5 button'); await wait(() => window.__shogi.state().mode === 'tsume'); await sleep(200);
+    ok((await cut()).length === 0, 'landscape HUD names fit (詰將棋): ' + (await cut()).join());
+    await P.ctx.close();
+  }
+  ok(errors.length === 0, 'browser: 0 page/console errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
+  console.log(`browser checks done in ${Math.round((Date.now() - T0) / 1000)} s`);
+  await browser.close();
+}
