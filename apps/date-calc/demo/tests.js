@@ -347,6 +347,219 @@ const MONTH_CASES = [
     await ctx.close();
   });
 
+  console.log('R1 regressions (touch, tabs, layout, holidays, details)');
+  const TZ = 'Asia/Taipei';
+  async function openT(opt = {}) {
+    const o = await open(opt.tz || TZ, opt);
+    if (opt.w) await o.p.setViewportSize({ width: opt.w, height: opt.h || 640 });
+    const cdp = await o.ctx.newCDPSession(o.p);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] || 1, radiusX: 1, radiusY: 1 })) });
+    const center = sel => o.p.$eval(sel, e => { e.scrollIntoView({ block: 'center' }); const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+    const tap = async sel => { const q = await center(sel); await T('touchStart', [q]); await T('touchEnd', []); };
+    // wait until 850 ms have passed on the page clock, so the next click is not inside the tap window
+    const quiet = () => o.p.evaluate(() => performance.now()).then(t0 => o.p.waitForFunction(t => performance.now() > t + 850, t0));
+    // Chromium 141 style: a detail-0 click right after the tap, on the control, its edge and elementFromPoint
+    const d0 = sel => o.p.evaluate(sel => { const e = document.querySelector(sel), b = e.getBoundingClientRect(), f = x => x && x.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }));
+      f(e); f(document.elementFromPoint(b.right - 1, b.top + b.height / 2)); f(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)); }, sel);
+    return Object.assign(o, { T, center, tap, quiet, d0 });
+  }
+  await t('tap + detail-0 clicks run each control once; delete / clear-all confirmations are never skipped; a lone detail-0 click acts once', async () => {
+    const { ctx, p, tap, d0, quiet, T } = await openT();
+    const st = () => p.evaluate(() => ({ start: document.querySelector('#diff-start').value, incl: document.querySelector('#diff-incl').checked, theme: document.querySelector('#theme-label').textContent,
+      cal: document.querySelector('#cal-title').textContent, sign: document.querySelector('#add-sign [aria-pressed=true]').id, unit: document.querySelector('#add-unit [aria-pressed=true]').id, open: document.querySelector('#p-work details.imp').open, tab: document.querySelector('nav [aria-selected=true]').id,
+      annis: document.querySelectorAll('.anni').length, armed: document.querySelectorAll('.del.armed').length, hol: document.querySelectorAll('#hol-list .chip').length, clearArmed: document.querySelector('#hol-clear').classList.contains('armed') }));
+    await p.fill('#diff-end', '2030-01-01');
+    const cases = [['#theme-btn', 'diff', 'theme'], ['#diff-swap', 'diff', 'start'], ['#diff-incl', 'diff', 'incl'], ['label.check:has(#diff-incl)', 'diff', 'incl'], ['#add-sign-minus', 'add', 'sign'],
+      ['#p-work details.imp summary', 'work', 'open'], ['#cal-next', 'lunar', 'cal'], ['#tab-add', 'diff', 'tab']];
+    for (const [sel, tab, key] of cases) {
+      await p.evaluate(t => { document.querySelector('#tab-' + t).click(); }, tab); await quiet();
+      const a = await st(); await tap(sel); await d0(sel);
+      const b = await st(); ok(JSON.stringify(a[key]) !== JSON.stringify(b[key]), sel + ' did not run'); await quiet();
+      // undo with one more tap (or its opposite control): if the detail-0 clicks had run too we would not be back where we started
+      await tap({ '#cal-next': '#cal-prev', '#add-sign-minus': '#add-sign-plus' }[sel] || sel); await quiet(); const c = await st();
+      if (sel !== '#theme-btn' && sel !== '#tab-add') eq(c[key], a[key], sel + ' ran more than once per tap');
+      if (sel === '#theme-btn') ok(c.theme !== b.theme && c.theme !== a.theme, 'theme went auto → light → dark, one step per tap');
+      if (sel === '#tab-add') eq(c.tab, 'tab-add', 'tab stays');
+    }
+    await p.evaluate(() => document.querySelector('#tab-anni').click()); await quiet();
+    await tap('[data-del-anni="s1"]'); await d0('[data-del-anni="s1"]'); await p.waitForTimeout(50);
+    let s = await st(); eq([s.annis, s.armed], [2, 1], 'delete: tap + detail 0 only arms the button');
+    await quiet(); await tap('[data-del-anni="s1"]'); await p.waitForFunction(() => document.querySelectorAll('.anni').length === 1, null, { timeout: 5000 }).catch(() => { throw new Error('second tap on 確定刪除？ did not delete'); });
+    // (a synthetic click within 800 ms of a tap is swallowed by design, so wait before switching tabs from the test)
+    await p.waitForFunction(() => !document.querySelector('#toast.act')); // the 5 s undo toast sits over the bottom of the page
+    await quiet(); await p.evaluate(() => document.querySelector('#tab-work').click()); await p.evaluate(() => { document.querySelector('#p-work details.imp').open = true; }); await quiet();
+    ok(await p.isVisible('#hol-clear'), 'work tab shown');
+    await tap('#hol-clear'); await d0('#hol-clear'); await p.waitForTimeout(50);
+    s = await st(); eq([s.hol, s.clearArmed], [3, true], 'clear all: tap + detail 0 only arms');
+    await quiet(); await tap('#hol-clear'); await p.waitForFunction(() => document.querySelectorAll('#hol-list .chip').length === 0, null, { timeout: 5000 }).catch(() => { throw new Error('second tap on 再按一次確定清空 did not clear'); });
+    await quiet(); const t0 = (await st()).theme; await p.evaluate(() => document.querySelector('#theme-btn').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+    ok((await st()).theme !== t0, 'lone detail-0 click (keyboard / screen reader) acts once');
+    // 8 taps a second: 15 taps on the 含首日 checkbox toggle it 15 times
+    await quiet(); await p.evaluate(() => document.querySelector('#tab-diff').click()); await quiet();
+    const i0 = (await st()).incl, qi = await p.$eval('#diff-incl', e => { const b = e.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
+    for (let i = 0; i < 15; i++) { await T('touchStart', [qi]); await T('touchEnd', []); await p.waitForTimeout(110); }
+    eq((await st()).incl, !i0, '15 fast taps toggle 15 times');
+    await ctx.close();
+  });
+  await t('a tap with another finger already resting on the screen fires once (pointerup per pointerId)', async () => {
+    const { ctx, p, T, center, quiet } = await openT();
+    const rest = [4, 400, 1]; // in the page gutter, on no control
+    for (const [sel, tab, get] of [['#cal-next', 'lunar', () => p.$eval('#cal-title', e => e.textContent)], ['#lunar-next', 'lunar', () => p.$eval('#lunar-date', e => e.value)], ['#diff-swap', 'diff', () => p.$eval('#diff-start', e => e.value)],
+      ['label.check:has(#diff-incl)', 'diff', () => p.$eval('#diff-incl', e => e.checked)], ['#tab-work', 'diff', () => p.$eval('#p-work', e => e.hidden)]]) {
+      await p.evaluate(t => { document.querySelector('#tab-' + t).click(); const e = document.querySelector('#diff-end'); e.value = '2031-01-01'; e.dispatchEvent(new Event('input', { bubbles: true })); }, tab); await quiet();
+      const before = await get(), q = await center(sel);
+      await T('touchStart', [rest]); await T('touchStart', [rest, [q[0], q[1], 2]]); await T('touchEnd', [[q[0], q[1], 2]]);
+      const mid = await get(); await T('touchEnd', [rest]); await quiet();
+      ok(JSON.stringify(mid) !== JSON.stringify(before), 'second finger on ' + sel + ' did nothing');
+      eq(await get(), mid, sel + ' fired again when the resting finger lifted');
+    }
+    await ctx.close();
+  });
+  await t('two tabs: closing an older tab keeps what the newer tab added; the older tab shows it too (storage event)', async () => {
+    const { ctx, p: A } = await open(TZ, { store: {} });
+    const B = await ctx.newPage(); await B.goto(URL); await B.waitForFunction(() => window.__dateCalc);
+    await B.click('#tab-anni'); await B.fill('#anni-title', '分頁B新增'); await B.click('#anni-add');
+    await B.click('#tab-work'); await B.fill('#hol-date', '2027-03-03'); await B.click('#hol-add');
+    await A.click('#tab-anni');
+    await A.waitForFunction(() => [...document.querySelectorAll('.anni h3')].some(h => h.textContent === '分頁B新增'));
+    await A.close({ runBeforeUnload: true });
+    const C = await ctx.newPage(); await C.goto(URL); await C.waitForFunction(() => window.__dateCalc);
+    ok(await C.evaluate(() => [...document.querySelectorAll('.anni h3')].some(h => h.textContent === '分頁B新增')), 'anniversary from tab B lost');
+    ok(await C.evaluate(() => !!document.querySelector('[data-del-hol="2027-03-03"]')), 'holiday from tab B lost');
+    // and a change in the stale tab merges instead of overwriting
+    await C.click('#tab-anni'); await C.fill('#anni-title', '分頁C新增'); await C.click('#anni-add');
+    await B.close({ runBeforeUnload: true });
+    await C.waitForFunction(() => (localStorage.getItem('date-calc:v1:anniversaries') || '').includes('分頁C新增'));
+    const D = await ctx.newPage(); await D.goto(URL); await D.waitForFunction(() => window.__dateCalc);
+    const names = await D.evaluate(() => [...document.querySelectorAll('.anni h3')].map(h => h.firstChild.textContent));
+    ok(names.includes('分頁B新增') && names.includes('分頁C新增'), 'merged list: ' + names.join(','));
+    await ctx.close();
+  });
+  await t('tear-off leaf: year/month text stays ≥ 4 px from the punch-hole dots at 320–430 px, months 10–12, also with a wider font', async () => {
+    const { ctx, p } = await openT();
+    await p.click('#tab-add'); await p.fill('#add-n', '0');
+    for (const w of [320, 360, 370, 390, 430]) for (const wide of [false, true]) {
+      await p.setViewportSize({ width: w, height: 700 });
+      await p.evaluate(wide => { let s = document.getElementById('wide'); if (wide && !s) { s = document.createElement('style'); s.id = 'wide'; s.textContent = '.leaf .band{font-size:15px!important;letter-spacing:.12em!important}'; document.head.append(s); } if (!wide && s) s.remove(); }, wide);
+      for (const d of ['2026-10-05', '2026-11-05', '2026-12-05', '9999-12-05']) {
+        await p.fill('#add-base', d);
+        const g = await p.evaluate(() => { const b = document.querySelector('#add-out .band'), B = b.getBoundingClientRect(); let L = 1e9, R = -1e9;
+          for (const sp of b.querySelectorAll('span')) for (const r of sp.getClientRects()) { L = Math.min(L, r.left); R = Math.max(R, r.right); }
+          return [L - B.left, B.right - R]; });
+        ok(g[0] >= 17 && g[1] >= 17, w + 'px ' + d + (wide ? ' wide font' : '') + ': text ' + g.map(x => x.toFixed(1)).join('/') + ' px from the edge (dots end at 13 px)');
+      }
+    }
+    await ctx.close();
+  });
+  await t('360×640: the answer is on the first screen in 相差天數, 加減日期 and 工作天', async () => {
+    const { ctx, p } = await openT({ w: 360, h: 640 });
+    for (const [tab, sel] of [['diff', '#diff-days'], ['add', '#add-result'], ['work', '#work-result']]) {
+      await p.click('#tab-' + tab); await p.evaluate(() => scrollTo(0, 0));
+      const b = await p.$eval(sel, e => e.getBoundingClientRect().bottom); ok(b <= 640, tab + ' result bottom at ' + b);
+    }
+    await ctx.close();
+  });
+  await t('holidays: samples are labelled as examples (no invented official data); ranges and 補班 lines import; ✕ can be undone; list copies back as importable text', async () => {
+    const { ctx, p, tap, quiet } = await openT();
+    await p.click('#tab-work');
+    ok(/範例/.test(await text(p, '#hol-sample-note')) && /不是官方/.test(await text(p, '#hol-sample-note')), 'sample note');
+    await p.click('#work-mode-end'); await p.fill('#work-start', '2026-02-02'); await p.fill('#work-end', '2026-02-27');
+    eq(await text(p, '#work-count'), '20', 'Feb 2–27 2026 has 20 weekdays');
+    await p.click('#p-work details.imp summary');
+    await p.fill('#hol-import', '2026/2/14~2/22 春節\n2026/2/7 補班\n2026-02-27 至 2026-03-01 和平紀念日');
+    await p.click('#hol-import-btn');
+    await p.waitForFunction(() => /匯入 13 筆（含 1 個補班日）/.test(document.querySelector('#toast').textContent));
+    // 2/16–2/20 (5 weekdays) and 2/27 are off, Saturday 2/7 becomes a working day: 20 − 6 + 1
+    eq(await text(p, '#work-count'), '15', 'count with range and make-up day');
+    ok(await p.$('[data-del-mk="2026-02-07"]'), 'make-up chip');
+    await quiet(); await tap('[data-del-hol="2026-02-27"]'); await p.waitForFunction(() => !document.querySelector('[data-del-hol="2026-02-27"]'));
+    eq(await text(p, '#work-count'), '16', 'after ✕');
+    await p.waitForSelector('#toast-undo'); await quiet(); await tap('#toast-undo');
+    await p.waitForFunction(() => !!document.querySelector('[data-del-hol="2026-02-27"]')); eq(await text(p, '#work-count'), '15', 'after 復原');
+    await p.click('#hol-export'); await p.waitForFunction(() => /已複製/.test(document.querySelector('#toast').textContent));
+    const clip = await p.evaluate(() => navigator.clipboard.readText());
+    ok(clip.includes('2026-02-07 補班') && clip.includes('2026-02-14'), 'exported list');
+    await ctx.close();
+  });
+  await t('backup: copy the anniversaries + holidays as text, wipe storage, paste it back', async () => {
+    const { ctx, p } = await open(TZ, { store: {} });
+    await p.click('#tab-anni'); await p.fill('#anni-title', '備份測試'); await p.fill('#anni-date', '2020-05-05'); await p.click('#anni-add');
+    await p.waitForFunction(() => (localStorage.getItem('date-calc:v1:anniversaries') || '').includes('備份測試')); // saved (300 ms debounce)
+    await p.click('#bk-copy'); await p.waitForFunction(() => /已複製/.test(document.querySelector('#toast').textContent));
+    const bk = await p.evaluate(() => navigator.clipboard.readText()); ok(JSON.parse(bk).anniversaries.some(a => a.title === '備份測試'), 'backup text');
+    await p.evaluate(() => { localStorage.setItem('date-calc:v1:anniversaries', '[]'); localStorage.setItem('date-calc:v1:holidays', '[]'); });
+    await p.reload(); await p.waitForFunction(() => window.__dateCalc);
+    eq(await p.$$eval('.anni', e => e.length), 0, 'wiped');
+    await p.click('#tab-anni'); await p.click('#p-anni details.imp summary'); await p.fill('#bk-text', bk); await p.click('#bk-import');
+    await p.waitForFunction(() => document.querySelectorAll('.anni').length === 3);
+    ok(await p.$('[data-del-hol="2026-10-09"]'), 'holidays restored');
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#bk-export')]);
+    ok(/^date-calc-backup-\d{4}-\d\d-\d\d\.json$/.test(dl.suggestedFilename()), 'backup file name');
+    await ctx.close();
+  });
+  await t('date fields use a keyboard with - and /; 「1 個月 10 天」 never leaves 「天」 alone on a line at 360/390 px', async () => {
+    const { ctx, p } = await openT({ w: 360, h: 640 });
+    eq(await p.$$eval('input.dtext', e => [...new Set(e.map(x => x.inputMode))]), ['text']);
+    for (const w of [360, 390]) {
+      await p.setViewportSize({ width: w, height: 800 }); await p.fill('#diff-start', '2026-01-05'); await p.fill('#diff-end', '2026-02-15');
+      ok((await text(p, '#diff-out .fact b')).includes('1 個月 10 天'), 'ymd text');
+      const lines = await p.$$eval('#diff-out .fact .nw', e => e.map(x => x.getClientRects().length));
+      ok(lines.every(n => n === 1), w + 'px: a number and its unit split over lines');
+    }
+    await ctx.close();
+  });
+  await t('details: DST note with real hours (New York), 「已過 0 天（今天開始）」, notice on the 100th day, 2/29 in common years, swap button beside 含首日', async () => {
+    let { ctx, p } = await open('America/New_York');
+    await p.fill('#diff-start', '2026-03-07'); await p.fill('#diff-end', '2026-03-09');
+    ok((await text(p, '#diff-dst')).includes('實際經過 47 小時'), 'DST note');
+    ok((await text(p, '#diff-out')).includes('總時數（每天 24 小時）'), 'hours label says 24 h per day');
+    await p.fill('#diff-start', '2026-04-07'); await p.fill('#diff-end', '2026-04-09'); eq(await p.$('#diff-dst'), null, 'no note without DST');
+    const r = await p.evaluate(() => { const a = document.querySelector('#diff-incl').closest('label').getBoundingClientRect(), b = document.querySelector('#diff-swap').getBoundingClientRect(); return Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2); });
+    ok(r < 4, 'swap sits on the 含首日 row');
+    await ctx.close();
+    ({ ctx, p } = await open(TZ));
+    const today = await p.evaluate(() => __dateCalc.today());
+    const minus = k => p.evaluate(([t, k]) => __dateCalc.iso(__dateCalc.parseISO(t) - k), [today, k]);
+    await p.click('#tab-anni'); await p.uncheck('#anni-first');
+    await p.fill('#anni-title', '今天'); await p.fill('#anni-date', today); await p.click('#anni-add');
+    const c0 = await p.$eval('.anni .count', e => e.textContent); eq(c0, '已過0天（今天開始）', 'start today, not counting the first day');
+    await p.check('#anni-first');
+    await p.fill('#anni-title', '百日'); await p.fill('#anni-date', await minus(99)); await p.click('#anni-add');
+    ok((await p.$eval('.anni .count', e => e.textContent)).includes('今天就是第 100 天'), '100th day notice');
+    await p.fill('#anni-title', '閏日'); await p.fill('#anni-date', '2024-02-29'); await p.click('#anni-add');
+    ok((await p.$eval('.anni', e => e.textContent)).includes('以 2/28 計'), '2/29 explained');
+    await ctx.close();
+  });
+  await t('drafts (anniversary name, holiday date, pasted list) survive a reload; blocked storage shows a warning', async () => {
+    let { ctx, p } = await open(TZ, { store: {} });
+    await p.click('#tab-anni'); await p.fill('#anni-title', '草稿名稱');
+    await p.click('#tab-work'); await p.fill('#hol-date', '2027-02-02'); await p.click('#p-work details.imp summary'); await p.fill('#hol-import', '2027-01-01');
+    await p.reload(); await p.waitForFunction(() => window.__dateCalc);
+    eq(await p.evaluate(() => ['#anni-title', '#hol-date', '#hol-import'].map(s => document.querySelector(s).value)), ['草稿名稱', '2027-02-02', '2027-01-01']);
+    ok(await p.isHidden('#store-warn'), 'no warning when storage works');
+    await ctx.close();
+    ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await ctx.addInitScript(() => { Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('blocked', 'SecurityError'); } }); });
+    p = await ctx.newPage(); p.on('pageerror', e => errors.push('blocked pageerror: ' + e.message));
+    await p.goto(URL); await p.waitForFunction(() => window.__dateCalc);
+    ok(await p.isVisible('#store-warn'), 'warning shown'); ok(/無法儲存/.test(await text(p, '#store-warn')), 'warning text');
+    await ctx.close();
+  });
+  await t('work days counted backwards (N working days before a date) match a day-by-day reference', async () => {
+    const hol = new Set(['2026-10-09', '2026-10-26', '2026-12-25']), mk = new Set(['2026-10-31']);
+    const off = n => !mk.has(ref.iso(n)) && (ref.wd(n) === 0 || ref.wd(n) === 6 || hol.has(ref.iso(n)));
+    for (let i = 0; i < 60; i++) {
+      const st = dn('2026-09-01') + Math.floor(rnd() * 150), N = 1 + Math.floor(rnd() * 60);
+      let n = st, left = N; while (left) { n--; if (!off(n)) left--; }
+      eq(C.workdays(st, { holidays: hol, makeup: mk, sat: true, sun: true, mode: 'back', n: N }).end, n, 'back N=' + N + ' from ' + ref.iso(st));
+    }
+    const { ctx, p } = await open(TZ);
+    await p.click('#tab-work'); await p.click('#work-mode-back'); await p.fill('#work-start', '2026-10-27'); await p.fill('#work-n', '10');
+    eq(await text(p, '#work-result'), '2026-10-12', '10 working days before 2026-10-27 (10/9 and 10/26 are holidays)');
+    ok((await text(p, '#work-n-lbl')).startsWith('往前數'), 'label follows the mode');
+    await ctx.close();
+  });
+
   await browser.close();
   if (errors.length) { fail++; console.log('FAIL   page errors: ' + errors.slice(0, 5).join(' | ')); }
   console.log(fail ? `FAIL ${fail} failed, ${pass} passed` : `all ${pass} passed`);
