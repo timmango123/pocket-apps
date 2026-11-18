@@ -3,6 +3,7 @@
 // Usage: node tests.js   (about 40-70 s; waits on conditions, no timing-based assertions)
 const fs = require('fs'), path = require('path');
 const APP = path.resolve(__dirname, '..', 'index.html');
+let PAGE_URL = '';
 const html = fs.readFileSync(APP, 'utf8');
 const C = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn {genWorld, simulate, params, NC};')();
 let pass = 0, fail = 0;
@@ -27,6 +28,11 @@ function mkBattle(n, extra) {
 
 (async () => {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(APP)); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  PAGE_URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   async function open(w, h, prep, scheme) {
@@ -34,7 +40,7 @@ function mkBattle(n, extra) {
     const page = await ctx.newPage();
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-    await page.goto('file://' + APP);
+    await page.goto(PAGE_URL);
     await page.evaluate(p => { localStorage.clear(); localStorage.setItem('cannon.mute', 'true'); localStorage.setItem('cannon.intro', JSON.stringify(p.seen));
       for (const k in p.prep) localStorage.setItem('cannon.' + k, typeof p.prep[k] === 'string' ? p.prep[k] : JSON.stringify(p.prep[k])); }, { prep: prep || {}, seen: SEEN });
     await page.reload();

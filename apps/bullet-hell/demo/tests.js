@@ -137,7 +137,11 @@ ok(C.DIFFS.every(d => d.blurb && d.blurb.indexOf((d.lives + 1) + ' 條命') === 
 // ---------------- the page, with real touch ----------------
 (async () => {
   const { chromium } = require('/opt/node22/lib/node_modules/playwright');
-  const URL = 'file://' + path.resolve(__dirname, '..', 'index.html');
+  // Served over http, not opened as a file:// page: Chromium gives file:// documents an opaque origin, and a new document
+  // (a reload, or a second page) sometimes gets a different, empty localStorage from the one the first page wrote to.
+  const pageSrv = require('http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(require('fs').readFileSync(path.resolve(__dirname, '..', 'index.html'))); });
+  await new Promise(r => pageSrv.listen(0, '127.0.0.1', r)); pageSrv.unref();
+  const URL = 'http://127.0.0.1:' + pageSrv.address().port + '/';
   const browser = await chromium.launch();
   const errors = [];
   const KEY = 'bullet-hell:v1:';
