@@ -4,7 +4,7 @@
 const fs = require('fs'), path = require('path');
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
 const src = html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1];
-const C = new Function(src + '\nreturn {genQuestion, rgb8ToLab, deltaE, de2000, cvdDE, localDev, targetDE, kFor, mulberry32, rgbToLab, labToRgb, diffLevel, gradOff, hueRot};')();
+const C = new Function(src + '\nreturn {genQuestion, rgb8ToLab, deltaE, de2000, cvdDE, localDev, targetDE, kFor, mulberry32, rgbToLab, labToRgb, diffLevel, gradOff, hueRot, KMAX, timeBonus};')();
 let fail = 0;
 // 1) Lab conversion sanity: white, black, known reference (sRGB red -> L 53.24 a 80.09 b 67.20)
 const near = (a, b, e) => Math.abs(a - b) < e;
@@ -25,8 +25,8 @@ for (const mode of modes) {
   let n = 0, minRatio = 9, maxRatio = 0, sameQuant = 0, deErr = 0, grayBad = 0, cvdMin = 9, outlierBad = 0, lBad = 0;
   for (let seed = 1; seed <= 60; seed++) {
     const rng = C.mulberry32(seed * 7919);
-    for (let q = 0; q <= 80; q++) {
-      const Q = C.genQuestion(q, rng, { mode, kmax: 9 });
+    for (let q = 0; q <= 100; q++) {
+      const Q = C.genQuestion(q, rng, { mode, kmax: C.KMAX });
       n++;
       const ref = Q.grad ? Q.base : Q.cells[(Q.odd + 1) % Q.n];
       const de = C.de2000(C.rgb8ToLab(Q.diff), C.rgb8ToLab(Q.base));
@@ -49,17 +49,19 @@ for (const mode of modes) {
 console.table(stats);
 // 3) odd position uniformity (chi-square) on k=6 boards (q=12..14)
 const k = 6, cnt = new Array(36).fill(0), rng = C.mulberry32(42), N = 36000;
-for (let i = 0; i < N; i++) { const Q = C.genQuestion(12, rng, { mode: 'classic', kmax: 9 }); cnt[Q.odd]++; }
+for (let i = 0; i < N; i++) { const Q = C.genQuestion(12, rng, { mode: 'classic', kmax: C.KMAX }); cnt[Q.odd]++; }
 const exp = N / 36, chi = cnt.reduce((s, c) => s + (c - exp) ** 2 / exp, 0);
 console.log('odd-position chi-square (35 dof, 99.9% crit 66.6):', chi.toFixed(1), 'min/max count', Math.min(...cnt), Math.max(...cnt));
 if (chi > 66.6) fail++;
 // 4) difficulty curve
 const rows = [];
-for (const q of [0, 5, 10, 15, 20, 25, 30, 40, 50, 52, 60, 80]) rows.push({ q, k: C.kFor(q, 9), targetDE: C.targetDE(q).toFixed(2), 難度: C.diffLevel(q) });
+for (const q of [0, 5, 10, 15, 20, 25, 30, 40, 50, 52, 60, 72, 80, 92, 100]) rows.push({ q, k: C.kFor(q, C.KMAX), targetDE: C.targetDE(q).toFixed(2), 加時: C.timeBonus(q).toFixed(2), 難度: C.diffLevel(q) });
 console.table(rows);
-for (let q = 1; q < 120; q++) if (C.targetDE(q) > C.targetDE(q - 1) || C.kFor(q, 9) < C.kFor(q - 1, 9)) fail++;
+for (let q = 1; q < 120; q++) if (C.targetDE(q) > C.targetDE(q - 1) || C.kFor(q, C.KMAX) < C.kFor(q - 1, C.KMAX) || C.timeBonus(q) > C.timeBonus(q - 1)) fail++;
+// late game keeps getting harder after q 52 (ΔE keeps falling to a 1.0 floor, the time bonus runs out by q 92), board fixed at 7×7
+if (!(C.KMAX === 7 && C.targetDE(72) < C.targetDE(52) - 0.15 && C.targetDE(200) === 1.0 && C.timeBonus(51) === 2 && C.timeBonus(72) < 1.01 && C.timeBonus(92) === 0)) { fail++; console.log('late-game progression wrong'); }
 // 5) gradient interference present from q>=40
-const g = C.genQuestion(45, C.mulberry32(5), { mode: 'classic', kmax: 9 });
+const g = C.genQuestion(45, C.mulberry32(5), { mode: 'classic', kmax: C.KMAX });
 const uniq = new Set(g.cells.map(c => c.join())).size;
 console.log('q=45 gradient interference: distinct cell colours on board', uniq, 'of', g.n);
 console.log(fail ? 'CORE CHECK FAILED (' + fail + ')' : 'CORE CHECK PASSED');
