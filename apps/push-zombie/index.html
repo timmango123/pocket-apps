@@ -16,7 +16,7 @@ html,body{height:100%;background:#140e2c;color:var(--ink);overflow:hidden;font-f
 .topbtn:active{transform:scale(.92)}
 .topbtn svg{width:24px;height:24px}
 #pauseBtn{left:calc(env(safe-area-inset-left) + 10px)}
-#muteBtn{right:calc(env(safe-area-inset-right) + 10px)}
+#muteBtn{right:calc(env(safe-area-inset-right) + 10px);z-index:12} /* above the overlays: mute works on title / pause / result too */
 .hide{display:none!important}
 .overlay{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 14px);z-index:10;background:rgba(14,8,32,.62);overflow-y:auto;touch-action:pan-y}
 .overlay.show{display:flex}
@@ -50,6 +50,46 @@ h2{font-size:30px;font-weight:900;color:var(--gold);text-shadow:0 3px 0 #8a5a12}
 .col{display:grid;gap:12px;margin-top:6px}
 .btn.center{justify-content:center;text-align:center}
 .kbd{font-size:12px;color:var(--dim);margin-top:10px}
+.medal{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:4px;vertical-align:-1px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.25)}
+.medal.m1{background:#d08a4e}.medal.m2{background:#d9dde8}.medal.m3{background:#ffd34a}
+.why{font-size:14px;color:var(--ink);margin-top:8px;font-weight:700}
+.why:empty{display:none}
+/* narrow screens: keep the card clear of the corner mute button */
+@media (max-width:520px){.overlay{padding-top:calc(env(safe-area-inset-top) + 64px)}}
+/* short portrait screens (in-lobby phones): compact title card, no scrolling */
+@media (max-height:700px) and (max-aspect-ratio:1/1){
+  .tcard{padding:14px 14px 12px}
+  .tcard h1{font-size:32px}
+  .tcard .sub{display:none}
+  .tcard .modes{gap:8px;margin-top:10px}
+  .tcard .btn{min-height:50px;padding:7px 14px;font-size:17px}
+  .tcard .dex{margin-top:10px;gap:4px}
+  .tcard .dex div{padding:3px 2px 4px;font-size:10.5px;line-height:1.2}
+  .tcard .dex canvas{width:34px;height:34px}
+  .tcard .dex b{font-size:11.5px}
+  .tcard .tip{margin-top:8px;font-size:12px;line-height:1.45}
+}
+@media (max-height:560px) and (max-aspect-ratio:1/1){
+  .tcard .btn{min-height:47px;padding:5px 14px}
+  .tcard .dex canvas{width:28px;height:28px}
+  .overlay{padding-bottom:calc(env(safe-area-inset-bottom) + 8px)}
+  .ocard{padding:14px 16px}
+  .ocard .big{font-size:48px;margin:4px 0}
+  .ocard .stats{margin:10px 0}
+}
+/* landscape phones: two-column title card that fits the height */
+@media (min-aspect-ratio:5/4) and (max-height:560px){
+  .tcard{max-width:680px;display:grid;grid-template-columns:1fr 1fr;gap:0 18px;padding:14px 16px;align-items:start}
+  .tcard h1{font-size:34px}
+  .tcard .modes{gap:8px;margin-top:10px}
+  .tcard .btn{min-height:52px;padding:7px 14px;font-size:17px}
+  .tcard .tcol2 .dex{margin-top:0}
+  .tcard .dex canvas{width:42px;height:42px}
+  .tcard .tip{font-size:12.5px;line-height:1.5}
+  .ocard{max-width:560px;display:grid;grid-template-columns:1fr 1fr;gap:0 16px;align-items:center;padding:14px 16px}
+  .ocard .big{font-size:48px;margin:4px 0}
+  .ocard .stats{margin:10px 0 0}
+}
 </style>
 <style id="mobile-shim">
 /* Mobile shim: keep browser gestures (double-tap zoom, pull-to-refresh, long-press menus, image drag) from hijacking play. */
@@ -87,22 +127,26 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <button id="muteBtn" class="topbtn" aria-label="靜音切換"><svg id="muteIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></svg></button>
 
   <div id="title" class="overlay show">
-    <div class="card">
+    <div class="card tcard">
+      <div class="tcol1">
       <h1>推推殭屍</h1>
       <div class="sub">午夜墓園，殭屍們想爬出來散步……敲回去！</div>
       <div class="modes">
-        <button class="btn rush" id="btnRush"><span>速推模式<small>30 秒・只敲完全爬出來的那隻</small></span><span class="best" id="bestR">最佳 0</span></button>
-        <button class="btn" id="btnSurvival"><span>生存模式<small>三顆心・越撐越快</small></span><span class="best" id="bestS">最佳 0</span></button>
-        <button class="btn gold" id="btnTimed"><span>計時挑戰<small>60 秒拚最高分</small></span><span class="best" id="bestT">最佳 0</span></button>
+        <button class="btn rush" id="btnRush"><span>速推模式<small>30 秒・只敲全出來的・敲錯暈眩</small></span><span class="best" id="bestR">最佳 0</span></button>
+        <button class="btn" id="btnSurvival"><span>生存模式<small>三顆心・溜走或敲貓 -♥</small></span><span class="best" id="bestS">最佳 0</span></button>
+        <button class="btn gold" id="btnTimed"><span>計時挑戰<small>60 秒・溜走斷連擊・敲貓 -20</small></span><span class="best" id="bestT">最佳 0</span></button>
       </div>
+      </div>
+      <div class="tcol2">
       <div class="dex">
         <div><canvas data-t="normal"></canvas><b>小殭</b>敲 1 下</div>
         <div><canvas data-t="helmet"></canvas><b>鐵鍋殭</b>敲 2 下</div>
         <div><canvas data-t="fast"></canvas><b>飛毛腿</b>動作超快</div>
         <div class="no"><canvas data-t="cat"></canvas><b>幽靈貓</b>不要敲！</div>
       </div>
-      <div class="tip"><em>速推模式</em>：同時有三隻，分別在冒頭、露半身、全出來三個階段。只能敲<em>全出來</em>的那隻，敲完後另外兩隻各往上爬一段，再冒出一隻新的。敲錯會暈 0.5 秒。<br>土堆<em>抖動</em>、冒出<em>頭頂</em>＝下一隻要出來了！<br>在殭屍爬出墳墓前點牠。連續命中有<em>連擊加倍</em>。</div>
+      <div class="tip">土堆<em>抖動</em>、冒出<em>頭頂</em>＝下一隻要出來了！趁牠爬出墳墓前點牠。<br>每連擊 8 下得分 <em>×1.5</em>，最高 <em>×3</em>（速推不加倍）。<br>獎牌（銅／銀／金）：生存撐 60／120／180 秒・速推 80／150／220・計時 1200／2500／4000</div>
       <div class="kbd" id="kbdTip">鍵盤：墓碑上的字母鍵敲打・P 暫停</div>
+      </div>
     </div>
   </div>
 
@@ -118,22 +162,27 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   </div>
 
   <div id="over" class="overlay">
-    <div class="card">
+    <div class="card ocard">
+      <div>
       <h2 id="overTitle">遊戲結束</h2>
       <div class="sub" id="overMode">生存模式</div>
       <div class="big" id="overScore">0</div>
       <div id="overBest" class="sub">最佳 0</div>
       <div id="newBest" class="newbest hide">新紀錄！</div>
+      <div class="why" id="overWhy"></div>
       <div class="stats">
         <div><b id="stHits">0</b>敲回去</div>
         <div><b id="stCombo">0</b>最高連擊</div>
         <div><b id="stThird">0</b><span id="stThirdL">存活秒數</span></div>
       </div>
+      </div>
+      <div>
       <div class="col">
         <button class="btn center" id="btnRetry">再來一次</button>
         <button class="btn ghost" id="btnMenu2">主選單</button>
       </div>
       <div class="kbd" id="kbdTip2">空白鍵／Enter 快速重來</div>
+      </div>
     </div>
   </div>
 </div>
@@ -206,7 +255,7 @@ function setMuteIcon(){
   $('muteBtn').setAttribute('aria-pressed',muted?'true':'false');
 }
 setMuteIcon();
-$('muteBtn').addEventListener('click',()=>{ensureAudio();muted=!muted;store.set('muted',muted);if(master)master.gain.value=muted?0:0.55;setMuteIcon();});
+function toggleMute(){ensureAudio();muted=!muted;store.set('muted',muted);if(master)master.gain.value=muted?0:0.55;setMuteIcon();}
 
 /* ================= DRAWING: CHARACTERS ================= */
 function drawHelmet(c){
@@ -220,9 +269,10 @@ function drawHelmet(c){
 function drawZombie(c,type,o){
   const t=o.t||0;
   if(type==='cat'){drawCat(c,o);return;}
-  const skin=type==='fast'?'#b4e06c':'#8fd06c', skinD=type==='fast'?'#7da843':'#5f9c49';
-  const shirt=type==='fast'?'#e8693f':type==='helmet'?'#5f78b8':'#8a62c0';
-  const shirtD=type==='fast'?'#b5492a':type==='helmet'?'#455a92':'#674596';
+  if(type==='big'&&!o.noScale){c.save();c.scale(1.18,1.18);drawZombie(c,'big',{...o,noScale:true});c.restore();return;}
+  const skin=type==='fast'?'#b4e06c':type==='big'?'#7cc07a':type==='mole'?'#a6d46c':'#8fd06c', skinD=type==='fast'?'#7da843':type==='big'?'#4f8c55':type==='mole'?'#6f9a3f':'#5f9c49';
+  const shirt=type==='fast'?'#e8693f':type==='helmet'?'#5f78b8':type==='big'?'#a33a4a':type==='mole'?'#8a6445':'#8a62c0';
+  const shirtD=type==='fast'?'#b5492a':type==='helmet'?'#455a92':type==='big'?'#73232f':type==='mole'?'#5e412c':'#674596';
   // arms
   c.lineCap='round';
   const sway=Math.sin(t*(type==='fast'?16:9))*4;
@@ -270,6 +320,14 @@ function drawZombie(c,type,o){
     c.strokeStyle='#e23b3b';c.lineWidth=5;c.beginPath();c.moveTo(26,-14);c.quadraticCurveTo(38,-18+Math.sin(t*25)*5,46,-10+Math.sin(t*25+1)*6);c.stroke();
   }
   if(o.helmet)drawHelmet(c);
+  if(type==='mole'){ // miner's hard hat with a lamp
+    c.fillStyle='#ffcf4a';c.beginPath();c.moveTo(-27,-12);c.bezierCurveTo(-27,-40,27,-40,27,-12);c.closePath();c.fill();
+    c.fillStyle='#d9a52a';rr(c,-31,-15,62,6,3);c.fill();
+    c.fillStyle='#fff6c0';c.beginPath();c.arc(0,-28,6,0,7);c.fill();
+  }
+  if(type==='big'&&o.hp>0){ // remaining hits as pips over the head
+    for(let i=0;i<o.hp;i++){c.fillStyle='#ffcf4a';c.beginPath();c.arc((i-(o.hp-1)/2)*13,-40,4.5,0,7);c.fill();}
+  }
   c.restore();
 }
 function drawCat(c,o){
@@ -308,16 +366,18 @@ function drawCat(c,o){
 
 /* ================= LAYOUT & BACKGROUND ================= */
 const KEYROWS=['1234','qwer','asdf','zxcv'];
-let cols=3,rows=3,graves=[],cellW=100,cellH=120,boardTop=0,boardBottom=0;
+let cols=3,rows=3,graves=[],cellW=100,cellH=120,boardTop=0,boardBottom=0,boardLeft=0,boardRight=0,sideHUD=false;
 function readSafe(){const cs=getComputedStyle($('safe'));safeT=parseFloat(cs.paddingTop)||0;safeR=parseFloat(cs.paddingRight)||0;safeB=parseFloat(cs.paddingBottom)||0;safeL=parseFloat(cs.paddingLeft)||0;}
 function computeGrid(){
-  const top=safeT+112, bottom=H-safeB-16;
-  const availH=Math.max(200,bottom-top), availW=Math.min(W-safeL-safeR-20,560);
-  cellW=Math.min(availW/cols,availH/(rows*1.12),165);
+  // wide, short screens (phone in landscape): HUD goes to side columns and the graveyard uses the full height
+  sideHUD=W>H*1.25&&H<620;
+  const top=safeT+(sideHUD?30:112), bottom=H-safeB-(sideHUD?10:16);
+  const availH=Math.max(200,bottom-top), availW=sideHUD?W-safeL-safeR-2*160:Math.min(W-safeL-safeR-20,560);
+  cellW=Math.min(availW/cols,availH/(rows*(sideHUD?1.08:1.12)),165);
   cellH=Math.min(availH/rows,cellW*1.5);
   const bw=cellW*cols,bh=cellH*rows;
   const x0=(W-bw)/2,y0=top+(availH-bh)*0.55;
-  boardTop=y0;boardBottom=y0+bh;
+  boardTop=y0;boardBottom=y0+bh;boardLeft=x0;boardRight=x0+bw;
   return {x0,y0};
 }
 function buildGraves(keep){
@@ -392,10 +452,20 @@ let screen='title',mode='survival',gameTime=0,score=0,shownScore=0,hearts=3,comb
 let shake=0,flash=0,flashColor='255,60,80',scoreBump=0,heartBump=[0,0,0],banner=null,pendingGrid=null,dieTimer=0,readyT=0,demoT=0,lastMult=1;
 let particles=[],pops=[];
 const TIMED_LEN=60,RUSH_LEN=30,STAGE_P=[0,0.3,0.58,1],STUN_LEN=0.5;
-let stunT=0,wrongs=0;
+let stunT=0,wrongs=0,escapes=0,catHits=0,deathBy='';
+const CAT_GRACE=60; // survival: a cat hit in the first minute only warns (-20), no heart lost
+const BIG_AT=90,MOLE_AT=150; // survival: tougher zombie types join later in the run
+const MEDALS={survival:[60,120,180],rush:[80,150,220],timed:[1200,2500,4000]};
+let bestSec=+store.get('bestSec:survival',0)||0;
 const modeLen=()=>mode==='rush'?RUSH_LEN:TIMED_LEN;
 let best={survival:+store.get('best:survival',0)||0,timed:+store.get('best:timed',0)||0,rush:+store.get('best:rush',0)||0};
-function refreshBest(){$('bestS').textContent='最佳 '+best.survival;$('bestT').textContent='最佳 '+best.timed;$('bestR').textContent='最佳 '+best.rush;}
+function medalOf(m){const v=m==='survival'?bestSec:best[m];let k=0;for(const th of MEDALS[m])if(v>=th)k++;return k;}
+function setBest(el,m){
+  const k=medalOf(m);el.textContent='';
+  if(k){const i=document.createElement('i');i.className='medal m'+k;i.title=['','銅牌','銀牌','金牌'][k];el.appendChild(i);}
+  el.appendChild(document.createTextNode('最佳 '+best[m]));
+}
+function refreshBest(){setBest($('bestS'),'survival');setBest($('bestT'),'timed');setBest($('bestR'),'rush');}
 refreshBest();
 
 function diff(){
@@ -421,6 +491,11 @@ function mult(){if(mode==='rush')return 1;return 1+0.5*Math.min(4,Math.floor(com
 
 function pickType(d){
   if(mode==='survival'&&spawned<5)return'normal';
+  if(mode==='survival'){
+    const r0=Math.random();
+    if(gameTime>=MOLE_AT&&r0<0.13)return'mole';
+    if(gameTime>=BIG_AT&&r0>=0.13&&r0<0.25)return'big';
+  }
   const pc=d>0.14?Math.min(0.16,0.07+d*0.09):0;
   const ph=d>0.07?Math.min(0.24,0.1+d*0.14):0;
   const pf=d>0.22?Math.min(0.24,0.06+d*0.17):0;
@@ -438,7 +513,8 @@ function spawn(demo){
   if(type==='fast'){rise*=0.55;hold*=0.62;}
   if(type==='helmet'){rise*=1.08;}
   if(type==='cat'){hold=Math.max(0.75,1.2-0.35*d);}
-  g.z={type,phase:'cue',t:0,p:0,cue:P.cue,rise,hold,hp:type==='helmet'?2:1,helmet:type==='helmet',stun:0,riseAt:0,look:rand(-1,1),squash:0,id:++spawned,demo:!!demo};
+  if(type==='big'){rise*=1.25;hold*=1.35;}
+  g.z={type,phase:'cue',t:0,p:0,cue:P.cue,rise,hold,hp:type==='helmet'?2:type==='big'?3:1,helmet:type==='helmet',stun:0,riseAt:0,look:rand(-1,1),squash:0,id:++spawned,demo:!!demo};
   return true;
 }
 function rushSpawn(stage,avoid){
@@ -455,7 +531,7 @@ function activeCount(){let n=0;for(const g of graves)if(g.z)n++;return n;}
 
 function startGame(m){
   ensureAudio();
-  mode=m;stunT=0;wrongs=0;screen='ready';readyT=0.9;gameTime=0;score=0;shownScore=0;hearts=3;combo=0;maxCombo=0;hits=0;perfects=0;spawned=0;lastGrave=-1;
+  noSpawn=false;mode=m;stunT=0;wrongs=0;escapes=0;catHits=0;deathBy='';introBig=introMole=false;screen='ready';readyT=0.9;gameTime=0;score=0;shownScore=0;hearts=3;combo=0;maxCombo=0;hits=0;perfects=0;spawned=0;lastGrave=-1;
   particles=[];pops=[];banner={text:'準備……',t:0,dur:0.9,color:'#fff'};pendingGrid=null;lastMult=1;flash=0;
   cols=3;rows=3;graves=[];buildGraves(false);graves.forEach((g,i)=>g.appear=-i*0.04);buildBG();
   spawnTimer=0.35;
@@ -464,13 +540,20 @@ function startGame(m){
 }
 function showOverlay(id){for(const o of ['title','pause','over'])$(o).classList.toggle('show',o===id);}
 function toMenu(){screen='title';showOverlay('title');$('pauseBtn').classList.add('hide');refreshBest();cols=3;rows=3;graves=[];buildGraves(false);graves.forEach((g,i)=>g.appear=-i*0.04);buildBG();particles=[];pops=[];banner=null;}
-function pause(){if(screen!=='play'&&screen!=='ready')return;pausedFrom=screen;screen='paused';showOverlay('pause');}
-let pausedFrom='play';
-function resume(){if(screen!=='paused')return;screen=pausedFrom;showOverlay(null);last=performance.now();}
+function pause(){if(screen!=='play'&&screen!=='ready')return;pausedFrom=screen;screen='paused';showOverlay('pause');$('pauseBtn').classList.add('hide');}
+let pausedFrom='play',introBig=false,introMole=false,noSpawn=false; // noSpawn: test hook only
+function resume(){if(screen!=='paused')return;screen=pausedFrom;showOverlay(null);$('pauseBtn').classList.remove('hide');last=performance.now();}
 function endGame(){
   screen='over';
+  // nothing left mid-animation behind the result card
+  for(const g of graves)g.z=null;particles=[];pops=[];banner=null;flash=0;shake=0;
   const key=mode;const isNew=score>best[key];
   if(isNew){best[key]=score;store.set('best:'+key,score);}
+  if(mode==='survival'&&Math.floor(gameTime)>bestSec){bestSec=Math.floor(gameTime);store.set('bestSec:survival',bestSec);}
+  const why=mode==='survival'?(deathBy==='cat'?'敲到貓出局':'殭屍溜走出局')+'・溜走 '+escapes+'・敲到貓 '+catHits
+    :mode==='rush'?'時間到・敲錯 '+wrongs:'時間到・溜走 '+escapes+'・敲到貓 '+catHits;
+  const k=medalOf(mode);
+  $('overWhy').textContent=why+(k?'・'+['','銅牌','銀牌','金牌'][k]:'');
   $('overTitle').textContent=mode==='survival'?'遊戲結束':'時間到！';
   $('overMode').textContent=modeName();
   $('overScore').textContent=score;
@@ -482,8 +565,8 @@ function endGame(){
   if(mode==='rush'){}else if(mode==='timed'){$('stThird').textContent=perfects;$('stThirdL').textContent='完美';}
   else{$('stThird').textContent=Math.floor(gameTime);$('stThirdL').textContent='存活秒數';}
   showOverlay('over');$('pauseBtn').classList.add('hide');refreshBest();
-  // brief guard so a last frantic tap doesn't hit 再來一次 and skip the result
-  $('over').style.pointerEvents='none';overGuard=performance.now();setTimeout(()=>{$('over').style.pointerEvents='';},700);
+  // brief guard so a last frantic tap doesn't hit 再來一次 and skip the result (checked in the button handlers)
+  overGuard=performance.now();
 }
 let overGuard=0;
 
@@ -548,9 +631,26 @@ function hitGrave(g){
   if(z.type==='cat'){
     z.phase='sad';z.t=0;SFX.cat();combo=0;
     flash=0.35;flashColor='255,120,190';shake=Math.max(shake,0.25);
-    if(mode==='survival'){hearts--;heartBump[Math.max(0,hearts)]=1;addPop(g.cx,headY-30*u,'不要敲貓咪！ -♥','#ff8fb8',20,1);if(hearts<=0)die();}
+    catHits++;
+    if(mode==='survival'&&gameTime<CAT_GRACE){score=Math.max(0,score-20);addPop(g.cx,headY-30*u,'不要敲貓咪！ -20（再敲會 -♥）','#ff8fb8',18,1.2);}
+    else if(mode==='survival'){hearts--;heartBump[Math.max(0,hearts)]=1;addPop(g.cx,headY-30*u,'不要敲貓咪！ -♥','#ff8fb8',20,1);if(hearts<=0){deathBy='cat';die();}}
     else{score=Math.max(0,score-20);addPop(g.cx,headY-30*u,'不要敲貓咪！ -20','#ff8fb8',20,1);}
     return;
+  }
+  if(z.type==='big'&&z.hp>1){
+    z.hp--;SFX.clank();stars(g.cx,headY-20*u,u,3);addPop(g.cx,headY-40*u,'咚！還有 '+z.hp+' 下','#ffcf4a',18,0.55);
+    z.p=Math.max(0.12,z.p-0.35);z.phase='rise';z.t=0;z.stun=0.1;z.squash=1;shake=Math.max(shake,0.1);
+    return;
+  }
+  if(z.type==='mole'&&!z.hopped){
+    // dives and pops up from another grave
+    const pool=graves.filter(o=>!o.z&&o!==g&&o.appear>=1);
+    if(pool.length){
+      const g2=pool[(Math.random()*pool.length)|0];
+      SFX.miss();puff(g.cx,g.holeY,u,8);dirt(g.cx,g.holeY,u,6);addPop(g.cx,headY-34*u,'鑽走了！','#ffcf4a',19,0.6);
+      g.z=null;g2.z={...z,phase:'cue',t:0,p:0,cue:0.3,hopped:true,squash:0,stun:0,riseAt:0};
+      return;
+    }
   }
   if(z.hp>1){
     z.hp--;z.helmet=false;SFX.clank();helmetFly(g.cx,headY-10*u,u,Math.random()<0.5?-1:1);
@@ -561,7 +661,7 @@ function hitGrave(g){
   const perfect=z.p<0.62;
   combo++;hits++;if(perfect)perfects++;maxCombo=Math.max(maxCombo,combo);
   const m=mult();
-  const base=z.type==='helmet'?20:z.type==='fast'?15:10;
+  const base=z.type==='big'?30:z.type==='mole'?25:z.type==='helmet'?20:z.type==='fast'?15:10;
   const pts=Math.round(base*(perfect?1.5:1)*m);
   score+=pts;scoreBump=1;
   z.phase='bonk';z.t=0;z.squash=1;
@@ -571,7 +671,7 @@ function hitGrave(g){
   addPop(g.cx,headY-30*u,(perfect?'完美 ':'')+'+'+pts,perfect?'#ffe066':'#ffffff',perfect?24:21,0.75);
   if(m>lastMult){SFX.combo();banner={text:'連擊 ×'+m,t:0,dur:0.9,color:'#9cff6b'};}
   lastMult=m;
-  if(mode==='survival'&&combo>0&&combo%25===0&&hearts<3){hearts++;heartBump[hearts-1]=1;SFX.heart();addPop(W/2,safeT+96,'+♥ 回復！','#ff7aa8',22,1);}
+  if(mode==='survival'&&combo>0&&combo%25===0&&hearts<3){hearts++;heartBump[hearts-1]=1;SFX.heart();addPop(sideHUD?(safeL+boardLeft)/2:W/2,sideHUD?safeT+200:safeT+96,'+♥ 回復！','#ff7aa8',22,1);}
 }
 function die(){screen='dying';dieTimer=0.9;SFX.over();shake=0.5;}
 function tapAt(x,y){
@@ -582,7 +682,7 @@ function tapAt(x,y){
 // Touch: every new finger from touchstart counts as one tap, so fast alternating thumbs and
 // overlapping touches all register. Pointer events are only used for mouse/pen.
 cv.addEventListener('touchstart',e=>{
-  e.preventDefault();ensureAudio();
+  if(e.cancelable)e.preventDefault();ensureAudio();
   for(const t of e.changedTouches)tapAt(t.clientX,t.clientY);
 },{passive:false});
 cv.addEventListener('pointerdown',e=>{
@@ -600,15 +700,36 @@ addEventListener('keydown',e=>{
   for(let r=0;r<rows;r++){const c=KEYROWS[r].indexOf(k);if(c>=0&&c<cols){e.preventDefault();hitGrave(graves[r*cols+c]);return;}}
 });
 document.addEventListener('contextmenu',e=>e.preventDefault());
-$('btnRush').addEventListener('click',()=>startGame('rush'));
-$('btnSurvival').addEventListener('click',()=>startGame('survival'));
-$('btnTimed').addEventListener('click',()=>startGame('timed'));
-$('btnResume').addEventListener('click',resume);
-$('btnRestart').addEventListener('click',()=>startGame(mode));
-$('btnRetry').addEventListener('click',()=>startGame(mode));
-$('btnMenu1').addEventListener('click',toMenu);
-$('btnMenu2').addEventListener('click',toMenu);
-$('pauseBtn').addEventListener('click',pause);
+// Buttons fire on pointerup of the pointer that pressed them (tracked per pointerId, released over the same button),
+// so taps work while another finger is down, and a control that appears under a finger is never fired by it.
+// Pointer-made clicks (detail>0) are swallowed page-wide; keyboard clicks (detail 0) still activate buttons.
+addEventListener('click',e=>{if(e.detail>0){e.preventDefault();e.stopPropagation();}},true);
+const btnFires={};
+function onTap(el,fn){
+  const ids=new Set(),f0=fn;fn=()=>{btnFires[el.id]=(btnFires[el.id]||0)+1;f0();};
+  el.addEventListener('pointerdown',e=>{if(e.button===0||e.pointerType==='touch')ids.add(e.pointerId);});
+  const drop=e=>ids.delete(e.pointerId);
+  el.addEventListener('pointercancel',drop);
+  el.addEventListener('pointerup',e=>{
+    if(!ids.delete(e.pointerId))return;
+    const r=el.getBoundingClientRect();
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)return;
+    if(el.offsetParent===null)return; // hidden meanwhile
+    fn();
+  });
+  el.addEventListener('click',()=>fn()); // keyboard only: pointer clicks never get here
+}
+const guarded=fn=>()=>{if(screen==='over'&&performance.now()-overGuard<700)return;fn();};
+onTap($('btnRush'),()=>{if(screen==='title')startGame('rush');});
+onTap($('btnSurvival'),()=>{if(screen==='title')startGame('survival');});
+onTap($('btnTimed'),()=>{if(screen==='title')startGame('timed');});
+onTap($('btnResume'),resume);
+onTap($('btnRestart'),()=>{if(screen==='paused')startGame(mode);});
+onTap($('btnRetry'),guarded(()=>{if(screen==='over')startGame(mode);}));
+onTap($('btnMenu1'),()=>{if(screen==='paused')toMenu();});
+onTap($('btnMenu2'),guarded(()=>{if(screen==='over')toMenu();}));
+onTap($('pauseBtn'),pause);
+onTap($('muteBtn'),toggleMute);
 
 /* ================= UPDATE ================= */
 function updateZombie(g,dt){
@@ -627,9 +748,9 @@ function updateZombie(g,dt){
       if(z.t>=z.hold){
         if(z.type==='cat'||z.demo){z.phase='leave';z.t=0;}
         else{
-          z.phase='escape';z.t=0;combo=0;lastMult=1;SFX.escape();shake=Math.max(shake,0.3);flash=0.3;flashColor='255,60,80';
+          z.phase='escape';z.t=0;combo=0;lastMult=1;SFX.escape();escapes++;shake=Math.max(shake,0.3);flash=0.3;flashColor='255,60,80';
           dirt(g.cx,g.holeY,g.u,8);puff(g.cx,g.holeY,g.u,10);
-          if(mode==='survival'){hearts--;heartBump[Math.max(0,hearts)]=1;addPop(g.cx,g.holeY-100*g.u,'溜走了！ -♥','#ff6b6b',20,1);if(hearts<=0)die();}
+          if(mode==='survival'){hearts--;heartBump[Math.max(0,hearts)]=1;addPop(g.cx,g.holeY-100*g.u,'溜走了！ -♥','#ff6b6b',20,1);if(hearts<=0){deathBy='escape';die();}}
           else{addPop(g.cx,g.holeY-100*g.u,'溜走了！ 連擊歸零','#ff6b6b',20,1);}
         }
       }
@@ -675,9 +796,11 @@ function update(dt){
     const old=graves.length;buildGraves(false);graves.forEach((g,i)=>g.appear=i<old?1:-(i-old)*0.08);buildBG();
     banner={text:'墓園擴建！',t:0,dur:1.1,color:'#ffcf4a'};SFX.grow();spawnTimer=0.55;shake=0.25;
   }
+  if(mode==='survival'&&!introBig&&gameTime>=BIG_AT){introBig=true;banner={text:'大塊頭殭屍！敲 3 下',t:0,dur:1.8,color:'#ff8a8a'};SFX.grow();}
+  if(mode==='survival'&&!introMole&&gameTime>=MOLE_AT){introMole=true;banner={text:'鑽地殭屍！會換洞',t:0,dur:1.8,color:'#ffcf4a'};SFX.grow();}
   const P=params(diff());
   spawnTimer-=dt;
-  if(spawnTimer<=0&&!pendingGrid){
+  if(spawnTimer<=0&&!pendingGrid&&!noSpawn){
     if(activeCount()<P.maxActive&&spawn(false))spawnTimer=P.interval*rand(0.8,1.2);
     else spawnTimer=0.05;
   }
@@ -727,7 +850,7 @@ function drawGraveZombie(c,g,t){
   if(z.phase==='escape'){
     const k=z.t/0.6;
     c.save();c.globalAlpha=1-k;c.translate(g.cx+k*60*u*(g.c<cols/2?-1:1),g.holeY-Math.sin(k*Math.PI)*50*u-k*20*u);c.scale(u,u);
-    drawZombie(c,z.type,{t,tilt:Math.sin(t*20)*0.15,down:false,helmet:z.helmet});c.restore();return;
+    drawZombie(c,z.type,{t,tilt:Math.sin(t*20)*0.15,down:false,helmet:z.helmet,hp:z.hp});c.restore();return;
   }
   if(z.phase==='cue'){
     // peeking: glowing eyes + head top
@@ -745,7 +868,7 @@ function drawGraveZombie(c,g,t){
   const urgent=z.phase==='top'&&z.type!=='cat'?z.t/z.hold:0;
   if(z.phase==='top')jx=Math.sin(t*(30+urgent*30))*(1+urgent*2.5)*u;
   c.translate(g.cx+jx,g.holeY+(1-p)*100*u);c.scale(u,u);
-  drawZombie(c,z.type,{t,grab:z.phase==='top'||(z.phase==='stage'&&z.stage===3),dazed:z.phase==='bonk'||z.stun>0,cry:z.phase==='sad',helmet:z.helmet,squash:z.squash,lookX:z.look,lookY:0.3,tilt:z.phase==='bonk'?0.2:Math.sin(t*4+g.i)*0.06});
+  drawZombie(c,z.type,{t,grab:z.phase==='top'||(z.phase==='stage'&&z.stage===3),dazed:z.phase==='bonk'||z.stun>0,cry:z.phase==='sad',helmet:z.helmet,hp:z.phase==='bonk'?0:z.hp,squash:z.squash,lookX:z.look,lookY:0.3,tilt:z.phase==='bonk'?0.2:Math.sin(t*4+g.i)*0.06});
   c.restore();
   if(urgent>0.35&&z.phase==='top'){
     const a=clamp((urgent-0.35)*2,0,1);
@@ -762,18 +885,22 @@ function drawHeart(c,x,y,s,fill){
 }
 function drawHUD(c,t){
   if(screen==='title')return;
-  const cy=safeT+34;
+  // portrait: score centred on top, hearts/timer left and combo right below it.
+  // landscape (sideHUD): everything in the side columns beside the graveyard, below the corner buttons.
+  const colL=(safeL+boardLeft)/2,colR=(boardRight+W-safeR)/2;
+  const sx=sideHUD?colL:W/2,cy=sideHUD?safeT+100:safeT+34;
   c.textAlign='center';c.textBaseline='middle';
   const bump=1+scoreBump*0.18;
-  c.save();c.translate(W/2,cy);c.scale(bump,bump);
+  c.save();c.translate(sx,cy);c.scale(bump,bump);
   c.font=`900 36px ${FONT}`;c.lineWidth=6;c.strokeStyle='rgba(20,10,40,.8)';c.strokeText(Math.round(shownScore),0,0);c.fillStyle='#fff';c.fillText(Math.round(shownScore),0,0);
   c.restore();
-  c.font=`700 12px ${FONT}`;c.fillStyle='rgba(230,220,255,.7)';c.fillText(modeName()+'・最佳 '+best[mode],W/2,cy+26);
-  const y2=safeT+84;
+  c.font=`700 12px ${FONT}`;c.fillStyle='rgba(230,220,255,.7)';c.fillText(modeName()+'・最佳 '+best[mode],sx,cy+26);
+  const y2=sideHUD?cy+66:safeT+84;
   if(mode==='survival'){
-    for(let i=0;i<3;i++){const b=heartBump[i];drawHeart(c,22+safeL+i*34,y2,1.45*(1+b*0.4),i<hearts);}
+    const hx=sideHUD?colL-34:22+safeL;
+    for(let i=0;i<3;i++){const b=heartBump[i];drawHeart(c,hx+i*34,y2,1.45*(1+b*0.4),i<hearts);}
   }else{
-    const L=modeLen(),left=Math.max(0,L-gameTime),bw=Math.min(150,W*0.36),bx=16+safeL;
+    const L=modeLen(),left=Math.max(0,L-gameTime),bw=sideHUD?Math.min(130,boardLeft-safeL-24):Math.min(150,W*0.36),bx=sideHUD?colL-bw/2:16+safeL;
     rr(c,bx,y2-9,bw,18,9);c.fillStyle='rgba(255,255,255,.12)';c.fill();
     rr(c,bx,y2-9,Math.max(18,bw*left/L),18,9);c.fillStyle=left<10?(Math.sin(t*12)>0?'#ff5d7e':'#ff8a5d'):'#ffcf4a';c.fill();
     c.font=`900 13px ${FONT}`;c.fillStyle='#2a1a36';c.textAlign='left';c.fillText(Math.ceil(left)+' 秒',bx+8,y2+1);
@@ -784,12 +911,12 @@ function drawHUD(c,t){
     const sy=H*0.5+Math.sin(t*30)*3;c.strokeText('敲錯了！暈眩中',W/2,sy);c.fillText('敲錯了！暈眩中',W/2,sy);c.restore();
   }
   // combo
-  c.textAlign='right';
-  const m=mult();
+  c.textAlign=sideHUD?'center':'right';
+  const m=mult(),cx2=sideHUD?colR:W-16-safeR,cy2=sideHUD?cy:y2-2;
   if(combo>0){
     c.font=`900 ${18+Math.min(combo,30)*0.2}px ${FONT}`;c.fillStyle=m>1?'#9cff6b':'#fff';
-    c.lineWidth=5;c.strokeStyle='rgba(20,10,40,.8)';const txt=combo+' 連擊';c.strokeText(txt,W-16-safeR,y2-2);c.fillText(txt,W-16-safeR,y2-2);
-    if(m>1){c.font=`900 13px ${FONT}`;c.fillStyle='#ffe066';c.fillText('得分 ×'+m,W-16-safeR,y2+18);}
+    c.lineWidth=5;c.strokeStyle='rgba(20,10,40,.8)';const txt=combo+' 連擊';c.strokeText(txt,cx2,cy2);c.fillText(txt,cx2,cy2);
+    if(m>1){c.font=`900 13px ${FONT}`;c.fillStyle='#ffe066';c.fillText('得分 ×'+m,cx2,cy2+20);}
   }
 }
 let lastT=0;
@@ -833,12 +960,14 @@ function render(t){
   c.setTransform(DPR,0,0,DPR,0,0);
   if(flash>0){c.fillStyle=`rgba(${flashColor},${flash*0.45})`;c.fillRect(0,0,W,H);}
   // vignette-ish bottom/top gradient for HUD readability
-  if(screen!=='title'){const hg=c.createLinearGradient(0,0,0,safeT+110);hg.addColorStop(0,'rgba(12,6,30,.55)');hg.addColorStop(1,'rgba(12,6,30,0)');c.fillStyle=hg;c.fillRect(0,0,W,safeT+110);}
+  if(screen!=='title'&&!sideHUD){const hg=c.createLinearGradient(0,0,0,safeT+110);hg.addColorStop(0,'rgba(12,6,30,.55)');hg.addColorStop(1,'rgba(12,6,30,0)');c.fillStyle=hg;c.fillRect(0,0,W,safeT+110);}
   drawHUD(c,t);
   if(banner){
     const k=banner.t/banner.dur,sc=k<0.2?easeOutBack(k/0.2):1;
     c.save();c.translate(W/2,boardTop+(boardBottom-boardTop)*0.42);c.scale(sc,sc);c.globalAlpha=k>0.75?1-(k-0.75)/0.25:1;
-    c.font=`900 ${Math.min(56,W*0.13)}px ${FONT}`;c.textAlign='center';c.textBaseline='middle';
+    c.font=`900 ${Math.min(56,W*0.13)}px ${FONT}`;
+    {const tw=c.measureText(banner.text).width,maxW=W*0.92;if(tw>maxW)c.font=`900 ${Math.floor(Math.min(56,W*0.13)*maxW/tw)}px ${FONT}`;}
+    c.textAlign='center';c.textBaseline='middle';
     c.lineWidth=10;c.strokeStyle='rgba(20,10,40,.85)';c.strokeText(banner.text,0,0);c.fillStyle=banner.color;c.fillText(banner.text,0,0);c.restore();
   }
 }
@@ -872,8 +1001,13 @@ startLoop();
 /* ================= TEST HOOK ================= */
 window.__game={
   start:m=>startGame(m||'survival'),
+  skipReady:()=>{if(screen==='ready')readyT=0;},
   warp:sec=>{gameTime=sec;},
-  state:()=>({screen,mode,score,stunT,wrongs,hearts,combo,maxCombo,hits,time:gameTime,cols,rows,
+  fires:()=>({...btnFires}),
+  pick:n=>{const c={},sp=spawned;spawned=Math.max(spawned,5);for(let i=0;i<n;i++){const t=pickType(diff());c[t]=(c[t]||0)+1;}spawned=sp;return c;},
+  put:(i,type)=>{const g=graves[i];g.z={type,phase:'top',t:0,p:1,cue:0,rise:1,hold:30,hp:type==='helmet'?2:type==='big'?3:1,helmet:type==='helmet',stun:0,riseAt:gameTime,look:0,squash:0,id:++spawned,demo:false};},
+  clear:()=>{for(const g of graves)g.z=null;noSpawn=true;},
+  state:()=>({screen,mode,score,stunT,wrongs,hearts,combo,maxCombo,hits,time:gameTime,cols,rows,escapes,catHits,bestSec,sideHUD,cellW,boardLeft,boardRight,boardTop,boardBottom,particles:particles.length,
     graves:graves.map(g=>{const z=g.z;let tap=null;if(z){const b=zombieBox(g);tap=b?{x:g.cx,y:Math.max(b.y0+20*g.u,g.holeY-45*g.u)}:{x:g.cx,y:g.holeY-10*g.u};}
       return{i:g.i,x:g.x,y:g.y,w:g.w,h:g.h,cx:g.cx,holeY:g.holeY,ready:g.appear>=1,z:z?{id:z.id,type:z.type,phase:z.phase,stage:z.stage||0,p:z.p,riseAt:z.riseAt,hp:z.hp,t:z.t,hold:z.hold}:null,tap};})}),
 };
