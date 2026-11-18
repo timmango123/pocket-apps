@@ -20,6 +20,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
   -webkit-user-select:none;user-select:none}
 #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+/* the backdrop, the centre column glow and the fade under the HUD are CSS layers, so the canvas only clears and draws the play
+   objects each frame (full-screen gradient fills were a large share of the per-frame raster work) */
+body{background:linear-gradient(#171839,#12132a) fixed}
+#colGlow,#hudFade{position:fixed;top:0;pointer-events:none}
+#colGlow{bottom:0;left:0;width:100%;background:linear-gradient(90deg,#b48cff00,#b48cff12,#b48cff00)}
+#hudFade{left:0;right:0;height:min(130px,20vh);z-index:1;background:linear-gradient(#121329d9,#12132a00)}
+@media (prefers-color-scheme: light){
+  body{background:linear-gradient(#f8f5f0,#efe9f3) fixed}
+  #colGlow{background:linear-gradient(90deg,#8f65e600,#8f65e60d,#8f65e600)}
+  #hudFade{background:linear-gradient(#f6f3eed9,#f6f3ee00)}
+}
 button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;padding:0}
 .hidden{display:none !important}
 /* HUD */
@@ -30,7 +41,8 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .hright{justify-content:flex-end}
 .ibtn{width:44px;height:44px;border-radius:14px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;flex:none;box-shadow:0 4px 14px #0003}
 .ibtn svg{width:22px;height:22px;stroke:var(--ink);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.ibtn:active{transform:scale(.93)}
+/* press feedback never moves or shrinks the button (that would make taps near its edge miss) */
+.ibtn:active,.ibtn.press{background:var(--card2);box-shadow:inset 0 0 0 2px var(--acc),0 2px 8px #0003}
 .gem{display:flex;align-items:center;gap:5px;height:34px;padding:0 11px 0 8px;border-radius:17px;background:var(--card);border:1px solid var(--line);font-weight:800;font-size:15px;pointer-events:none}
 .gem svg{width:18px;height:18px}
 .hmid{flex:none;text-align:center;pointer-events:none;min-width:110px}
@@ -55,7 +67,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .card p{margin:6px 0;color:var(--ink2);line-height:1.6;font-size:15px}
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:50px;border-radius:17px;margin-top:10px;font-weight:800;font-size:17px;
   background:linear-gradient(135deg,#8a5ae6,#d9473d);color:#fff;box-shadow:0 6px 20px #b48cff55;letter-spacing:1px;text-shadow:0 1px 2px #0004}
-.btn:active{transform:scale(.97)}
+.btn:active,.btn.press{filter:brightness(.86);box-shadow:inset 0 0 0 2px #ffffff55,0 2px 8px #0003}
 .btn.sec{background:var(--card2);color:var(--ink);box-shadow:none;border:1px solid var(--line)}
 .btn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .row{display:flex;gap:8px}.row .btn{flex:1;font-size:15px;min-height:48px;padding:0 4px}
@@ -66,8 +78,9 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
   background:linear-gradient(90deg,#ff6f61,#ffc23d,#3ee6b0,#b48cff);-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 14px #b48cff66)}
 .logo .sub{margin-top:8px;color:var(--ink2);font-weight:700;font-size:15px;letter-spacing:2px}
-.logo .rec{margin-top:12px;display:inline-flex;gap:14px;font-size:14px;color:var(--ink2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 14px}
-.logo .rec b{color:var(--ink)}
+.logo .rec{margin-top:12px;display:inline-flex;align-items:center;gap:10px;font-size:14px;color:var(--ink2);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 14px}
+.logo .rec b{color:var(--ink);margin-left:4px}
+.logo .rec i{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.7}
 .tmenu{width:min(340px,100%);margin:0 auto}
 @media (max-height:600px) and (orientation:landscape){ .tmenu{width:min(300px,46%);margin:0} }
 /* result */
@@ -79,18 +92,29 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .achs{margin:8px 0 0;font-size:13px;color:var(--good);font-weight:700}
 /* lists */
 .list{text-align:left;margin:8px 0;max-height:52vh;overflow-y:auto;touch-action:pan-y}
+/* scroll cue: a list with more below fades out at the bottom and shows a hint */
+.list.more{-webkit-mask-image:linear-gradient(#000 calc(100% - 34px),#0000);mask-image:linear-gradient(#000 calc(100% - 34px),#0000)}
+.morecue{font-size:12px;color:var(--ink2);font-weight:700;margin:-4px 0 2px;letter-spacing:1px}
+.why{font-weight:700;color:var(--ink)!important;font-size:14px!important;margin:0 0 4px!important}
+.why i{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px;margin:0 3px}
+.buy{margin:4px 0 0;padding:10px;border-radius:16px;background:var(--card2);border:1px solid var(--line)}
+.buy p{margin:0 0 2px;color:var(--ink);font-weight:700}
+.buy .row .btn{margin-top:8px}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:52px;padding:4px 2px;border-bottom:1px solid var(--line);font-size:15px;font-weight:700;text-align:left}
 .sw small{display:block;font-weight:500;font-size:12px;color:var(--ink2)}
+.sw:active,.sw.press{background:var(--card2)}
 .trk{flex:none;width:48px;height:28px;border-radius:14px;background:#8a86a855;position:relative;transition:background .2s}
 .trk::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 4px #0003;transition:transform .2s}
 .sw[aria-checked="true"] .trk{background:var(--good)}
 .sw[aria-checked="true"] .trk::after{transform:translateX(20px)}
 .help{font-size:14px;color:var(--ink2);line-height:1.7;margin:10px 0 0;padding-left:18px;text-align:left}
-.skins{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
-.skin{background:var(--card2);border:2px solid transparent;border-radius:18px;padding:8px 6px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:44px}
-.skin canvas{width:64px;height:64px}
+.skins{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin:10px 0}
+.skin{background:var(--card2);border:2px solid transparent;border-radius:18px;padding:8px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:44px;min-width:0}
+.skin:active,.skin.press{filter:brightness(.9);box-shadow:inset 0 0 0 2px var(--line)}
+.skin.pick{border-color:var(--gold)}
+.skin canvas{width:100%;max-width:60px;height:auto;aspect-ratio:1}
 .skin .nm{font-weight:800;font-size:15px}
-.skin .pr{font-size:13px;color:var(--ink2);font-weight:700}
+.skin .pr{font-size:12px;color:var(--ink2);font-weight:700;line-height:1.3}
 .skin.on{border-color:var(--acc)}
 .skin.lock{opacity:.85}
 .ach{display:flex;gap:10px;align-items:center;padding:8px 2px;border-bottom:1px solid var(--line)}
@@ -108,8 +132,8 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
   .score{font-size:38px}
   .card{width:min(560px,100%);padding:14px 18px}
   .card h2{font-size:20px;margin-bottom:4px}
-  .skins{grid-template-columns:repeat(4,1fr);margin:6px 0}
-  .skin canvas{width:48px;height:48px}
+  .skins{margin:6px 0}
+  .skin canvas{max-width:44px}
   .stgrid{grid-template-columns:repeat(4,1fr)}
   .big{font-size:48px}
   .list{max-height:44vh}
@@ -148,7 +172,9 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </script>
 </head>
 <body>
+<div id="colGlow"></div>
 <canvas id="cv"></canvas>
+<div id="hudFade" class="hidden"></div>
 
 <div class="hud hidden" id="hud">
   <div class="hleft"><div class="gem" aria-label="星晶"><svg viewBox="0 0 24 24"><path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3z" fill="#ffd76a" stroke="#fff6" stroke-width="1"/></svg><span id="hGems">0</span></div></div>
@@ -158,13 +184,13 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <button class="ibtn" id="bMute" aria-label="音效"><svg viewBox="0 0 24 24" id="muteIcon"></svg></button>
   </div>
 </div>
-<div id="hint" class="hidden">點一下開始<small>只能穿過同色光環</small></div>
+<div id="hint" class="hidden">點一下開始<small>只能穿過同色光環・第一環是練習</small></div>
 
 <div class="ov" id="title">
   <div class="logo">
     <h1>光環穿越</h1>
     <div class="sub">穿過同色光環・霓虹水晶</div>
-    <div class="rec">最高 <b id="tBest">0</b>・星晶 <b id="tGems">0</b></div>
+    <div class="rec"><span>最高<b id="tBest">0</b></span><i></i><span>星晶<b id="tGems">0</b></span></div>
   </div>
   <div class="tmenu">
     <button class="btn" id="bPlay"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" fill="currentColor"/></svg>開始遊戲</button>
@@ -172,6 +198,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
     <div class="row">
       <button class="btn sec" id="bShop">造型</button>
       <button class="btn sec" id="bStats">成就</button>
+      <button class="btn sec" id="bHelp">玩法</button>
       <button class="btn sec" id="bSet">設定</button>
     </div>
   </div>
@@ -185,6 +212,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 
 <div class="ov hidden" id="overOv"><div class="card">
   <h2 id="oTitle">光球碎裂</h2>
+  <p class="why" id="oWhy"></p>
   <div id="oNew" class="newrec hidden">新紀錄！</div>
   <div class="big" id="oScore">0</div>
   <div class="res">
@@ -200,6 +228,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 <div class="ov hidden" id="shopOv"><div class="card">
   <h2>球造型</h2><p>用星晶兌換造型・目前 <b id="sGems">0</b> 星晶</p>
   <div class="skins" id="skins"></div>
+  <div class="buy hidden" id="buyBar"><p id="buyTxt"></p><div class="row"><button class="btn" id="bBuy">確定兌換</button><button class="btn sec" id="bBuyNo">取消</button></div></div>
   <button class="btn sec" data-close>關閉</button>
 </div></div>
 
@@ -211,21 +240,31 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 </div></div>
 
 <div class="ov hidden" id="setOv"><div class="card">
-  <h2>設定與玩法</h2>
+  <h2>設定</h2>
   <div class="list">
     <button class="sw" role="switch" id="swPat" aria-checked="false"><span>色盲友善圖樣<small>每種顏色加上點、線、格、斜紋</small></span><span class="trk"></span></button>
     <button class="sw" role="switch" id="swGlow" aria-checked="true"><span>光暈效果<small>效能不足時會自動關閉</small></span><span class="trk"></span></button>
     <button class="sw" role="switch" id="swVib" aria-checked="true"><span>震動回饋</span><span class="trk"></span></button>
     <button class="sw" role="switch" id="swSnd" aria-checked="true"><span>音效</span><span class="trk"></span></button>
+  </div>
+  <div class="morecue hidden">往下捲動看更多</div>
+  <button class="btn sec" data-close>關閉</button>
+</div></div>
+
+<div class="ov hidden" id="helpOv"><div class="card">
+  <h2>玩法</h2>
+  <div class="list">
     <ul class="help">
       <li>點一下螢幕，光球向上彈跳；不點就會落下。</li>
       <li>只能穿過與光球<b>同色</b>的區段，擦到別的顏色就會碎裂。</li>
+      <li>掉出畫面下方也會碎裂。前兩個光環是練習，轉得比較慢：第一環掉到底會彈回來，第二環最多再彈 8 次（畫面底部的亮線）。</li>
       <li>碰到稜鏡會換色，新顏色保證能通過下一個障礙。</li>
       <li>穿過障礙 +1，吃到中心星晶 +1，星晶可兌換造型。</li>
-      <li>分數越高，障礙越快、越密、種類越多；每 10 分有一個慢速喘息環。</li>
+      <li>分數越高，障礙越快、越密、種類越多：60 分出現 8 字環，80 分出現雙十字門；每 10 分有一個慢速喘息環。110 分後難度不再提高。</li>
       <li>鍵盤：空白鍵彈跳、P 暫停。</li>
     </ul>
   </div>
+  <div class="morecue hidden">往下捲動看更多</div>
   <button class="btn sec" data-close>關閉</button>
 </div></div>
 
@@ -244,10 +283,14 @@ var CR = (function () {
   // rng(seed) continues exactly where a generator left off when seeded with its st() (used to resume a saved run)
   function rng(seed) { var a = seed | 0, f = function () { a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; f.st = function () { return a; }; return f; }
   function hashStr(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
+  // PEAK: the score where the game stops getting harder (spacing creeps until here; the last obstacle kind arrives at 80)
+  var PEAK = 110, SAFE = 2, BOUNCES = 8; // practice: the bottom of the screen bounces the ball back until the first obstacle is passed, then up to BOUNCES more times until SAFE are passed
   function omegaFor(s) { return 1.4 * Math.pow(1.025, Math.min(s, 60)); }
-  function spacingFor(s) { return Math.max(260, 380 - s * 2); }
-  function diffFor(s) { return 1 + Math.floor(s / 8); }
-  var UNLOCK = [['ring', 0], ['cross', 5], ['bar', 10], ['double', 18], ['triple', 28], ['square', 38]];
+  function spacingFor(s) { return s <= 60 ? Math.max(260, 380 - s * 2) : 260 - (Math.min(s, PEAK) - 60) * 0.32; }
+  function diffFor(s) { return 1 + Math.floor(Math.min(s, PEAK) / 10); }
+  // the shortest same-colour window an obstacle must leave: wider for multi-ring and for swinging / variable-speed rotors
+  function needWin(o) { return MINWIN + (o.rots.length > 1 ? 0.04 : 0) + (o.mode === 2 ? 0.08 : o.mode === 1 ? 0.03 : 0); }
+  var UNLOCK = [['ring', 0], ['cross', 5], ['bar', 10], ['double', 18], ['triple', 28], ['square', 38], ['eight', 60], ['gate', 80]];
   function poolFor(s) { var p = []; for (var i = 0; i < UNLOCK.length; i++) if (s >= UNLOCK[i][1]) p.push(UNLOCK[i][0]); return p; }
   // rotor angle (rad, or px for bars) as a closed-form function of time: constant, variable (w*(1+0.35 sin t)), or zig-zag reversing
   function rotAng(ro, t) {
@@ -312,14 +355,15 @@ var CR = (function () {
   }
   function period(o) { var m = 0; for (var i = 0; i < o.rots.length; i++) { var ro = o.rots[i], p = (o.type === 'bar' ? 360 : TAU) / ro.w; if (p > m) m = p; } return m; }
   // shortest window (s) of tap times that let the ball cross a band touching only its own colour
-  function fairness(o, col) {
+  // stopBelow: return as soon as a complete window shorter than this is found (the caller only needs to know it is too short)
+  function fairness(o, col, stopBelow) {
     var span = clamp(period(o) * 1.15, 3, 14); if (o.mode === 1) span = Math.max(span, 7); if (o.mode === 2) span = Math.max(span, 4.6);
     var step = Math.max(0.02, span / 350), min = Infinity;
     for (var bi = 0; bi < o.bands.length; bi++) {
       var b = o.bands[bi], run = -1, fail = false, head = 0, anyPass = false, done = Infinity, t0;
       for (t0 = 0; t0 <= span; t0 += step) {
         if (crossOK(o, b, t0, col)) { anyPass = true; if (run < 0) run = t0; }
-        else { if (run >= 0) { if (fail) done = Math.min(done, t0 - run); else head = t0 - run; run = -1; } fail = true; }
+        else { if (run >= 0) { if (fail) { done = Math.min(done, t0 - run); if (done < stopBelow) return done; } else head = t0 - run; run = -1; } fail = true; }
       }
       if (!anyPass) return 0;
       if (!fail) continue;
@@ -329,13 +373,17 @@ var CR = (function () {
     }
     return min === Infinity ? 99 : min;
   }
-  function build(type, s, R, col) {
+  // intro: 1 = practice ring (slow, one colour), 2 = gentle second ring (slow, one quarter in another colour)
+  function build(type, s, R, col, intro) {
     var w = omegaFor(s), dir = R() < 0.5 ? -1 : 1, mode = 0, b = [], i, cols;
-    if (type !== 'loose') { if (s >= 50 && R() < 0.3) mode = 2; else if (s >= 25 && R() < 0.35) mode = 1; }
+    if (intro === 1) w = 0.9; else if (intro === 2) w = Math.min(w, 1.1);
+    if (type !== 'loose' && !intro) { if (s >= 50 && R() < 0.3) mode = 2; else if (s >= 25 && R() < 0.35) mode = 1; }
     var o = { type: type, cy: 0, hh: 0, rots: [], ps: [], parts: [], bands: [], col: col, mode: mode, passed: false, star: true, pulse: 0, s: s, w0: w };
     if (type === 'ring' || type === 'loose') {
       var Rr = type === 'loose' ? 112 : 100;
-      o.rots.push(mkRot(R, type === 'loose' ? 1.3 : w, dir, mode)); addRing(o, 0, Rr, 16, 0, R); o.hh = Rr + 8; b = ringBands(0, Rr, 16);
+      // practice ring: all in the ball's colour (just tap through); second ring: three quarters in the ball's colour
+      if (intro) { cols = [col, col, col, col]; if (intro === 2) cols[Math.floor(R() * 4)] = (col + 1 + Math.floor(R() * 3)) % 4; }
+      o.rots.push(mkRot(R, type === 'loose' ? 1.3 : w, dir, mode)); addRing(o, 0, Rr, 16, 0, R, cols); o.hh = Rr + 8; b = ringBands(0, Rr, 16);
     } else if (type === 'double') {
       // inner ring = outer ring mirrored about the vertical axis and counter-rotating, so both show the same colour on the ball's path
       var r0 = mkRot(R, w * 0.85, dir, mode), r1 = { a0: -r0.a0, w: r0.w, dir: -dir, mode: mode, P: r0.P }; cols = shuf(R);
@@ -364,14 +412,36 @@ var CR = (function () {
       o.parts.push({ kind: 'square', ox: 0, oy: 0, h: 86, hw: 7, cols: cols, ro: 0 });
       for (i = 0; i < 4; i++) o.ps.push({ k: 2, ox: 0, oy: 0, h: 86, hw: 7, i: i, c: cols[i], ro: 0 });
       o.hh = 132; b = [[-132, -79], [79, 132]];
+    } else if (type === 'eight') {
+      // two rings stacked like an 8, counter-rotating and mirrored about the line between them: where they meet they show the same colour
+      var e0 = mkRot(R, w * 0.8, dir, mode), e1 = { a0: -e0.a0, w: e0.w, dir: -dir, mode: mode, P: e0.P }; cols = shuf(R);
+      o.rots.push(e0, e1);
+      addRing(o, 74, 70, 14, 0, R, cols); addRing(o, -74, 70, 14, 1, R, [3, 2, 1, 0].map(function (j) { return cols[j]; }));
+      o.hh = 152; b = ringBands(74, 70, 14).concat(ringBands(-74, 70, 14));
+    } else if (type === 'gate') {
+      // two crosses either side of the path, mirrored and counter-rotating, so the arms that meet over the path share a colour
+      var g0 = mkRot(R, w * 0.8, dir, mode), g1 = { a0: Math.PI - g0.a0, w: g0.w, dir: -dir, mode: mode, P: g0.P }; cols = shuf(R);
+      var mc = [0, 1, 2, 3].map(function (j) { return cols[(4 - j) % 4]; });
+      o.rots.push(g0, g1);
+      [[-74, cols, 0], [74, mc, 1]].forEach(function (q) {
+        o.parts.push({ kind: 'cross', ox: q[0], oy: 0, L: 84, hw: 7, cols: q[1], ro: q[2] });
+        for (var j = 0; j < 4; j++) o.ps.push({ k: 1, ox: q[0], oy: 0, L: 84, hw: 7, i: j, c: q[1][j], ro: q[2] });
+      });
+      o.hh = 91; b = [[-70, 70]];
     }
     o.bands = mergeBands(b);
     o.slowed = 0;
-    for (var k = 0; k < 24; k++) {
-      o.win = fairness(o, col);
-      if (o.win >= MINWIN) break;
-      for (i = 0; i < o.rots.length; i++) { o.rots[i].w *= 0.86; if (k === 12) o.rots[i].mode = 0; } // too tight: slow down (then drop speed variation) and re-check
-      if (k === 12) o.mode = 0;
+    // too tight: slow down by about as much as the window is short (windows grow at least as fast as 1/speed), re-check;
+    // after a few tries drop the speed variation. Few re-checks keeps generation cheap (it runs inside a frame).
+    var w0s = o.rots.map(function (r) { return r.w; });
+    for (var k = 0; k < 16; k++) {
+      var need = needWin(o);
+      o.win = fairness(o, col, need);
+      if (o.win >= need) break;
+      var f = o.win > 0.03 ? clamp(Math.sqrt(o.win / need) * 0.98, 0.5, 0.9) : 0.7;
+      // a swinging / variable rotor that still leaves no window after a few tries: make it a steady one at nearly full speed instead
+      if (k === 3 && o.mode) { o.mode = 0; for (i = 0; i < o.rots.length; i++) { o.rots[i].mode = 0; o.rots[i].w = w0s[i] * 0.9; } }
+      else for (i = 0; i < o.rots.length; i++) o.rots[i].w *= f;
       o.slowed++;
     }
     o.w = o.rots[0].w;
@@ -382,18 +452,20 @@ var CR = (function () {
     if (S.count > 0 && lz > S.lastLoose) { S.lastLoose = lz; type = 'loose'; }
     else if (!S.seen[newest]) type = newest;
     else if (s < 50 && pool.length > 1 && R() < 0.3) type = newest;
+    else if (s >= 60 && R() < 0.3) type = pool[pool.length - 1 - Math.floor(R() * 2)]; // late game: the two newest kinds come up more
     else type = pool[Math.floor(R() * pool.length)];
     S.seen[type] = 1;
     var cols = [0, 1, 2, 3].filter(function (c) { return c !== S.lastColor; }), col = cols[Math.floor(R() * cols.length)];
-    var o = build(type, s, R, col), first = S.count === 0;
+    var o = build(type, s, R, col, S.count < 2 && type === 'ring' && !S.decor ? S.count + 1 : 0), first = S.count === 0;
     var bottom = first ? -200 : S.topY - (spacingFor(s) - 100);
     o.cy = bottom - o.hh; o.idx = S.count;
     if (!first) S.prisms.push({ y: (S.topY + bottom) / 2, c: col, taken: false, idx: S.count });
     S.topY = o.cy - o.hh; S.obs.push(o); S.count++; S.lastColor = col;
   }
   function fill(S) { while (S.count === 0 || S.topY > S.cam - S.viewH * 1.3) genNext(S); }
-  function newRun(seed, viewH) {
-    var S = { seed: seed, R: rng(seed), t: 0, viewH: viewH, ball: { x: PX, y: 0, vy: 0, c: 0 }, cam: -viewH * 0.72, obs: [], prisms: [],
+  // decor: the title screen's backdrop (a normal four-colour ring instead of the practice ring)
+  function newRun(seed, viewH, decor) {
+    var S = { seed: seed, decor: !!decor, R: rng(seed), t: 0, viewH: viewH, ball: { x: PX, y: 0, vy: 0, c: 0 }, cam: -viewH * 0.72, obs: [], prisms: [],
       score: 0, starsGot: 0, noStar: 0, maxNoStar: 0, passed: 0, kinds: {}, topY: 0, lastColor: -1, lastLoose: 0, count: 0, seen: {}, started: false, dead: false, ev: [] };
     fill(S); S.ball.c = S.obs[0].col; return S;
   }
@@ -405,7 +477,18 @@ var CR = (function () {
     else B.vy = JV;
     S.ev.push({ e: 'tap' });
   }
-  function die(S, why) { S.dead = true; S.ev.push({ e: 'die', why: why }); }
+  function die(S, why, hc) { S.dead = true; S.why = why; S.hitC = hc == null ? -1 : hc; S.ev.push({ e: 'die', why: why, c: S.hitC }); }
+  // colour of the piece the ball touched (only for the result card)
+  function hitCol(o, x, y, r, t, col) {
+    for (var i = 0; i < o.ps.length; i++) {
+      var p = o.ps[i]; if (p.c === col) continue; var a = rotAng(o.rots[p.ro], t);
+      if (p.k === 3) { for (var j = 0; j < 4; j++) if (p.cols[j] !== col) { var q = Object.create(p); q.cols = p.cols.map(function (c, m) { return m === j ? c : col; }); if (hitPiece(o, q, x, y, r, a, col)) return p.cols[j]; } continue; }
+      if (hitPiece(o, p, x, y, r, a, col)) return p.c;
+    }
+    return -1;
+  }
+  function floorY(S) { return S.cam + S.viewH - BR - 2; }
+  function floorOn(S) { return S.passed < 1 || S.passed < SAFE && (S.bounces || 0) < BOUNCES; }
   function tick(S) {
     S.t += DT;
     if (!S.started || S.dead) return;
@@ -417,9 +500,10 @@ var CR = (function () {
       var o = S.obs[i];
       if (o.star && Math.abs(B.y - o.cy) < BR + 11) { o.star = false; S.score++; S.starsGot++; S.noStar = 0; S.ev.push({ e: 'star', y: o.cy }); }
       if (!o.passed && B.y + BR < o.cy - o.hh) { o.passed = true; o.pulse = 1; S.score++; S.passed++; S.kinds[o.type] = 1; if (o.star) { S.noStar++; if (S.noStar > S.maxNoStar) S.maxNoStar = S.noStar; } S.ev.push({ e: 'pass', o: o }); }
-      if (hitObs(o, PX, B.y, BR, S.t, B.c)) { die(S, 'hit'); return; }
+      if (hitObs(o, PX, B.y, BR, S.t, B.c)) { die(S, 'hit', hitCol(o, PX, B.y, BR, S.t, B.c)); return; }
     }
-    if (B.y - BR > S.cam + S.viewH) { die(S, 'fall'); return; }
+    if (floorOn(S)) { var fy = floorY(S); if (B.y > fy && B.vy > 0) { B.y = fy; B.vy = JV * 0.8; if (S.passed >= 1) S.bounces = (S.bounces || 0) + 1; S.ev.push({ e: 'bounce' }); } }
+    else if (B.y - BR > S.cam + S.viewH) { die(S, 'fall'); return; }
     var lim = S.cam + S.viewH + 80;
     while (S.obs.length && S.obs[0].passed && S.obs[0].cy - S.obs[0].hh > lim) S.obs.shift();
     while (S.prisms.length && S.prisms[0].taken && S.prisms[0].y > lim) S.prisms.shift();
@@ -444,7 +528,7 @@ var CR = (function () {
       if (!S || d.v !== SNAPV || !fin(d.rs) || !S.ball || !fin(S.ball.y) || !fin(S.ball.vy) || [0, 1, 2, 3].indexOf(S.ball.c) < 0 || !fin(S.t) || !fin(S.cam) || !fin(S.topY)) return null;
       if (!S.started || S.dead || !(S.score >= 0 && S.score === Math.floor(S.score) && S.score < 1e5) || !Array.isArray(S.obs) || !S.obs.length || !S.obs.every(okObs)) return null;
       if (!Array.isArray(S.prisms) || !S.prisms.every(function (p) { return p && fin(p.y) && [0, 1, 2, 3].indexOf(p.c) >= 0; })) return null;
-      ['starsGot', 'noStar', 'maxNoStar', 'passed', 'lastLoose', 'count', 'lastColor'].forEach(function (k) { if (!fin(S[k])) S[k] = 0; });
+      ['starsGot', 'noStar', 'maxNoStar', 'passed', 'lastLoose', 'count', 'lastColor', 'bounces'].forEach(function (k) { if (!fin(S[k])) S[k] = 0; });
       if (!S.seen || typeof S.seen !== 'object') S.seen = {};
       if (!S.kinds || typeof S.kinds !== 'object') S.kinds = {};
       S.R = rng(d.rs); S.ev = []; S.ball.x = PX;
@@ -460,7 +544,8 @@ var CR = (function () {
     for (var k = 0; k < n; k++) {
       st.vy += G * DT; if (st.vy > 1100) st.vy = 1100; st.y += st.vy * DT; st.t += DT;
       var tc = st.y - S.viewH * CAMF; if (tc < st.cam) st.cam = tc;
-      if (st.y - BR > st.cam + S.viewH - 4) return false;
+      if (floorOn(S)) { var fy = st.cam + S.viewH - BR - 2; if (st.y > fy && st.vy > 0) { st.y = fy; st.vy = JV * 0.8; } }
+      else if (st.y - BR > st.cam + S.viewH - 4) return false;
       var p = S.prisms[st.pi]; if (p && Math.abs(st.y - p.y) < BR + 13) { st.c = p.c; st.pi++; }
       for (var i = 0; i < S.obs.length; i++) { var o = S.obs[i]; if (Math.abs(st.y - o.cy) < o.hh + r + 2 && hitObs(o, PX, st.y, r, st.t, st.c)) return false; }
     }
@@ -490,7 +575,7 @@ var CR = (function () {
     if (jit && (planValue(S, Math.max(0.01, lat - jit), slot, depth, inf, true) <= -1e9 || planValue(S, lat + jit, slot, depth, inf, true) <= -1e9)) return false;
     return vT > planValue(S, lat, slot, depth, inf, false) + 0.5;
   }
-  return { W: W, PX: PX, BR: BR, G: G, JV: JV, DT: DT, TAU: TAU, CAMF: CAMF, MINWIN: MINWIN, UNLOCK: UNLOCK, rng: rng, hashStr: hashStr, omegaFor: omegaFor,
+  return { W: W, PX: PX, BR: BR, G: G, JV: JV, DT: DT, TAU: TAU, CAMF: CAMF, MINWIN: MINWIN, PEAK: PEAK, SAFE: SAFE, BOUNCES: BOUNCES, needWin: needWin, floorY: floorY, floorOn: floorOn, UNLOCK: UNLOCK, rng: rng, hashStr: hashStr, omegaFor: omegaFor,
     spacingFor: spacingFor, diffFor: diffFor, poolFor: poolFor, rotAng: rotAng, hitArc: hitArc, hitBox: hitBox, hitObs: hitObs, build: build, fairness: fairness,
     newRun: newRun, tick: tick, tap: tap, plan: plan, fill: fill, setTail: setTail, snapshot: snapshot, restore: restore };
 })();
@@ -513,8 +598,10 @@ function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {
 var best = cnt(LS.get('best', 0)), gems = cnt(LS.get('gems', 0));
 var SET = { pat: false, glow: true, vib: true, snd: true };
 (function (o) { for (var k in SET) if (typeof o[k] === 'boolean') SET[k] = o[k]; })(obj(LS.get('settings', {})));
+// [name, price]; the first four are the original skins (their indices are what colorrings.skins / colorrings.skin store)
+var SKINS = [['光球', 0], ['水滴', 30], ['星形', 60], ['行星', 100], ['寶石', 150], ['愛心', 200], ['方糖', 260], ['花朵', 320]];
 var owned = [0];
-(function (a) { if (Array.isArray(a)) a.forEach(function (i) { if (i === 1 || i === 2 || i === 3) if (owned.indexOf(i) < 0) owned.push(i); }); })(LS.get('skins', [0]));
+(function (a) { if (Array.isArray(a)) a.forEach(function (i) { if (typeof i === 'number' && i % 1 === 0 && i >= 1 && i < SKINS.length) if (owned.indexOf(i) < 0) owned.push(i); }); })(LS.get('skins', [0]));
 var skin = LS.get('skin', 0); if (owned.indexOf(skin) < 0) skin = 0;
 var STATS = { plays: 0, total: 0, gemsEarned: 0, best: 0 };
 (function (o) { for (var k in STATS) STATS[k] = cnt(o[k]); })(obj(LS.get('stats', {})));
@@ -544,11 +631,15 @@ function resize() {
   cv.width = Math.round(Wd * DPR); cv.height = Math.round(Hd * DPR);
   SC = Math.min(Wd / CR.W, Hd / 540);
   OX = (Wd - CR.W * SC) / 2;
+  var cgs = $('colGlow').style; cgs.left = OX + 'px'; cgs.width = CR.W * SC + 'px';
   VIEWH = Hd / SC;
   if (S) { var oldH = S.viewH; S.viewH = VIEWH; if (!S.started) S.cam = S.ball.y - VIEWH * 0.72; else S.cam += (oldH - VIEWH) * CR.CAMF; CR.fill(S); }
   SPRV++;
 }
 function sx(x) { return OX + x * SC; }
+// on a phone held sideways the world is scaled by the height and the ball would be ~6.5 px: draw it at least 8 px
+// (the collision radius stays the same, so the ball never looks smaller than what can hit it)
+function ballR() { return Math.max(BR * SC, 8); }
 function sy(y) { return (y - S.cam) * SC; }
 
 // ---------- audio ----------
@@ -667,10 +758,10 @@ var S = null, state = 'title', daily = false, deadT = 0, slowT = 0, shake = 0, c
 var trail = [], parts = [], ripples = [], floaters = [], runAch = [], runGems = 0, lastTapAt = 0;
 var runBest0 = 0, runDate = '', overAt = 0, tickN = 0, tapN = 0;
 function todayKey() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
-function newGame(isDaily) {
+function newGame(isDaily, decor) {
   daily = !!isDaily; runDate = todayKey(); runBest0 = best;
   var seed = daily ? CR.hashStr('colorrings-' + runDate) : (Math.random() * 4294967296) >>> 0;
-  S = CR.newRun(seed, VIEWH);
+  S = CR.newRun(seed, VIEWH, decor);
   trail = []; parts = []; ripples = []; floaters = []; combo = 0; runAch = []; runGems = 0; slowT = 0; shake = 0;
   LS.del('run');
   updHud();
@@ -718,11 +809,13 @@ function updHud() {
   $('hScore').textContent = S.score; $('hDiff').textContent = CR.diffFor(S.score); $('hGems').textContent = gems + runGems;
   $('hDaily').classList.toggle('hidden', !daily);
 }
-function show(id, on) { $(id).classList.toggle('hidden', !on); }
-var HINTS = { ready: '點一下開始<small>只能穿過同色光環</small>', hold: '點一下繼續<small>點下去光球就會往上彈</small>' };
+// ovShown: when each overlay last appeared (a tap on it counts only if its finger went down after that)
+var ovShown = {};
+function show(id, on) { var e = $(id), was = !e.classList.contains('hidden'); e.classList.toggle('hidden', !on); if (on && !was && e.classList.contains('ov')) { ovShown[id] = performance.now(); cue(e); } }
+var HINTS = { ready: '點一下開始<small>只能穿過同色光環・第一環是練習</small>', hold: '點一下繼續<small>點下去光球就會往上彈</small>' };
 function setState(s) {
   state = s;
-  show('title', s === 'title'); show('hud', s !== 'title'); show('hint', s === 'ready' || s === 'hold');
+  show('title', s === 'title'); show('hud', s !== 'title'); show('hudFade', s !== 'title'); show('hint', s === 'ready' || s === 'hold');
   if (HINTS[s]) $('hint').innerHTML = HINTS[s];
   show('pauseOv', s === 'pause'); show('overOv', s === 'over');
   if (s === 'title') refreshTitle();
@@ -746,10 +839,10 @@ function doTap(at) {
 }
 function evTime(e) { var n = performance.now(); return e.timeStamp && Math.abs(n - e.timeStamp) < 120 ? e.timeStamp : n; } // ignore bogus timestamps
 cv.addEventListener('pointerdown', function (e) { e.preventDefault(); if (e.pointerType === 'mouse' && e.button !== 0) return; audio(); doTap(evTime(e)); });
-function topSheet() { var o = ['shareOv', 'shopOv', 'statsOv', 'setOv'].filter(function (id) { return !$(id).classList.contains('hidden'); }); return o[0] && $(o[0]); }
+function topSheet() { var o = ['shareOv', 'helpOv', 'shopOv', 'statsOv', 'setOv'].filter(function (id) { return !$(id).classList.contains('hidden'); }); return o[0] && $(o[0]); }
 window.addEventListener('keydown', function (e) {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.code === 'Escape' && topSheet()) { topSheet().querySelector('[data-close]').click(); return; }
+  if (e.code === 'Escape' && topSheet()) { fire(topSheet().querySelector('[data-close]')); return; }
   if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
     if (state === 'ready' || state === 'play' || state === 'hold') { e.preventDefault(); audio(); doTap(evTime(e)); }
     else if (state === 'title' && e.code === 'Space' && !topSheet()) { e.preventDefault(); startPlay(false); }
@@ -783,6 +876,7 @@ function handleEvents() {
     else if (e.e === 'pass') { combo++; SFX.pass(combo - 1); $('hScore').classList.remove('bump'); void $('hScore').offsetWidth; $('hScore').classList.add('bump'); floatText('+1', e.o.cy - e.o.hh, '#fff'); checkLive(); }
     else if (e.e === 'star') { runGems++; SFX.star(); burst(PX, e.y, dark ? '#ffe9a8' : '#e0a015', 16, 220); floatText('+1 星晶', e.y - 20, dark ? col(2) : '#8a5b00'); checkLive(); }
     else if (e.e === 'prism') { SFX.prism(); vib(8); ripples.push({ y: e.y, c: e.c, life: 0 }); burst(PX, e.y, col(e.c), 12, 180); }
+    else if (e.e === 'bounce') { tone(330, 0.12, 'triangle', 0.09, 0, 520); ripples.push({ y: S.ball.y + BR, c: S.ball.c, life: 0.2 }); }
     else if (e.e === 'die') { onDie(); }
   }
   updHud();
@@ -799,6 +893,7 @@ var ACHS = [
   ['s50', '水晶行者', '單局達到 50 分'],
   ['s100', '光環大師', '單局達到 100 分'],
   ['all6', '見多識廣', '單局穿過全部 6 種障礙'],
+  ['all8', '光環全覽', '單局穿過全部 8 種障礙（含 8 字環、雙十字門）'],
   ['g200', '收藏家', '累計獲得 200 星晶'],
   ['daily', '每日一環', '每日挑戰得到 10 分以上'],
   ['skin', '換個樣子', '兌換第一個造型']
@@ -812,13 +907,17 @@ function checkLive() {
   if (S.score >= 10) unlock('s10');
   if (S.score >= 50) unlock('s50');
   if (S.score >= 100) unlock('s100');
-  if (CR.UNLOCK.every(function (u) { return S.kinds[u[0]]; })) unlock('all6');
+  if (CR.UNLOCK.slice(0, 6).every(function (u) { return S.kinds[u[0]]; })) unlock('all6');
+  if (CR.UNLOCK.every(function (u) { return S.kinds[u[0]]; })) unlock('all8');
   if (daily && S.score >= 10) unlock('daily');
 }
 function finishRun() {
   var sc = S.score, isNew = sc > runBest0;
   bankRun();
   $('oTitle').textContent = isNew && sc > 0 ? '突破自我！' : (daily ? '每日挑戰結束' : '光球碎裂');
+  // why the run ended: touched another colour (which one) or fell off the bottom
+  var dot = function (c) { return '<i style="background:' + col(c) + '"></i>'; };
+  $('oWhy').innerHTML = S.why === 'fall' ? '掉出畫面下方：記得持續點擊' : S.hitC >= 0 ? '撞到' + dot(S.hitC) + NAMES[S.hitC] + '色，光球是' + dot(S.ball.c) + NAMES[S.ball.c] + '色' : '撞到不同顏色的光環';
   show('oNew', isNew && sc > 0);
   $('oScore').textContent = sc; $('oBest').textContent = daily ? (DAILY.date === runDate ? DAILY.best : sc) : best;
   $('oBest').previousSibling.textContent = daily ? '今日最佳' : '最高';
@@ -833,14 +932,8 @@ function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.remov
 // ---------- drawing ----------
 var bgDots = [];
 (function () { var r = CR.rng(7); for (var i = 0; i < 70; i++) bgDots.push({ x: r(), y: r() * 1600, z: 0.2 + r() * 0.6, s: 0.6 + r() * 1.8, h: Math.floor(r() * 4) }); })();
+// the backdrop gradient and the column glow are CSS layers behind the canvas (see #colGlow); only the drifting dots are drawn
 function drawBg() {
-  var g = ctx.createLinearGradient(0, 0, 0, Hd);
-  if (dark) { g.addColorStop(0, '#171839'); g.addColorStop(1, '#12132a'); } else { g.addColorStop(0, '#f8f5f0'); g.addColorStop(1, '#efe9f3'); }
-  ctx.fillStyle = g; ctx.fillRect(0, 0, Wd, Hd);
-  // column glow
-  var cg = ctx.createLinearGradient(OX, 0, OX + CR.W * SC, 0);
-  cg.addColorStop(0, 'rgba(180,140,255,0)'); cg.addColorStop(0.5, dark ? 'rgba(180,140,255,0.07)' : 'rgba(143,101,230,0.05)'); cg.addColorStop(1, 'rgba(180,140,255,0)');
-  ctx.fillStyle = cg; ctx.fillRect(OX, 0, CR.W * SC, Hd);
   for (var i = 0; i < bgDots.length; i++) {
     var d = bgDots[i], yy = ((d.y - S.cam * d.z * 0.3) % 1600 + 1600) % 1600 / 1600 * (Hd + 40) - 20;
     ctx.globalAlpha = dark ? 0.25 + d.z * 0.4 : 0.18 + d.z * 0.25;
@@ -884,16 +977,22 @@ function drawBar(o, p, a, vis) {
   }
   ctx.restore();
 }
+// the star gem is pre-rendered with its glow (a per-frame shadow blur is one of the costliest canvas calls)
+var starSpr = null;
+function starSprite() {
+  if (starSpr && starSpr.v === SPRV) return starSpr;
+  var k = SC * DPR, r = 9, half = r * 1.12 + 14, n = Math.ceil(half * 2 * k), c = document.createElement('canvas'); c.width = c.height = n;
+  var g = c.getContext('2d'); g.translate(n / 2, n / 2); g.scale(k, k);
+  if (glowOn) { g.shadowColor = dark ? '#fff3c4' : '#e0a015'; g.shadowBlur = 12 * k; }
+  g.fillStyle = dark ? '#fff6d6' : '#f2b522'; g.beginPath();
+  for (var i = 0; i < 8; i++) { var rr = (i % 2 ? r * 0.38 : r), a = i * TAU / 8; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  g.closePath(); g.fill(); g.shadowBlur = 0;
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.arc(0, 0, r * 0.22, 0, TAU); g.fill();
+  return (starSpr = { c: c, half: half, v: SPRV });
+}
 function drawStar(x, y, vis) {
-  var r = 9 * SC * vis, tw = 1 + 0.12 * Math.sin(S.t * 6);
-  ctx.save(); ctx.translate(x, y); ctx.rotate(S.t * 0.8);
-  if (glowOn) { ctx.shadowColor = dark ? '#fff3c4' : '#e0a015'; ctx.shadowBlur = 12; }
-  ctx.fillStyle = dark ? '#fff6d6' : '#f2b522';
-  ctx.beginPath();
-  for (var i = 0; i < 8; i++) { var rr = (i % 2 ? r * 0.38 : r * tw), a = i * TAU / 8; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
-  ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.22, 0, TAU); ctx.fill();
-  ctx.restore();
+  var sp = starSprite(), sz = sp.half * 2 * SC * vis * (1 + 0.08 * Math.sin(S.t * 6));
+  ctx.save(); ctx.translate(x, y); ctx.rotate(S.t * 0.8); ctx.drawImage(sp.c, -sz / 2, -sz / 2, sz, sz); ctx.restore();
 }
 function drawPrism(p) {
   var x = sx(PX), y = sy(p.y), r = 13 * SC;
@@ -914,6 +1013,10 @@ function ballPath(g, sk, r, t, vy) {
     g.arc(0, 0, r, Math.PI / 2 + 0.62, Math.PI / 2 - 0.62); g.lineTo(0, r * 2); g.closePath();
   } else if (sk === 2) { for (var i = 0; i < 10; i++) { var rr = i % 2 ? r * 0.55 : r * 1.3, a = t * 2 + i * TAU / 10 - Math.PI / 2; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } g.closePath(); }
   else if (sk === 3) { g.arc(0, 0, r * 0.88, 0, TAU); }
+  else if (sk === 4) { for (var h = 0; h < 6; h++) { var ah = t * 0.6 + h * TAU / 6; g.lineTo(Math.cos(ah) * r * 1.08, Math.sin(ah) * r * 1.08); } g.closePath(); }
+  else if (sk === 5) { g.moveTo(0, r * 1.05); g.bezierCurveTo(-r * 1.55, r * 0.05, -r * 0.85, -r * 1.25, 0, -r * 0.45); g.bezierCurveTo(r * 0.85, -r * 1.25, r * 1.55, r * 0.05, 0, r * 1.05); g.closePath(); }
+  else if (sk === 6) { var c6 = Math.cos(t * 0.8), s6 = Math.sin(t * 0.8), e6 = r * 0.92, k6 = r * 0.3; for (var m = 0; m < 4; m++) { var ca = m * TAU / 4; for (var n = 0; n <= 4; n++) { var aa = ca + n / 4 * TAU / 4, px = (e6 - k6) * (Math.cos(aa) > 0 ? 1 : -1) + k6 * Math.cos(aa), py = (e6 - k6) * (Math.sin(aa) > 0 ? 1 : -1) + k6 * Math.sin(aa); g.lineTo(px * c6 - py * s6, px * s6 + py * c6); } } g.closePath(); }
+  else if (sk === 7) { for (var q = 0; q <= 60; q++) { var af = q / 60 * TAU, rf = r * (0.86 + 0.24 * Math.cos(5 * (af + t * 0.5))); g.lineTo(Math.cos(af) * rf, Math.sin(af) * rf); } g.closePath(); }
   else g.arc(0, 0, r, 0, TAU);
 }
 // colour-blind mode: the ball carries its colour's texture (dots, lines, grid, stripes) drawn to its own size and centred,
@@ -946,6 +1049,7 @@ function draw() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   var shx = 0, shy = 0;
   if (shake > 0.2) { shx = (Math.random() - 0.5) * shake; shy = (Math.random() - 0.5) * shake; }
+  ctx.clearRect(0, 0, Wd, Hd);
   ctx.save(); ctx.translate(shx, shy);
   drawBg();
   for (var i = 0; i < S.obs.length; i++) drawObs(S.obs[i]);
@@ -957,15 +1061,22 @@ function draw() {
     ctx.beginPath(); ctx.arc(sx(PX), sy(rp.y), (14 + u * 90) * SC, 0, TAU); ctx.stroke();
   }
   ctx.globalAlpha = 1;
-  var B = S.ball;
+  var B = S.ball, br = ballR();
+  // practice floor: a soft glowing edge at the bottom while it still bounces the ball back
+  if (state !== 'title' && CR.floorOn(S)) {
+    var left = 1 - (S.bounces || 0) / CR.BOUNCES, fy = sy(CR.floorY(S) + BR);
+    ctx.globalAlpha = 0.25 + 0.45 * left; ctx.fillStyle = col(B.c);
+    ctx.fillRect(sx(0), fy - 3, CR.W * SC, 3);
+    ctx.globalAlpha = 1;
+  }
   if (state !== 'dying' && state !== 'over' && state !== 'title') {
     for (i = 0; i < trail.length; i++) {
       var tp = trail[i], f = (i + 1) / (trail.length + 1);
       ctx.globalAlpha = f * 0.45; ctx.fillStyle = col(tp.c);
-      ctx.beginPath(); ctx.arc(sx(PX), sy(tp.y), BR * SC * (0.35 + f * 0.6), 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx(PX), sy(tp.y), br * (0.35 + f * 0.6), 0, TAU); ctx.fill();
     }
     ctx.globalAlpha = 1;
-    drawBallAt(ctx, skin, sx(PX), sy(B.y), BR * SC, B.c, S.t, B.vy, glowOn);
+    drawBallAt(ctx, skin, sx(PX), sy(B.y), br, B.c, S.t, B.vy, glowOn);
   }
   // particles
   for (i = 0; i < parts.length; i++) {
@@ -985,12 +1096,7 @@ function draw() {
   }
   ctx.globalAlpha = 1;
   ctx.restore();
-  // soft fade under the HUD so the score stays readable over obstacles
-  if (state !== 'title') {
-    var fh = Math.min(130, Hd * 0.2), fg = ctx.createLinearGradient(0, 0, 0, fh), bgc = dark ? '18,19,42' : '246,243,238';
-    fg.addColorStop(0, 'rgba(' + bgc + ',.85)'); fg.addColorStop(1, 'rgba(' + bgc + ',0)');
-    ctx.fillStyle = fg; ctx.fillRect(0, 0, Wd, fh);
-  }
+
 }
 
 // ---------- loop ----------
@@ -1037,6 +1143,71 @@ function frame() {
   draw();
 }
 
+// ---------- tap layer ----------
+// Buttons act on pointerup of the finger that pressed them, tracked per pointerId, so a tap still counts while another finger
+// holds the play field (the browser sends no click then). A release counts when that finger moved < 10 px or was lifted inside
+// the button's box (as it was at pointerdown) grown by 16 px. A touch just outside a button (not on the field) goes to the
+// nearest button within 16 px, as the browser's own tap targeting does. The action runs through el.click() under `firing`;
+// any other click within 800 ms of a tap-layer pointerup is swallowed (whatever its detail, target or coordinates) unless an
+// Enter/Space keydown came after that tap, so the browser's follow-up click never runs an action twice or hits the next screen.
+// A tap on an overlay counts only if its finger went down after the overlay appeared; a native click from a touch that went
+// down before an overlay appeared and lifted on it (the ghost restart) is swallowed too. The play field keeps its own
+// pointerdown jump for its own finger.
+var taps = {}, lastTapUp = -1e9, lastKey = -1e9, firing = false, TAP_GROW = 16, ptrDownAt = -1e9, ptrUpAt = -1e9;
+function usableBtn(b) { return b && !b.disabled && b.isConnected && !b.closest('.hidden') ? b : null; }
+function onTop(b) { var r = b.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && (e === b || b.contains(e)); }
+function tapTarget(t, x, y) {
+  var b = t && t.closest ? t.closest('button') : null;
+  if (b) return usableBtn(b);
+  if (t === cv) return null; // the play field: its own handler jumps
+  var bs = document.querySelectorAll('button'), best = null, bd = 1e9;
+  for (var i = 0; i < bs.length; i++) {
+    var r = bs[i].getBoundingClientRect(); if (!r.width) continue;
+    var d = Math.max(r.left - x, 0, x - r.right, r.top - y, 0, y - r.bottom);
+    if (d <= TAP_GROW && d < bd && usableBtn(bs[i]) && onTop(bs[i])) { best = bs[i]; bd = d; }
+  }
+  return best;
+}
+function fire(el) { if (!el) return; firing = true; try { el.click(); } finally { firing = false; } }
+function inBox(t, x, y) { var r = t.r, G = TAP_GROW; return x >= r.left - G && x <= r.right + G && y >= r.top - G && y <= r.bottom + G; }
+function drop(id) { var t = taps[id]; if (t) t.el.classList.remove('press'); delete taps[id]; return t; }
+document.addEventListener('pointerdown', function (e) {
+  var now = performance.now(); ptrDownAt = now;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  var el = tapTarget(e.target, e.clientX, e.clientY);
+  if (!el) return;
+  e.preventDefault(); // no compatibility mousedown / focus: the action runs at pointerup
+  var a = document.activeElement; if (a && a.blur && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+  drop(e.pointerId);
+  taps[e.pointerId] = { el: el, x: e.clientX, y: e.clientY, r: el.getBoundingClientRect(), at: now };
+  el.classList.add('press');
+}, true);
+document.addEventListener('pointermove', function (e) { var t = taps[e.pointerId]; if (t) t.el.classList.toggle('press', Math.hypot(e.clientX - t.x, e.clientY - t.y) < 10 || inBox(t, e.clientX, e.clientY)); }, true);
+document.addEventListener('pointercancel', function (e) { drop(e.pointerId); }, true);
+document.addEventListener('pointerup', function (e) {
+  var now = performance.now(); ptrUpAt = now;
+  var t = drop(e.pointerId);
+  if (!t) return;
+  if (!(Math.hypot(e.clientX - t.x, e.clientY - t.y) < 10 || inBox(t, e.clientX, e.clientY))) return;
+  if (!usableBtn(t.el)) return;
+  var ov = t.el.closest('.ov');
+  if (ov && t.at <= (ovShown[ov.id] || 0)) return; // the finger went down before this overlay was there
+  if (ov && ov.id === 'overOv' && t.at - overAt < OVER_GUARD) return; // still the jump tap of the run that just ended
+  lastTapUp = now;
+  fire(t.el);
+}, true);
+window.addEventListener('blur', function () { for (var id in taps) drop(id); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') lastKey = performance.now(); }, true);
+document.addEventListener('click', function (e) {
+  if (firing) return;
+  var now = performance.now(), swallow = now - lastTapUp < 800 && !(lastKey > lastTapUp);
+  if (!swallow && !(lastKey > ptrUpAt)) {
+    var ov = e.target && e.target.closest && e.target.closest('.ov'), shown = ov ? ovShown[ov.id] || 0 : 0;
+    swallow = ov && ptrDownAt < shown && ptrUpAt > shown && now - ptrUpAt < 800; // a touch that began before this overlay appeared
+  }
+  if (swallow) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+
 // ---------- UI wiring ----------
 function on(id, fn) { $(id).addEventListener('click', function (e) { SFX.ui(); fn(e); }); }
 on('bPlay', function () { startPlay(false); });
@@ -1045,16 +1216,23 @@ on('bPause', pause);
 on('bResume', resume);
 // quitting from pause banks what the run earned (gems, stats, best)
 on('bRestart', function () { bankRun(); startPlay(daily); });
-on('bHome', function () { bankRun(); newGame(false); setState('title'); });
-// the result card appears while the player may still be tapping to jump: ignore its buttons for a moment
-function overOn(id, fn) { $(id).addEventListener('click', function (e) { if (performance.now() - overAt < 600) return; SFX.ui(); fn(e); }); }
-overOn('bHome2', function () { newGame(false); setState('title'); });
+on('bHome', function () { bankRun(); newGame(false, true); setState('title'); });
+// the result card appears while the player may still be tapping to jump: the tap layer only takes taps that went down at least
+// OVER_GUARD ms after the card appeared; any other click (keyboard, assistive tech) is ignored for the first 600 ms
+var OVER_GUARD = 450;
+function overOn(id, fn) { $(id).addEventListener('click', function (e) { if (!firing && performance.now() - overAt < 600) return; SFX.ui(); fn(e); }); }
+overOn('bHome2', function () { newGame(false, true); setState('title'); });
 overOn('bAgain', function () { startPlay(daily); });
 overOn('bShare', shareScore);
-on('bShop', openShop);
+on('bShop', function () { buyPick = -1; openShop(); });
 on('bStats', openStats);
 on('bSet', function () { syncSwitches(); show('setOv', true); });
+on('bHelp', function () { show('helpOv', true); });
 Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function (b) { b.addEventListener('click', function () { b.closest('.ov').classList.add('hidden'); if (state === 'title') refreshTitle(); }); });
+// scroll cue: a list that has more below fades at the bottom and says so, until it is scrolled to the end
+function cue(ov) { Array.prototype.forEach.call(ov.querySelectorAll('.list'), function (l) { var more = l.scrollHeight - l.clientHeight - l.scrollTop > 4, c = l.nextElementSibling; l.classList.toggle('more', more); if (c && c.classList.contains('morecue')) c.classList.toggle('hidden', !more); }); }
+Array.prototype.forEach.call(document.querySelectorAll('.list'), function (l) { l.addEventListener('scroll', function () { cue(l.closest('.ov')); }, { passive: true }); });
+window.addEventListener('resize', function () { Array.prototype.forEach.call(document.querySelectorAll('.ov:not(.hidden)'), cue); });
 function syncSwitches() {
   $('swPat').setAttribute('aria-checked', SET.pat); $('swGlow').setAttribute('aria-checked', glowOn);
   $('swVib').setAttribute('aria-checked', SET.vib); $('swSnd').setAttribute('aria-checked', SET.snd);
@@ -1069,26 +1247,36 @@ function muteIcon() {
   $('muteIcon').innerHTML = SET.snd ? '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12"/>' : '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>';
   $('bMute').setAttribute('aria-label', SET.snd ? '音效開' : '音效關');
 }
-var SKINS = [['光球', 0], ['水滴', 30], ['星形', 60], ['行星', 100]];
+// buying asks first: a locked skin you can afford is picked, then 確定兌換 spends the gems (取消 or another skin changes nothing)
+var buyPick = -1;
 function openShop() {
   $('sGems').textContent = gems;
   var box = $('skins'); box.innerHTML = '';
   SKINS.forEach(function (sk, i) {
     var have = owned.indexOf(i) >= 0, b = document.createElement('button');
-    b.className = 'skin' + (skin === i ? ' on' : '') + (have ? '' : ' lock');
+    b.className = 'skin' + (skin === i ? ' on' : '') + (have ? '' : ' lock') + (buyPick === i ? ' pick' : '');
     var c = document.createElement('canvas'); c.width = c.height = 128; b.appendChild(c);
-    var g = c.getContext('2d'); g.scale(2, 2); drawBallAt(g, i, 32, i === 1 ? 26 : 32, 13, i, 0.3, -1, true);
-    b.insertAdjacentHTML('beforeend', '<span class="nm">' + sk[0] + '</span><span class="pr">' + (skin === i ? '使用中' : have ? '點一下使用' : sk[1] + ' 星晶兌換') + '</span>');
+    var g = c.getContext('2d'); g.scale(2, 2); drawBallAt(g, i, 32, i === 1 ? 26 : 32, 13, i % 4, 0.3, -1, true);
+    b.insertAdjacentHTML('beforeend', '<span class="nm">' + sk[0] + '</span><span class="pr">' + (skin === i ? '使用中' : have ? '點一下使用' : sk[1] + ' 星晶') + '</span>');
     b.addEventListener('click', function () {
-      if (have) { skin = i; LS.set('skin', skin); }
-      else if (gems >= sk[1]) { gems -= sk[1]; owned.push(i); skin = i; LS.set('gems', gems); LS.set('skins', owned); LS.set('skin', skin); unlock('skin'); SFX.prism(); vib(12); }
-      else { toast('星晶不足，還差 ' + (sk[1] - gems) + ' 顆'); return; }
+      if (have) { skin = i; LS.set('skin', skin); buyPick = -1; }
+      else if (gems >= sk[1]) buyPick = buyPick === i ? -1 : i;
+      else { buyPick = -1; toast('星晶不足，還差 ' + (sk[1] - gems) + ' 顆'); }
       openShop();
     });
     box.appendChild(b);
   });
+  var pk = SKINS[buyPick];
+  show('buyBar', !!pk);
+  if (pk) $('buyTxt').textContent = '用 ' + pk[1] + ' 星晶兌換「' + pk[0] + '」？（剩 ' + (gems - pk[1]) + '）';
   show('shopOv', true);
 }
+on('bBuy', function () {
+  var i = buyPick, sk = SKINS[i]; buyPick = -1;
+  if (sk && owned.indexOf(i) < 0 && gems >= sk[1]) { gems -= sk[1]; owned.push(i); skin = i; LS.set('gems', gems); LS.set('skins', owned); LS.set('skin', skin); unlock('skin'); SFX.prism(); vib(12); toast('已兌換「' + sk[0] + '」'); }
+  openShop();
+});
+on('bBuyNo', function () { buyPick = -1; openShop(); });
 function openStats() {
   var avg = STATS.plays ? (STATS.total / STATS.plays).toFixed(1) : '0';
   $('stGrid').innerHTML = '<div>最高分<b>' + best + '</b></div><div>平均分<b>' + avg + '</b></div><div>遊玩次數<b>' + STATS.plays + '</b></div><div>累計星晶<b>' + STATS.gemsEarned + '</b></div>';
@@ -1121,15 +1309,17 @@ window.addEventListener('resize', resize);
 // ---------- boot ----------
 resize();
 muteIcon();
-if (!resumeSaved()) { newGame(false); setState('title'); }
+if (!resumeSaved()) { newGame(false, true); setState('title'); }
 requestAnimationFrame(frame);
 // hooks for the verification bot / tests
 window.__game = {
   core: CR,
-  state: function () { return { state: state, taps: tapN, vy: S.ball.vy, runGems: runGems, daily: daily, pat: SET.pat, score: S.score, diff: CR.diffFor(S.score), t: S.t, y: S.ball.y, started: S.started, dead: S.dead, color: S.ball.c, glow: glowOn, best: best, gems: gems, obs: S.obs.map(function (o) { return { type: o.type, w: +o.w.toFixed(2), win: +o.win.toFixed(3), mode: o.mode, s: o.s }; }) }; },
+  state: function () { return { state: state, taps: tapN, vy: S.ball.vy, runGems: runGems, daily: daily, pat: SET.pat, score: S.score, diff: CR.diffFor(S.score), t: S.t, y: S.ball.y, started: S.started, dead: S.dead, color: S.ball.c, glow: glowOn, best: best, gems: gems, why: S.why || '', hitC: S.hitC == null ? -1 : S.hitC, bounces: S.bounces || 0, passed: S.passed, skin: skin, owned: owned.slice(), snd: SET.snd, vib: SET.vib, buyPick: buyPick, br: ballR(), obs: S.obs.map(function (o) { return { type: o.type, w: +o.w.toFixed(2), win: +o.win.toFixed(3), mode: o.mode, s: o.s }; }) }; },
   // test hook: fast-forward the current run with the auto player (used for screenshots/cover only)
   fastForward: function (target) { if (state === 'ready') setState('play'); if (!S.started) CR.tap(S); var pend = -1, next = 0, guard = 0; while (!S.dead && S.score < target && guard++ < 200000) { if (pend >= 0 && S.t >= pend) { CR.tap(S); pend = -1; } if (pend < 0 && S.t >= next) { if (CR.plan(S, 0.15)) pend = S.t + 0.15; next = S.t + 0.04; } CR.tick(S); } S.ev = []; trail = []; runGems = S.starsGot; combo = S.passed; updHud(); return S.score; },
   overAt: function () { overAt = performance.now(); },
+  // test hook: drop every obstacle and prism the ball could fall back into, so a run with no more taps ends by falling
+  clearBelow: function () { var y = S.ball.y - BR; S.obs = S.obs.filter(function (o) { return o.cy + o.hh < y; }); S.prisms = S.prisms.filter(function (p) { return p.y < y; }); return S.obs.length; },
   debug: function () { var B = S.ball; return { y: B.y, vy: B.vy, c: B.c, t: S.t, near: S.obs.filter(function (o) { return Math.abs(B.y - o.cy) < o.hh + 30; }).map(function (o) { return { type: o.type, rel: Math.round(B.y - o.cy), col: o.col, w: o.w, mode: o.mode }; }) }; },
   plan: function (lat, jit) { if (state === 'play') catchUp(); var r = { go: state === 'play' ? CR.plan(S, lat || 0.15, 0.15, 7, 2.5, jit || 0) : false, t: S.t, state: state, lastTapT: S.lastTapT || 0 }; if (window.__plog) window.__plog.push([+S.t.toFixed(3), Math.round(S.ball.y), Math.round(S.ball.vy), r.go, +(lat || 0).toFixed(3), S.ball.c, Math.round(S.cam)]); return r; }
 };
