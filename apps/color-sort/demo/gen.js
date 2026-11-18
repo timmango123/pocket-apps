@@ -2,12 +2,13 @@
 // Usage: node gen.js <outdir> <from> <to>      -> writes <outdir>/<L>.json for each level
 //        node gen.js --inject <outdir>         -> writes the 100 levels into ../index.html (LEVELS-START/END)
 // Deterministic per level: seed = L*6151. Random deal (no 3 same-colour layers in a row), then hill-climb by
-// swapping layers until the exact A* optimum equals round(csTarget(L)). Unsolvable deals are rejected.
+// swapping layers until the exact A* optimum equals round(csTarget(L)). Unsolvable deals are rejected, and so is any deal where
+// one of the first two moves (any legal pour, then any legal pour after it) leaves the level unsolvable.
 const fs = require('fs'), path = require('path');
 const APP = path.join(__dirname, '..', 'index.html');
 const html = fs.readFileSync(APP, 'utf8');
 const core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] +
-  '\nreturn {csParams, csTarget, csDiffRaw, csInit, csSolve, csWon};')();
+  '\nreturn {csParams, csTarget, csDiffRaw, csInit, csSolve, csWon, csMoves, csPour};')();
 
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const has3 = t => { for (let j = 2; j < t.length; j++) if (t[j] === t[j - 1] && t[j] === t[j - 2]) return true; return false; };
@@ -40,6 +41,26 @@ function evaluate(P, d, limit) {
   if (!r) return { len: -1 };
   return r;
 }
+// can this (true) position still be won? 1 yes, 0 proven no (search exhausted), -1 unknown. Greedy-weighted searches find
+// solutions fast; only exhaustion proves a dead end.
+function solvable(S) {
+  if (core.csWon(S)) return 1;
+  for (const [w, limit] of [[5, 20000], [2, 100000], [1, 400000]]) { const r = core.csSolve(S, { limit, w }); if (r === null) return 0; if (r.len >= 0) return 1; }
+  return -1;
+}
+// no early move is fatal: every legal first move, and every legal second move after it, keeps the level solvable.
+// Returns the number of fatal (or unprovable) sequences, 0 = safe. Hidden layers don't change which moves are fatal, only
+// whether the player can see it coming, so this is what makes a loss in the first two moves impossible.
+// Score: d1 * 1000 + d2 (d1 = fatal first moves, d2 = fatal second moves after a safe first one).
+function earlyFatal(D, depth) {
+  const S0 = core.csInit(D); let d1 = 0, d2 = 0;
+  for (const [a, b] of core.csMoves(S0)) {
+    const S1 = core.csPour(S0, a, b).S; if (solvable(S1) !== 1) { d1++; continue; }
+    if (depth >= 2 && !core.csWon(S1)) for (const [c, e] of core.csMoves(S1)) { if (solvable(core.csPour(S1, c, e).S) !== 1) d2++; }
+  }
+  return d1 * 1000 + d2;
+}
+const EARLY_DEPTH = 2, TIME_BUDGET = +process.env.GEN_BUDGET || 240000;
 function mutate(d, rnd) {
   for (let tries = 0; tries < 50; tries++) {
     const nd = { tubes: d.tubes.map(t => t.slice()), caps: d.caps, fz: d.fz };
@@ -69,8 +90,11 @@ function gen(L) {
       const r = evaluate(P, nd, limit); evals++;
       if (dist(r) <= dist(cur)) { d = nd; cur = r; }
     }
-    if (!best || dist(cur) < dist(best.r)) best = { d, r: cur, attempt };
-    if (dist(cur) === 0) break;
+    const fatal = dist(cur) === 0 ? earlyFatal(toLevel(P, d), EARLY_DEPTH) : 1e9;
+    if (!best || fatal < best.fatal || (fatal === best.fatal && dist(cur) < dist(best.r))) best = { d, r: cur, attempt, fatal };
+    if (dist(cur) === 0 && fatal === 0) break;
+    // a level must never have a fatal first move; past the time budget a few fatal second moves are tolerated
+    if (best.fatal < 1000 && dist(best.r) === 0 && Date.now() - t0 > TIME_BUDGET) break;
   }
   const { d, r } = best;
   const D = toLevel(P, d);
@@ -82,14 +106,17 @@ function gen(L) {
   const hid = D.caps.map(() => 0); slots.slice(0, nh).forEach(([i, j]) => { hid[i] |= 1 << j; });
   return {
     L, t: D.tubes.join('/'), c: D.caps.join(''), h: hid.map(x => x.toString(36)).join(','), f: D.fz.join(''), p: r.len,
-    target: T, hidden: nh, attempt: best.attempt, evals, ms: Date.now() - t0
+    target: T, hidden: nh, attempt: best.attempt, earlyFatal: best.fatal, evals, ms: Date.now() - t0
   };
 }
 
 const args = process.argv.slice(2);
 if (args[0] === '--inject') {
   const dir = args[1], out = [];
-  for (let L = 1; L <= 100; L++) { const o = JSON.parse(fs.readFileSync(path.join(dir, L + '.json'), 'utf8')); out.push({ t: o.t, c: o.c, h: o.h, f: o.f, p: o.p }); }
+  // a level that did not change keeps its ★★★ limit "s" (from hpar.js); run hpar.js again for the ones that did
+  const old = JSON.parse(html.match(/\/\*LEVELS-START\*\/([\s\S]*?)\/\*LEVELS-END\*\//)[1]);
+  for (let L = 1; L <= 100; L++) { const o = JSON.parse(fs.readFileSync(path.join(dir, L + '.json'), 'utf8')), q = { t: o.t, c: o.c, h: o.h, f: o.f, p: o.p };
+    if (old[L - 1] && old[L - 1].t === o.t && old[L - 1].h === o.h && old[L - 1].s) q.s = old[L - 1].s; out.push(q); }
   const js = '[\n' + out.map(o => JSON.stringify(o)).join(',\n') + '\n]';
   const nh = html.replace(/\/\*LEVELS-START\*\/[\s\S]*?\/\*LEVELS-END\*\//, '/*LEVELS-START*/' + js + '/*LEVELS-END*/');
   fs.writeFileSync(APP, nh); console.log('injected', out.length, 'levels,', nh.length, 'bytes');
@@ -99,6 +126,6 @@ if (args[0] === '--inject') {
   for (let L = from; L <= to; L++) {
     const o = gen(L);
     fs.writeFileSync(path.join(dir, L + '.json'), JSON.stringify(o));
-    console.log('L' + L, 'opt', o.p, 'target', o.target, o.p === o.target ? 'OK' : 'MISS', 'evals', o.evals, (o.ms / 1000).toFixed(1) + 's');
+    console.log('L' + L, 'opt', o.p, 'target', o.target, o.p === o.target ? 'OK' : 'MISS', 'early-fatal', o.earlyFatal, 'evals', o.evals, (o.ms / 1000).toFixed(1) + 's');
   }
 }

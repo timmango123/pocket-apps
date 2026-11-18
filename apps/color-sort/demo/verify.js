@@ -1,5 +1,5 @@
 // Verification for 鍊金藥劑室 (color-sort).
-// 1) Node: reads the game's own core (CORE-START/END) + embedded LEVELS from ../index.html and, for all 100 levels,
+// 1) Node (hidden-information ★★★ limits come from hpar.js; early-move safety is enforced by gen.js): reads the game's own core (CORE-START/END) + embedded LEVELS from ../index.html and, for all 100 levels,
 //    proves solvability with exact A* (admissible heuristic: colour segments - colours), checks the embedded par equals
 //    the proven optimum, par is within ±10% of the target curve and never decreases, and the difficulty metric
 //    (spec formula) strictly increases.
@@ -38,12 +38,17 @@ function solveAll(only) {
       if (r.len < prevPar) issues.push('par decreased');
     }
     if (!only && diff <= prevDiff) issues.push('difficulty not increasing');
+    // no fatal first move (gen.js also checks the second move); ★★★ limit between par + 2 and par + 20 % (hpar.js)
+    { const S0 = core.csInit(D); for (const [a, b] of core.csMoves(S0)) { const S1 = core.csPour(S0, a, b).S; if (core.csWon(S1)) continue;
+        let ok1 = false; for (const [w, limit] of [[5, 20000], [2, 100000], [1, 400000]]) { const q = core.csSolve(S1, { limit, w }); if (q === null) break; if (q.len >= 0) { ok1 = true; break; } }
+        if (!ok1) issues.push('first move ' + a + '>' + b + ' is fatal'); } }
+    const s3 = Lv.s || Lv.p + 2; if (s3 < Lv.p + 2 || s3 > Math.max(Lv.p + 2, Lv.p + Math.ceil(Lv.p * 0.2)) || (Lv.s && !hidden)) issues.push('star limit ' + s3 + ' out of range');
     if (issues.length) { ok = false; console.log('LEVEL', n, 'PROBLEM:', issues.join('; ')); }
     prevPar = r ? r.len : prevPar; prevDiff = diff;
     res.push({ n, opt: r ? r.len : null, sol: r ? r.sol : null, K: P.K, tubes: D.tubes.length, hidden, frozen: P.frozen, diff, ms, expanded: r ? r.expanded : 0 });
   }
   if (!only) {
-    console.log('All', LEVELS.length, 'levels solvable, embedded par = proven A* optimum, par non-decreasing & within ±10% of target, difficulty strictly increasing:', ok);
+    console.log('All', LEVELS.length, 'levels solvable, embedded par = proven A* optimum, par non-decreasing & within ±10% of target, difficulty strictly increasing, no fatal first move, ★★★ limit in range:', ok);
     console.log('Solve time total', (totalMs / 1000).toFixed(1) + 's');
     for (const n of [1, 10, 20, 21, 40, 41, 50, 60, 61, 70, 71, 75, 80, 81, 90, 91, 99, 100]) {
       const x = res[n - 1];
