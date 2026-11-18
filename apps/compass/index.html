@@ -80,7 +80,7 @@ button, input { font: inherit; color: inherit; }
 .num { fill: var(--tick); font: 600 11px var(--mono); text-anchor: middle; }
 .card { fill: var(--tick); font: 800 22px var(--sans); text-anchor: middle; }
 .card.n { fill: var(--north); font-size: 26px; }
-.icard { fill: var(--tick-soft); font: 700 12px var(--sans); text-anchor: middle; }
+.icard { fill: var(--ink-2); font: 700 13px var(--sans); text-anchor: middle; }
 .northpt { fill: var(--north); }
 .southpt { fill: var(--tick-soft); }
 .tgt { fill: var(--target); }
@@ -131,7 +131,17 @@ button, input { font: inherit; color: inherit; }
   .top { min-height: 44px; }
   .big .v { font-size: 48px; } .readout.alt .n { font-size: 48px; }
 }
-#toast { position: fixed; left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 50; background: var(--on); color: var(--on-ink); padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); width: max-content; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+/* toast: a snackbar at the bottom, clear of the header; it never takes taps except on its own 復原 button */
+#toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50; background: var(--on); color: var(--on-ink); padding: 9px 14px; border-radius: 12px; font-size: 14px; font-weight: 600; max-width: calc(100% - 32px); width: max-content; box-shadow: 0 8px 24px rgba(0,0,0,.25); display: flex; align-items: center; gap: 10px; pointer-events: none; }
+#toast[hidden] { display: none; }
+body.toasting .wrap { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+#toast button { pointer-events: auto; min-width: 64px; min-height: 44px; margin: -6px -8px -6px 0; border-radius: 10px; border: 1px solid currentColor; background: transparent; color: inherit; font-weight: 800; cursor: pointer; padding: 0 12px; }
+/* press feedback: colour only, never transform (it would move the hit box under the finger) */
+.btn:active, .tbtn:active, .go:active, .seg button:active, .decl button:active, #toast button:active { box-shadow: inset 0 0 0 2px var(--ink-2); filter: brightness(.93); }
+#hubBtn:active { background: rgba(127, 127, 127, .14); }
+.cphint { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); }
+.cphint svg { width: 14px; height: 14px; }
+.readout:not(.live) .cphint, .chip.warn ~ .cphint { display: none; }
 </style>
 
 <div class="wrap">
@@ -142,7 +152,7 @@ button, input { font: inherit; color: inherit; }
 
   <div class="readout" id="readout" role="button" tabindex="0" aria-label="目前方位：尚未啟用">
     <div class="big"><span class="v" id="hDeg">—°</span><span class="n" id="hName">　</span></div>
-    <div class="meta"><span class="chip" id="refChip">磁北</span><span class="chip" id="accChip"><span class="dot"></span><span id="accText">尚未啟用</span></span></div>
+    <div class="meta"><span class="chip" id="refChip">磁北</span><span class="chip" id="accChip"><span class="dot"></span><span id="accText">尚未啟用</span></span><span class="cphint" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>長按複製</span></div>
   </div>
 
   <div class="dialbox" id="dialbox">
@@ -182,7 +192,7 @@ button, input { font: inherit; color: inherit; }
     <div class="row"><span><label for="declIn">磁偏角</label></span>
       <div class="decl"><button type="button" id="declSign" aria-label="正負號：切換偏東／偏西">±</button><button type="button" id="declMinus" aria-label="磁偏角減 0.5">−</button><input id="declIn" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-describedby="declNote" value="-4.5"><button type="button" id="declPlus" aria-label="磁偏角加 0.5">+</button></div>
     </div>
-    <p class="note" id="declNote">真北 = 磁北方位 + 磁偏角（偏東為正、偏西為負，± 切換正負）。台灣約 −4.5°。點盤面中心切換度數／16 方位，長按方位可複製。</p>
+    <p class="note" id="declNote">真北 = 磁北方位 + 磁偏角（偏東為正、偏西為負，± 切換正負）。台灣約 −4.5°。點盤面中心切換度數／16 方位，長按上方方位數字可複製。</p>
   </section>
 </div>
 <div id="toast" hidden role="status"></div>
@@ -208,6 +218,16 @@ function holdDeg(shown, h) {
   h = norm360(h);
   if (shown == null || Math.abs(angleDiff(h, shown)) >= 0.75) return Math.round(h) % 360;
   return shown;
+}
+// The hysteresis above must not leave a settled reading off by one (approaching 0.4° from above it would hold 1°):
+// once the plainly rounded value has differed from the shown one for 400 ms, show the rounded value.
+// st = { shown, cand, t } is kept by the caller; returns the number to show.
+function settleDeg(st, h, now) {
+  var s = holdDeg(st.shown, h), r = Math.round(norm360(h)) % 360;
+  if (s === r) st.cand = null;
+  else if (st.cand !== r) { st.cand = r; st.t = now; }
+  else if (now - st.t >= 400) { s = r; st.cand = null; }
+  st.shown = s; return s;
 }
 // Hysteresis for the 16-point name: keep the sector until the heading is 1° past its edge.
 function holdDir(idx, h) {
@@ -280,7 +300,50 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   'use strict';
   var $ = function (s) { return document.querySelector(s); };
   var KEY = 'compass.v1';
-  var S = { trueNorth: false, declination: -4.5, target: null, mode: 'deg', theme: 'auto' };
+
+  // ---------- tap layer ----------
+  // Buttons act on pointerup of the finger that pressed them, tracked per pointerId, so a tap still counts while another
+  // finger rests on the screen (the browser sends no click then). A tap counts when the finger moved < 10 px or was
+  // released inside the button's box grown by 16 px. The action runs through el.click() under `firing`; any other click
+  // within 800 ms of a tap-layer pointerup is swallowed (whatever its detail, target or coordinates) unless an Enter/Space
+  // keydown came after that tap, so the browser's follow-up click (detail 0 on Chromium 141) never runs an action twice
+  // or hits a control that appeared under the finger. A lone click with no recent tap (keyboard, screen reader) acts once.
+  var taps = {}, lastTapUp = -1e9, lastKey = -1e9, firing = false;
+  function usable(b) { return b && !b.disabled && !b.closest('[hidden]') && b.getClientRects().length ? b : null; }
+  function tapButton(t, x, y) {
+    var b = t && t.closest ? t.closest('button') : null;
+    if (b) return usable(b);
+    if (t && t.closest && t.closest('input, textarea, select, #readout')) return null;
+    // pixel snapping can hand a tap 0.5–1 px inside a button's edge to its container: take the button whose box holds it
+    var bs = document.querySelectorAll('button');
+    for (var i = 0; i < bs.length; i++) { var r = bs[i].getBoundingClientRect();
+      if (r.width && x >= r.left - 1 && x <= r.right + 1 && y >= r.top - 1 && y <= r.bottom + 1 && usable(bs[i])) return bs[i]; }
+    return null;
+  }
+  document.addEventListener('pointerdown', function (e) {
+    var b = tapButton(e.target, e.clientX, e.clientY);
+    if (!b || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault(); // no compatibility mousedown / focus after a tap that has already acted
+    var a = document.activeElement; if (a && a !== document.body && a.blur && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) a.blur();
+    taps[e.pointerId] = { el: b, x: e.clientX, y: e.clientY, r: b.getBoundingClientRect() };
+  }, true);
+  document.addEventListener('pointercancel', function (e) { delete taps[e.pointerId]; }, true);
+  document.addEventListener('pointerup', function (e) {
+    var t = taps[e.pointerId]; delete taps[e.pointerId];
+    if (!t) return;
+    var moved = Math.hypot(e.clientX - t.x, e.clientY - t.y), G = 16, r = t.r;
+    var inside = e.clientX >= r.left - G && e.clientX <= r.right + G && e.clientY >= r.top - G && e.clientY <= r.bottom + G;
+    if (!(moved < 10 || inside) || !t.el.isConnected || !usable(t.el)) return;
+    lastTapUp = performance.now();
+    firing = true; try { t.el.click(); } finally { firing = false; }
+  }, true);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') lastKey = performance.now(); }, true);
+  document.addEventListener('click', function (e) {
+    if (firing) return;
+    if (performance.now() - lastTapUp < 800 && !(lastKey > lastTapUp)) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+
+  var S = { trueNorth: false, declination: -4.5, target: null, mode: 'deg', theme: 'auto', sensor: false };
   try {
     var sv = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (sv && typeof sv === 'object') {
@@ -289,6 +352,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
       if (typeof sv.target === 'number' && isFinite(sv.target)) S.target = norm360(sv.target);
       if (sv.mode === '16pt') S.mode = '16pt';
       if (['auto', 'light', 'dark'].indexOf(sv.theme) >= 0) S.theme = sv.theme;
+      if (sv.sensor === true) S.sensor = true;
     }
   } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -306,8 +370,38 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   $('#themeBtn').addEventListener('click', function () { S.theme = { auto: 'light', light: 'dark', dark: 'auto' }[S.theme]; applyTheme(); save(); });
   applyTheme();
   var toastT;
-  function toast(t) { var el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; }, 2000); }
-  function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+  // toast(text) or toast(text, { label, fn }): an optional action button (復原) keeps it up for 5 s
+  function toast(t, act) {
+    var el = $('#toast'); el.innerHTML = ''; el.appendChild(document.createTextNode(t));
+    if (act) {
+      var b = document.createElement('button'); b.type = 'button'; b.id = 'toastBtn'; b.textContent = act.label;
+      b.addEventListener('click', function () { el.hidden = true; document.body.classList.remove('toasting'); clearTimeout(toastT); act.fn(); });
+      el.appendChild(b);
+    }
+    el.hidden = false; placeToast(el); clearTimeout(toastT); toastT = setTimeout(function () { el.hidden = true; document.body.classList.remove('toasting'); }, act ? 5000 : 2000);
+  }
+  // Put the toast where it covers no control: over the lower half of the dial face (below the centre button) when that
+  // is on screen, else as a bottom snackbar; if that would cover a control, the page gets room at the bottom to scroll it clear.
+  function placeToast(el) {
+    el.style.top = ''; el.style.bottom = ''; el.style.left = ''; document.body.classList.remove('toasting');
+    var w = el.offsetWidth, h = el.offsetHeight, vw = innerWidth, vh = innerHeight;
+    var ctrls = [].slice.call(document.querySelectorAll('button, input, [role="button"]')).filter(function (c) { return !el.contains(c) && c.getClientRects().length && !c.closest('[hidden]'); })
+      .map(function (c) { return c.getBoundingClientRect(); });
+    function free(x, y) { // x = centre, y = top
+      var l = Math.max(16, Math.min(vw - 16 - w, x - w / 2)), r = { left: l, right: l + w, top: y, bottom: y + h };
+      if (y < 0 || r.bottom > vh) return null;
+      for (var i = 0; i < ctrls.length; i++) { var c = ctrls[i]; if (c.left < r.right && c.right > r.left && c.top < r.bottom && c.bottom > r.top) return null; }
+      return l + w / 2;
+    }
+    var d = $('#dialbox').getBoundingClientRect(), hub = $('#hubBtn').getBoundingClientRect();
+    var bandTop = hub.bottom + 4, bandBot = d.bottom - d.height * 0.05, y = Math.round((bandTop + bandBot - h) / 2);
+    if (bandBot - bandTop >= h) { var cx = free(d.left + d.width / 2, y); if (cx != null) { el.style.left = cx + 'px'; el.style.top = y + 'px'; el.style.bottom = 'auto'; return; } }
+    var bTop = vh - h - 16 - (parseFloat(getComputedStyle(el).bottom) - 16 || 0);
+    if (free(vw / 2, bTop) == null) document.body.classList.add('toasting');
+  }
+  // vibrate only after the user has interacted (Chromium logs an error for a vibrate before the first tap, e.g. on an
+  // auto-started compass already facing a saved target); browsers without userActivation keep the old behaviour
+  function buzz(ms) { try { var ua = navigator.userActivation; if (ua && !ua.hasBeenActive) return; if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 
   // ---------- rose ----------
   (function drawRose() {
@@ -332,7 +426,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     running: false, got: false, any: false, relOnly: false, src: null, absSeen: false,
     raw: null, cur: null, acc: null, beta: 0, gamma: 0, hist: [], calibUntil: 0,
     timer: 0, raf: 0, forceAngle: null, onTarget: false,
-    lastT: 0, lastEvt: 0, iosUncal: false, shownDeg: null, shownDir: null, ariaT: 0, ariaTxt: '', live: { t: 0, key: '' }
+    lastT: 0, lastEvt: 0, iosUncal: false, shownDeg: null, shownDir: null, ariaT: 0, ariaTxt: '', live: { t: 0, key: '' }, deg: { shown: null, cand: null, t: 0 }
   };
   function curScr() {
     if (R.forceAngle != null) return R.forceAngle;
@@ -346,7 +440,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     R.lastT = now;
     R.hist.push([now, angleDiff(h, norm360(R.cur))]);
     while (R.hist.length && now - R.hist[0][0] > 2000) R.hist.shift();
-    if (!R.got) { R.got = true; clearTimeout(R.timer); $('#gate').hidden = true; $('#tgtBtn').hidden = false; }
+    if (!R.got) { R.got = true; clearTimeout(R.timer); $('#gate').hidden = true; $('#tgtBtn').hidden = false; $('#readout').classList.add('live'); if (!S.sensor) { S.sensor = true; save(); } }
   }
   function onAbs(e) {
     if (e.alpha == null) return;
@@ -387,8 +481,9 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     $('#gateMsg').innerHTML = '<div class="msg"><strong>' + title + '</strong>' + body + link + '</div>';
     $('#gateMsg').hidden = false;
     $('#goBtn').disabled = false; $('#goBtn').lastChild.nodeValue = retry ? '再試一次' : '啟用指南針';
-    $('#gate').hidden = false; $('#tgtBtn').hidden = true; $('#turn').hidden = true;
+    $('#gate').hidden = false; $('#tgtBtn').hidden = true; $('#turn').hidden = true; $('#readout').classList.remove('live');
     setAcc('', '未啟用');
+    if (S.sensor) { S.sensor = false; save(); } // it failed: don't start on its own next time
   }
   function timeout() {
     if (R.got) return;
@@ -402,14 +497,25 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   // ---------- start / stop ----------
   var wake = null;
   function lockWake() { try { if (navigator.wakeLock && document.visibilityState === 'visible') navigator.wakeLock.request('screen').then(function (w) { wake = w; }, function () {}); } catch (e) {} }
-  function start() {
+  // auto: the sensor worked last time, so try without a tap; if the browser wants a tap for permission (iPhone),
+  // fall back to a one-tap 點一下繼續 prompt instead of an error
+  var GATE_P = '';
+  function resumePrompt() {
+    $('#gate').firstElementChild.innerHTML = '上次已啟用指南針。這次需要再允許一次，<b>點一下</b>即可繼續。';
+    $('#goBtn').disabled = false; $('#goBtn').lastChild.nodeValue = '點一下繼續';
+  }
+  function start(auto) {
+    auto = auto === true;
     $('#gateMsg').hidden = true;
+    if (!auto && GATE_P) $('#gate').firstElementChild.innerHTML = GATE_P;
+    if (auto && (window.isSecureContext === false || typeof DeviceOrientationEvent === 'undefined')) { resumePrompt(); return; }
     if (window.isSecureContext === false) { showMsg('需要 HTTPS 安全連線', '瀏覽器只在 HTTPS 網頁提供方位感測器，這個網址不是安全連線。', false); return; }
     if (typeof DeviceOrientationEvent === 'undefined') { timeout(); return; }
     var p = null;
     try { if (typeof DeviceOrientationEvent.requestPermission === 'function') p = DeviceOrientationEvent.requestPermission(); } catch (e) { p = Promise.reject(e); }
     $('#goBtn').disabled = true;
     Promise.resolve(p).then(function (r) { return r; }, function (e) { return 'error:' + (e && e.name || 'Error'); }).then(function (r) {
+      if (auto && typeof r === 'string' && (r === 'denied' || r.indexOf('error:') === 0)) { resumePrompt(); return; }
       if (r === 'denied') {
         var apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
         showMsg('方向取用被拒絕', apple ? 'iPhone／iPad：關閉這個分頁重新開啟再點一次並選「允許」；若仍無效，到「設定 > Safari」開啟「動作與方向取用」。'
@@ -424,7 +530,9 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     });
   }
   function stop() { R.running = false; listen(false); cancelAnimationFrame(R.raf); clearTimeout(R.timer); try { if (wake) wake.release(); } catch (e) {} wake = null; }
-  $('#goBtn').addEventListener('click', start);
+  $('#goBtn').addEventListener('click', function () { start(false); });
+  GATE_P = $('#gate').firstElementChild.innerHTML;
+  if (S.sensor) setTimeout(function () { start(true); }, 0);
   document.addEventListener('visibilitychange', function () {
     if (!R.running) return;
     if (document.visibilityState === 'hidden') { listen(false); cancelAnimationFrame(R.raf); }
@@ -441,7 +549,13 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
   }
   $('#magBtn').addEventListener('click', function () { S.trueNorth = false; save(); renderRef(); draw(); });
   $('#trueBtn').addEventListener('click', function () { S.trueNorth = true; save(); renderRef(); draw(); });
-  function setDecl(v) { v = Math.round(v * 10) / 10; if (!isFinite(v)) return; S.declination = Math.max(-30, Math.min(30, v)); save(); renderRef(); draw(); }
+  // returns true when the value had to be limited to ±30
+  function setDecl(v) {
+    v = Math.round(v * 10) / 10; if (!isFinite(v)) return false;
+    var c = Math.max(-30, Math.min(30, v)); S.declination = c; save(); renderRef(); draw();
+    if (c !== v) { toast('已限制為 ' + (c > 0 ? '+' : '−') + '30°（範圍 −30 到 +30）'); return true; }
+    return false;
+  }
   $('#declIn').addEventListener('change', function () { var v = parseDecl(this.value); if (isFinite(v)) setDecl(v); else toast('請輸入 −30 到 30 之間的數字'); this.value = S.declination; });
   $('#declIn').addEventListener('keydown', function (e) { if (e.key === 'Enter') this.blur(); });
   $('#declSign').addEventListener('click', function () { var t = $('#declIn'); if (document.activeElement === t && isFinite(parseDecl(t.value))) { setDecl(-parseDecl(t.value)); t.value = S.declination; } else setDecl(-S.declination); toast('磁偏角 ' + S.declination + '°（' + (S.declination < 0 ? '偏西' : S.declination > 0 ? '偏東' : '無偏角') + '）'); });
@@ -459,7 +573,13 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     $('#turn').hidden = !on || !R.got;
   }
   $('#tgtBtn').addEventListener('click', function () {
-    if (S.target != null) { S.target = null; R.onTarget = false; R.live.key = ''; say('已清除目標'); }
+    if (S.target != null) {
+      var prev = S.target; S.target = null; R.onTarget = false; R.live.key = ''; say('已清除目標');
+      toast('已清除目標 ' + fmtHeading(toTrue(prev, decl())), { label: '復原', fn: function () {
+        if (S.target != null) return;
+        S.target = prev; R.onTarget = false; R.live.key = ''; save(); draw(); toast('已復原目標 ' + fmtHeading(toTrue(prev, decl())));
+      } });
+    }
     else if (R.cur != null) { S.target = norm360(R.cur); R.onTarget = true; R.live.key = 'ok'; buzz(20); toast('已鎖定 ' + fmtHeading(toTrue(S.target, decl()))); }
     save(); draw();
   });
@@ -473,12 +593,14 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     try { navigator.clipboard.writeText(t).then(done, function () { toast(t); }); } catch (e) { toast(t); }
   }
   var ro = $('#readout');
+  var roUp = -1e9;
   ro.addEventListener('pointerdown', function () { clearTimeout(lp); lp = setTimeout(copy, 550); });
+  ro.addEventListener('pointerup', function () { roUp = performance.now(); });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { ro.addEventListener(ev, function () { clearTimeout(lp); }); });
   ro.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   ro.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copy(); } });
   // screen readers activate with a synthetic click (detail 0); a finger tap (detail 1) does nothing, long press copies
-  ro.addEventListener('click', function (e) { if (e.detail === 0) copy(); });
+  ro.addEventListener('click', function (e) { if (e.detail === 0 && performance.now() - roUp > 800) copy(); });
 
   // ---------- drawing ----------
   function setAcc(kind, t) { var c = $('#accChip'); c.className = 'chip' + (kind ? ' ' + kind : ''); if ($('#accText').textContent !== t) $('#accText').textContent = t; }
@@ -499,7 +621,7 @@ function fmtHeading(h) { var n = Math.round(norm360(h)) % 360; return n + '°'; 
     var dispUnwrapped = R.cur + decl(), h = norm360(dispUnwrapped);
     $('#rose').setAttribute('transform', 'rotate(' + (-dispUnwrapped).toFixed(2) + ' 150 150)');
     if (R.shownDecl !== decl()) { R.shownDecl = decl(); R.shownDeg = R.shownDir = null; } // a settings jump is exact, not held
-    R.shownDeg = holdDeg(R.shownDeg, h); R.shownDir = holdDir(R.shownDir, h);
+    R.deg.shown = R.shownDeg; R.shownDeg = settleDeg(R.deg, h, now); R.shownDir = holdDir(R.shownDir, h);
     var degT = R.shownDeg + '°', dirT = DIR16[R.shownDir];
     if ($('#hDeg').textContent !== degT) $('#hDeg').textContent = degT;
     if ($('#hName').textContent !== dirT) $('#hName').textContent = dirT;
