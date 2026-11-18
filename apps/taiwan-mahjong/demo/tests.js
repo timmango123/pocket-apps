@@ -7,6 +7,11 @@ const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8'
 const MJ = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + ';return MJ;')();
 let pass = 0, fail = 0;
 function ok(c, msg) { if (c) pass++; else { fail++; console.log('FAIL', msg); } }
+// The real-page checks run in a child process at the same time as the engine checks below.
+if (process.env.TWMJ_PAGE) { pageTests().then(() => { console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }, e => { console.log('FAIL page tests crashed', e); process.exit(1); }); return; }
+const pageChild = require('child_process').spawn(process.execPath, [__filename], { env: Object.assign({}, process.env, { TWMJ_PAGE: '1' }), stdio: ['ignore', 'pipe', 'inherit'] });
+let pageOut = ''; pageChild.stdout.on('data', d => { pageOut += d; });
+const pageDone = new Promise(r => pageChild.on('close', code => r(code)));
 // notation: 123m 筒=p 條=s 字=z(1東 2南 3西 4北 5中 6發 7白) 花=f(1-8 春夏秋冬梅蘭竹菊)
 function T(s) { const out = []; let digits = []; for (const ch of s.replace(/\s/g, '')) { if (/\d/.test(ch)) digits.push(+ch); else { const base = { m: 0, p: 9, s: 18, z: 27, f: 34 }[ch]; digits.forEach(d => out.push(base + d - 1)); digits = []; } } return out; }
 const t1 = s => T(s)[0];
@@ -346,5 +351,244 @@ const F16 = ['123m456m789m123p4p', '111p'];
   }
   ok(bad === 0, 'self-play ' + hands + ' hands: AI moves all legal, 144 tiles conserved, hand sizes OK, zero-sum (' + (Date.now() - t0) + ' ms)');
 }
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+console.log(`engine: ${pass} passed, ${fail} failed`);
+pageDone.then(code => {
+  process.stdout.write('Page (mobile Chromium, CDP touch, http)\n' + pageOut);
+  const m = pageOut.match(/(\d+) passed, (\d+) failed\s*$/);
+  if (m) { pass += +m[1]; fail += +m[2]; } else { fail++; console.log('FAIL page tests gave no result (exit ' + code + ')'); }
+  if (m && code && !+m[2]) { fail++; console.log('FAIL page tests exit code ' + code); }
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+});
+
+// ================= real page in mobile Chromium (CDP touch), served over http =================
+async function pageTests() {
+  const http = require('http');
+  const { chromium } = require('/opt/node22/lib/node_modules/playwright');
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const server = http.createServer((q, r) => { r.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); r.end(fs.readFileSync(path.resolve(__dirname, '..', 'index.html'))); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r)); server.unref();
+  const base = 'http://127.0.0.1:' + server.address().port + '/';
+  const browser = await chromium.launch();
+  let tid = 100;
+  async function at(name, fn) {
+    const t0 = Date.now(); let tm;
+    try { await Promise.race([fn(), new Promise((_, no) => { tm = setTimeout(() => no(new Error('no result after 100 s')), 100000); })]); clearTimeout(tm); console.log('  ok  ', name, '(' + ((Date.now() - t0) / 1000).toFixed(1) + 's)'); }
+    catch (e) { clearTimeout(tm); fail++; console.log('FAIL', name, '-', String(e.message || e).split('\n')[0]); }
+  }
+  async function open(vp, ls) {
+    const ctx = await browser.newContext({ viewport: vp || { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    const page = await ctx.newPage(), errors = [];
+    page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ': ' + m.text()); });
+    await page.goto(base); await page.waitForFunction(() => window.__twmj);
+    if (ls) { await page.evaluate(ls => { localStorage.clear(); for (const k in ls) localStorage.setItem('twmj:' + k, ls[k]); }, ls); await page.reload(); await page.waitForFunction(() => window.__twmj); }
+    const cdp = await ctx.newCDPSession(page);
+    const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts });
+    const tap = async (x, y, hold = 40) => { const id = ++tid; await touch('touchStart', [{ x, y, id }]); await sleep(hold); await touch('touchEnd', [{ x, y, id }]); };
+    const mid = sel => page.evaluate(sel => { const r = document.querySelector(sel).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, r: r.right, b: r.bottom }; }, sel);
+    const settle = () => page.waitForFunction(() => [...document.querySelectorAll('.ov:not([hidden]) .card')].every(c => c.getAnimations().every(a => a.playState !== 'running')), null, { timeout: 10000 }).catch(() => {});
+    const tapSel = async (sel, hold) => { await settle(); const c = await mid(sel); await tap(c.x, c.y, hold); };
+    const until = (fn, arg, ms = 30000) => page.waitForFunction(fn, arg, { timeout: ms, polling: 50 });
+    const info = () => page.evaluate(() => window.__twmj.info());
+    const ex = () => page.evaluate(() => window.__twmj.extra());
+    const replay = sel => page.evaluate(sel => {   // the detail-0 click Chromium 141 may send after a tap: on the control, its edge and what is under the finger
+      const el = document.querySelector(sel), r = el.getBoundingClientRect(), mk = () => new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 });
+      el.dispatchEvent(mk()); (document.elementFromPoint(r.right - 2, r.bottom - 2) || el).dispatchEvent(mk());
+      (document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) || el).dispatchEvent(mk());
+    }, sel);
+    return { ctx, page, errors, touch, tap, mid, settle, tapSel, until, info, ex, replay, close: () => ctx.close() };
+  }
+  const SET = o => JSON.stringify(Object.assign({ speed: 2, sound: false, haptic: false, timer: false }, o));
+  // saved matches built with the engine, in the shape the page saves
+  function matchUntil(stop, seed0) {
+    for (let seed = seed0 || 1; seed < 400; seed++) {
+      const M = MJ.newMatch({ seed, rules: { flowers: true }, len: 'east', dealer: 1 }), H = MJ.matchHand(M);
+      let g = 0;
+      while (H.phase !== 'end' && g++ < 3000) {
+        if (stop(H)) return { M, H };
+        const p = [0, 1, 2, 3].find(q => MJ.legal(H, q).length);
+        MJ.act(H, p, MJ.think(MJ.view(H, p), 1, { imp: 0.5 }, seed * 7 + g).a);
+      }
+      if (stop(H)) return { M, H };
+    }
+    throw new Error('no state');
+  }
+  const saveOf = st => JSON.stringify({ M: st.M, H: st.H, lv: 1, daily: null, ms: { wins: 0, self: 0, dealin: 0, maxTai: 0, hands: 0 }, res: false });
+  const claimState = matchUntil(H => H.phase === 'claim' && H.claim.resp[0] === null && MJ.legal(H, 0).some(o => o.a === 'pon' || o.a === 'chi'));
+  const endState = matchUntil(H => H.phase === 'end');
+  const myTurnState = matchUntil(H => H.phase === 'discard' && H.turn === 0 && H.steps > 8);
+
+  await Promise.all([
+    at('home buttons: resting finger, overlapping taps, holds, detail-0 replay (清除統計 keeps its two-step confirm)', async () => {
+      const s = await open(null, { settings: SET({ lv: 1, len: 'east', preset: 'tw' }), stats: JSON.stringify({ hands: 7, wins: 3, self: 1, dealin: 1, taiSum: 6, maxTai: 3, matches: 1, firsts: 1, ach: { first: '2026-11-01' }, daily: {} }) });
+      const card = await s.mid('#home .sub'), R = { x: card.x, y: card.y };
+      const pressed = sel => s.page.evaluate(sel => document.querySelector(sel).getAttribute('aria-pressed'), sel);
+      let n = 0;
+      for (const sel of ['#segLen button[data-v="full"]', '#segLen button[data-v="east"]', '#segPreset button[data-v="nf"]', '#segLv button[data-v="2"]']) {
+        const c = await s.mid(sel), rest = ++tid, id = ++tid;
+        await s.touch('touchStart', [{ ...R, id: rest }]); await sleep(150);
+        await s.touch('touchStart', [{ ...R, id: rest }, { x: c.x, y: c.y, id }]); await sleep(50); await s.touch('touchEnd', [{ x: c.x, y: c.y, id }]); await sleep(80);
+        if (await pressed(sel) === 'true') n++;
+        await s.touch('touchEnd', [{ ...R, id: rest }]); await sleep(60);
+      }
+      ok(n === 4, 'segment taps with a finger resting on blank card space: ' + n + '/4');
+      { // 規則 with a resting finger
+        const c = await s.mid('#bHelp'), rest = ++tid, id = ++tid;
+        await s.touch('touchStart', [{ ...R, id: rest }]); await sleep(150);
+        await s.touch('touchStart', [{ ...R, id: rest }, { x: c.x, y: c.y, id }]); await sleep(50); await s.touch('touchEnd', [{ x: c.x, y: c.y, id }]); await sleep(100);
+        ok((await s.ex()).ov.includes('help'), '規則・台數表 opens with a finger resting on the card');
+        await s.touch('touchEnd', [{ ...R, id: rest }]); await sleep(60);
+        await s.tapSel('#hClose'); await sleep(100); ok(!(await s.ex()).ov.includes('help'), 'help closes');
+      }
+      for (const order of ['first', 'second']) { // overlapping taps on two segment buttons
+        await s.page.evaluate(() => { window.__set = (sel) => document.querySelector(sel).click(); });
+        await sleep(850); await s.page.evaluate(() => { document.querySelector('#segLv button[data-v="1"]').click(); });
+        await sleep(850); await s.page.evaluate(() => { document.querySelector('#segLen button[data-v="east"]').click(); });
+        const a = await s.mid('#segLv button[data-v="0"]'), b = await s.mid('#segLen button[data-v="full"]'), A = { x: a.x, y: a.y, id: ++tid }, B = { x: b.x, y: b.y, id: ++tid };
+        await s.touch('touchStart', [A]); await sleep(50); await s.touch('touchStart', [A, B]); await sleep(40);
+        if (order === 'first') { await s.touch('touchEnd', [A]); await sleep(30); await s.touch('touchEnd', [B]); } else { await s.touch('touchEnd', [B]); await sleep(30); await s.touch('touchEnd', [A]); }
+        await sleep(100);
+        ok(await pressed('#segLv button[data-v="0"]') === 'true' && await pressed('#segLen button[data-v="full"]') === 'true', 'overlapping taps on two segment buttons both act (' + order + ' finger lifts first)');
+      }
+      for (const hold of [600, 1000]) { const f0 = (await s.ex()).fired; await s.tapSel('#bHelp', hold); await sleep(100); ok((await s.ex()).ov.includes('help') && (await s.ex()).fired === f0 + 1, hold + ' ms hold on 規則 fires once'); await sleep(300); await s.tapSel('#hClose'); await sleep(100); }
+      { // tap 規則, then the click that follows lands on the help card: nothing there runs
+        const c = await s.mid('#bHelp'); await s.tap(c.x, c.y);
+        await s.page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); e && e.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); }, [c.x, c.y]);
+        await sleep(100); ok((await s.ex()).ov.includes('help'), 'the detail-0 click after the tap that opened help did nothing on the new screen');
+        await sleep(300); await s.tapSel('#hClose'); await sleep(100);
+      }
+      // 清除統計: tap + detail-0 replay arms it only; the stats survive; a second real tap clears
+      await s.tapSel('#bStats'); await sleep(100);
+      await s.tapSel('#stReset'); await s.replay('#stReset'); await sleep(150);
+      let st = await s.page.evaluate(() => JSON.parse(localStorage.getItem('twmj:stats')));
+      ok(st.hands === 7 && /確認/.test(await s.page.evaluate(() => document.getElementById('stReset').textContent)), '清除統計: tap + detail-0 clicks only arm the confirm (stats kept)');
+      await sleep(850); await s.tapSel('#stReset'); await sleep(150);
+      st = await s.page.evaluate(() => JSON.parse(localStorage.getItem('twmj:stats')));
+      ok(st.hands === 0, '清除統計: the second tap clears');
+      await s.tapSel('#stClose'); await sleep(900);
+      const f0 = (await s.ex()).fired; await s.page.evaluate(() => document.getElementById('bStats').click()); await sleep(100);
+      ok((await s.ex()).ov.includes('statsOv') && (await s.ex()).fired === f0, 'a lone detail-0 click (no tap in the last 800 ms) acts once');
+      await s.page.evaluate(() => document.getElementById('stClose').click()); await sleep(900);
+      await s.page.focus('#segLv button[data-v="2"]'); await s.page.keyboard.press('Enter'); await sleep(100);
+      ok((await s.ex()).lv === 2, 'Enter on a focused segment button acts');
+      ok(!s.errors.length, 'home: no page errors ' + s.errors.join(' | ')); await s.close();
+    }),
+    at('table: per-finger tiles (resting finger never discards), select on press, overlapping tiles, HUD buttons, first-turn bar hint, 出牌建議', async () => {
+      const s = await open(null, { settings: SET({ learn: 0, hint: true }), match: saveOf(myTurnState) });
+      await s.tapSel('#bResume');
+      const myTurn = () => s.until(() => { const i = window.__twmj.info(); return i.has && i.phase === 'discard' && i.turn === 0 && i.human && !i.busy && !i.resultShown; });
+      await myTurn(); await sleep(300);
+      ok(/再點一次或上滑/.test(await s.page.evaluate(() => document.getElementById('tingTx').textContent)), 'first turns: the bar says how to discard (tap again or swipe up)');
+      await s.until(() => window.__twmj.extra().hint >= 0, null, 8000).catch(() => {});
+      const hint = (await s.ex()).hint; ok(hint >= 0 && (await s.info()).opts.some(o => o.a === 'd' && o.t === hint), '出牌建議 suggests a legal discard (' + hint + ')');
+      const rects = await s.page.evaluate(() => window.__twmj.rects()), tile = i => ({ x: rects[i].x + rects[i].w / 2, y: rects[i].y + rects[i].h / 2 });
+      const selI = () => s.page.evaluate(() => window.__twmj.sel());
+      const steps0 = (await s.info()).steps;
+      { // reviewer repro: finger resting on the felt, second finger holds a tile, felt finger lifts first
+        const F = { x: 195, y: 330, id: ++tid }, T4 = { ...tile(4), id: ++tid };
+        await s.touch('touchStart', [F]); await sleep(150); await s.touch('touchStart', [F, T4]); await sleep(60);
+        ok(await selI() === 4, 'a tile is selected as soon as it is pressed');
+        await s.touch('touchEnd', [F]); await sleep(120);
+        ok((await s.info()).steps === steps0 && await selI() === 4, 'felt finger lifting while a tile is held: no discard, tile stays selected');
+        await s.touch('touchEnd', [T4]); await sleep(120);
+        ok((await s.info()).steps === steps0 && await selI() === 4, 'then the tile finger lifts: still no discard');
+      }
+      { // two fingers on two tiles, both lift orders: both act, nothing discarded
+        const A = { ...tile(1), id: ++tid }, B = { ...tile(6), id: ++tid };
+        await s.touch('touchStart', [A]); await sleep(50); await s.touch('touchStart', [A, B]); await sleep(40);
+        await s.touch('touchEnd', [B]); await sleep(40); const m1 = await selI(); await s.touch('touchEnd', [A]); await sleep(80); const f1 = await selI();
+        ok(m1 === 6 && f1 === 1, 'overlapping taps on two tiles (second lifts first): 6 then 1 selected, got ' + m1 + ', ' + f1);
+        const C = { ...tile(2), id: ++tid }, D = { ...tile(7), id: ++tid };
+        await s.touch('touchStart', [C]); await sleep(50); await s.touch('touchStart', [C, D]); await sleep(40);
+        await s.touch('touchEnd', [C]); await sleep(40); const m2 = await selI(); await s.touch('touchEnd', [D]); await sleep(80); const f2 = await selI();
+        ok(m2 === 2 && f2 === 7, 'overlapping taps on two tiles (first lifts first): 2 then 7 selected, got ' + m2 + ', ' + f2);
+        ok((await s.info()).steps === steps0, 'overlapping tile taps discarded nothing');
+      }
+      { // a felt tap with a tile finger down does not deselect; a plain felt tap does
+        await s.tap(195, 330); await sleep(80); ok(await selI() === -1, 'a plain tap on the felt deselects');
+      }
+      { // HUD 音效: resting finger, and tap + detail-0 replay toggles once
+        const F = { x: 195, y: 330, id: ++tid };
+        let v = (await s.ex()).sound, c = await s.mid('#bMute'), id = ++tid;
+        await s.touch('touchStart', [F]); await sleep(150); await s.touch('touchStart', [F, { x: c.x, y: c.y, id }]); await sleep(50); await s.touch('touchEnd', [{ x: c.x, y: c.y, id }]); await sleep(80);
+        ok((await s.ex()).sound === !v, '音效 toggles with a finger resting on the table');
+        await s.touch('touchEnd', [F]); await sleep(60);
+        ok(await selI() === -1 && (await s.info()).steps === steps0, 'the resting finger lifting after a HUD tap changes nothing on the table');
+        v = (await s.ex()).sound; await sleep(850); await s.tap(c.x, c.y); await s.replay('#bMute'); await sleep(100);
+        ok((await s.ex()).sound === !v, '音效: tap + detail-0 clicks toggle once');
+        const m = await s.mid('#bMenu'); id = ++tid;
+        await s.touch('touchStart', [F]); await sleep(150); await s.touch('touchStart', [F, { x: m.x, y: m.y, id }]); await sleep(50); await s.touch('touchEnd', [{ x: m.x, y: m.y, id }]); await sleep(100);
+        ok((await s.ex()).ov.includes('menu'), '選單 opens with a finger resting on the table');
+        await s.touch('touchEnd', [F]); await sleep(60);
+        await s.tapSel('#mLog'); await sleep(100); ok((await s.ex()).ov.includes('logOv'), '逐局紀錄 opens from the menu');
+        await s.tapSel('#lgClose'); await sleep(100); await s.tapSel('#mBack'); await sleep(100);
+        ok(!(await s.ex()).ov.length, 'back at the table');
+      }
+      { // discard: tap a tile twice
+        const t5 = tile(5); await s.tap(t5.x, t5.y); await sleep(80); await s.tap(t5.x, t5.y); await sleep(150);
+        ok((await s.info()).steps > steps0, 'tapping the selected tile again discards it');
+        ok((await s.ex()).learn === 1, 'the first-turn hint counts discards');
+      }
+      ok(!s.errors.length, 'table: no page errors ' + s.errors.join(' | ')); await s.close();
+    }),
+    at('claim 過 and 下一局: resting finger, tap + detail-0 replay runs once (no illegal-action warning, no re-deal)', async () => {
+      const s = await open(null, { settings: SET({ autoPass: false, autoHu: false }), match: saveOf(claimState) });
+      await s.tapSel('#bResume');
+      await s.until(() => !!document.querySelector('#acts button[data-a="pass"]'));
+      const st0 = (await s.info()).steps, c = await s.mid('#acts button[data-a="pass"]');
+      await s.page.evaluate(() => { window.__pb = document.querySelector('#acts button[data-a="pass"]'); });
+      await s.tap(c.x, c.y); await s.replay('#acts button[data-a="pass"]').catch(() => {});
+      await s.page.evaluate(() => window.__pb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));   // also on the removed button itself
+      await sleep(200);
+      ok(!s.errors.length && (await s.info()).steps === st0 + 1, '過: tap + detail-0 clicks pass once, no warning ' + s.errors.join(' | '));
+      // again, with a finger resting on the table
+      await s.page.reload(); await s.page.waitForFunction(() => window.__twmj);
+      await s.page.evaluate(v => localStorage.setItem('twmj:match', v), saveOf(claimState)); await s.page.reload(); await s.page.waitForFunction(() => window.__twmj);
+      await s.tapSel('#bResume'); await s.until(() => !!document.querySelector('#acts button[data-a="pass"]'));
+      const F = { x: 195, y: 330, id: ++tid }, p = await s.mid('#acts button[data-a="pass"]'), id = ++tid;
+      await s.touch('touchStart', [F]); await sleep(150); await s.touch('touchStart', [F, { x: p.x, y: p.y, id }]); await sleep(50); await s.touch('touchEnd', [{ x: p.x, y: p.y, id }]); await sleep(150);
+      ok((await s.info()).steps === st0 + 1, '過 works with a finger resting on the table');
+      await s.touch('touchEnd', [F]);
+      // 下一局
+      await s.page.evaluate(v => localStorage.setItem('twmj:match', v), saveOf(endState)); await s.page.reload(); await s.page.waitForFunction(() => window.__twmj);
+      await s.tapSel('#bResume'); await s.until(() => window.__twmj.extra().ov.includes('result')); await sleep(400);
+      const d0 = (await s.ex()).deals;
+      await s.tapSel('#rNext'); await s.replay('#rNext').catch(() => {}); await s.page.evaluate(() => document.getElementById('rNext').click()); await sleep(200);
+      ok((await s.ex()).deals === d0 + 1 && (await s.info()).handNo === 1, '下一局: tap + detail-0 clicks deal once');
+      ok(!s.errors.length, 'claim/result: no page errors ' + s.errors.join(' | ')); await s.close();
+    }),
+    at('damaged storage: boot, new game and 統計 still work; a bad saved match is discarded', async () => {
+      const s = await open();
+      const cases = [['stats', '{"daily":null}'], ['stats', '{"ach":null}'], ['stats', '{"hands":"x","daily":[1],"ach":5}'], ['stats', 'null'], ['stats', '{'],
+        ['match', '{}'], ['match', '{"M":{}}'], ['match', '{"M":{"len":"east","handNo":0},"H":{},"lv":1}'], ['match', JSON.stringify(Object.assign(JSON.parse(saveOf(myTurnState)), { lv: 7 }))], ['match', '[1]'],
+        ['settings', '{"lv":9}'], ['settings', '{"lv":"2","speed":-1,"rules":null}'], ['settings', '{"rules":{"base":7,"per":"x"}}'], ['settings', '5']];
+      for (const [k, v] of cases) {
+        s.errors.length = 0;
+        await s.page.evaluate(([k, v]) => { localStorage.clear(); localStorage.setItem('twmj:' + k, v); }, [k, v]); await s.page.reload(); await s.page.waitForFunction(() => window.__twmj);
+        const home = (await s.ex()).ov.includes('home'), resumeHidden = await s.page.evaluate(() => document.getElementById('bResume').hidden);
+        await s.page.evaluate(() => document.getElementById('bStats').click()); const stOpen = (await s.ex()).ov.includes('statsOv');
+        await s.page.evaluate(() => document.getElementById('stClose').click());
+        await s.page.evaluate(() => document.getElementById('bNew').click());
+        const started = await s.until(() => window.__twmj.info().has && window.__twmj.extra().ov.length === 0, null, 8000).then(() => true, () => false);
+        const gone = k !== 'match' || await s.page.evaluate(() => { const m = localStorage.getItem('twmj:match'); return !m || !!JSON.parse(m).H; });
+        ok(home && stOpen && started && (k !== 'match' || resumeHidden) && gone && !s.errors.length, 'twmj:' + k + ' = ' + v.slice(0, 40) + ' → menu, 統計, new game ok ' + JSON.stringify({ home, stOpen, started, resumeHidden, gone }) + (s.errors.length ? ' ' + s.errors.join(' | ') : ''));
+      }
+      // a good save next to damaged stats still resumes
+      await s.page.evaluate(v => { localStorage.clear(); localStorage.setItem('twmj:match', v); localStorage.setItem('twmj:stats', '{"daily":null}'); }, saveOf(myTurnState)); await s.page.reload(); await s.page.waitForFunction(() => window.__twmj);
+      ok(!(await s.page.evaluate(() => document.getElementById('bResume').hidden)), 'a valid saved match is still offered');
+      await s.close();
+    }),
+    at('layout: start button and 設定 without scrolling, landscape HUD round info', async () => {
+      for (const [w, h, sel] of [[844, 390, '#bNew'], [360, 640, '#bSet'], [360, 640, '#bNew'], [640, 360, '#bNew']]) {
+        const s = await open({ width: w, height: h }); const c = await s.mid(sel);
+        ok(c.b <= h - 4, sel + ' visible without scrolling at ' + w + 'x' + h + ' (bottom ' + Math.round(c.b) + ')'); await s.close();
+      }
+      const s = await open({ width: 844, height: 390 }, { settings: SET({}), match: saveOf(myTurnState) });
+      await s.tapSel('#bResume'); await sleep(600);
+      const hi = await s.page.evaluate(() => { const e = document.getElementById('hInfo'), r = e.getBoundingClientRect(); return { vis: getComputedStyle(e).visibility, w: r.width, t: e.textContent }; });
+      ok(hi.vis === 'visible' && hi.w > 60 && /局/.test(hi.t), 'landscape HUD shows the round info (' + hi.t + ', ' + Math.round(hi.w) + 'px)');
+      ok(!s.errors.length, 'layout: no page errors'); await s.close();
+    })
+  ]);
+  await browser.close(); server.close();
+}
