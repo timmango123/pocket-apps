@@ -19,13 +19,18 @@ const item = (o) => Object.assign({ id: 'a' + Math.random().toString(36).slice(2
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cd-tests-'));
 
   // seed: items written before the app script runs (only on the first load of this context)
-  async function open({ time = '2026-10-30T10:00:00+08:00', tz = 'Asia/Taipei', seed, settings, w = 390, h = 844, acceptDownloads = false } = {}) {
+  async function open({ time = '2026-10-30T10:00:00+08:00', tz = 'Asia/Taipei', seed, settings, w = 390, h = 844, acceptDownloads = false, css = null } = {}) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2, reducedMotion: 'reduce', timezoneId: tz, acceptDownloads });
     if (seed || settings) await ctx.addInitScript(([K, seed, settings]) => {
       if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1');
       if (seed) localStorage.setItem(K + 'items', typeof seed === 'string' ? seed : JSON.stringify(seed));
       if (settings) localStorage.setItem(K + 'settings', JSON.stringify(settings));
     }, [K, seed || null, settings || null]);
+    // css：在 app 載入前插入的樣式（例如換成很寬的字型，確認版面不靠本機字型）
+    if (css) await ctx.addInitScript(css => {
+      const add = () => { const root = document.documentElement; if (!root) return false; const st = document.createElement('style'); st.textContent = css; root.appendChild(st); return true; };
+      if (!add()) { const mo = new MutationObserver(() => { if (add()) mo.disconnect(); }); mo.observe(document, { childList: true }); }
+    }, css);
     const p = await ctx.newPage();
     p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); p.on('pageerror', e => errors.push(e.message));
     await p.clock.install({ time: new Date(time) });
@@ -81,19 +86,19 @@ const item = (o) => Object.assign({ id: 'a' + Math.random().toString(36).slice(2
     await ctx.close();
   }
 
-  // 3. 詳情倒數：夏令時間開始那週，天數仍和卡片一致；跨夏令時間的未來倒數
+  // 3. 詳情倒數：時／分／秒用實際經過的時間（夏令時間少掉的一小時要算進去），卡片的天數仍用日曆日
   {
     const seed = [item({ id: 'pst', title: '十天前', date: '2026-03-01' }), item({ id: 'fut', title: '週一早上', date: '2026-03-09', time: '09:00', order: 1 })];
     const { ctx, p, tapSel, settle } = await open({ time: '2026-03-11T00:30:00-04:00', tz: 'America/New_York', seed });
     eq(await tileText(p, 'pst'), '已過 10天', '紐約 3/11 00:30（3/8 起夏令時間）卡片已過 10 天');
     await tapSel('#app .tile[data-id="pst"]'); await p.waitForSelector('#d-clock b'); await settle();
-    eq(await p.$$eval('#d-clock b', b => b.map(x => x.textContent)), ['10', '00', '30', '00'], '詳情 10 天 00:30:00，不會因少掉的一小時變 9 天 23 時');
+    eq(await p.$$eval('#d-clock b', b => b.map(x => x.textContent)), ['9', '23', '30', '00'], '詳情是實際經過的 9 天 23:30:00（3/8 少了一小時），卡片仍是已過 10 天');
     await p.goBack(); await p.waitForSelector('#detail', { state: 'hidden' });
     await p.clock.setSystemTime(new Date('2026-03-07T09:00:00-05:00'));
     await p.evaluate(() => dispatchEvent(new Event('focus')));
     await p.waitForFunction(() => __cd.today === '2026-03-07'); await settle();
     await tapSel('#app .tile[data-id="fut"]'); await p.waitForSelector('#d-clock b'); await settle();
-    eq(await p.$$eval('#d-clock b', b => b.map(x => x.textContent)), ['2', '00', '00', '00'], '週六 09:00 到週一 09:00（中間換夏令時間）倒數 2 天 00:00:00');
+    eq(await p.$$eval('#d-clock b', b => b.map(x => x.textContent)), ['1', '23', '00', '00'], '週六 09:00 到週一 09:00（中間換夏令時間）實際只有 47 小時：1 天 23:00:00');
     await ctx.close();
   }
 
@@ -255,6 +260,134 @@ const item = (o) => Object.assign({ id: 'a' + Math.random().toString(36).slice(2
     await tapSel('#app .tile[data-id="l1"]'); await p.waitForSelector('#d-share'); await settle();
     const ok = await p.evaluate(() => ['#d-close', '#d-edit'].every(s => { const b = document.querySelector(s).getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight && b.height >= 44; }));
     assert(ok, '橫向詳情的返回／編輯在畫面內且 ≥44px');
+    await ctx.close();
+  }
+
+  // 11. r1 回歸：第二指點按、點按後的 detail 0 click、多分頁、夏令時間、不自動聚焦、橫式抽屜、字數、五位數天數
+  {
+    const seed = [item({ id: 'aa', title: '甲', date: '2027-03-01' }), item({ id: 'pp', title: '過去', date: '2026-01-01', order: 1 })];
+    const { ctx, p, touch, tap, center, tapSel, settle } = await open({ seed });
+    const cdp = await ctx.newCDPSession(p);
+    const T = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] })) });
+    const theme = () => p.evaluate(() => document.documentElement.dataset.theme || '');
+    const past = () => p.evaluate(() => !document.querySelector('#past').hidden);
+    const quiet = () => p.evaluate(() => performance.now()).then(t0 => p.waitForFunction(t => performance.now() > t + 850, t0));
+    // 另一指按住 (200,30)，第二指點主題、收合、卡片：各觸發一次（CDP touchEnd 只放開列出的那一指）
+    const rest = [200, 30, 1];
+    for (const [sel, get] of [['#theme', theme], ['#past-toggle', past]]) {
+      const before = await get(), q = await center(sel);
+      await T('touchStart', [rest]); await T('touchStart', [rest, [q[0], q[1], 2]]); await T('touchEnd', [[q[0], q[1], 2]]);
+      await p.waitForFunction(([s, b]) => s === '#theme' ? (document.documentElement.dataset.theme || '') !== b : !document.querySelector('#past').hidden !== b, [sel, before]);
+      await T('touchEnd', [rest]); await quiet();
+      assert((await get()) !== before, '另一指按住時第二指點 ' + sel + ' 有作用');
+    }
+    { const q = await center('#app .tile[data-id="aa"]');
+      await T('touchStart', [[20, 30, 1]]); await T('touchStart', [[20, 30, 1], [q[0], q[1], 2]]); await T('touchEnd', [[q[0], q[1], 2]]);
+      await p.waitForFunction(() => __cd.detailId === 'aa'); await T('touchEnd', [[20, 30, 1]]);
+      assert(true, '另一指按住時第二指點卡片打開詳情');
+      await settle(); await tapSel('#d-close'); await p.waitForSelector('#detail', { state: 'hidden' }); await settle(); await quiet(); }
+    // 點按後馬上補一個 detail 0 click（在按鈕上、按鈕邊緣、elementFromPoint）：只執行一次
+    const d0 = sel => p.evaluate(sel => {
+      const e = document.querySelector(sel), b = e.getBoundingClientRect(), fire = el => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }));
+      fire(e); fire(document.elementFromPoint(b.right - 1, b.top + b.height / 2)); fire(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2));
+    }, sel);
+    for (const [sel, get] of [['#theme', theme], ['#past-toggle', past]]) {
+      const before = await get(); await tapSel(sel); await d0(sel);
+      assert((await get()) !== before, '點 ' + sel + ' 再補 3 個 detail 0 click：只切換一次');
+      await quiet();
+    }
+    { const t0 = await theme(); await p.evaluate(() => document.querySelector('#theme').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+      assert((await theme()) !== t0, '沒有點按在前、單獨的 detail 0 click 執行一次');
+      const t1 = await theme(); await tapSel('#theme'); await p.keyboard.press('Enter');
+      eq([await theme() === t1, await p.evaluate(() => document.activeElement.id)], [true, 'theme'], '點按後 800ms 內按 Enter 照樣有作用（點一次＋Enter 一次＝回到原樣）');
+      await quiet(); }
+    // 匯出：點一下＋detail 0 只下載一次
+    await p.evaluate(() => { window.__dl = 0; const oc = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) { window.__dl++; return; } return oc.call(this); }; });
+    await tapSel('#export'); await d0('#export');
+    eq(await p.evaluate(() => window.__dl), 1, '匯出點一下＋detail 0 只下載一次'); await quiet();
+    // 儲存（新增、編輯）：點一下＋detail 0 只存一筆，詳情不會被打開；抽屜關了之後 f-save 是空操作
+    await tapSel('#add'); await p.waitForSelector('#sheet:not([hidden])'); await settle();
+    await p.fill('#f-title', '新的'); await tapSel('#f-save'); await d0('#f-save');
+    eq(await p.evaluate(() => [__cd.items.filter(x => x.title === '新的').length, __cd.detailId, document.querySelector('#sheet').hidden]), [1, null, true], '新增：點儲存＋detail 0 只多一筆，底下沒有東西被觸發');
+    await quiet();
+    await p.evaluate(() => document.querySelector('#f-save').dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 })));
+    eq(await p.evaluate(() => __cd.items.length), 3, '抽屜關閉後單獨的 f-save click 不做任何事');
+    await tapSel('#app .tile[data-id="aa"]'); await p.waitForSelector('#d-edit'); await settle();
+    await tapSel('#d-edit'); await p.waitForSelector('#sheet:not([hidden])'); await settle();
+    // 不自動聚焦名稱欄（鍵盤不會自己跳出來）
+    await p.clock.runFor(100);
+    eq(await p.evaluate(() => document.activeElement.id), 'sheet-h', '編輯：焦點在抽屜標題，不在名稱欄');
+    await p.fill('#f-title', '甲改'); await tapSel('#f-save'); await d0('#f-save');
+    eq(await p.evaluate(() => __cd.items.map(x => x.title).sort()), ['新的', '甲改', '過去'].sort(), '編輯：點儲存＋detail 0 不會多出一筆');
+    await settle(); await tapSel('#d-close'); await p.waitForSelector('#detail', { state: 'hidden' }); await settle(); await quiet();
+    await tapSel('#add'); await p.waitForSelector('#sheet:not([hidden])'); await p.clock.runFor(100);
+    eq(await p.evaluate(() => document.activeElement.id), 'sheet-h', '新增：也不自動聚焦名稱欄');
+    // 名稱以字元數計：30 個表情符號可以存，第 31 個被截掉；每年 2/29 有說明
+    await p.fill('#f-title', '😀'.repeat(31));
+    eq([await p.evaluate(() => Array.from(document.querySelector('#f-title').value).length), await p.textContent('#f-count')], [30, '30/30'], '名稱上限 30 個字元（表情符號算 1 字）');
+    await p.fill('#f-date', '2024-02-29'); await settle(); await tapSel('#rep-yearly');
+    assert(/平年算在 2\/28/.test(await p.textContent('#rep-hint')) && await p.isVisible('#rep-hint'), '每年＋2/29 說明平年算 2/28');
+    await tapSel('#f-save'); await p.waitForFunction(() => __cd.items.some(x => Array.from(x.title).length === 30 && x.title.startsWith('😀')));
+    assert(true, '30 個表情符號的名稱存得進去');
+    await ctx.close();
+  }
+  {
+    // 清除範例：點一下＋detail 0 只清一次，復原把範例找回來
+    const { ctx, p, tapSel, settle } = await open();
+    const n0 = await p.evaluate(() => __cd.items.length);
+    await tapSel('#clear-ex');
+    await p.evaluate(() => document.querySelector('#clear-ex').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })));
+    await p.evaluate(() => performance.now()).then(t0 => p.waitForFunction(t => performance.now() > t + 400, t0));
+    await tapSel('#toast-undo');
+    await p.waitForFunction(() => document.querySelector('#toast-t').textContent === '已復原');
+    eq(await p.evaluate(() => __cd.items.length), n0, '清除範例＋detail 0 後復原，範例都回來');
+    await ctx.close();
+  }
+  {
+    // 夏令時間：時／分／秒是實際剩下的時間
+    for (const [now, date, exp, m] of [['2027-03-13T22:00:00-05:00', '2027-03-14', ['0', '04', '00', '00'], '紐約 3/13 22:00 到 3/14 03:00 實際 4 小時'], ['2026-10-31T22:00:00-04:00', '2026-11-01', ['0', '06', '00', '00'], '紐約 10/31 22:00 到 11/1 03:00 實際 6 小時']]) {
+      const { ctx, p, tapSel, settle } = await open({ time: new Date(Date.parse(now) - 5000), tz: 'America/New_York', seed: [item({ id: 'ds', date, time: '03:00' })] });
+      await p.clock.pauseAt(new Date(now));
+      await tapSel('#app .tile[data-id="ds"]'); await p.waitForSelector('#d-clock b');
+      eq(await p.$$eval('#d-clock b', b => b.map(x => x.textContent)), exp, m);
+      eq(await p.evaluate(() => /約 (\d+) 小時/.exec(document.querySelector('#d-stats').textContent)[1]), String(+exp[1]), m + '（約 N 小時）');
+      await ctx.close();
+    }
+  }
+  {
+    // 兩個分頁：A 新增後關掉，再關掉較舊的 B，重新打開資料還在；B 也即時同步到 A 的變更
+    const { ctx, p: A } = await open(); // 不用 seed（seed 只在每個分頁第一次載入時寫，第三個分頁會再寫一次）
+    const B = await ctx.newPage(); B.on('pageerror', e => errors.push(e.message)); await B.goto(URL); await B.waitForFunction(() => window.__cd);
+    await A.bringToFront(); await A.click('#add'); await A.waitForSelector('#sheet:not([hidden])');
+    await A.fill('#f-title', '重要的日子'); await A.fill('#f-date', '2027-06-01');
+    await A.evaluate(() => performance.now()).then(t0 => A.waitForFunction(t => performance.now() > t + 400, t0));
+    await A.click('#f-save'); await A.waitForFunction(() => __cd.items.some(x => x.title === '重要的日子'));
+    await B.waitForFunction(() => __cd.items.some(x => x.title === '重要的日子') && document.querySelector('#app .tile'));
+    assert(true, '另一個分頁透過 storage 事件同步新項目');
+    await A.close({ runBeforeUnload: true }); await B.close({ runBeforeUnload: true });
+    const C = await ctx.newPage(); await C.goto(URL); await C.waitForFunction(() => window.__cd);
+    assert(await C.evaluate(() => __cd.items.some(x => x.title === '重要的日子')), '關掉舊分頁不會蓋掉另一分頁存的資料');
+    await ctx.close();
+  }
+  {
+    // 844×390 抽屜：沒有預覽卡，名稱欄不被底部儲存列蓋住
+    const { ctx, p, tapSel, settle } = await open({ w: 844, h: 390, seed: [] });
+    await tapSel('#add'); await p.waitForSelector('#sheet:not([hidden])'); await settle();
+    const r = await p.evaluate(() => { const t = document.querySelector('#f-title').getBoundingClientRect(), a = document.querySelector('.sheet-actions').getBoundingClientRect(); return [document.querySelector('#preview').offsetHeight, t.bottom <= a.top, t.top >= 0]; });
+    eq(r, [0, true, true], '橫式抽屜不顯示預覽卡、名稱欄完整露出');
+    await ctx.close();
+  }
+  // 五位數／四位數天數：「天」和數字在同一行、整組在卡片內距之內；本機字型和刻意很寬的字型（等寬＋字距）都要過
+  const WIDE = '.tile .days { font-family: "DejaVu Sans Mono", "DejaVu Sans", monospace !important; letter-spacing: .08em !important; } .tile .days small { font-family: "DejaVu Sans", serif !important; font-size: 16px !important; }';
+  for (const [w, css] of [[320, null], [360, null], [390, null], [430, null], [320, WIDE], [360, WIDE], [390, WIDE], [430, WIDE], [844, WIDE]]) {
+    const seed = [item({ id: 'hero', title: '置頂五位數', date: '1900-01-01', pinned: true }), item({ id: 'old', title: '很久以前', date: '1901-01-01', order: 1 }), item({ id: 'k4', title: '四位數', date: '2020-01-01', order: 2 }), item({ id: 'k3', title: '三位數', date: '2026-01-01', order: 3 })];
+    const { ctx, p } = await open({ w, h: w > 700 ? 390 : 844, seed, css });
+    if (css) eq(await p.$eval('#app .tile .days', d => getComputedStyle(d).letterSpacing !== 'normal'), true, w + ' 寬字型樣式有套用');
+    await p.evaluate(() => document.fonts.ready); await p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const r = await p.$$eval('#app .tile .days', ds => ds.map(d => { const s = d.querySelector('small').getBoundingClientRect(), b = d.getBoundingClientRect(), t = d.closest('.tile').getBoundingClientRect(), pr = parseFloat(getComputedStyle(d.closest('.tile')).paddingRight);
+      const oneLine = s.top >= b.top - 2 && s.bottom <= b.bottom + 2, inside = s.right <= t.right - pr + 0.5 && d.scrollWidth <= d.clientWidth + 1;
+      return oneLine && inside ? 'ok' : d.closest('.tile').dataset.id + ' ' + d.textContent + ' line:' + oneLine + ' in:' + inside; }));
+    eq(r, ['ok', 'ok', 'ok', 'ok'], w + ' 寬' + (css ? '（很寬的字型）' : '') + '：五位數、四位數天數「天」在同一行、不超出卡片內距');
     await ctx.close();
   }
 
