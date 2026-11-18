@@ -383,6 +383,134 @@ function serve() {
     await u.ctx.close();
   }
 
+  // ---------- 7. release R1 regressions: tap layer, seconds text, format switches, small fixes ----------
+  {
+    const t = await open();
+    const cdp = await t.ctx.newCDPSession(t.p);
+    const pt = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id })) });
+    // count clicks that reach the page's handlers (bubble phase on document, after the capture guard)
+    await t.p.evaluate(() => { window.__cl = []; document.addEventListener('click', e => { const x = e.target.closest && e.target.closest('[id]'); window.__cl.push(x ? x.id : e.target.tagName); }); });
+    const reset = () => t.p.evaluate(() => { window.__cl = []; });
+    const cl = () => t.p.evaluate(() => window.__cl);
+    const tap = async sel => { const c = await t.center(sel); await pt('touchStart', [[c[0], c[1], 1]]); await pt('touchEnd', []); };
+    // tap X, then replay a detail-0 click on X, on X's edge point and on whatever is under the finger now
+    const d0After = async (sel, settle) => {
+      await t.p.waitForTimeout(900); await reset();
+      const c = await t.center(sel);
+      await tap(sel);
+      await t.p.waitForFunction(() => window.__cl.length > 0);
+      if (settle) await settle();
+      await t.p.evaluate(([sel, x, y]) => {
+        const fire = (el, cx, cy) => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: cx, clientY: cy }));
+        const el = document.querySelector(sel);
+        if (el) { const r = el.getBoundingClientRect(); fire(el, x, y); fire(el, r.left + 1, r.top + 1); }
+        fire(document.elementFromPoint(x, y), x, y);
+      }, [sel, c[0], c[1]]);
+      return cl();
+    };
+    await t.setExpr('0 9 * * 1');
+    eq([await d0After('#key-0'), await t.val()], [['key-0'], '0 9 * * 1*'], '點「*」後的 detail 0 click 不再插入第二次');
+    await t.p.evaluate(() => { window.__copies = 0; navigator.clipboard.writeText = () => { window.__copies++; return Promise.resolve(); }; window.__shares = 0; navigator.share = () => { window.__shares++; return Promise.resolve(); }; });
+    await t.setExpr('0 9 * * 1');
+    eq([await d0After('#copy'), await t.p.evaluate(() => window.__copies)], [['copy'], 1], '複製：點按＋detail 0 只執行一次');
+    eq([await d0After('#share'), await t.p.evaluate(() => window.__shares)], [['share'], 1], '分享：點按＋detail 0 只執行一次');
+    await t.p.$eval('#ve', e => e.scrollIntoView({ block: 'center' }));
+    const open0 = await t.p.$eval('#ve', e => e.open);
+    eq([await d0After('#ve summary'), await t.p.$eval('#ve', e => e.open)], [['ve'], !open0], '視覺編輯器標題：點一下只收合一次');
+    await tap('#ve summary'); await t.p.waitForFunction(o => document.getElementById('ve').open === o, open0);
+    await t.p.evaluate(() => scrollTo(0, 0));
+    eq([await d0After('#mode-6'), await t.val()], [['mode-6'], '0 0 9 * * 1'], '格式切換：只執行一次，新畫面上的按鈕沒被點到');
+    eq([await d0After('#ex-1'), await t.val()], [['ex-1'], '30 * * * * *'], '範例：只執行一次');
+    // a lone detail-0 click (keyboard / screen reader) still runs once; Enter right after a tap is not swallowed
+    await t.p.waitForTimeout(900); await reset();
+    await t.p.evaluate(() => document.getElementById('ex-0').click());
+    eq([await cl(), await t.val()], [['ex-0'], '*/10 * * * * *'], '單獨的 detail 0 click 照常執行一次');
+    await reset(); await tap('#ex-1'); await t.p.waitForFunction(() => document.getElementById('expr').value === '30 * * * * *');
+    await t.p.focus('#ex-0'); await t.p.keyboard.press('Enter');
+    eq(await t.val(), '*/10 * * * * *', '點按後立刻按 Enter：鍵盤操作不會被吞');
+    // second finger: one finger rests on the page, the other taps controls
+    await t.p.evaluate(() => scrollTo(0, 0)); await t.p.waitForTimeout(900);
+    await t.p.locator('#expr').blur();
+    const rest = [370, 800];
+    const tap2 = async sel => { const c = await t.center(sel); await pt('touchStart', [[rest[0], rest[1], 1]]); await pt('touchMove', [[rest[0], rest[1], 1], [c[0], c[1], 2]]); await pt('touchEnd', [[c[0], c[1], 2]]); await pt('touchEnd', [[rest[0], rest[1], 1]]); };
+    await t.setExpr('0 9 * * * *'); await reset();
+    await tap2('#key-0'); await t.p.waitForFunction(() => document.getElementById('expr').value === '0 9 * * * **');
+    await tap2('#mode-5'); await t.p.waitForFunction(() => document.getElementById('mode-5').getAttribute('aria-pressed') === 'true');
+    await tap2('#ex-2'); await t.p.waitForFunction(() => document.getElementById('expr').value === '0 9 * * 1');
+    await t.p.$eval('#ve summary', e => e.scrollIntoView({ block: 'center' })); await t.p.waitForTimeout(100);
+    eq(await t.p.evaluate(([x, y]) => !document.elementFromPoint(x, y).closest('button, summary, select, input'), rest), true, '放著的手指不在控制項上');
+    const vo = await t.p.$eval('#ve', e => e.open);
+    await tap2('#ve summary'); await t.p.waitForFunction(o => document.getElementById('ve').open !== o, vo);
+    eq((await cl()).length, 4, '另一指放在頁面上時，第二指點符號鍵、格式、範例、視覺編輯器標題都各執行一次');
+    // the toast (6 s, with 復原) sits over the bottom of the page; once it's gone the summary reopens with a plain tap
+    await t.p.waitForFunction(() => !document.querySelector('.toast'), null, { timeout: 8000 });
+    await tap('#ve summary'); await t.p.waitForFunction(o => document.getElementById('ve').open === o, vo);
+    await t.ctx.close();
+  }
+  {
+    const t = await open();
+    const D = await t.p.evaluate(list => list.map(([e, m]) => __cron.describe(__cron.parse(e, m)).text), [
+      ['30 * * * * *', '6'], ['15 */5 * * * *', '6'], ['15 * 9 * * *', '6'], ['30 * * * * ?', 'q'], ['0-59/20 * * * *', '5'], ['*/20 * * * *', '5'], ['0 0-23/6 * * *', '5'], ['0 0 * * * *', '6']]);
+    eq(D, ['每分鐘的第 30 秒', '每 5 分鐘的第 15 秒', '9 點的每分鐘第 15 秒', '每分鐘的第 30 秒', '每 20 分鐘', '每 20 分鐘', '每天 00:00、06:00、12:00 與 18:00', '每小時整點'], '秒不是 0 時說明帶出秒；0-59/20 與 */20 同樣說法');
+    // 5 → Quartz keeps every day-of-week token valid and equal
+    const conv = await t.p.evaluate(() => {
+      const bad = []; const toks = ['5-7', '0-7', '3-7/2', '1-5', '0-6/2', '6,7', 'MON-FRI', '5L', '5#2', '*/2'];
+      for (const d of toks) { const a = __cron.parse('0 0 * * ' + d, '5'), r = __cron.convertExpr('0 0 * * ' + d, '5', 'q'); let b; try { b = __cron.parse(r, 'q'); } catch (e) { bad.push(d + '→' + r); continue; }
+        if (JSON.stringify(a.dow.set.slice(0, 7)) !== JSON.stringify(b.dow.set.slice(0, 7)) || JSON.stringify(a.dow.sp) !== JSON.stringify(b.dow.sp)) bad.push(d + '→' + r); }
+      return [__cron.convertExpr('0 0 * * 5-7', '5', 'q'), bad];
+    });
+    eq(conv, ['0 0 0 ? * 1,6,7', []], '5 欄 → Quartz：週 5-7 轉成有效且同義的 1,6,7');
+    // lossy switch: warn, undo restores
+    await t.p.tap('#mode-q'); await t.p.waitForFunction(() => document.getElementById('mode-q').getAttribute('aria-pressed') === 'true');
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#ex-6'); await t.p.waitForFunction(() => document.getElementById('expr').value === '0 0 0 * * ? 2027-2028');
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#mode-5');
+    await t.p.waitForSelector('.toast:has-text("年份")');
+    assert((await t.p.textContent('.toast')).includes('2027-2028'), '切到 5 欄會拿掉年份：提示');
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#toastAct');
+    await t.p.waitForFunction(() => document.getElementById('mode-q').getAttribute('aria-pressed') === 'true' && document.getElementById('expr').value === '0 0 0 * * ? 2027-2028');
+    assert(true, '「復原」回到 Quartz 與原式');
+    await t.p.tap('#mode-6'); await t.p.waitForFunction(() => document.getElementById('mode-6').getAttribute('aria-pressed') === 'true');
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#ex-0'); await t.p.waitForFunction(() => document.getElementById('expr').value === '*/10 * * * * *');
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#mode-5');
+    await t.p.waitForSelector('.toast:has-text("秒")');
+    assert((await t.p.textContent('.toast')).includes('*/10'), '切到 5 欄會拿掉秒（*/10）：提示');
+    await t.p.waitForTimeout(900);
+    // saved Quartz expression is not overwritten silently
+    await t.setExpr('0 0 * * 5-7'); await t.p.locator('#expr').blur();
+    await t.p.evaluate(() => localStorage.setItem('cron-reader:v1:last:q', JSON.stringify('0 15 10 ? * 6#3')));
+    await t.p.tap('#mode-q'); await t.p.waitForFunction(() => document.getElementById('mode-q').getAttribute('aria-pressed') === 'true');
+    eq(await t.val(), '0 0 0 ? * 1,6,7', '5-7 轉 Quartz 後仍有效');
+    assert(!(await t.p.$eval('#expr', e => e.classList.contains('err'))), '轉換後沒有錯誤');
+    assert((await t.p.$$eval('#hist .chip.mono', b => b.map(x => x.firstChild.textContent))).includes('0 15 10 ? * 6#3') && (await t.p.textContent('.toast')).includes('最近'), '上次存的 Quartz 式子放進「最近」並提示');
+    // empty / error message has no list number
+    await t.setExpr('0 0 9 * * 1');
+    const before = await t.p.$eval('#runs li.empty', li => getComputedStyle(li, '::before').content);
+    assert(before === 'none' || before === 'normal', '錯誤訊息前沒有列表編號（::before ' + before + '）');
+    assert(await t.p.isVisible('#veErr'), '式子有誤時視覺編輯器說明正在編輯哪一欄');
+    // examples row says it scrolls
+    await t.p.tap('#mode-5'); await t.p.waitForFunction(() => document.getElementById('mode-5').getAttribute('aria-pressed') === 'true');
+    assert(await t.p.isVisible('#exHint') && await t.p.$eval('#examples', e => e.classList.contains('more-r')), '範例列可捲動：右側淡出並有文字提示');
+    await t.p.$eval('#examples', e => { e.scrollLeft = e.scrollWidth; });
+    await t.p.waitForFunction(() => !document.getElementById('examples').classList.contains('more-r') && document.getElementById('examples').classList.contains('more-l'));
+    assert(true, '捲到底後右側不再淡出');
+    // clearing 最近 can be undone
+    await t.p.waitForTimeout(900);
+    const h0 = await t.p.$$eval('#hist .chip.mono', b => b.map(x => x.firstChild.textContent));
+    await t.p.$eval('#histClear', e => e.scrollIntoView({ block: 'center', inline: 'center' }));
+    await t.p.tap('#histClear'); await t.p.waitForFunction(() => document.getElementById('hist').hidden);
+    await t.p.waitForTimeout(900);
+    await t.p.tap('#toastAct'); await t.p.waitForFunction(() => !document.getElementById('hist').hidden);
+    eq(await t.p.$$eval('#hist .chip.mono', b => b.map(x => x.firstChild.textContent)), h0, '清除「最近」後可復原');
+    await t.p.reload(); await t.p.waitForFunction(() => window.__cronReady);
+    eq(await t.p.$$eval('#hist .chip.mono', b => b.map(x => x.firstChild.textContent)), h0, '復原的「最近」重新整理後還在');
+    await t.ctx.close();
+  }
+
   // ---------- 6. small / landscape screens ----------
   for (const [w, h] of [[375, 500], [844, 390], [320, 568]]) {
     const t = await open({ w, h });
