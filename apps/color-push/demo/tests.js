@@ -196,7 +196,7 @@ const SEEN = { basic: 1, color: 1, split: 1, ice: 1, power: 1, glue: 1, paint: 1
     eq(await page.evaluate(() => [JSON.parse(localStorage.getItem('colorpush.progress')), localStorage.getItem('colorpush.stars')]), [{ 1: 0 }, null]);
     await waitFor(page, () => !document.getElementById('win').classList.contains('hidden'));
     ok(/不計星星/.test(await page.textContent('#wMsg')), 'message says no stars');
-    await waitFor(page, () => window.__game.state().cardReady); // the card ignores taps for its first 450 ms
+    await waitFor(page, () => window.__game.state().cardReady); // the card ignores taps for its first 700 ms
     await tap(cdp, page, '#wRetry'); await waitFor(page, () => window.__game.state().status === 'play' && window.__game.state().pushes === 0);
     // the demo kept the player's own board on the undo list
     await tap(cdp, page, '#bPause'); await tap(cdp, page, '#pResume');
@@ -271,6 +271,205 @@ const SEEN = { basic: 1, color: 1, split: 1, ice: 1, power: 1, glue: 1, paint: 1
         return { b, s: B.s, hud: hit(b, hud), bot: [...document.querySelectorAll('#bottom .pill')].some(p => hit(b, p.getBoundingClientRect())), fits: b.l >= 0 && b.t >= 0 && b.r <= innerWidth && b.b <= innerHeight }; });
       ok(!r.hud && !r.bot && r.fits && r.s >= 18, w + 'x' + h + ' ' + JSON.stringify(r));
     }
+    await ctx.close();
+  });
+
+  // ---- 2026-11-15 release re-review R1 fixes ----
+  const center = (page, sel) => page.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, l: r.left, t: r.top, r: r.right, b: r.bottom }; }, sel);
+  const count = page => page.evaluate(() => { window.__n = {}; for (const id of ['bMute', 'bUndo', 'bRestart', 'bHint', 'bPause', 'pResume']) { const el = document.getElementById(id), f = el.onclick; window.__n[id] = 0; el.onclick = function (e) { window.__n[id]++; return f.call(this, e); }; } });
+  const N = page => page.evaluate(() => Object.assign({}, window.__n));
+  const muted = page => page.evaluate(() => localStorage.getItem('colorpush.mute'));
+  const tp = (x, y, id) => ({ x, y, id, radiusX: 8, radiusY: 8 });
+  // a plain tap at a point (finger id), released where it went down
+  async function tapAt(cdp, x, y, id = 1, hold = 40, others = []) { await touch(cdp, 'touchStart', [...others, tp(x, y, id)]); await sleep(hold); await touch(cdp, 'touchEnd', [tp(x, y, id)]); }
+  async function pushTwice(cdp, page) {
+    // two pushes on the way to a win from the board as it stands
+    const p0 = (await st(page)).pushes;
+    const plan = await page.evaluate(() => { const n = window.__game.state().level, L = parseLevel(LEVELS[n - 1]), S = window.__game.snap(); const r = solve(L, { S }); return expandMoves(L, S, r.pushes).moves; }); let k = 0;
+    for (const mv of plan) { await move(cdp, page, mv.d); if (mv.push && ++k === 2) break; }
+    eq((await st(page)).pushes, p0 + 2, 'two pushes');
+  }
+  // the page keeps its tap time private: wait out the 800 ms follow-up-click window with a plain wait on a page clock
+  const quiet = page => page.evaluate(() => new Promise(r => setTimeout(r, 850)));
+
+  await t('R1#1/#3: a finger resting on the board, the HUD card or the margin never blocks a button tap (each tap acts once)', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page); await count(page);
+    const m = await center(page, '#bMute'), hm = await center(page, '.hmid'), B = await page.evaluate(() => window.__game.board());
+    for (const rp of [[B.x + B.w * B.s / 2, B.y + B.h * B.s / 2], [hm.x, hm.y], [30, 700]]) {
+      const a = await N(page), m0 = await muted(page), p0 = (await st(page)).p;
+      await touch(cdp, 'touchStart', [tp(rp[0], rp[1], 1)]); await sleep(80);
+      for (let i = 0; i < 4; i++) { await tapAt(cdp, m.x, m.y, 2, 50, [tp(rp[0], rp[1], 1)]); await sleep(120); }
+      await touch(cdp, 'touchEnd', [tp(rp[0], rp[1], 1)]); await sleep(150); await idle(page);
+      const b = await N(page);
+      eq(b.bMute - a.bMute, 4, 'four 音效 taps with a finger resting at ' + rp.map(Math.round));
+      eq(await muted(page), m0, 'four toggles end where they began');
+      eq((await st(page)).p, p0, 'the resting finger\'s lift does not walk');
+    }
+    // 悔棋 with a finger resting on the board
+    await pushTwice(cdp, page); const u = await center(page, '#bUndo');
+    await touch(cdp, 'touchStart', [tp(B.x + 5, B.y + 5, 1)]); await sleep(60);
+    await tapAt(cdp, u.x, u.y, 2, 50, [tp(B.x + 5, B.y + 5, 1)]); await sleep(100);
+    await touch(cdp, 'touchEnd', [tp(B.x + 5, B.y + 5, 1)]);
+    await waitFor(page, () => window.__game.state().pushes === 1);
+    await ctx.close();
+  });
+
+  await t('R1#2: a second finger on the board takes over (swipes and floor taps work; the first finger\'s lift does nothing)', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page);
+    const B = await page.evaluate(() => window.__game.board()), rest = tp(B.x + 4, B.y + B.h * B.s - 4, 1);
+    // swipe right with finger 2 from the pusher (cell 12 -> 13 is open floor)
+    eq(await page.evaluate(() => window.__game.stepInfo(1)), 'walk');
+    const s0 = await st(page), c = await cellPt(page, s0.p);
+    await touch(cdp, 'touchStart', [rest]); await sleep(80);
+    await touch(cdp, 'touchStart', [rest, tp(c.x, c.y, 2)]);
+    for (let i = 1; i <= 4; i++) { await sleep(16); await touch(cdp, 'touchMove', [rest, tp(c.x + 15 * i, c.y, 2)]); }
+    await touch(cdp, 'touchEnd', [tp(c.x + 60, c.y, 2)]); await idle(page);
+    eq((await st(page)).steps - s0.steps, 1, 'one step from the second finger');
+    // floor tap with finger 2 (finger 1 still resting)
+    const tgt = 24, q = await cellPt(page, tgt);
+    await tapAt(cdp, q.x, q.y, 2, 40, [rest]);
+    await waitFor(page, c => window.__game.state().p === c && !window.__game.state().animating, tgt);
+    const s1 = await st(page);
+    await touch(cdp, 'touchEnd', [rest]); await sleep(250); await idle(page);
+    eq([(await st(page)).p, (await st(page)).steps], [s1.p, s1.steps], 'the resting finger lifts without a move');
+    await ctx.close();
+  });
+
+  await t('R1#3: tap then a detail-0 click (on the button, its edge and elementFromPoint) acts once; a lone detail-0 click acts once; Enter still works', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page); await count(page);
+    const d0 = (page, how, sel) => page.evaluate(([how, sel]) => { const el = document.querySelector(sel), r = el.getBoundingClientRect();
+      const tg = how === 'el' ? el : how === 'edge' ? (document.elementFromPoint(r.left + 1, r.top + 1) || el) : (document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) || document.body);
+      tg.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })); }, [how, sel]);
+    await pushTwice(cdp, page); await quiet(page);
+    for (const how of ['el', 'edge', 'pt']) {
+      const p0 = (await st(page)).pushes; const u = await center(page, '#bUndo');
+      await tapAt(cdp, u.x, u.y); await sleep(30); await d0(page, how, '#bUndo'); await sleep(150); await idle(page);
+      eq((await st(page)).pushes, Math.max(0, p0 - 1), '悔棋 + detail-0 (' + how + ') undoes one push');
+      if (p0 <= 1) { await quiet(page); await pushTwice(cdp, page); }
+      await quiet(page);
+    }
+    // 音效: tap + detail-0 = one toggle; then a lone detail-0 = one toggle
+    let m0 = await muted(page); const m = await center(page, '#bMute');
+    await tapAt(cdp, m.x, m.y); await sleep(30); await d0(page, 'el', '#bMute'); await d0(page, 'pt', '#bMute'); await sleep(100);
+    ok((await muted(page)) !== m0, 'one toggle after tap + two detail-0 clicks');
+    await quiet(page); m0 = await muted(page);
+    await d0(page, 'el', '#bMute'); await sleep(50);
+    ok((await muted(page)) !== m0, 'a lone detail-0 click acts');
+    // 選單: tap + detail-0 on the new screen under the finger (繼續) -> still paused, pause handler once
+    await quiet(page); let a = await N(page); const pz = await center(page, '#bPause');
+    await tapAt(cdp, pz.x, pz.y); await sleep(30); await d0(page, 'el', '#bPause'); await d0(page, 'pt', '#bPause'); await d0(page, 'el', '#pResume'); await sleep(100);
+    let b = await N(page);
+    eq([b.bPause - a.bPause, b.pResume - a.pResume, (await st(page)).status], [1, 0, 'paused'], '選單 once, nothing on the new screen');
+    // 繼續: tap + detail-0 -> resume once
+    await quiet(page); a = await N(page);
+    const r = await center(page, '#pResume'); await tapAt(cdp, r.x, r.y); await sleep(30); await d0(page, 'el', '#pResume'); await sleep(100);
+    b = await N(page); eq([b.pResume - a.pResume, (await st(page)).status], [1, 'play']);
+    // keyboard: Enter on a focused button right after a tap still acts (a keyboard click after the tap)
+    m0 = await muted(page); await tapAt(cdp, m.x, m.y); await sleep(30);
+    const m1 = await muted(page); ok(m1 !== m0, 'tap toggled');
+    await page.evaluate(() => document.getElementById('bMute').focus()); await page.keyboard.press('Enter'); await sleep(80);
+    ok((await muted(page)) !== m1, 'Enter after the tap toggles again');
+    await ctx.close();
+  });
+
+  await t('R1#4: taps 1-8 px outside 悔棋/重來/提示/選單/音效 (above, and to the side) reach the button like a native one', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page); await count(page);
+    await pushTwice(cdp, page);
+    for (const [id, sides] of [['bUndo', 'TL'], ['bRestart', 'T'], ['bHint', 'TR'], ['bPause', 'BL'], ['bMute', 'BR']]) {
+      for (const side of sides) for (const d of [2, 7, 8]) { // tap-layer taps never wait out the follow-up-click window
+        if (id === 'bUndo' && (await st(page)).pushes === 0) await pushTwice(cdp, page);
+        const c = await center(page, '#' + id), x = side === 'L' ? c.l - d : side === 'R' ? c.r + d : c.x, y = side === 'T' ? c.t - d : side === 'B' ? c.b + d : c.y;
+        const a = await N(page); await tapAt(cdp, x, y); await sleep(60);
+        const b = await N(page); eq(b[id] - a[id], 1, id + ' ' + side + d);
+        if (id === 'bPause') { await tap(cdp, page, '#pResume'); }
+        await idle(page);
+      }
+    }
+    await ctx.close();
+  });
+
+  await t('R1#5: a button tap right after a swipe settles is not dropped', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page); await count(page);
+    const m = await center(page, '#bMute'), r = await center(page, '#bRestart');
+    for (let i = 0; i < 6; i++) {
+      const d = (await page.evaluate(() => window.__game.stepInfo(1))) === 'walk' ? 1 : 3;
+      await swipe(cdp, page, d); await idle(page);
+      const a = await N(page), tgt = i % 2 ? r : m;
+      await tapAt(cdp, tgt.x, tgt.y, 1, 30); await sleep(60);
+      const b = await N(page); eq(b[i % 2 ? 'bRestart' : 'bMute'] - a[i % 2 ? 'bRestart' : 'bMute'], 1, 'tap ' + i + ' right after a swipe');
+    }
+    await ctx.close();
+  });
+
+  await t('R1#6: 最少 on levels 71-99 is no more than the shortest solutions the review found', () => {
+    const found = { 71: 20, 72: 19, 73: 20, 74: 20, 75: 19, 78: 21, 79: 21, 82: 21, 84: 20, 86: 21, 90: 27, 97: 21, 98: 25, 99: 22 };
+    for (const n in found) ok(LEVELS[n - 1].m <= found[n], 'level ' + n + ' m=' + LEVELS[n - 1].m + ' > ' + found[n]);
+    // a level whose minimum is not proven says 參考 instead of 最少
+    ok(/參考/.test(html) && /L\.u/.test(html), 'unproven levels are labelled');
+    // recomputed with an exhaustive bounded A* (no solution with fewer pushes exists): proven minimums now
+    for (const n of [71, 72, 73, 74, 75, 78, 79, 82]) ok(!LEVELS[n - 1].u, 'level ' + n + ' proven');
+    eq([71, 72, 73, 74, 75, 78, 79, 82].map(n => LEVELS[n - 1].m), [20, 19, 20, 20, 19, 21, 21, 21]);
+  });
+
+  await t('R1#7: pushing a block into a dead corner shows a gentle notice', async () => {
+    const { ctx, page, cdp } = await open();
+    await startFromTitle(cdp, page); await idle(page); await sleep(2600); // let the level-start note fade
+    eq(await page.evaluate(() => window.__game.stepInfo(0)), 'push');
+    await move(cdp, page, 0); // level 1: pushing up from the start jams the block in a dead corner
+    await waitFor(page, () => { const t = document.getElementById('toast'); return !t.classList.contains('hidden') && /卡住/.test(t.textContent) && /悔棋/.test(t.textContent); });
+    await ctx.close();
+  });
+
+  await t('R1#8: the level-start note sits off the board (landscape) and never breaks 推力 across lines (390 wide)', async () => {
+    for (const [w, h, n] of [[844, 390, 100], [390, 844, 45], [360, 640, 100], [390, 844, 1]]) {
+      const { ctx, page, cdp } = await open({ unlockAll: true }, w, h);
+      await tap(cdp, page, '#tSelect'); await tap(cdp, page, '.lt[data-n="' + n + '"]');
+      await waitFor(page, () => window.__game.state().status === 'play');
+      await waitFor(page, () => !document.getElementById('toast').classList.contains('hidden'));
+      const r = await page.evaluate(() => { const B = window.__game.board(), t = document.getElementById('toast'), tr = t.getBoundingClientRect();
+        const segs = [...t.querySelectorAll('.tseg')].map(s => { const rs = s.getClientRects(); return { text: s.textContent, lines: rs.length }; });
+        const b = { l: B.x, t: B.y, r: B.x + B.w * B.s, b: B.y + B.h * B.s };
+        const over = tr.left < b.r && tr.right > b.l && tr.top < b.b && tr.bottom > b.t;
+        const btns = [...document.querySelectorAll('#hud button, #bottom button')].some(e => { const q = e.getBoundingClientRect(); return tr.left < q.right && tr.right > q.left && tr.top < q.bottom && tr.bottom > q.top; });
+        return { over, btns, segs, inView: tr.left >= 0 && tr.right <= innerWidth && tr.top >= 0 && tr.bottom <= innerHeight }; });
+      ok(!r.over && !r.btns && r.inView, w + 'x' + h + ' L' + n + ' ' + JSON.stringify(r));
+      ok(r.segs.length >= 2 && r.segs.every(s => s.lines === 1), 'one line per part ' + JSON.stringify(r.segs));
+      if (n !== 1) ok(r.segs.some(s => /推力/.test(s.text)), '推力 shown');
+      await ctx.close();
+    }
+  });
+
+  await t('R1#9: a floor tap held 0.6 s walks; a tap near a small cell snaps to the walkable cell nearest the finger', async () => {
+    const { ctx, page, cdp } = await open({ unlockAll: true }, 320, 568);
+    await tap(cdp, page, '#tSelect'); await tap(cdp, page, '.lt[data-n="1"]'); await idle(page);
+    const q = await cellPt(page, 24);
+    await tapAt(cdp, q.x, q.y, 1, 600);
+    await waitFor(page, () => { const s = window.__game.state(); return s.p === 24 && !s.animating; }).catch(e => { throw new Error('held tap did not walk'); });
+    await quiet(page);
+    await tap(cdp, page, '#bPause'); await tap(cdp, page, '#pSelect'); await tap(cdp, page, '.lt[data-n="100"]');
+    if (await visible(page, '#intro')) await tap(cdp, page, '#iOk');
+    await idle(page);
+    // pick a walkable cell next to a wall; tap inside the wall, 0.25 cell from the shared edge
+    const pick = await page.evaluate(() => { const L = parseLevel(LEVELS[99]), S = window.__game.snap(), B = window.__game.board();
+      const occ = new Int16Array(L.N).fill(-1); S.pos.forEach((c, i) => occ[c] = i);
+      const cells = reach(L, S, occ).slice();
+      for (const c of cells) { if (c === S.p) continue; const x = c % L.w, y = (c / L.w) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= L.w || ny >= L.h) continue; const a = ny * L.w + nx;
+          if (L.ter[a] !== 1) continue; // a wall cell
+          // the wall must not be closer to another walkable cell than to c
+          const fx = x + 0.5 + dx * 0.75, fy = y + 0.5 + dy * 0.75;
+          const near = cells.filter(o => { const ox = o % L.w + 0.5, oy = ((o / L.w) | 0) + 0.5; return (ox - fx) ** 2 + (oy - fy) ** 2 < 0.81; });
+          if (near.length === 1) return { c, px: B.x + fx * B.s, py: B.y + fy * B.s, s: B.s }; } }
+      return null; });
+    ok(pick, 'found a wall cell beside a walkable one');
+    ok(pick.s < 44, 'small cells here: ' + pick.s);
+    await tapAt(cdp, pick.px, pick.py);
+    await waitFor(page, c => { const s = window.__game.state(); return s.p === c && !s.animating; }, pick.c, 8000).catch(async () => { throw new Error('no snap: ' + JSON.stringify([pick, await st(page)])); });
     await ctx.close();
   });
 
