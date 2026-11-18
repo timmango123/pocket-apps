@@ -21,6 +21,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#e9dcc6;color:var(--in
 @media (prefers-color-scheme: dark){ html,body{background:#0b1024} }
 #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
 button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;padding:0}
+/* a finger that drifts a little while tapping must stay a tap (released within 16 px of the button still counts), so
+   in-game controls never turn into a pan; menu buttons still let a short screen's menu scroll vertically */
+.ibtn,.tb,.pad button,.sw{touch-action:none}.btn{touch-action:pan-y}
 .hidden{display:none !important}
 .hud{position:fixed;left:0;right:0;top:0;padding:calc(var(--sat) + 8px) calc(var(--sar) + 10px) 6px calc(var(--sal) + 10px);display:flex;align-items:center;gap:8px;pointer-events:none;z-index:5}
 .hud > *{pointer-events:auto}
@@ -43,7 +46,8 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;background:none;paddin
 .tb.on{background:var(--teal);color:#fff}.tb.on svg{stroke:#fff}
 .tb .bdg{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:10px;background:var(--gold);color:#3a2a10;font-size:11px;font-weight:800;display:grid;place-items:center;padding:0 4px}
 .tb.swap{background:linear-gradient(180deg,#f3d27a,#d9ae3c);color:#3a2a10}.tb.swap svg{stroke:#3a2a10}
-.zoom{position:fixed;right:calc(var(--sar) + 10px);top:calc(var(--sat) + 60px);z-index:5}
+.zoom{position:fixed;right:calc(var(--sar) + 10px);top:calc(var(--sat) + 60px);z-index:5;display:flex;flex-direction:column;gap:0;width:48px;height:48px}
+.zoom svg{width:18px;height:18px}.zoom span{font-size:11px;font-weight:800;line-height:1;color:var(--ink)}.zoom.on span{color:#fff}
 .zoom.on{background:var(--teal)}.zoom.on svg{stroke:#fff}
 .pad{position:fixed;right:calc(var(--sar) + 14px);bottom:calc(var(--sab) + 80px);width:148px;height:148px;z-index:5}
 .pad button{position:absolute;width:56px;height:56px;border-radius:16px;background:var(--card);box-shadow:0 4px 12px #3a2a1030;display:grid;place-items:center}
@@ -163,7 +167,7 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
   <button class="ibtn" id="bMute" aria-label="音效"><svg viewBox="0 0 24 24" id="muteIcon"></svg></button>
 </div>
 
-<button class="ibtn zoom hidden" id="bZoom" aria-label="放大跟隨" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg></button>
+<button class="ibtn zoom hidden" id="bZoom" aria-label="鏡頭：全圖／跟隨石碑" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M10.5 7.5v6M7.5 10.5h6"/></svg><span id="zLbl">全圖</span></button>
 <div class="bottom hidden" id="bottom">
   <button class="tb" id="bUndo" aria-label="悔棋"><svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>悔棋</button>
   <button class="tb" id="bHint" aria-label="提示"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/></svg>提示<span class="bdg" id="hintN">3</span></button>
@@ -255,15 +259,18 @@ canvas, img, svg { -webkit-user-drag: none; -webkit-touch-callout: none; }
 
 <script>
 /*CORE-START*/
-// Tiles: 0 void, 1 floor, 2 fragile, 3 goal, 4 bridge, 5 light switch, 6 heavy switch, 7 split pad
+// Tiles: 0 void, 1 floor, 2 fragile, 3 goal, 4 bridge, 5 light switch, 6 heavy switch, 7 split pad, 8 portal, 9 ice, 10 spring
 // Level def: {r:"rows/joined", sw:[[group,mode],...] (row-major order of switch cells; mode 0 toggle,1 on,2 off),
-//   br:[group,...] (row-major order of bridge cells), m:initial bridge mask, sp:[[cellA,cellB],...] (order of split pads)}
-// Row chars: '.' void, 'o' floor, 'c' fragile, 'G' goal, 'S' start, 'B' bridge, 'w' light switch, 'X' heavy switch, 'T' split pad
+//   br:[group,...] (row-major order of bridge cells), m:initial bridge mask, sp:[[cellA,cellB],...] (order of split pads),
+//   pp:[cell,...] (row-major order of portals: the partner portal's cell)}
+// Row chars: '.' void, 'o' floor, 'c' fragile, 'G' goal, 'S' start, 'B' bridge, 'w' light switch, 'X' heavy switch, 'T' split pad,
+//   'P' portal (standing slab is sent to the partner portal, standing), 'I' ice (a lying slab with both halves on ice keeps
+//   sliding the way it rolled), 'J' spring stone (a slab that stands up on it is thrown 2 more cells the same way, still standing)
 var DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0]; // 0 N, 1 E, 2 S, 3 W
 function parseLevel(def) {
   var rows = def.r.split('/'), h = rows.length, w = rows[0].length, N = w * h;
-  var kind = new Uint8Array(N), grp = new Int8Array(N).fill(-1), mode = new Int8Array(N), spA = new Int16Array(N).fill(-1), spB = new Int16Array(N).fill(-1);
-  var si = 0, bi = 0, pi = 0, start = -1, goal = -1, nG = 0;
+  var kind = new Uint8Array(N), grp = new Int8Array(N).fill(-1), mode = new Int8Array(N), spA = new Int16Array(N).fill(-1), spB = new Int16Array(N).fill(-1), pp = new Int16Array(N).fill(-1);
+  var si = 0, bi = 0, pi = 0, qi = 0, start = -1, goal = -1, nG = 0;
   for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
     var ch = rows[y][x], c = y * w + x;
     switch (ch) {
@@ -274,10 +281,13 @@ function parseLevel(def) {
       case 'B': kind[c] = 4; grp[c] = def.br[bi++]; break;
       case 'w': case 'X': kind[c] = ch === 'w' ? 5 : 6; grp[c] = def.sw[si][0]; mode[c] = def.sw[si][1]; si++; break;
       case 'T': kind[c] = 7; spA[c] = def.sp[pi][0]; spB[c] = def.sp[pi][1]; pi++; break;
+      case 'P': kind[c] = 8; pp[c] = def.pp[qi++]; break;
+      case 'I': kind[c] = 9; break;
+      case 'J': kind[c] = 10; break;
     }
     if (grp[c] >= nG) nG = grp[c] + 1;
   }
-  return { w: w, h: h, N: N, kind: kind, grp: grp, mode: mode, spA: spA, spB: spB, start: start, goal: goal, m0: def.m || 0, nG: nG, nSw: si, nSp: pi, def: def };
+  return { w: w, h: h, N: N, kind: kind, grp: grp, mode: mode, spA: spA, spB: spB, pp: pp, start: start, goal: goal, m0: def.m || 0, nG: nG, nSw: si, nSp: pi, nPt: qi, def: def };
 }
 // state: {s:1 whole,p,o,m} or {s:0 split,a,b,m} (a<b)
 function initState(L) { return { s: 1, p: L.start, o: 0, a: -1, b: -1, m: L.m0 }; }
@@ -312,6 +322,22 @@ function doMove(L, S, mv) {
     cells = blockCells(L, R.p, no);
     for (i = 0; i < cells.length; i++) if (!solidAt(L, cells[i], m)) { ev.fail = 'fall'; return { S: R, ev: ev }; }
     if (no === 0 && L.kind[R.p] === 2) { ev.fail = 'break'; return { S: R, ev: ev }; }
+    if (no === 0 && L.kind[R.p] === 10) { // spring: thrown two more cells, landing standing
+      var jx = nx + 2 * DX[d], jy = ny + 2 * DY[d];
+      ev.jump = R.p; R.p = jy * w + jx; cells = [R.p];
+      if (jx < 0 || jy < 0 || jx >= w || jy >= h) { ev.fail = 'fall'; R.off = true; R.x = jx; R.y = jy; return { S: R, ev: ev }; }
+      if (!solidAt(L, R.p, m)) { ev.fail = 'fall'; return { S: R, ev: ev }; }
+      if (L.kind[R.p] === 2) { ev.fail = 'break'; return { S: R, ev: ev }; }
+    } else if (no !== 0 && L.kind[cells[0]] === 9 && L.kind[cells[1]] === 9) { // ice: a lying slab slides on
+      ev.slideFrom = R.p; ev.slide = 0;
+      while (L.kind[cells[0]] === 9 && L.kind[cells[1]] === 9) {
+        var sx = R.p % w + DX[d], sy = ((R.p / w) | 0) + DY[d];
+        ev.slide++; ev.slideLast = R.p;
+        if (sx < 0 || sy < 0 || sx + (no === 1 ? 1 : 0) >= w || sy + (no === 2 ? 1 : 0) >= h) { ev.fail = 'fall'; R.off = true; R.x = sx; R.y = sy; return { S: R, ev: ev }; }
+        R.p = sy * w + sx; cells = blockCells(L, R.p, no);
+        for (i = 0; i < cells.length; i++) if (!solidAt(L, cells[i], m)) { ev.fail = 'fall'; return { S: R, ev: ev }; }
+      }
+    }
     R.m = fire(L, cells, no === 0, m, ev);
     for (i = 0; i < cells.length; i++) if (!solidAt(L, cells[i], R.m)) { ev.fail = 'fall'; return { S: R, ev: ev }; }
     if (no === 0 && R.p === L.goal) { ev.win = true; return { S: R, ev: ev }; }
@@ -322,6 +348,7 @@ function doMove(L, S, mv) {
       if (!solidAt(L, a, R.m) || !solidAt(L, b, R.m)) { ev.fail = 'fall'; return { S: R, ev: ev }; }
       return { S: mergeCheck(L, R, ev), ev: ev };
     }
+    if (no === 0 && L.kind[R.p] === 8) { ev.port = R.p; R.p = L.pp[R.p]; }
     return { S: R, ev: ev };
   }
   var which = mv >> 2, me = which ? S.b : S.a, other = which ? S.a : S.b;
@@ -389,106 +416,106 @@ function solve(L, S0, opts) {
 }
 /*CORE-END*/
 var LEVELS = [
-{"r":"....ooo../..ooo..../o..o.o.../.oo..o.o./.Gooooooo/oooooS.../oo.ooo.oo/..ooo..o.","sw":[],"br":[],"m":0,"sp":[],"o":8,"d":4,"t":0},
-{"r":"..o.oooo/.o..o.oo/o...oo../o.oo.ooo/oooo...o/o.Gooo../..ooS.../o..oo...","sw":[],"br":[],"m":0,"sp":[],"o":9,"d":4.5,"t":0},
-{"r":"....o.o../o..ooooSo/o.oooo.o./....oo.../oooo.o.oo/.o.o.Go.o/o...o.o.o/.....oooo","sw":[],"br":[],"m":0,"sp":[],"o":10,"d":5,"t":0},
-{"r":"..o..oo./..o..o../...Soo.o/o.oo.ooo/o.Gooo../o..ooo.o/oooooo../.o..o.oo","sw":[],"br":[],"m":0,"sp":[],"o":11,"d":5.5,"t":0},
-{"r":".o.oo..../.....oo../...ooo.So/..o..ooo./oGoooooo./o.oooo.../...ooo.../oo..o.ooo","sw":[],"br":[],"m":0,"sp":[],"o":12,"d":6,"t":0},
-{"r":"..o.o.../o...o.oo/..Sooo../.....oo./..ooooo./.ooooo../.oooo.../Goo.o...","sw":[],"br":[],"m":0,"sp":[],"o":13,"d":6.5,"t":0},
-{"r":"...o.Gooo/....oo..o/oo...oo.o/..o.oooS./oo..oooo./oooo..ooo/o.o.oo.../..o...o.o","sw":[],"br":[],"m":0,"sp":[],"o":14,"d":7,"t":0},
-{"r":".oo...o./..o..ooo/oo..o.o./oooo.o../o..oow.o/...BSGo./.ooooo.o/oo.oo...","sw":[[0,0]],"br":[0],"m":1,"sp":[],"o":15,"d":10.5,"t":0},
-{"r":".oBoBSoo./ooo.ooo.o/.Goo.ooo./.ooo.ooo./.oooo.woo/..oo.o.../o.B...o../oooo...o.","sw":[[0,0]],"br":[0,0,0],"m":0,"sp":[],"o":16,"d":11,"t":0},
-{"r":".o.ooo../.o.ow.o./o.ooooSo/o...o.../oo..o.oo/ooooooo./.ooo..../GooooB..","sw":[[0,0]],"br":[0],"m":0,"sp":[],"o":17,"d":11.5,"t":0},
-{"r":"o......../oB.....o./o.o..oo.o/o..oooo../ooooowoB./o.GoS.o.o/o.oo..ooo/oB.......","sw":[[0,0]],"br":[0,0,0],"m":1,"sp":[],"o":18,"d":12,"t":0},
-{"r":"ooB...../oBoo.oo./o.ooo.oo/Go.oo.oo/o..ooo../.SBBwoo./....ooo.","sw":[[0,0]],"br":[0,0,0,0],"m":1,"sp":[],"o":19,"d":12.5,"t":0},
-{"r":"o..wooo.o/.o.o.oB.o/.ooG.oSoo/oo.o.ooo./..ooo..o./Booooo..o/.ooooo.oo/.oooo.oo.","sw":[[0,0]],"br":[0,0],"m":1,"sp":[],"o":20,"d":13,"t":0},
-{"r":".oo.o.o../.oooo.o.B/oo.ooooo./..o.o.ooo/.Boo.ooBo/.woo.o.../.SoooG.oo/...o.oooo","sw":[[0,0]],"br":[0,0,0],"m":0,"sp":[],"o":21,"d":13.5,"t":0},
-{"r":"..o..oco.o/oB....oo.o/.o..oSooo./.oo..ooc../o.Goooo.../..oBo.ooo./.o.ooo.ooo/.oooX.o..o/o.........","sw":[[0,0]],"br":[0,0],"m":0,"sp":[],"o":22,"d":14,"t":0},
-{"r":"oocoo..../oowoGooo./oo.o.S.oo/...ooo..o/..o.oooo./ooooooo../oo..ooo../oo..o..B./.o..ooo..","sw":[[0,0]],"br":[0],"m":0,"sp":[],"o":23,"d":14.5,"t":0},
-{"r":"oo...ooBo./ooo..oooS./.GocBoo.oo/.o.ocoo..o/.B.oo.X.../o.oooBoo../.oo.....oo/.o...oo.../....oo....","sw":[[0,0]],"br":[0,0,0,0],"m":0,"sp":[],"o":24,"d":15,"t":0},
-{"r":".oo.ooo./owooo.../c.oooo../..c.o.../oo.ooo.o/oooooo../.ooo.o../.oooSB../..o.ooG.","sw":[[0,0]],"br":[0],"m":0,"sp":[],"o":25,"d":15.5,"t":0},
-{"r":"o.oo..Boo./.ooo..oo../.o...oSo../oo.ooow.o./...BoooBo./ooooo..o../...Booo..o/o.oooG..o./.oco..oco.","sw":[[0,0]],"br":[0,0,0,0],"m":0,"sp":[],"o":26,"d":16,"t":0},
-{"r":"oooooo..o/oGoBo..o./oo.o.oB.o/o.oBBoo../..ooXooB./....BoooS/...oBo.X./.....ooB./.c.....oo","sw":[[1,2],[0,0]],"br":[0,0,0,1,1,1,1,0],"m":2,"sp":[],"o":27,"d":21.72,"t":0.111},
-{"r":"ooo...o.oo/Bo...Xoco./oo.ooooBo./B.oo.coS../..oo..Xoo./...ooo..oo/...ooGo.o./....oBo.../..B.cBooo.","sw":[[0,1],[1,2]],"br":[0,1,1,1,0,0],"m":2,"sp":[],"o":28,"d":22.31,"t":0.115},
-{"r":"...oo.wXo/..o..ooBo/o..SooBoc/.B..ooo.o/....o..../.oGBo.oo./.ooco...B/oooo.o.../...o.....","sw":[[1,2],[0,0]],"br":[1,1,1,0,1],"m":2,"sp":[],"o":29,"d":23.14,"t":0.132},
-{"r":"..ooo.Xo../ooooo.oB.o/..oo.BoB.o/.c..ocowoo/.o.oooo.o./..ooo.Soo./o..Bo..o.o/.oocoG...o/.oo....o.o","sw":[[1,2],[0,1]],"br":[0,1,1,1],"m":2,"sp":[],"o":30,"d":23.95,"t":0.148},
-{"r":"woooo.ooo/ocooGocoo/oo.B.oo.o/B.oooB..o/oo..ooo.w/ooo.ooB../oo.oooo.o/.ooBSoBBo/o...o..o.","sw":[[1,2],[0,0]],"br":[0,1,1,1,0,0,0],"m":2,"sp":[],"o":31,"d":24.75,"t":0.162},
-{"r":".oooooooSo/o.ocooowB./o...c...oo/.o.ooBooBB/.o.o..ooXo/...cco..oo/oo.oBo.oo./o.Booo.oo./GooB...o.o","sw":[[1,2],[0,0]],"br":[1,0,1,0,1,0,0],"m":2,"sp":[],"o":32,"d":25.71,"t":0.186},
-{"r":"...wooXoo/o..coSoo./.oo.oBo.c/o.ooo.o../o.o.o.o../ocoooc.oo/oBGo.oooB/.ooooo.oo/.o.oBooo.","sw":[[1,2],[0,1]],"br":[1,0,1,1],"m":2,"sp":[],"o":33,"d":26.33,"t":0.191},
-{"r":"oo..o.oo.../oo..o.ocooo/.oo..BSo.../....cooc.../...oooB.o../...Bo..ooo./...wo..oo../B.Goowoo.../oo.c.o.oo.o/oBooooo.oo.","sw":[[0,0],[1,2]],"br":[0,1,1,1,1],"m":2,"sp":[],"o":34,"d":27.19,"t":0.21},
-{"r":".....o.ooo/.....ooooG/oo...oo.oB/.o...o.ooo/B.o.ooo.oc/o.o.oBo.X./..oooo.ooo/....ooB.ow/...o.ooSBo/B.oo...ooo","sw":[[0,1],[1,2]],"br":[0,1,1,1,1,0],"m":2,"sp":[],"o":35,"d":28.07,"t":0.229},
-{"r":".oooooB.o../..c..o.oBB./...ocS.oow./..wooooooco/..oo..ooo.o/...coo.o.oo/.o.ooo..oBo/o..ooo...oo/GoBo.B...../ooo..o...o.","sw":[[0,0],[1,2]],"br":[0,0,1,0,0,1],"m":3,"sp":[],"o":36,"d":28.94,"t":0.247},
-{"r":"ooooSooooB/..cooXoc.B/wooo.ooB../oo..ooooo./..o.o..o../.oooo...o./oooooo.oo./oBoo.ooooo/...o.oo.../oooG.oo...","sw":[[1,2],[0,1]],"br":[0,0,1,0],"m":2,"sp":[],"o":37,"d":29.58,"t":0.254},
-{"r":"..o.o.o.oo./...ooooBo../...o.BSooo./.oo.ooooBo./....oXo.ooo/..ooo...o../o..Bcooo..o/o.oBoGo..../.....ooo.../.ooo..cw..o","sw":[[1,2],[0,1]],"br":[1,0,0,1,0],"m":2,"sp":[],"o":38,"d":30.33,"t":0.266},
-{"r":".oBo.coo.o/.oBooooooG/.o.o.oX.oo/.ooooB..../.oo.owo.../.wo.oooc.o/oo.ocoBBoo/......BS.o/ooo......./ooo...oo..","sw":[[0,1],[1,1],[2,2]],"br":[0,1,1,2,2,1],"m":4,"sp":[],"o":39,"d":33.81,"t":0.265},
-{"r":".w..o.ooBo./oco..o.oooc/.ooo.o..owB/...oooooBco/oo.o...ooo./.oBcoB..o.o/o.oBoo...oB/.o.ooSoB..o/GoBo.o....o/o.Bw......o","sw":[[2,1],[0,1],[1,2]],"br":[1,1,2,1,1,2,0,2,0,0],"m":6,"sp":[],"o":40,"d":34.62,"t":0.281},
-{"r":".....coBXw/.....oooo./o.o..ooc../oo..BoS.o./o...o...B./..oBo.o.cw/.o.BocoooG/o.ooooB..o/oooo...oo./Boooo.ooco","sw":[[0,0],[1,2],[2,0]],"br":[2,1,2,0,1,2,2],"m":6,"sp":[],"o":41,"d":35.06,"t":0.278},
-{"r":"ooooo.oc.o./...o...oB.o/Bo...oooB.o/oco.coooo.B/.o..oSo.oo./o..oo.Xoco./o.oooG..woB/..oBoBo.o.o/o.oX.ooB.../o..o.......","sw":[[1,2],[2,1],[0,1]],"br":[0,2,1,1,2,2,2,1],"m":6,"sp":[],"o":42,"d":35.83,"t":0.291},
-{"r":"B.oB.oo.../oBoooooooG/oB.o.oXB.o/ooBooo.o.o/owo.Bco.oo/.oo.ooSc../o..oBoB.oB/oBoo....oo/Bo.oc.ooX./o.c.co..o.","sw":[[0,0],[2,2],[1,0]],"br":[0,1,0,2,2,1,1,1,2,0,2,0],"m":6,"sp":[],"o":43,"d":36.37,"t":0.293},
-{"r":"oo.ooc..oB./co.oBoooo../oo.o.ocB.../.o..ooooo../...Bo.X..../.o.coo..oo./B.ooooX.o.o/.o.ocoS.ooo/GoBBB.ooo.o/o...o.coo.w","sw":[[0,1],[1,2],[2,2]],"br":[0,0,1,2,0,0,1,1],"m":2,"sp":[],"o":44,"d":37.04,"t":0.302},
-{"r":"o....coBoo./....ooooX../.o...ooc..w/.o..Soo..oB/oocoo...o.o/.o..oooooo./B.ooBooB.o./.oocBBoBBo./.o.B.oo..o./ow.G.o.o.oo/.Booo..Bo..","sw":[[0,1],[2,2],[1,2]],"br":[1,1,2,1,2,0,0,0,2,0,2,1],"m":6,"sp":[],"o":45,"d":37.34,"t":0.292},
-{"r":"...o.oo.oo.B/....oB.oB.../.....oooo.oB/o.oooooowoo./o...ooo.o.o./ooooo...oc.o/oo.ooB..oooo/.ooBoow.S..o/oo.o..o..ooo/Gowo....o.o./ooooooo...oo","sw":[[1,2],[2,2],[0,1]],"br":[1,1,0,2,2,2],"m":6,"sp":[],"o":46,"d":38.2,"t":0.31},
-{"r":"o.......ooB/oo....ooo.o/o..o.ooo.../ooTo.o.Boo./oow..ooo.oo/ooooowBo.G./o..ooooo.c./..oB..Boo../oo.oo..B..o/oBwo.o....o/oooSocoo...","sw":[[0,2],[1,0],[2,2]],"br":[1,2,0,2,2,0,0],"m":7,"sp":[[88,102]],"o":47,"d":41.69,"t":0.31},
-{"r":"...oo..cB.../o..Toooo..../oo...oooo.o./c.o.wooooo../oo..o.o..o../.Bo.oo.o..../o..oooo..o../.o.oooS.BooX/GoBB.coo.o.o/ooo.o..oo.oo/o.owco..o.o.","sw":[[0,0],[2,1],[1,2]],"br":[2,2,0,0,1],"m":2,"sp":[[128,3]],"o":48,"d":42.15,"t":0.308},
-{"r":".ooooBoo..c/oBo..oooXo./oo.o.coooXo/..oooBo...o/o.o.oo.oo../.oo.o.ooooo/o.Xooocooo./.ScB.coBTBo/oo.o..Bo..o/o.oG.oo.ooo/..ooooooo.o","sw":[[0,0],[1,1],[2,2]],"br":[2,2,2,2,0,0,1],"m":4,"sp":[[117,99]],"o":49,"d":42.86,"t":0.318},
-{"r":"oooo......../o.c....oB.../.Boo.coToo.o/.ooXooXoooo./.o..ooo.ocoB/.oo.B.ooSo../ooooc......B/...BooB..ooc/.o.o..ooG..o/.oooooo.oooo/ocwoBooc.cBo","sw":[[2,0],[1,0],[0,0]],"br":[0,1,2,1,1,2,2,1,0],"m":0,"sp":[[89,126]],"o":51,"d":43.87,"t":0.319},
-{"r":".GB.o.....B/Boo.oBooo.B/.ooo..o.o.B/.oTwoo.Bo../.oo..ooo..o/.X.BoooB.../oB.ooo.o.../.o.B.o....o/o..oo.o.B../owBoSBc..Xo/ooo.ooooo..","sw":[[0,0],[1,1],[2,2],[3,2]],"br":[3,3,1,1,2,1,2,3,2,0,2,1,0,0],"m":15,"sp":[[88,114]],"o":52,"d":47.57,"t":0.328},
-{"r":"..SoXXooo..o/.oBo.o...Bo./o.o..oo.c.o./ooocoBoooB.o/BB.oB..c.o../oo.cooo.oBco/.ooBBoXo.oBo/.cTooo..oB.o/ooo..ooo.G../..Xooc.o.o.o/..oBo.......","sw":[[2,1],[3,1],[0,1],[1,2]],"br":[1,0,0,1,3,3,2,2,2,3,1,2,1],"m":14,"sp":[[96,115]],"o":53,"d":48.07,"t":0.329},
-{"r":".....oooooo/.ooB.oooX.o/co.B.coo.oo/o.cooBB.oc./..cooo...../....o.oooBo/..XcooooooB/cSoB.c..Xoo/oo.o.oooo.w/...G.ooo.oo/oo.oooBoB.T","sw":[[0,1],[2,2],[3,0],[1,0]],"br":[3,1,2,2,0,0,2,0,2],"m":4,"sp":[[117,65]],"o":54,"d":48.81,"t":0.34},
-{"r":"oBoooB..o..../o....o.BB.o.o/B.oo.coTXoo.o/..oXoBoooooo./..o.occ.oo.Bo/....B...Soo../...oo.o.owo../.o.BooB....o./..oo..oooo.o./o.wo.oooG..../.oBooo.coc.../...oc..oo....","sw":[[1,1],[2,0],[3,2],[0,1]],"br":[0,3,3,0,0,3,1,1,2,2,2],"m":8,"sp":[[96,106]],"o":56,"d":49.91,"t":0.346},
-{"r":"..o..oT...B./.oo...oooo.o/ooco.oBo.wBB/oco....ooB../o..o.ooo.ooo/ooocBBoo.Bo./oo...oBo.o../.....o.oBwoo/oo.SoooooB../oo.oco.o.coo/Booooow.ooGo/.o...ow.B.oo","sw":[[1,2],[2,2],[3,1],[0,0]],"br":[0,1,3,0,2,1,0,3,3,2,2,1,0],"m":14,"sp":[[96,27]],"o":57,"d":50.47,"t":0.349},
-{"r":"oo..BB.o..oB./ooB...ooo.oo./o.So.o..o.o.o/.wocoBXoBB.o./.oooo..o.o.o./.o.coo...oBoo/.o.oBXX.ooGoo/.Tooco.o.ooo./oo...o.o.oo../.o..oc..o.o../cocoo..oB.o../c.B.o.ocoo...","sw":[[2,2],[3,0],[1,2],[0,1]],"br":[3,2,3,1,0,3,1,2,3,2,0],"m":14,"sp":[[104,133]],"o":58,"d":50.95,"t":0.347},
-{"r":"..ooc.oo...c/..o.BBXoXoc./.oooooooo..o/ooooooo...BB/Booooo.oo.../ooo.o..oXoo./...coScoBo.o/.o.B.ocB..co/oB.o.wBooT.o/o..G.c.o.o../Bo...oo..ooc/coo...oo..Bo","sw":[[2,2],[0,1],[3,2],[1,1]],"br":[1,1,3,3,3,2,2,0,0,0,3,1],"m":12,"sp":[[26,7]],"o":59,"d":51.62,"t":0.356},
-{"r":"oooo..oB.o.o./ooo.oo.oBo.../...o.ooToooBo/B.oXoooBo...o/oo..oco.o.oo./..w.B.o.S..../...oo..o..Boo/.o.BooB...oo./.ooo..oo..oo./.wo..oooGB.oo/wo...oo.o.ooo/oooooooo....o","sw":[[2,0],[3,0],[0,0],[1,0]],"br":[0,0,3,3,1,1,2,2,2,1],"m":2,"sp":[[29,106]],"o":61,"d":52.6,"t":0.355},
-{"r":"......TooXco/oo....Gooooo/..ooo.oo...o/cco....Boo../B...ooooo.oo/oooo.Booo.Bc/o.oo.o.ow.oo/o.ooco...oco/o...oooocB.o/.ooBcXooBo../cSoooooo.o../.....Bw.oooo","sw":[[2,0],[1,2],[3,0],[0,0]],"br":[2,1,0,3,2,1,3,3],"m":6,"sp":[[96,27]],"o":62,"d":53.51,"t":0.375},
-{"r":"o.........c../ooB........o./..S.....o..oc/.oocoBXoBB.o./ooXco..o.o.oo/.B.coo...oo../.o.oBoX.ooBo./.T.Bcooc.ooo./oo..oo.o.woB./Booooo..B.o../.ocooo.o..G../oBo...o.o....","sw":[[3,0],[1,2],[0,1],[2,1]],"br":[1,0,3,1,2,3,3,0,0,2,2,0],"m":14,"sp":[[104,131]],"o":63,"d":54.13,"t":0.382},
-{"r":".o..oooo..co/oc.o.oooX.oo/ooBBcwoc..co/oo.Xwoo.o.../co.ooo.ooo../o..oo..oo.o./Boo.oSooooB./...B.ooB.ooc/.o.cBcooT.oo/.o.G...oo.oo/..o.Bo....../.B.ooo...o..","sw":[[0,1],[3,2],[2,2],[1,1]],"br":[1,2,0,3,2,0,0,1,2],"m":12,"sp":[[17,53]],"o":65,"d":55.12,"t":0.381},
-{"r":"..oooooo.o..o/.o...o.oBoBoB/.o.o.ooToco.o/o..Xcoooo..oo/.oB.oco.o.ooo/o.B.o...S.oo./o.oBoo..o..B./...Bo....ooo./oooB.oo.o.o.o/.woo.ooooo..o/wX.B.o..B..o./oooocooGoo...","sw":[[2,0],[0,0],[1,0],[3,0]],"br":[0,3,0,0,3,1,3,2,1,0,1],"m":2,"sp":[[86,109]],"o":66,"d":55.53,"t":0.377},
-{"r":"......ToGXXo./.oooo.cXoo.o./oBoo..ooBoo.o/ooB....B...oc/o..o.Booo.ooB/oooo.BBooB..o/.o.o.X.oo...o/o..o.o....c.o/o.ooooc..B.../.o.ooo.oo.o../cScooco..co../co.B.ow.ocB../..oo..o..oo.o","sw":[[2,0],[1,2],[4,2],[3,1],[0,0]],"br":[4,1,0,2,0,4,0,2,3,2,1,1],"m":28,"sp":[[52,29]],"o":67,"d":59.19,"t":0.384},
-{"r":"oo.B.B..Boc.../coB...oo..oBo./..c.o.ooo..oc./..ocoBwoBoo.oo/oo.Bo..o.B..oo/.B.coB.o.ooB../.o.oooX.BoX.../oo..co.o..oc../ooS.oo.o.ooo../.ooooXo...o.o./.oTowc.c..G.oo/B.o..o..o...../.........oBo..","sw":[[3,0],[0,0],[2,0],[1,2],[4,0]],"br":[4,0,3,1,3,0,3,2,1,2,2,4,3,0,1],"m":30,"sp":[[159,143]],"o":69,"d":60.41,"t":0.396},
-{"r":".oB..ooo.Booo/o..o.ooow.oco/oocBcooc.ooo./c..XoXo..o..o/ooo.o..ooooo./o...o..oo...c/.ow.oSoooo.../...B.ooB..o.o/oo.oooooT.coo/..BGo..oow..o/..o..oooB..../...oB..oooo.o/Bo....o...Boo","sw":[[0,1],[2,2],[1,1],[4,2],[3,2]],"br":[1,1,2,2,0,0,4,0,3,2],"m":12,"sp":[[18,6]],"o":70,"d":61.01,"t":0.401},
-{"r":"..o..o....cc../..o.o..oB..oo./..ocBcoTo.oB../cooXoBoBo.oB.o/c.ccoBo.o..oo./oco.o.ooS.oo.o/BBoooo..BBoooo/...Bo.....coo./cooo.oooBo..../..wo.oooX.o.../..ooXooooooBco/..o..Xoc.oooBo/..o.oo..oG.o.o","sw":[[2,0],[0,0],[1,2],[4,1],[3,0]],"br":[0,4,3,1,1,0,1,2,0,4,0,2,4,3,3],"m":2,"sp":[[64,163]],"o":72,"d":61.91,"t":0.396},
-{"r":".ooo..TXGXco./coo..ccSBo.Bo/.c.o.ooo.B.../BoB....BB..../o..oo..oo..../cooo.oococ..o/o.oo.o..oo.o./o..o.ooo..o../o.ooooowoB.../Xo.Booow.B.B./coooo.o.oo.../ooo....o...../o....o..ooo.B","sw":[[1,0],[2,0],[0,0],[4,1],[3,1]],"br":[0,1,3,1,2,2,2,2,4,0,0,0],"m":22,"sp":[[104,15]],"o":73,"d":62.83,"t":0.417},
-{"r":"o.........oo../ooB..oBo.oo.../..co..ooo..oo./..oooBwoBooo.o/co.Bo.oo.B.ooo/oB.coB.c.oo.oB/.c.oooXB.oX.../oo..oo.o.ooo.B/ooS.oo.ooooB../oooBoX....oB../.oToo...X.Go.c/B.o..o.oo.o.../oooo...B.oBoBo","sw":[[3,0],[0,0],[2,0],[1,2],[4,0]],"br":[1,0,0,3,2,1,2,2,4,4,4,1,3,4,0,3,1,2],"m":14,"sp":[[57,143]],"o":74,"d":63.27,"t":0.413},
-{"r":"ooB.BoXo..occ/.....oocw.oco/oooBoocc.ooo./o..oooo.oo..o/ooo.o..oooooS/.Bo.o.Xoooo../..c.oowooo..o/...B.XoB..o.o/ocBoocooT.o.o/..BG..Booo.Bo/..o..o.B.ooo./..ooB.ooB.oBo/.o.o.oo..oBo.","sw":[[1,0],[0,1],[2,2],[4,2],[3,2]],"br":[1,3,2,0,2,0,4,0,1,4,1,0,3,4,2],"m":12,"sp":[[18,23]],"o":76,"d":64.33,"t":0.417},
-{"r":"..oo...o.ooo../...o...oB.o.../..oc.coooc..../.B.XoooBo..B.o/o..ooBB.oB..oo/ooo.o...S.Bo.o/o..ooG......oB/oB.BT.B..o..o./...o.o....oo../.owo.BooX.o.o./..oooooooooBoo/..o.XXoo.o.ooo/..oo.oBo...o..","sw":[[2,0],[0,0],[1,2],[4,1],[3,1]],"br":[0,0,1,2,1,1,4,0,3,4,2,3,4,3,0],"m":6,"sp":[[21,163]],"o":77,"d":64.97,"t":0.424},
-{"r":".X....ooGoo..o/o.o..BoSBooooo/..o.oBoo.o..oo/oco.co.Bo....o/o.....ooo.o.oo/c...owBoo.oo../ooBo.c.T...o../.o.o.oo.coo..B/..oooooXo.o.oc/.....o.woB...o/.c.o..BBoo..../o..o.oo.woBoo./....o.....o.../o.oB....B...o.","sw":[[3,2],[1,0],[0,0],[4,1],[2,2]],"br":[3,0,1,2,2,4,4,1,3,2,1,4,4],"m":30,"sp":[[165,44]],"o":78,"d":65.57,"t":0.429},
-{"r":"oo.oo....oo..../coo.ooo.o.o..../ooco.oooo.oo..o/...ooBwoBXcoBco/oo.Bo.oo.B....o/cB.cco.o.oo.o../.o.ooooB.ooo.../oo..oo..ooo..B./ooB.Bo.cooo.o../oocBcX....cBo../.oToc..ow.G.oo./B.SX..o.o.o..o./c...cBoo..oo..o/...oc.o..oo.Boo","sw":[[3,0],[2,0],[1,2],[4,0],[0,0]],"br":[0,3,4,2,1,2,4,4,3,1,3,4,0,2,1],"m":14,"sp":[[61,106]],"o":80,"d":66.52,"t":0.426},
-{"r":"...o.ooo..oooo/...o.oBow.oB.c/B.oBoocc.co.o./co..ooo.BoX.oc/o..oo..oooocSo/ooo.o.Xoo...o./...Boooooo.oo./Bo.B.ooB....co/...cocooT.c.BB/o.oG..Booooc../o...o....ooooo/Bo..o.....ow../..B.co..ooBo../..oX.oBo.o.o..","sw":[[0,1],[1,0],[2,2],[3,0],[4,2]],"br":[2,4,1,2,1,4,4,2,0,0,3,1,0,0,2,3],"m":14,"sp":[[179,24]],"o":81,"d":67.4,"t":0.445},
-{"r":"Boo.ooo.o..coo./o.cooo.oBo...c./coo..coooooc.B./..oXooooc.o..B./.o.oToo.Xoooo../.oB.o...SB...oo/.ocBBc..w..ooo./o.cBo....oo..oB/oo.o.Bo.o...G../.wwoooBoo.o.c../o.oocc.ooooooo./ooo....o..oBo../o.oooc.B...o.../.....o.........","sw":[[2,0],[4,0],[3,2],[1,1],[0,0]],"br":[3,0,1,3,1,3,4,1,2,3,4,4,4,0],"m":10,"sp":[[4,161]],"o":83,"d":68.54,"t":0.452},
-{"r":"ccoo..ooooB.B./oooo.GoSBoooT./o.oo.BcB.o.o.o/B.o..o.owo.ooo/o...o.ooo..oo./wBoo.oBcX...oo/coBooo.ooo.BBc/.oo..o......../..BoooBoBX..../ooocBo.ooBoowo/o.B.oo.coooo.o/w.oo.oo..oB.o./...oooo...ooo./..oco...oo.ooB","sw":[[1,0],[4,2],[5,2],[0,0],[3,0],[2,2]],"br":[1,1,0,1,4,1,5,2,3,0,0,2,3,2,4,3,4,3,0],"m":30,"sp":[[150,31]],"o":84,"d":72.17,"t":0.459},
-{"r":"...oo....oB..../.oo.o.o..oc...o/oooo.ooo..o...o/..BXXBwoBooo.o./oo.oo.oo.B.oco./.B.ooc.o.o.oo.o/.o.ooo...o.oB../oo..ooo.coo.o../oooBoo.oooc.o../oBcocXo...o..../.oTXoo.c..G..cX/o.S.c.ooo.oB.Bo/BoB.oBoo..o...o/B..ooooc.ooo..o","sw":[[2,0],[0,0],[3,0],[1,2],[5,2],[4,2]],"br":[0,1,0,3,1,2,2,5,3,3,4,4,0,2,4],"m":14,"sp":[[61,181]],"o":86,"d":72.97,"t":0.448},
-{"r":"oB.o.ooo..XooB/oo.o.oBow.wo.c/..cBoocc.oB..o/cc..ooo.Boo.Xc/oo.oc..oooocS./..o.o.ooo.ooo./.oBBBcoooo..o./Bo.B.ooB...oco/.w.oocowT.o..B/o.oG.o.ooooc.o/.o...oo..oo.cB/B..o..oo.B.o../..o.ccc....oB./.Boo.......B..","sw":[[5,1],[0,1],[3,2],[2,2],[4,2],[1,1]],"br":[1,2,2,2,5,1,1,4,5,4,2,0,3,4,0,4,5,0,0],"m":38,"sp":[[11,82]],"o":87,"d":73.73,"t":0.462},
-{"r":"o...coo...oo...o/o.o..B.oBo.oooo./ooo..oSooo.oooo./B.owoooocB..oB.B/oo.oToX.Xo.o..o./Bo..o.oo.ooo.o../.ooBoB.....oBoo./...Bo.o.o....oo./o..o..oooo....oo/o.woowBooBo.co../oBoBc...ooBooo.o/.o.o..B..oc..w../..o..co.o.Bo..../BoooBoo....Bo.../.....oo..o.G....","sw":[[5,0],[2,0],[4,0],[0,0],[3,2],[1,0]],"br":[2,0,0,3,5,3,1,4,4,0,2,4,3,5,1,5,1,1,2,2,5],"m":2,"sp":[[90,154]],"o":88,"d":74.28,"t":0.464},
-{"r":"oo....oooo..B../o.oB.GoSBoooT../c.co.BoB.o.o.../.Bc..o.ooo.ooo./oo.co.ooo..ooo./w..c.oBoo....../oooooo..oo..BBo/..B..o.o......./ooBoooBoBX..oco/.ooo.o.ooBc.w../o.oo.oc.B.oXo../o.coXoo.....oB./o..co..o...o.o./o..oo.Bo.o.w.../.oo.c.....oooo.","sw":[[4,2],[0,0],[2,2],[1,1],[5,0],[3,0]],"br":[1,4,0,1,4,3,2,0,0,4,2,3,2,3,1,3,5],"m":30,"sp":[[160,33]],"o":90,"d":75.38,"t":0.469},
-{"r":".ooo............/..oo..oB.oco..o./oooo.oBoB.B.B.../...ooBwoBoo..o../oo.oo..X.Boo.oo./.B.oooo.oo.oo.oo/oc.Xoo...o.o.oo./oo..oo..coo.o.../Xcw.co.co.o.oc../oBcocX....oo.o../.oTooo.o..G..co./..S.o.oo...B.oc./BoB.o..B..o...oo/o.oo..oc.BBc..o./..o..ooooooo..o.","sw":[[3,0],[4,2],[0,0],[2,0],[5,2],[1,2]],"br":[4,2,3,0,5,0,3,1,2,3,4,4,0,1,0,2],"m":6,"sp":[[65,211]],"o":91,"d":76.06,"t":0.478},
-{"r":"ooGc.woooo.ooB./.o.o.oBoX.oo.oo/..cBoocc.oc..o./ccoBooo.Booooo./.o..c..ooooooo./....o..co.o.o../.oooooSoo...B../wo.B.BoB....c../co.BXoooT.oB.B./o..w...c...o.oo/o.oo..oB.o.oc.o/......oo.ooB.oo/.o.o..oc..w.oo./oooc..oo.ocB.../.o.o...o.B....B","sw":[[4,2],[0,1],[2,2],[1,2],[3,2],[5,1]],"br":[2,2,2,5,1,3,2,0,0,4,3,3,1,1,0,4,5],"m":62,"sp":[[127,87]],"o":93,"d":77.19,"t":0.484},
-{"r":"....ooG.o.ow..../o.c.oo.oBoo..o../ococ.oowXoBo..o./BoocooocX.B.o.o./...oToo.X.ooo.../B...o.o.S..Bcoo./.ocBBo...oo....B/...Bo.cB..o.oo.B/.c.o.o...o..o.../..wo.oBo..oooo../c.Booc.oooooooB./ccc.oo.o..ooc.o./..c..o..ocBo..../oo..o.........../..B.......oc....","sw":[[3,0],[5,0],[1,1],[2,0],[4,0],[0,1]],"br":[0,3,5,3,1,3,4,1,5,2,2,4,4,4,2,1,2],"m":2,"sp":[[16,173]],"o":94,"d":77.66,"t":0.483},
-{"r":"ocoo..oBXoo.oo./c.oo.ooSBBooT../o.co.Boo.B.o.o./B.c.oB.ooc.G.o./oo.o..ooo...ooo/o.oo.oBcX.ooooc/ooBooo.oo...Bo./BoooBo....oo.../..BocoBo.c.o.../.wocB.ooc.oow../.o.oBo..ooooo../o.ooBwo..o..o../...cooco..oooo./..woc.o.B...c../....o........o.","sw":[[4,0],[5,0],[2,2],[3,0],[0,0],[1,0]],"br":[5,0,0,1,1,1,4,2,3,0,4,3,2,3,4,4,1,2],"m":22,"sp":[[160,33]],"o":96,"d":78.72,"t":0.486},
-{"r":"occoo..coB...B../..oB..o.ooc..oo./....ooBoo...B.o./.w.XoBw.o....ooo/oo.oo..ooB.ooBo./.B.ooco..o.oB..B/oo.ooo...c.o.o../oo..oo..oo.oo.../coo.co...oc.o.../oBcccX....oo.o../.oTooo...BGo.c../ooS.Xow.Bo....../o.B.o..o..oo.o.o/..oo...coo.c..o./.oo...ooooBooo.o","sw":[[4,0],[0,0],[3,0],[1,2],[2,0],[5,2]],"br":[2,1,3,2,5,0,1,5,2,2,5,3,3,4,0,4],"m":38,"sp":[[65,211]],"o":97,"d":79.57,"t":0.504},
-{"r":"Gooc.ooo.coB.B../o..o.oBwX..B.oo./..oBoooc.oo..o../ooBB....ooo..o../.c.ooo.oXoooo.../oo..o.oow..oooo./ooooooSoBo...B../oc....cB..oocoo./wo.owocoT..oo.../B..o...o..oooo../..c...oooc..o.o./oo....o.oo.o..oc/.o.ooo.c......../oo.oooB.o.c...o./o...o..o..o..oB./oB..............","sw":[[4,2],[0,0],[3,2],[5,1],[2,2],[1,2]],"br":[5,2,2,0,2,2,5,1,0,0,4,3,5,3],"m":54,"sp":[[135,92]],"o":99,"d":80.5,"t":0.5},
-{"r":"oo..coG.o.cw...../o.c.oo.oBoT....../oo...o.coo.o...../.XcoooooXc.o..o../...ooooBooo..oo.o/....o.oBS..oo..../..coooBc.o..co.../...B..c..oo..o.../oc.o.o...o.oo..../ooXoooBco.ooco.../ocBo.o.oo.oc.o..B/ccoXo.ooo.coco..o/o.c.Bo..ooo.....o/oo.B.Bo..ocoo.B../.o.coooBoo.oo.w../o.oo.o...ocB.....","sw":[[3,0],[4,0],[2,0],[0,1],[1,1],[5,0]],"br":[0,1,3,2,2,4,4,3,1,4,0,3,5,3],"m":2,"sp":[[17,183]],"o":100,"d":81.06,"t":0.503},
-{"r":"ocooB.oBooo.Bo./c..o.BoSBBooT../c.co.Boc...o..o/X.c...BBoc.G.c./c..B..ooo...oT./o.oo.oBow.ooooo/oB.occ.oo..o.oo/.oooooo.o.ooo../...oc.BB.c.c.../.ooco.ooc.oow../..ooow..oooB.o./.BocBwc...oooo./o.oooBc...oo.../..wooco..o..oB./..o.oo.oo....oo/.....o.o.o...o.","sw":[[4,0],[5,0],[3,0],[2,2],[0,0],[1,0]],"br":[4,5,2,3,0,0,1,3,2,4,2,4,3,0,1,3,1,2,1],"m":22,"sp":[[176,33],[232,184]],"o":102,"d":85.31,"t":0.515},
-{"r":"co.....c...oo..oo/.oo.ooBcB..oooco./TB.ooo.o.oo.o..oo/co..o.wo..c.BoooX/o..oo.o..X.oooooB/o.oo....o.....ooo/o.ooo.o..o.oBoooc/oo.oco.oBB.c.o.../o.X..c.oc.w..ooc./B.oooo...oGoo.c.o/ooToooc.oB..oc.../oBS.Bcooo..oX.c.B/..oo.o.oooB...oc./..o....c..cBo..../o.Bo..o..o.o.oo.o/.oBc......B.oo.oo","sw":[[3,0],[1,2],[4,1],[2,0],[0,1],[5,2]],"br":[4,0,1,1,5,5,2,0,2,3,3,4,0,2,3,0,5,5],"m":51,"sp":[[49,18],[52,19]],"o":103,"d":85.63,"t":0.507},
-{"r":"Goc..ooooo.oo.../o.o.ooXoo.B.oo../o.oBoooc.o...o.o/.oBB....oXoXoooo/.o.oo.ooooocc.BB/co..o.owo..o.BBo/oooooooo.owoo.c./ooS.o.oBBo.o.co./.c...BXoT.oc..oo/.oo..o..c.oo.o../.ooo.ooBoo.c.o../..o...oooo..ooo./..To.o........o./o.ooo.ooB.oooc.o/coo.cB.o.Bo...o./oB...ooo..o.....","sw":[[0,0],[3,0],[5,1],[1,1],[2,2],[4,0]],"br":[2,2,2,5,0,0,3,0,0,5,1,4,4,3,2,3],"m":20,"sp":[[162,28],[215,157]],"o":104,"d":86.33,"t":0.516},
-{"r":"...oocG.o.coooo../....oo.oBcT....../ccoS.ooc...oo..../.XcooBooXo......o/.o.oBocoo.X..oo.o/....o...o...oocoo/.ocBBo..oo..oo..c/...Bo.oo..oo.c.oo/.c.o..B..ooow.o../o..ccwBo..ocTo.../..oooc.oooo..oo.o/o.o..co..oXo.ocoo/o.oo.oo.ooooBBoc./o...oB....co.o.B./oo.oo.oo.occ.o.o./.......BB.oooo..B","sw":[[4,0],[2,0],[5,0],[3,0],[0,1],[1,1]],"br":[0,1,1,4,1,2,4,4,3,5,2,5,5,1,4],"m":10,"sp":[[212,183],[215,84]],"o":106,"d":87.64,"t":0.532},
-{"r":"Boooo.oBooB.oBoB/c.oooBoSoBooTB../..o..Boc...oo.oo/o.o.B..oBo.G.oBo/......ooo.o..oo./..oooBBcX..oo.o./...ooo.oo.oo.o../oooooo..o..c..../...oc.o..ooooo../oXoocoooooTowoB./ooooowoc..o..B../B..X..c.ocooBc.B/o...oo..o.oo..o./o.o..c...o....oo/o..o.owc..oo..oo/oBoo.co.......o.","sw":[[5,0],[0,0],[4,0],[2,2],[1,0],[3,0]],"br":[5,5,5,4,0,3,0,2,1,4,1,3,1,2,2,3,1,0,4,2],"m":22,"sp":[[107,92],[238,38]],"o":107,"d":88.17,"t":0.534},
-{"r":"oooBo..cooo.ooooo./..o..cw.coc..ooB../ooo.c.Bcc.oco.oo.o/cw.woBo.oo.o.o.o.B/oo.oo..ooB.oo...../.o.ooo...o.o...BB./oo.ooc..co..oo..o./co.ooo...o.oc...../coB.co..oocoB..o../oBccco....oo.ooo../.oTcooo...Go.ooB../XXS..Bo..o.....o../o.B...oo..coBo.B../..oo.oXoo..ooooooo/..o.oo..occooo.oo./.oT..o..o.........","sw":[[3,0],[4,0],[0,0],[2,0],[1,2],[5,2]],"br":[4,3,2,0,3,1,4,3,2,2,3,0,5,0,0,2],"m":38,"sp":[[50,4],[0,265]],"o":109,"d":89.2,"t":0.535},
-{"r":"GBocoooo..c....Bo/...c.oocX....o.../.BoBoooc.B....Boo/.ooo.o..oooo.ooc./.c.Tc.oooooco.oo./oc..o.coX.o.X..o./ooooooco.ooooo.oo/ooS.oooBTB.Bcooo./oc.oc.ooow..c..co/B..c.o....co...../c.oo.oo.oco..oooo/wo.......o..oBo../oBoo.o.o.wo..o.../.o..oooc..co.oo../c..oo..o.o....oo./Bo.o.ooc.......B./.....o...........","sw":[[0,0],[5,0],[3,0],[1,2],[2,2],[4,0]],"br":[5,3,2,2,4,2,0,5,2,1,3,3,5,0],"m":30,"sp":[[100,207],[75,49]],"o":110,"d":89.8,"t":0.54},
-{"r":".oo.o.o.o.oooo..../o....o.oBoTG....../oc.o.oocB..o....../.XccooooXoBo....oc/o..cBocXo..o...oo./B...o...So..coc.o./.ocBoo.wo.....ooo./.c.Bo.o.c.oo.oB.Bo/oc.o.oB..o..co..o./o.wccoBo..o.oooo../.ooco..Bocc..ooo../c.co..oo.ooooooXo./B.o..oo.oooo..oo../....cB..o.o.oo..../.o.o.oc...oc.o.oo./.oo..B..oBocTo..../.....o......o..B..","sw":[[4,0],[2,0],[1,1],[3,0],[0,1],[5,0]],"br":[0,5,3,1,1,4,2,3,5,4,4,1,5,2,2,3,1],"m":2,"sp":[[226,193],[262,149]],"o":112,"d":90.77,"t":0.538},
-{"r":"cocoo.oBooo.oBc../ooocoooSoBcoTo.oo/..o..Boc...oo.coc/...c...o.ooG.o.oo/......Xoo.o.o.o../.ooooBBooo.coooo./...ooo.oo..ooc..o/o.Boco..co.o.o..B/...Xo.....ooco..o/oXoXcoooooocooBo./oBooowoc..oo..o../B..X.oo.ccoToo.c./o.B.oo.oo.oo..o../.....co...co.BBco/ooBo.oocc.oo..oc./oo...cc.ooo.Boc../o.oo..o..oo......","sw":[[4,0],[3,0],[0,1],[5,0],[2,2],[1,1]],"br":[5,4,0,1,1,2,2,3,2,5,1,4,2,5,4,3],"m":22,"sp":[[113,97],[252,30]],"o":113,"d":91.56,"t":0.553},
-{"r":"ooBoo.Bcoc...o.ooo/..c..ow.ooco.oo.o./ooo.c.Booo.oo.ooo./Bo.ooBo.co.o.o..../oo.oo..coB.oo...o./.B.ow..B.Bo..B.o.o/.c.ooc..ooooo....c/cc.ooco..o.o.o..../oo..c..B.oco.o.oo./oBcccX....oo..o.../ooocXoo...G..ooo../XcS.wooo.o.o....../.cB.o.co...o.o..o./..ooo.ooccocc.ocoo/..o.oocTcoo.o.oo../.oT.oo.....co.B..o/..o........oo.....","sw":[[3,0],[4,0],[1,2],[0,0],[2,2],[5,2]],"br":[3,5,2,3,0,1,2,0,4,4,2,3,0,3],"m":6,"sp":[[13,29],[0,4]],"o":115,"d":92.64,"t":0.557},
-{"r":"GBBcBooo.oo....../.....oocX.ooo..../..XBoooo.c.o.o.o./oocc.o..ooo.o.co./.c.oo.ooooTcc.oo./ocB.c.coX.coBoo.o/oooooBoo.BoTBo.../coSw...Booo...c../o..oococoo..ooooo/.o.o.o...o.o.o..o/c.oooo.o.ooo...o./woo.ooo....o.c.o./o..o..c.....oBooo/o....oo..ocoo..o./c...o.cco..c...../..oo.ooc...co..../o.oo.XBo...Bo..B.","sw":[[0,0],[1,0],[5,1],[3,0],[2,2],[4,1]],"br":[5,3,2,2,0,0,4,3,2,0,3,1,4,2],"m":28,"sp":[[77,49],[127,149]],"o":116,"d":93.3,"t":0.565},
-{"r":"cc.oo.oo......c.cc/....oo.oBBTG.oX.oo/.o.c.ooc...c..o.co/.XocooXooc...oo..c/oooBBooocXB...o.o./o.o.B...BSo...oooo/coooo.co.oo.oo..../.o.oooc..o..o.c..o/w..B......ooooc.o./.owoooB..oo..o.c../.ooco.occooooooc../..Bo..o.o.o..ooo.c/o.o.ooo...ooT.o.../oB.o..ooo.oo..cc../...o.o...ooccocooo/oB.oc.o.oooo.oooo./oo.o.co.coooo..o.o","sw":[[3,1],[4,1],[2,0],[1,1],[5,1],[0,1]],"br":[0,3,5,1,3,1,1,2,4,2,1,2],"m":12,"sp":[[190,303],[157,201]],"o":118,"d":94.2,"t":0.56},
-{"r":"c.oo..oBoow.o.o.w/oooo.ooSoBooTo.oo/.....ooc.o.oo...c/.oTooB.oo.BG.oooo/..oc..ooo.o..oo../..ooooBBco.coo..o/...coo.oo..coc.oo/c..ocoo.o.oo.o.../o..oo..o.Booco.B./BXoococoococ.Bo../woXooo.co.o....../.o...oo.cccoooo.o/o..o....oo.oo.B../..Bo.co...oo.c.co/oooB.oo.o.ow.Boco/co.o.oo.oco..oc.o/....oBo..oo.cc...","sw":[[3,0],[1,2],[0,1],[4,0],[5,1],[2,2]],"br":[5,0,2,1,2,2,3,4,3,2,1,5,4,5,4],"m":14,"sp":[[201,97],[252,30]],"o":119,"d":94.73,"t":0.562},
-{"r":"ooBBo.oc.c...oo.oo/..o..ow.ooco.oooo./ooo.c.Booo.o..ooo./.o.ooBo.c..o.o.o../Bo.oB..coB.ooo..co/oB.co..c.Bo.B..ooc/.c.ooc...ooo.Bo..c/cc.occo..o.o..oo../oo.oo..oooo.....Xo/oooccXB.o.o...cB../ooXcoooo.oG..o.o../Xcoooo.oB..o.o..../.oo.o.co...B.ooooo/ooo.wcocco.oc..c.o/.BoooococoSo.Boooo/..T..Too.o.co.oo.c/..o.....B..oo.o..o","sw":[[3,0],[5,1],[0,0],[1,2],[2,2],[4,0]],"br":[3,3,2,0,4,0,1,2,4,4,5,3,4,5,1,0,0,2],"m":6,"sp":[[0,4],[13,43]],"o":121,"d":95.82,"t":0.566},
-{"r":"oBBoo.oc.Bo.BooBBo/o.o..owoocco..oc../.co.o.Boo.ooo.ococ/.o.ooBo.ooBo...co./oo.o.o.coB..oo...o/oB.oo....B..B.ooXc/.c.oocB.oo....o..B/cB.ocT...o...o..../oo.oo..o.Bo.....oo/XcoccXo.o.o.o..c../ooocooo..oG.oo.o.o/Tcoooo..o....Boooc/ooo.o.cc.....ooooo/oo.oooSccw..B.oc.c/..oooococooo.oo..o/...oooXo.o.coo.c.c/.BcB.......coBo..o","sw":[[3,0],[5,1],[1,2],[0,0],[4,0],[2,2]],"br":[3,3,5,3,4,1,2,0,0,1,2,4,4,1,5,0,3,5,0,1,2,2],"m":6,"sp":[[13,44],[0,4]],"o":122,"d":96.71,"t":0.585},
-{"r":"GBBc...oo....c...o/o..BoT.o.....c..X./.ooBo.oo.oooc..ow./.ooo.o..ooo.oo.cw./oo.Bo.oBoooooc.oT./ooo.o.ooX.o.o..o.o/.o.ooooo.oooo.ooo./oBooooocooc.ocoSc./oBoo..coo..oo.oo../c..BoB.o..ooo.o.o./oo.....oo...co...B/wow.o..cB..c..ooo./c.o...o..ooo..oo../oo.o..o...oo.oo.o./.Bo.oco.ooo...c..o/..c.c....c......../oc.oo.c.oo.Bo.B...","sw":[[0,0],[4,0],[3,1],[5,0],[2,2],[1,0]],"br":[5,1,4,2,5,0,4,0,5,0,1,3,4,3,1],"m":21,"sp":[[151,212],[105,51]],"o":124,"d":97.77,"t":0.589},
-{"r":".oBo.ooBo.o.cco../.o....ccBBooTc.o./.o...oSo..wo.oow./.w....ooo.cB.oooo/.co.c.cXooo.oo..o/ooooooBooo.ooo.../.oooo...ooco..oco/ccccBTo.oooocc.oo/...oooo...Boo..c./.Xoocoow..BoBcoBo/..oooo.cco.o.oo.o/.o......ooo..Bo.c/...oo..ooooo....o/..Bcoooc......c.o/oGoBoo..cBBoo.o../oo....ooBcoBooc.o/..occ..ooBooo.ooo","sw":[[1,2],[4,0],[5,1],[3,1],[0,0],[2,2]],"br":[3,5,3,0,4,2,2,5,2,1,0,0,5,4,4,1,1,0,4],"m":38,"sp":[[201,169],[274,164]],"o":125,"d":98.27,"t":0.588},
-{"r":"ooBBo.oo.o....oo.o/..oo..woo.c..ccoco/ooo..oBoco..oooooo/Bo.ooBo.c.o..oBo../Bo.o...ooBoo....cB/.B.o...o.B.....o.c/.c.ooc..oo.o.Boo.o/oc.ooo...X......../.X.oo..oooooo.o.cB/.ooccoo.o.o...c.oo/oooooowc.cG..oo.oo/occ.oo.o.c.ooooo../.oo.X........oBc.o/ooo.ooocoSooc.ccoo/o.oBoococooc..oo../ooToooco.ooo..oo.o/......oXoToooo....","sw":[[3,0],[5,2],[0,0],[4,0],[2,2],[1,2]],"br":[3,3,2,1,0,0,0,1,3,2,4,5,0,4,4],"m":22,"sp":[[0,4],[52,1]],"o":127,"d":99.31,"t":0.591},
-{"r":"GBocBo.oooo..ocBo/..Bw..ocX....c.o./.coBococ.w.o..Bo./o.B..oooocoo.oooo/.c.oo..ooo.coo.To/.oB.c..oX.c..oooB/coBoo.oo.oooo.oo./c.ScoooB.c..cooo./oc.ocococoooXooo./..ccoc.o.oco.o.../ooo.cooBB.o..co../woo..ooo..o.cBoo./co..o.oooToo..ooo/oo..cooo..BBoo.../coo..Bccoo.B...../.c.o.....o......./.oooo............","sw":[[3,2],[0,0],[4,2],[5,0],[1,2],[2,2]],"br":[5,2,3,2,2,5,2,0,4,4,0,3,5,3,0,5,3,1],"m":28,"sp":[[172,49],[75,205]],"o":129,"d":100.5,"t":0.6},
-{"r":".BoG.ooBo...o.cc.o/...oooc...o.oBo.o./.oo.oc..o.B..o..../o..o.oowooo...o.oc/oooc..ooXT....w..w/Tc..co.oX.o.ooooBc/co..c.oo.oocB..o.o/o..ooooB.ooo..coB./oooooBcocooooococo/..ooo....c.c.oc.../o.o.ooB.oo.ooco.../o...oc.o.c..oooS.o/wo.c..cBooBo..o.oc/oc.oooB.ooooBo.oo./.oo...ooo....c..o./oo.o..oo.ooc...c../Bcooo...ooo..ooc.B","sw":[[4,2],[0,0],[3,2],[1,2],[5,0],[2,0]],"br":[5,5,4,2,4,1,0,3,3,3,0,4,4,1,5,0],"m":30,"sp":[[144,291],[225,126]],"o":130,"d":100.93,"t":0.597},
-{"r":"c...cooo.o.cco.../oBB.BoS.oB.B.oooB/o.c..ooc.Go..o.oo/o.....Xco.Bw.oco./oooBB..ccc.o.oooo/.o.ooooocoTo..owo/co.oXooooo..ocoo./oooo.c........c../o.c.oocooco.woo../.B.ooooo.coB.o.../ooo..c.c.ooooBo../..oo.oo.c.oc.c..c/coo...o.oo.c.Booo/c..c.ooooocoo..T./coBo.o.oo..ooo..o/.oBBo.coo.co..oo./.ooooooB..ooooX..","sw":[[5,2],[3,0],[2,2],[4,2],[1,2],[0,0]],"br":[1,5,5,0,3,4,1,3,3,4,4,2,0,0,2,1,5],"m":38,"sp":[[190,31],[210,144]],"o":132,"d":102.37,"t":0.618}
+{"r":"....ooo../..ooo..../o..o.o.../.oo..o.o./.Gooooooo/oooooS.../oo.ooo.oo/..ooo..o.","sw":[],"br":[],"m":0,"sp":[],"o":8,"d":4,"t":0,"s":"30123033"},
+{"r":"..o.oooo/.o..o.oo/o...oo../o.oo.ooo/oooo...o/o.Gooo../..ooS.../o..oo...","sw":[],"br":[],"m":0,"sp":[],"o":9,"d":4.5,"t":0,"s":"301230032"},
+{"r":"..oooooGo/....oSoo./......oo./.o...ooo./o.o.oooo./..oooooo./.....oooo/..ooooo..","sw":[],"br":[],"m":0,"sp":[],"o":10,"d":5,"t":0,"s":"1223210010"},
+{"r":"...ooo.o./o...o.o../ooooo.o../oo.S.oo../...o...o./ooooooo.o/oooooGo.o/.o..ooooo/..ooo.o.o","sw":[],"br":[],"m":0,"sp":[],"o":11,"d":5.5,"t":0,"s":"22101230321"},
+{"r":".ooo..o.o./oooooooo.o/ooooo...../oo.GoS.o../oo...oo.o./...o.ooo../..oo.o.oo./o.oooo..o./...oooo.o.","sw":[],"br":[],"m":0,"sp":[],"o":12,"d":6,"t":0,"s":"303012300122"},
+{"r":".o.Gooooo/.o.oooo.o/.oooo..../.o.oooooo/oo...o.o./..oooooo./.o.o.ooo./oo.oooooo/...o.oS.o","sw":[],"br":[],"m":0,"sp":[],"o":13,"d":6.5,"t":0,"s":"0103210033030"},
+{"r":"..o.ooo.oo/..o.ooooo./oo.o..o.oo/oo.o.ooo../.o.o...o../ooSooo.oo./.ooo...o../ooooooooG./.o....o.o.","sw":[],"br":[],"m":0,"sp":[],"o":14,"d":7,"t":0,"s":"21032210321111"},
+{"r":"oBoow..../..ooo.o../....o.o.o/oo..o..oo/ooooooo.o/.oo.Boo.o/.o..ooG.o/oS..oo.oo/B.....o.o","sw":[[0,0]],"br":[0,0,0],"m":0,"sp":[],"o":15,"d":10.5,"t":0,"s":"001100301222112"},
+{"r":".o....oo../.o..o.Bo.o/oo.o...o.B/ooGoo..o../.o.oo...../SoooB.B.../.owoooo.o./ooo...oo../....o.....","sw":[[0,0]],"br":[0,0,0,0],"m":0,"sp":[],"o":16,"d":11,"t":0,"s":"1210123032101003"},
+{"r":".ooo.o.oo/.o..ooooo/..ooBoo.o/.o.oooooo/oB.o..Xoo/o.B..oG.o/.o.o.o.oS/...ooo.oo/.oooo...o","sw":[[0,0]],"br":[0,0,0],"m":0,"sp":[],"o":17,"d":11.5,"t":0,"s":"00330121230032122"},
+{"r":".o..o...o../.oo..Booo../.ooo..oo.../o...o.ooowo/.......oBo./...o...oooo/.oo..ooooo./GoooSoooB../o.oo.....o./.o.o.....o.","sw":[[0,0]],"br":[0,0,0],"m":0,"sp":[],"o":18,"d":12,"t":0,"s":"101001321123233333"},
+{"r":"..oB...ooo/o.ooo...o./.ooo....o./o.oXooooo./ooooo.oo.o/.o...ooo.o/.o..oo.Soo/.oGooo.o../...ooo.o../...oo.o.o.","sw":[[0,0]],"br":[0],"m":1,"sp":[],"o":19,"d":12.5,"t":0,"s":"0303303211122322303"},
+{"r":"oooo.oo..../.oo.oooB.o./..ooooo.o.G/o..oooooSoo/o..o.o..Boo/oo.oo..woo./..oo.o.oB../ooo.oo.oo.o/.........o./.oo.o.o.oo.","sw":[[0,0]],"br":[0,0,0],"m":1,"sp":[],"o":20,"d":13,"t":0,"s":"33032111223132100110"},
+{"r":".o.oo...o./..oowSoo.o/..oB....oo/oBoooooo../oBo.o.o.o./o...ooB.../.ooooooo../ooooo.oo.o/oo.oooGooo/.oo.....o.","sw":[[0,0]],"br":[0,0,0,0],"m":1,"sp":[],"o":21,"d":13.5,"t":0,"s":"302322301012112230122"},
+{"r":".o..c.o.o../....oooXoGS/....oBo.o../o..Boo....o/o.ooooo..o./..ooo....o./....oooo.oo/...oooBoooo/....o.ooo.o/..ooooooooo","sw":[[0,0]],"br":[0,0,0],"m":1,"sp":[],"o":22,"d":14,"t":0,"s":"3313332222103030100111"},
+{"r":"oooooo..../..o..o...o/oo..oooo../.oo..oB.o./...oowo.../o.BSooooo./oo..o..ooo/.ooo.ooooo/.o.oo.ooo./o.o...G.o.","sw":[[0,0]],"br":[0,0],"m":0,"sp":[],"o":23,"d":14.5,"t":0,"s":"10210321122301032103232"},
+{"r":"o.....oocoo/o...oowooBo/o..oooo.oB./.ooo.o.oooo/..B.o..oo../.....Sooo.o/.....oo.oo./ooo.o..oBco/.ooo.oocoo./o...oo.Go..","sw":[[0,0]],"br":[0,0,0,0],"m":0,"sp":[],"o":24,"d":15,"t":0,"s":"110003313230110123222232"},
+{"r":"..oS.oo.../ooooo.oo../.ooo..o.../..oc..G.oc/ooXooooooo/ooooooB.oo/.o.o.oooo./o.o..ooo../...o.o.o..","sw":[[0,0]],"br":[0],"m":0,"sp":[],"o":25,"d":15.5,"t":0,"s":"2322111212300331122103010"},
+{"r":".oooooBo..../oocSo.ooo.../ooo..oB.o.oo/.ooo.ooo.o../oooooo...o.o/oo.ooo...o../.G.o.oo.o.../..oo.o...o.o/o.oo.ooooo.o/Booo.Xoc..../oo.o........","sw":[[0,0]],"br":[0,0,0],"m":1,"sp":[],"o":26,"d":16,"t":0,"s":"32212112221030030303210322"},
+{"r":".oBooooo..o/oooooB...../o.o..oooo../ooooooooG../.o.oo.oo.../oBBooo.oBo./.woo.o.B.o./co.ooo.oooo/.ooooo.oooo/woo..S....o/oooo.oo..o.","sw":[[0,0],[1,2]],"br":[1,0,1,0,0,0],"m":2,"sp":[],"o":27,"d":18.65,"t":0.11,"s":"033030101233222101100300111"},
+{"r":"....o.ooo.../oBooB.ooo.o./oXooo..o.oo./..oooSoooo../o..o.o.oo..o/o.oGooo...oo/o..oo..o..o./o.oo...oo.oo/.o.oooB.wooo/.o.coooooo../....ooooo...","sw":[[0,2],[1,1]],"br":[1,0,1],"m":1,"sp":[],"o":28,"d":19.27,"t":0.118,"s":"3003212222112110233012300300"},
+{"r":"oo..B..oo../.ooc.ocooo./o......ooo./oB.oooB..../oo.oSoo.o../GBow.oB..o./oo.o.oooooo/o..ooooo..c/..o.oBBoooo/oo.ooXoco../oo.ooo..oo.","sw":[[0,0],[1,2]],"br":[0,1,1,0,1,1,0],"m":2,"sp":[],"o":29,"d":20.05,"t":0.137,"s":"12223210010332212100033320233"},
+{"r":"...oooo.o.../.o..oo.o...o/..c.c.oG.oo./ooooooooooXo/Boo...oooo../coooo...ooB./..o.oo.oSoo./o.oooo.o...o/o.oo.oo..o.o/..wooo....../ooo.oo..oo..","sw":[[1,0],[0,2]],"br":[0,1],"m":1,"sp":[],"o":30,"d":20.8,"t":0.153,"s":"010323012101323032101232103030"},
+{"r":"oo.oooo.o../o..oo...GBo/......oooo./..o.o.oBooo/ooooooo..w./..B..o.cooo/.cSBooc..o./oooooooBBo./..oo.ooo.oo/ooo.ooooooo/...oBo.X.o.","sw":[[1,0],[0,2]],"br":[0,1,1,0,0,1,0],"m":1,"sp":[],"o":31,"d":21.45,"t":0.163,"s":"1121211000222330303212101100030"},
+{"r":"oo.....ooo../.ooXoooo.ooo/o.oo.oBoo.o./.oooo..oo.../.Bo.oooBoo../.oGS.ooo..o./oooooooo..o./.o.ooBoooo.o/ow..o.oooo.o/....Bo.oooo./o.......oo..","sw":[[0,1],[1,2]],"br":[0,0,0,1,1],"m":2,"sp":[],"o":32,"d":22.17,"t":0.178,"s":"32112303001023011121232323303012"},
+{"r":"oo...o...oo/o.oooooooo./oo......o../.ooBS.oo.oo/owB.ooooo../ooooooo..oo/..Bo.oo..../o.o.o.ooc.o/o.o.Boo.ooo/ocGBooooXoo/.o..oooooo.","sw":[[0,1],[1,2]],"br":[0,1,1,0,0],"m":2,"sp":[],"o":33,"d":22.99,"t":0.199,"s":"211222123000032330211012223210333"},
+{"r":"....ooGo..../oo..oSoooo.o/o......oB.oo/.o.oooBoo.oo/.ooBo..oocoo/ooooo..ooBoo/o.o.oooo.o.o/ooo..o.o.oow/ooB.oo...owo/oooooo.o..oo/o.ooo..ooooo","sw":[[0,1],[1,2]],"br":[1,0,1,1,1],"m":2,"sp":[],"o":34,"d":23.6,"t":0.207,"s":"1122112200330303012233230111003301"},
+{"r":".oo...o.o..B/..o....ooGo./o.oooooooooo/.o..o.o..ooo/.ooo.ooo.oo./o....ooowoo./B.oo.o.o.ooc/..o..o.o...c/coXooo.oooo./o.oooB.ooo.o/.coS..ooo..o/.oo...o.o.o.","sw":[[1,2],[0,0]],"br":[0,0,1],"m":2,"sp":[],"o":35,"d":24.36,"t":0.224,"s":"01100012322321000112221030011030301"},
+{"r":"o.o..ooo...oo/oooSoco...oo./..ooooo.c.o../..ooo.ooo.ooo/..o.oo.oooooo/wBo.ooo...o../....ooo.o...o/ocooo..o..o.o/.o..o...Boo.o/..Goo..oooo.o/cBoooooXooo../oo.o.ooo.o.o.","sw":[[1,1],[0,2]],"br":[0,1,0],"m":1,"sp":[],"o":36,"d":25.14,"t":0.243,"s":"230123223100103211222221111033233303"},
+{"r":".o..oo..Go../...ooo.oo.oo/..ocooooo..o/.o.oo..ooooo/o.oocwBooooo/o.B.ooo..o.B/.ooocoooo..o/ooooooo...oo/.Soo..oooo.X/.oo.oo..coc./oo....cooo../.o.ooBo..o.o","sw":[[1,2],[0,0]],"br":[0,1,1,0],"m":2,"sp":[],"o":37,"d":25.76,"t":0.251,"s":"0111000112111122200033303332211110300"},
+{"r":"...oooooo.o../o.oBoo.oooo../..o....ooo..S/oooBo.ooooooo/..owoowo..oco/ooc.ooBo.oo../ooooooo..Boo./..BBoB....oo./.Go.o...ooo../oooc...ooo.oo/ooooooooooo../.o.o..ooooB..","sw":[[0,2],[1,1]],"br":[0,1,1,0,0,0,1,1],"m":1,"sp":[],"o":38,"d":26.59,"t":0.273,"s":"23322232233333010101032321001232332230"},
+{"r":"Boooooo.o..o/o..o.Boooo.o/ooGooooocooo/.c...ooo.ooB/oo.o...ooooo/oo..o..oo.oX/Bo.oBB.o..Bo/ooooo.o...oo/.wB.ooB...o./ooBcooooooo./o.woS.ooo..o/oo.B.ooooooo","sw":[[0,1],[2,0],[1,2]],"br":[0,0,1,1,2,1,2,1,2,0,0],"m":3,"sp":[],"o":39,"d":27.47,"t":0.265,"s":"003320112112103210110001030123303303233"},
+{"r":"...oo..BB..../...ooooooo.../.o.ooB...oo.o/oooBoo.ooB.oo/..oooo.o.o.../oo.oo..ooo..o/.Soooo.oowooo/.wXooo.o.ooo./oo..B.o...oGo/oo..o.oo..o../.oo.o..o.o.o./..o.o...oco..","sw":[[1,0],[0,2],[2,0]],"br":[1,2,0,1,2,0],"m":3,"sp":[],"o":40,"d":28.2,"t":0.28,"s":"1100012322223100010330111122221033012112"},
+{"r":"ooooGoooo..o/ooooc.o.oooo/ooB.c.ooo.../.o.....ooooo/wooooo.oo..o/o.o.oo.o.wBo/B.c.ooSoooXo/ooo..B..oo.o/oo.B.o.o..o./BocoooB....o/oBooo......o/.Boco..oo...","sw":[[0,0],[2,0],[1,2]],"br":[1,1,0,2,1,1,2,0,0],"m":7,"sp":[],"o":41,"d":28.76,"t":0.284,"s":"30033313222121230121033000100112303300101"},
+{"r":".o...oooB.o../.ooo.oSoo..oo/ooooo.o.o...G/ooo.ooooooo.o/..oBoooo.o..o/oooo..coooBoX/Bo.oooo..oo.o/..oo.ooBoow../o.ooooooo.ooo/.o.Bo.o.ooooo/owBoBooo.o.../..o.oooo.....","sw":[[1,2],[0,0],[2,2]],"br":[2,2,2,1,1,2,0,1],"m":7,"sp":[],"o":42,"d":29.4,"t":0.293,"s":"222212303210110033033303012121112112301100"},
+{"r":"o..o..o...oo/o..Bc..oo..o/o...o...o.oo/.Goo.Bo.Booo/o.cBooooooco/.oo.o.oo.wo./oooc.oo.oooo/ooo.o..o.oo./BoooooooBoo./oS.oo..ooc.o/oo.oocooo.../o.ooXcoooX.o","sw":[[1,1],[2,2],[0,1]],"br":[2,1,2,0,2,2],"m":4,"sp":[],"o":43,"d":29.97,"t":0.298,"s":"0301221221111303330121101100010321032333303"},
+{"r":"wo..o.o.oo.o../oo.o.oooo..o.o/oo....o..o..../oooBooo.o.w.o./.oo.ooo.o.oo.o/.o.oooo.oooo.o/.BBBB..o..o..o/.o.o.oooooooow/.ooooco.oBo..o/.ooSoooBo.oo.B/oo..G.oo..c.../ooooo.oBoo..co/ooo...o.ooo...","sw":[[1,2],[2,0],[0,0]],"br":[2,2,1,1,0,0,1,2,1],"m":2,"sp":[],"o":44,"d":30.48,"t":0.299,"s":"11210300111113333322123030300110332103232212"},
+{"r":"oooooooooooo./.oBXXoBoooooo/ooo..o.o.o.../.oooooooo..../.o.o.ooooo.../.Boo.o.ooo.../o..oo...So..o/...ooo..o.o.B/ooooooo.oo.B./..o.BooB....o/ooB.w..o..o.o/oBo.oo.ooo.o./ooGooooo..oo.","sw":[[2,1],[1,1],[0,2]],"br":[0,2,2,0,2,1,0,1,0],"m":1,"sp":[],"o":45,"d":31.14,"t":0.309,"s":"030003332130321211121210303332221211223333012"},
+{"r":".o..XB.ooo..ow/.o..ooo.o..ooS/o.ooo.....ooo./o..oooooBBoG.o/.oooo..o.oo.o./o..ooo..ooBwoo/.oooooooooo.o./.ooo.oooo..oo./ooo.ooB.o....o/o.oo..o.oB..../o.....ooB.o..o/ooooooooo.o..o/..B.oB...BBo..","sw":[[2,2],[0,0],[1,0]],"br":[2,1,0,2,1,0,2,0,1,1,2],"m":4,"sp":[],"o":46,"d":31.67,"t":0.311,"s":"3232232333332101112101100101023232233230110001"},
+{"r":"........ooG/o.Toooooo../co...oo..../.o..oo..o../ooo..oo.ooo/o..o.o.oooo/.oo..o..ooo/o...Xooo.oo/....ooo.oB./o...ooSoo../.....o..ooo","sw":[[0,1]],"br":[0],"m":0,"sp":[[86,82]],"o":47,"d":34.01,"t":0.301,"s":"03321003210000033000000111016767744744444455541"},
+{"r":"o..oo.oo.o.o/ooooB..ooo.o/.......B.o../.o.o.oo.oToB/...oo...oo../..ooo.SoBo../...o..ooo.o./...o..o...Gc/....oooo.oo./..ooo..oowoo/ooooo......o","sw":[[0,2]],"br":[0,0,0,0],"m":1,"sp":[[6,19]],"o":48,"d":34.86,"t":0.324,"s":"110323210105152616162623762727223635262515245510"},
+{"r":"...ooo.oo../o.oBoo.oo../Too.ooo...o/.owo...Boo./oo.oB.ooooS/.o.oowoo.o./....Booo..o/o....o...oo/.o...o...../ooooooo.oo./.Go.o....o.","sw":[[0,2],[1,2]],"br":[1,0,0,0],"m":3,"sp":[[27,34]],"o":48,"d":35.32,"t":0.321,"s":"303223303030303335526261525261616262727233077772"},
+{"r":"o..ooo.oBooo/oXoooo..o.o./.coo...oocoo/.o...oBoX.G./.oo..ooo.o.B/.BB..c...ooo/.ooB.oooo.../oSw..oooooo./.ooo...oooBo/.ooToccBB.oc/...ocoo..ooo","sw":[[1,1],[2,0],[0,0]],"br":[2,1,1,0,1,0,1,2,0],"m":1,"sp":[[92,131]],"o":49,"d":36.33,"t":0.322,"s":"0000222122121030333000110111044747747774445545552"},
+{"r":"oo.oo...o.B/ooooo.Toc../o..o.oo..o./oo.c.Socooo/o...oo...B./.oB.ooo.ooo/oo...o.o..o/o.oooo.oBoo/.oowoc.G.Bo/oXooo.woooo/X....oo..o.","sw":[[0,1],[3,0],[1,0],[2,1]],"br":[2,3,2,0,1],"m":4,"sp":[[102,119]],"o":49,"d":36.9,"t":0.326,"s":"2223233100123301100010001100001111221223330477442"},
+{"r":"...o.XB...BB/..o.oocT..../X.w.oBoo.o.o/ooo.oooc.ooo/B.c..o..oo../.....oBBo.../o.oococ.oo.o/ooo.cBcw.oo./ooo..oo..Bco/.oSo.oo.oooo/BGoBo...o.oB","sw":[[2,2],[3,2],[0,0],[1,0]],"br":[2,2,2,3,3,1,2,1,0,3,0,1],"m":12,"sp":[[119,111]],"o":50,"d":37.47,"t":0.331,"s":"00110003210013000111121303333222430303033233332232"},
+{"r":".ooo.o..ooo/woow.o..ooc/o.ooo.oBooo/o.ocoooco../..ooo...ooo/oSBo.XoBooo/.oooc..o.o./ocoooBBoo.o/.oooo.o.ooG/Bo.oo.B.cc./B.oo.o..oTw","sw":[[2,2],[0,1],[3,2],[1,0]],"br":[0,3,2,0,1,0,3,0],"m":2,"sp":[[112,19]],"o":50,"d":37.68,"t":0.345,"s":"21100002222321011121222333323221211112154401111121"},
+{"r":"o..o.....o..o/o..oBoooo..oo/ooo.ooo...ooo/ooo.....o..../.ooB.oB....X./.o.ooSooooc../o.oooooooo.c./...ooTo.owooo/o...oBo...ow./ooo....ococoo/.oBBooGo.o.oo/...o.....oBoX","sw":[[0,1],[2,2],[3,0],[1,0]],"br":[1,2,3,0,2,2,3],"m":14,"sp":[[13,66]],"o":51,"d":38.03,"t":0.335,"s":"322121122120151522111121111615162617272323373723771"},
+{"r":"c.oo.oo.o..o/wo...oo..o.o/oB.co.Boo..c/..o.ooooco.B/.ooooo..ooT./XSoooo..oo.o/.oco.oo.oo../o..o.XBow.../o.ooB..Gco../..oo....oo.o/..c.oooB.oB./o.oBBo..oo.o","sw":[[3,2],[0,1],[2,2],[1,1]],"br":[3,3,1,1,3,1,3,2,0],"m":12,"sp":[[65,124]],"o":51,"d":38.22,"t":0.348,"s":"103211032312101011121001112222216774441000112121123"},
+{"r":"...Xo...oooBo/o.o.BoooBoooo/o.oBooooo.ooS/oowooo.Boo.o./.o.o.....o..G/o.ooo...ooooo/o.oo....oooBo/co.B..o..co.o/o..wcB.o...oo/oBooBTooo.c.o/o.o..ooo.oXo./.....o..oo.o.","sw":[[0,0],[2,2],[1,0],[3,0]],"br":[3,1,2,2,1,3,0,3,2,1],"m":15,"sp":[[37,26]],"o":52,"d":38.87,"t":0.358,"s":"0333323032332222021121032033322111101115162616221110"},
+{"r":"o.B..ooo..oo/ooooowo...oo/oco.ooB..oB./.o....ooooo./..Bo..o..oo./c.o..ooooooo/cooo.Tc.o..o/o..c.oo.w.../.oowoo..BBo./.Soo.ooo.ooc/Goo..owo.oo./ooB.ooc....c","sw":[[0,2],[1,2],[2,1],[3,1]],"br":[1,1,1,3,3,2,0],"m":2,"sp":[[118,80]],"o":53,"d":39.31,"t":0.354,"s":"10321011010003012223222103000332232347740033223233223"},
+{"r":"..B.ooooXoo.o/.BoToooooooo./.oo.o...o.o.o/.ooo..o.oBXc./..ooS.B.ooooo/..oXo...ooo.B/oo..ow.....oB/.oo..o.oo..../..o..o.oc...o/o....o.....o./..oB.o....cc./oooc.ooG..o..","sw":[[0,0],[2,2],[1,2],[3,2]],"br":[0,3,0,2,3,1,1],"m":14,"sp":[[10,18]],"o":53,"d":39.36,"t":0.357,"s":"30301221030012333233333336352625162615262616262625221"},
+{"r":"..o.ooG..ooo/..B...oooo.B/..oooS.o.B.o/o.oBooo..o../o.oowXowooo./o.oc.....B../c.o..oo..o.o/..ooooo..o.B/o.oococ..o../B.ooXo.o.o.o/..o...Toco../..o.....Bo.o","sw":[[3,2],[0,2],[2,0],[1,0]],"br":[3,1,0,3,1,1,2,2],"m":13,"sp":[[122,20]],"o":54,"d":39.95,"t":0.363,"s":"323222112033001012111222233330334444445555555444777471"},
+{"r":"o.ooooo.o..Go/..oo.o..S..o./.ooo..oooo.oo/.wc.o.oocoo.o/BBoooo...o.oo/oo.oo.Towo..B/oo.oooo.oo..o/XBoX..oooBBoo/..oooBo...oo./BB.ooooo.o.o./o..Bo.o.BB..o/o...o.oo.B..o","sw":[[2,1],[0,0],[1,0],[3,0]],"br":[2,3,1,2,3,1,0,1,0,2,0,2,3],"m":10,"sp":[[49,64]],"o":54,"d":40.16,"t":0.377,"s":"212231233233300200302321212123011003220030665554444470"},
+{"r":".oocB..oS..B/o...oooooX.c/oo..cc.ocooo/.o.oooooooB./oG..c..o..o./o....o..o.Bo/o.o..oo..Bwo/ooo.cw.oBoo./.oooB..ooB../TBXooooooo.o/.o.oo.oooo../ooooo..ooBoo","sw":[[3,1],[1,1],[2,2],[0,2]],"br":[1,3,3,0,3,0,2,3,1,0],"m":13,"sp":[[42,74]],"o":55,"d":40.58,"t":0.372,"s":"2321012223232333331111222223300010076677777477477444542"},
+{"r":"ocoooooo.oo../..Boooo.o..o./o.BBo..oo.B.o/Booo.ooooPo../...Tooooo..Go/...o.X..Boowo/.....o...o.oo/.o.oooowBo.oo/BBo..oBXoo.../oo..oo.Boooo./.oooo.o..ooo./oo...o.oo.PoS","sw":[[3,1],[2,2],[0,2],[1,2]],"br":[2,0,2,1,0,3,0,3,3,2,1],"m":7,"sp":[[19,33]],"pp":[153,48],"o":55,"d":42.77,"t":0.384,"s":"3003301212323333323222211236362525222515140011255440110"},
+{"r":"o....o.o.coo./.o.cBBoBooooc/.ooc.B...B.o./.Boo..BcBooSo/oo.o...c.w.oo/ooo..XoPB..o./..o..Too..oo./.oo.oBoo..GPo/oooo.B...w.../.oooooB...oo./oo........oo./Booowo.B.o.o./wBo.o..o...Bo","sw":[[0,1],[2,1],[3,1],[4,0],[1,0]],"br":[4,0,0,1,4,3,4,0,3,4,2,3,1,1,3,0],"m":19,"sp":[[144,42]],"pp":[102,72],"o":56,"d":43.81,"t":0.387,"s":"00321222223301230011111111222222144555544001100111122223"},
+{"r":"o.o.ooo...co.o/..oooooocoPoX./ocBo..oo.....c/occo.ocS....oo/..oo.o....GwB./..o.ooocwB.c../B.ooo.oc.woo../Bo....oc.o..oo/oooo..o...ooo./co..ooPooBB.Bo/oB.o..oo.Bo.Bo/Boo.BX..ooooBo/o.oooc..oToooo","sw":[[2,0],[0,0],[4,2],[3,0],[1,2]],"br":[1,0,2,4,3,4,1,1,3,4,4,3,2,2],"m":18,"sp":[[61,150]],"pp":[132,24],"o":56,"d":43.87,"t":0.392,"s":"03032111113333210111122211477112110010774444555655446423"},
+{"r":"ooooBXoB...P./.o.o.cBoo..oo/...o.co....oB/.oo.oBccw.o.B/...ooo..o.ooo/.o.o.owc.owo./oo.....o..ooo/Pooo.oow.o.../..B.oc..o...o/.o.oToooocooB/ooB..o..o.Gc./ooBo.o..o.ooo/BcoooB.ooocS.","sw":[[0,1],[1,2],[3,0],[2,1],[4,1]],"br":[0,2,2,3,1,1,0,3,2,3,2,4],"m":7,"sp":[[16,0]],"pp":[91,11],"o":57,"d":44.36,"t":0.391,"s":"030333314515161616262625252616172722363525251515122222550"},
+{"r":"oo.B.o.B..c.oB/....o..oBo.cTo/o.oo.oo.oooowo/ooo.ooo.Bc.ooo/o.oc....oS.ooo/..oo.Booowocc./o....Booo.B.oo/ooocooBBo.oo../ooB.oo.o.B.oco/..coo...woPc.B/oPoo.o.Xocc..o/.ooXoo.B.ocG.o/o.....ocoo....","sw":[[1,1],[2,1],[3,1],[4,0],[0,0]],"br":[4,0,0,1,2,2,1,4,1,2,1,2,0,3],"m":7,"sp":[[148,103]],"pp":[141,136],"o":57,"d":44.61,"t":0.407,"s":"032223032323233231011010101010011122301000111112212232121"},
+{"r":".B...Poo.oo../oo...Boo.o.co/.Boo..oPooBoo/.ocoocooocXo./.c...B.Bo..o./oo...ooo..oBo/oow..o.coooco/.o.ow..co.coo/Bwo.oo.Bo.oo./Bw..o...G..So/ocoo.oBo..co./.o.ooo.o..oo./.Too.oBBooo..","sw":[[4,1],[2,2],[3,2],[0,2],[1,2]],"br":[3,4,1,2,0,2,2,1,1,4,2,0,3],"m":31,"sp":[[159,37]],"pp":[33,5],"o":58,"d":45.59,"t":0.439,"s":"0301032100033300312333332222222222334554556655544544447322"},
+{"r":"ooooo..X.oo.oo/B..B.o.B.Tco.o/oo.oowooooo.../.oo..BoooooXS./..o..Bo.oo.ooB/..o..o.oBo..oo/.ooo.oo..PBooo/.o.o.wo.oo.ooc/.ooo.o..oo.oo./....oBocX.oooo/o.oooooPooo.../o.o..o.o.BooGo/oo.oo.o....ooB","sw":[[1,2],[0,1],[3,2],[4,2],[2,0]],"br":[0,3,3,2,1,3,2,2,4,3,2],"m":26,"sp":[[25,3]],"pp":[147,93],"o":59,"d":46.05,"t":0.436,"s":"33221323232300000111102232111112221121222216162677262635221"},
+{"r":"ooSB.Boc..wBo/oowooo..ooooo/coo..ooo.o.o./.oX...Boo.oB./Poo...XoooB.o/.o..o.ooo.B../.ooo.oPo.oco./....ocooo..o./...Boooo.cooo/.Boooo.o..ooo/.coo.XB...ooo/ooTo...oBoooo/ooo...ooB.Goo","sw":[[1,2],[3,0],[2,1],[4,1],[0,1]],"br":[4,0,0,1,2,0,4,3,3,0,4,4],"m":12,"sp":[[127,40]],"pp":[84,52],"o":59,"d":46.1,"t":0.436,"s":"23301222230123232120301103022323232001111211212112212452232"},
+{"r":"BoGoB.oo..coo./..BoXooo..oo../.ow..ooocB.ooB/.ooB...oo..ooo/o.o.Bo.oo..X.o/c.co.oooo.oooo/ooo.oXooccoocc/PoSo.ooo..ooo./Boo...w.oo.ooo/..c.Bo..Bc..B./cc..ooB.o.Booo/.BToPooco.oo../oB......o.o.oo","sw":[[1,0],[4,0],[0,0],[2,1],[3,0]],"br":[4,0,4,2,0,0,2,4,3,1,3,0,4,1,3],"m":8,"sp":[[24,109]],"pp":[158,98],"o":60,"d":46.48,"t":0.432,"s":"000222301233012301233122223233000030333332204777444474333330"},
+{"r":"X.B.oo....o.oo/o.o.o.Toww..oX/.....oo.B.oooo/o..oo.c.oooo../oo.oooP.oooo../...c...oocooo./.ooo...o...o../oPoo.oo.o..o../B..oo.oooo.ooo/ooBooBo.B.oooo/G..oo.o.oooo.o/o.....o...Xooo/......oooc..o./B.o..cSoBBB.oB","sw":[[1,0],[4,0],[3,2],[2,1],[0,1]],"br":[1,3,4,4,3,2,3,3,0,1,4],"m":14,"sp":[[138,123]],"pp":[99,62],"o":60,"d":46.84,"t":0.456,"s":"103003300321001113000000033300332223332222767774477677703322"},
+{"r":"oooo..B....o.c./oooo...o.oo.oo./coSoXoooo..c.Bo/oo.o..ooPBooo.B/oo.....o..ooG../T..ooBo..B.o.oB/coBP.oo..o...../..o.o.BBc..ooXo/.o.o....owoooXo/..ooo..oo...oco/.Xoooooooo.o.oc/BoooooooococBco/.c..oo.oo..oooo/o...oo.oo.BcoBo","sw":[[4,0],[1,0],[3,0],[2,0],[0,2]],"br":[2,1,3,4,4,2,1,4,2,3,0,2,0,4],"m":7,"sp":[[137,116]],"pp":[93,53],"o":61,"d":47.01,"t":0.434,"s":"0321133232233303300333233556555454477443332713033301211121121"},
+{"r":"Bco.o.....o..c/Bo..oBBoooTSo./.Bc.oc.B.o.o../o.c....o...o../..oooooPcooB../o..BooococX.Xc/o.ocoooo.ooB.o/B.oo......owBo/.oo..oo.o..ooo/.G.coooooBooo./ooo.Bo..oo.X.o/oo.ooBc.o.o.o./o.ooooBc.oo..o/P.c.wo..o.o.co","sw":[[4,0],[2,1],[0,2],[3,1],[1,0]],"br":[4,4,1,3,0,3,0,4,2,3,2,4,0,2,3],"m":27,"sp":[[133,37]],"pp":[182,63],"o":61,"d":47.35,"t":0.457,"s":"2232330321100200110332222233332323221111003003332333323236220"},
+{"r":"oo..oo.X.o.wco./...B.oo.ooBoooo/ooco.oB.B.ooooo/.woo...oo.oo.oo/..XB.Tooo.o..oS/..oo.o.oP..o.../o..ooo.cco.oo../oc.o.X.oBo.PBGo/o..oBo.o.B.oBco/..ooBo.oo.o.oo./.oooBo....o...o/Bcoooo....ocooo/c.o.Boo.o.o.o../occ..B.coo..o..","sw":[[1,1],[3,1],[4,2],[2,2],[0,1]],"br":[0,4,0,3,3,1,4,1,4,0,4,1,2,0,3],"m":26,"sp":[[56,47]],"pp":[116,83],"o":62,"d":48.17,"t":0.478,"s":"00333322331200333222233322552001200333226655445552123012103210"},
+{"r":"o...B.oooooooo/...B..ooo.o.oo/.oo.cccoT.cow./oo..cBcSBoowoo/.coc..o...ooo./.oBoooo...o..o/oo.B..PBooooBo/oooo.ooo..o.oo/c.oooo.ooooo../.PXo..co..ooco/coGooo.coo.Xoc/.ooc.woooo..ow/.B.coo.o...ooo/oo.o.ooBoc.oB.","sw":[[0,0],[4,0],[3,2],[2,0],[5,0],[1,1]],"br":[5,2,2,4,3,2,2,0,1,5,4],"m":8,"sp":[[27,0]],"pp":[127,90],"o":62,"d":48.59,"t":0.472,"s":"00112212322212030000112300123322233030332223321003022110321032"},
+{"r":".oBoBo...XoccoB/.o...Bo.ooo..c./BG.o..oooBoo.../..oo..ooS.Xoo.B/owo.w..oooo.ccw/.c..o....oP..co/.coc..o....ooo./.cooB.oBoc.Boo./oo..oo....B.BBB/...oo.....ooo.o/o..Bo.o...o...o/co.ocoTowoP.oo./o.occo.o.oooo../..o.o...oooBo.c","sw":[[2,0],[4,0],[1,2],[5,1],[0,1],[3,2]],"br":[4,2,2,0,2,0,5,1,0,4,4,2,4,3,1,5],"m":19,"sp":[[199,21]],"pp":[175,85],"o":63,"d":49.13,"t":0.475,"s":"010232301230112223033303333244555555445544454474747777747433332"},
+{"r":"oBccB.c.o.B.../oocI.oco.I..o./c....ooI.ooBo./o..GooBo.oTo../Bo.oI.Icoo..B./oocoIB..oBoo../o.Ioo.wXocoo.B/c.c.o.oocX..cI/oXoIoB..oooocc/oo.oS.oooc..o./oo.ocooI.ooB../oooo.ooo.IBo.o/oooooPoX.B.ooB/w.PIo.c..o.Bo.","sw":[[0,2],[3,0],[1,2],[5,0],[4,0],[2,1]],"br":[3,2,3,0,3,5,2,1,0,5,2,0,4,1,2,3],"m":51,"sp":[[95,120]],"pp":[184,173],"o":64,"d":51.51,"t":0.467,"s":"0002222323211101010003122232332021000100103212221030003030301233"},
+{"r":".oo..ooooI..B.o./.ooIoIc.Xoo...../o....Bo..ooo.o.o/.o..BSoooIIXoBT./.oo.o..o..co.oo./.coI..oIoo.o.o../.Bo.o.o.ocoooc.o/.o.oooXBXoBwo.../.c.oo.....ooc.../c.ooo.oIoo....../o.B.oP..o.Bo.oc./oooooooIoBBoBBG./..BooIo...B..o.o/oo.B.co..IwoB.oo/o..Po.....ooo.Io","sw":[[0,0],[4,0],[2,1],[1,2],[3,0],[5,0]],"br":[2,0,5,5,0,1,3,1,5,4,4,2,3,0,1,1,0],"m":59,"sp":[[223,66]],"pp":[227,165],"o":63,"d":51.56,"t":0.493,"s":"111301233300011212122202301202303233323011332122100011230111111"},
+{"r":"o.cc..o.o.o..o./..oB.BoSo.oo.o./o....ooPooo..o./Bo..oo.o.oo..o./I.oBoBoo.oooo../o.BooIIocoo.I../oo.cc.B.I.o..oo/Xoo...o.o...o.o/BIoTI.o.o.ocooI/.cBocco.BXwo.oB/oG.owBoBPoooo../.Ico...o....c../Bco.I.o.c..oo../w..IoI.o.oc.oco/XoBo...o.....Ic","sw":[[5,2],[0,0],[2,0],[1,0],[4,0],[3,1]],"br":[2,5,3,1,0,2,1,5,4,5,2,2,4,0,3],"m":34,"sp":[[119,26]],"pp":[158,37],"o":65,"d":51.93,"t":0.462,"s":"32110232231222330230322223333222223332330333277740003322227743332"},
+{"r":"o...oIoo....o.../o.Pco.ocowoo.oo./oo..o.cooIo...B./oBoooo..o.ooBooo/oo.o.o.wooocooo./.oIX.I..oBoo.o../ooB.owo.c..GIc.o/oo..ooooIcB...../oco.BIoBo..B.o.o/.Bco.I..ooco..X./oo.ooo.oooooooS./oIoooB..o.oooooI/Pooo.ooBo.o.I.o./o.oII.o.cooo.oT./o..w.coo....B...","sw":[[3,0],[2,0],[5,2],[4,2],[0,0],[1,0]],"br":[1,3,3,2,3,1,4,1,1,0,3,4,5],"m":50,"sp":[[186,111]],"pp":[192,18],"o":65,"d":51.99,"t":0.466,"s":"33301211102333032300000013222233223321032313010000011001121112212"},
+{"r":".oI.o.Boo..o.o./o..o.BBPo...Boo/.o.o.o.....c.c./X.o...o..o....o/o.o........Io.B/BXB...o..ooc.oS/oo..ooooo.oI.oc/ooo...oooBIoooo/oo.coc.oI.o.o.o/IoIIXoowIo..occ/.BcBooBB.ocoooo/..ocBo.TBIoo.Pw/.o..oo.oo..ooo./.B.oIBI.o..oIGo/.....oBooBooX.c","sw":[[1,0],[3,0],[0,2],[5,0],[2,0],[4,0]],"br":[2,4,0,5,5,0,1,2,1,5,1,0,4,1,5,4,3,2],"m":21,"sp":[[147,13]],"pp":[178,22],"o":66,"d":52.59,"t":0.472,"s":"222323123303012210303303333330000222121223030002221210123212111101"},
+{"r":"BB.oc......oo..c/...ooo....Tcwcoo/oo.owXB..BooI.oo/o..co.....Ico..I/.Boo....o...coo./.c.oocoIIoBoooo./B.oo..ooPX.ooo../o.BoooS.w.o.Po../.oo.o..o...o.c../.oo.ocooIooo.co./oo.o.c.oo.o.BoBG/o.B.coo..ooo.I.o/...o.IoI.ooco.../.o.oc.oIocooI.BI/oowoI.oooooc.ooo","sw":[[3,0],[5,1],[0,0],[2,0],[1,2],[4,0]],"br":[3,5,0,3,2,1,0,0,3,5,1,4],"m":35,"sp":[[20,99]],"pp":[124,104],"o":66,"d":52.77,"t":0.485,"s":"330000123221111112300030123302234525251515151515151512261616252221"},
+{"r":"BIo..oBo.ooooP./cc...cIIoTcoooo/co..BoG.o...Boc/.oo.oBIB.....oI/cwoo..oc.co..oc/coooo.oo...co.B/.oo.oc..o..oo.S/.oB..ooooo..ooo/o.o.oBIIocwo.../..I..o.Ioow.ooB/Poc..oBB.o...oo/cwBoooIoBoc...o/o..IoXI.o.ocBoo/X.oo..ooI....o./o..Io..oB.o...o","sw":[[4,1],[5,1],[2,1],[0,0],[1,0],[3,2]],"br":[1,1,1,4,3,5,4,2,0,4,2,2,5,5,4,0],"m":56,"sp":[[163,124]],"pp":[150,13],"o":67,"d":53.64,"t":0.51,"s":"0003012032303231056677774744547777722201230330332121033333221230301"},
+{"r":"oooooooooG..B..B/.co.oo.oPco..w.o/oooBcooII..oo.I./oo..BooooIBIo.oo/o.oo..o.ooooo.o./o..oo.o..S.oo..o/..o.o..oIXo..o.I/oBoo.oo..o.ooI.o/oooB.Io.o..o.cI./.Booo...o.coToIc/ooooBoo...cw..../.B.IooXB.PIooooo/..o..o..owoo.ooo/..o.oo.ooo.BBcc./o.o.Iooooow..o..","sw":[[5,0],[3,2],[4,0],[0,0],[2,0],[1,0]],"br":[2,5,5,3,0,4,1,5,4,5,1,0,1],"m":42,"sp":[[226,191]],"pp":[185,24],"o":67,"d":53.69,"t":0.511,"s":"0303210301232101023132323300303012121303032121221101022101210333001"},
+{"r":".oXooII..o.oo.o./.BooS.oooI.oIco./ooooo.oIco.ooooo/ooo.cX.oo.oo.coo/.oo.c..B...o.oo./oooo..oooI...oo./oP.o...oB...o.oo/..B.oooToooo...o/B..ooBwB.oBBoB../.oBc.oPooco.coo./.oXGo......oooc./cIo.oB.ocIIo.ooo/oIo.o.ooooIwBooo/ooII.wooo.I.ooBo/o.co..oooo..co.o/...oooo..oooc...","sw":[[1,1],[0,2],[3,0],[5,0],[4,0],[2,0]],"br":[3,3,4,0,2,1,2,5,4,0,2,3,2,1],"m":50,"sp":[[63,110]],"pp":[150,97],"o":68,"d":53.86,"t":0.491,"s":"30123322320321110033321011121212123010323233230123323303032103210001"},
+{"r":"oooIo.o..o...cBoo/.oooBIc......o.oo/..o..oBoooT..o..o/oowoo..Xoo.ooSBoc/ooowc.BooI.oc.oo./o....oo..Io.coooo/B.ooIo.ooIo.oc.I./....ooo..Io..oooB/....oXo..Po..Icoo/o.o.oo.oGco.oo.I./P....Bo..co..BXco/oooBo..ooo.ooBooI/ooooI.occoooBooBI/.cI..oooo.o..oo../.c..oBo...B..o.oo/ooBoc..o.o...o.ow","sw":[[0,2],[3,1],[5,0],[1,1],[4,0],[2,0]],"br":[5,4,0,2,5,0,5,1,1,4,5,0,0,4,1,3],"m":15,"sp":[[242,268]],"pp":[170,145],"o":68,"d":54.26,"t":0.517,"s":"12232210322122103321003122301233333010020033011101010110144477774403"},
+{"r":"o.co...oo.Ioooco/.ocBoIoB.o.oo.BI/..ocS.ocoI..Pooo/..Io.Pw....o.oII/.oocBoooccco.o.o/cooB.oX..IoIc..o/ooB...c.o.oIcoBB/ooc..oooooooo.co/.c....oToBo..cco/.ococX.o.B.I.o.o/o..ocoB..oo..oc./o.X.wcIoGoo..ooc/ooo.IT..oo..oB../ooBo..oo..oIoo.o/.c.oooB.oo.oo.oo/oo.BooXI....oo..","sw":[[1,1],[4,2],[3,0],[2,2],[0,2],[5,2]],"br":[1,1,1,5,4,0,2,3,5,2,0,4,0,0,4],"m":53,"sp":[[17,221],[185,240]],"pp":[53,44],"o":69,"d":54.66,"t":0.511,"s":"322110233321001011222211110323231111122222211122214444010033233232223"},
+{"r":".BBoo.o....ooococ/cBcB.Booc.B...oc./.o.o.occoooo.c.oo/.c.o..oBo.oo...oI/.....oo.ooTooo.o./Two..oc.o.co..o.o/oow..oBo.XocBoooo/oB.oo...coo.o...X/oo.c..o..ooBo...o/Io.oI..ooc..Ic.co/IPBIcooBIoIoo..co/ocSoo.IIo.o.oocoo/occ...P.o.o..oIoo/oIo.oo.o...B..oco/.o..oooo.ooo...cX/.o.BIGoowIcocooI.","sw":[[0,2],[1,1],[3,1],[5,2],[4,1],[2,2]],"br":[4,4,4,1,3,3,1,1,3,2,3,5,0,0,4],"m":32,"sp":[[117,66],[43,39]],"pp":[210,171],"o":70,"d":55.1,"t":0.507,"s":"2330123000010311212122616162623762625252516151525122616162727237733333"},
+{"r":"..c.oIcocoTo...I/..ooBo......c..o/ooo.PBooBo.I..../oooTo.ooo.oo..oo/o.wooooBBo..oo.o/.oo..ocIoo.II.oo/oooo.oooX.ooo.o./ooo.ooooB.coo.Go/oBo.oIo..ooB..Bo/woooSo.B..o.o.I./o.I.Xoo.oI..ooBI/.o.ooo.ocBooowBI/oooo....cooo..../woco.oooB.oIIooo/.o..B.ooBo.ooI.o/o.B...BPoo.oo.oo","sw":[[4,0],[3,1],[5,0],[1,1],[0,1],[2,0]],"br":[3,2,5,1,1,0,4,5,2,5,0,4,0,3,1,5,2,4],"m":0,"sp":[[77,94],[186,230]],"pp":[247,36],"o":70,"d":55.22,"t":0.514,"s":"0101130321232223233311101003331110010303033012110012300101121230010100"},
+{"r":"ooBo...o...co..oo/co.o.o.Io...ooooo/..o.c.BScoXXooooo/c..oco.oIcIXoo.oo/.o.I.cBo..o..c.To/.ooGoo..oB...oooo/...ooo....coo.oo./I.oo.ooooco.cB..c/B...o.IXoo.P.oo.o/coo.oco.B..IooI../oIco....o.Tccooo./oo..o.oo.Ioooo.o./co.oBwwoBo.oco..c/cc.III..ooo.ooB.o/ooooI.ccIooo.o.co/oc..cB.B.P...cooc","sw":[[1,2],[2,0],[3,0],[0,0],[4,1],[5,1]],"br":[3,5,3,1,2,1,1,3,4,2,0,1],"m":12,"sp":[[188,238],[226,100]],"pp":[264,147],"o":71,"d":55.77,"t":0.518,"s":"11111012322221101112122112303330033333323323455554545455447477677777443"},
+{"r":"Io.o...o......o./oIc.ooccoBococI./cBoocoo...B..o../..Io.o.o.coIooco/wooIBo.B...oB..c/...o..c.Bo..o.o./oo.c...TIB..oSo./.Ioo..PoI.oBooo./X.o..TXocoo.Ic.o/..oc.cPooXo.cI../B.c..w.o..oB.o.c/.Ioo..c.ooBB.oo./ooooc.oI...w.ooo/Goo.c.ooo..o..o./.I.o.I.oo.o.c.oo/Bco..o..cooo.ooo","sw":[[4,2],[1,0],[2,1],[0,1],[3,2],[5,2]],"br":[1,1,5,5,5,2,3,4,5,3,3,0,1,4],"m":43,"sp":[[253,216],[239,179]],"pp":[150,118],"o":71,"d":56.21,"t":0.548,"s":"23012321033233330103103011230333744474000030003300333323223322232222223"},
+{"r":"..oooB.o.......o./....Ioo.IcoS.o.c./TooIoo..oo.IIIG.c/.oco....oc.o.occ./ooo..oocI.ooco.Io/.ooo..ooo.o.o..../coo.JooI.oo.ooo.o/ooP..Xo...oXc..Io/oBoo.BB...wBc..oo/ooP.oooo.cc.ooo../..ocB.ooo.o.B.ooo/Ioo..coII.oooo.Bw/.oTo..oBIoBc.oBo./.woooo..co.woooc./B...oo..ooBI.o.c./Jcoooc.oB...o....","sw":[[5,2],[3,0],[0,2],[1,0],[2,1],[4,0]],"br":[0,3,2,4,3,0,1,3,4,4,5,3,5,0],"m":44,"sp":[[69,111],[247,217]],"pp":[155,121],"o":71,"d":58.14,"t":0.542,"s":"33223223221212211023300321030300033212203330000000100114454444444454411"},
+{"r":"B..oIcc.XoToo.../ccoPcoo.ooXoc..o/.ooooo..coc..o.B/Bc.o.co.ooo..o.B/...c.ccXIooo.oIo/.ooooT.oc..Boo../oowoo.oo..ooc.I./..o..oo.ooo..ooB/.oI..coI.oo..J.B/.ooo.I..oo.ooocP/..Io...Jo.oIIII./Goo.XoooBoo.o.../..o..ooo.oo.o.o./..o..ooo.oIIcoo./o..oocoo.oooooSo/...ocoooooXcI..o","sw":[[3,0],[4,1],[5,1],[0,2],[1,0],[2,0]],"br":[2,0,5,4,0,3,1,0],"m":9,"sp":[[182,163],[12,138]],"pp":[159,19],"o":71,"d":58.19,"t":0.516,"s":"30323012230110001112301122223322233333232344540333333237223636262627223"},
+{"r":"ooIo.oo..ooooo.P./oJoGBoc.ooo.c..co/.ooc...coooB.o.ow/oo...oooBT.Ic.oo./oBooo..Bc.BI.o.o./w..B...Joooo.Xco./cooc.o.oBocoo..I./c..o.o.o......oo./Io..c.So.....ocwo/o..o.oIooooIoPocc/o.oo.oo....o.o.oo/o.w..BIToooIIIIoo/ocBo.ocBwo.cco.../cooocBco....c..o./.oIo.oc..c.oo.Ic./oo...coo....o.oI.","sw":[[4,2],[3,2],[2,2],[1,0],[0,1],[5,2]],"br":[1,5,3,1,3,2,0,1,4,4,5,4],"m":31,"sp":[[111,47],[186,42]],"pp":[166,15],"o":73,"d":58.91,"t":0.527,"s":"2211111100302232033330001210303223223233301210322103330000001010032110321"},
+{"r":"occo.coB.Io.ooo./o..oooX.ooIII.I./...oooo.o.ooSo.o/ooo..oc.IBBcowoo/B....oBXX.o....c/co.Bo.I..cooo.o./.o.oc.Io.coo.ocB/..ooc.IoJ.oBXo.o/..c.c.owo.ooco../...oooBo.oo..o../oo..c.I..Iooo.P./o....ooIB.I...To/ooc.I.T.o.oBcoo./o.oooGc..o.o.c.o/B..oIJB.oo....o./.oooBPo..oo..ooo","sw":[[1,2],[4,2],[0,0],[2,0],[5,1],[3,1]],"br":[3,5,1,4,4,0,0,4,0,2,4,2,2,0],"m":23,"sp":[[12,97],[92,13]],"pp":[245,174],"o":73,"d":59.26,"t":0.55,"s":"3210332103222210300010332233012222232223322236262626362625252515145503001"},
+{"r":".o...ooIo.o.oI.cX/c.oo...ooPB.o..Go/oo.o.SII.oIo...oB/o.oooooo.ooo.oooo/J.BwooIIB.oBoo.../.o.o.c.....oo..Bo/..oo..o.XoooIooB./..o.T.ooJoXBwoBo./.c.ooToooooo..oo./...oo.Pco.o..o..B/...ooo..oB.o.BoIo/.o.Bo.I..w.ooocBI/oooo.ooo.ooIo...o/occ..oII.c.o.o.o./Boo.oooooc...oBoo/cI.oo...o..o.o.oB","sw":[[4,0],[0,2],[2,2],[3,0],[1,1],[5,2]],"br":[4,2,1,0,3,2,1,3,5,4,0,3,4,5,4,5,0],"m":21,"sp":[[242,200],[104,174]],"pp":[159,26],"o":74,"d":60.1,"t":0.574,"s":"21103221001123001123001321033233100011011011121221101104455455455544554550"},
+{"r":".oB.BBcocoIB...o/I.ococooooIoco.T/o..oI.coIo.oXooo/ooo.o.ooo..wocBo/oP..o.o..coo..Bo/.cIooTooIococoo./IooB..o..o..XoIX/.ooo........IBcB/o.o.G.oo.o.c.ooI/o..Bo..oc.oIo.o./...Po.o..oooc..B/.SooJowcooocooo./.o.c.co.oBo.o.B./BoooooI.o.ooIooo/c.BoJcooo.oooo../...o.o.oX...ooI.","sw":[[3,2],[2,1],[4,1],[5,2],[1,1],[0,1]],"br":[0,4,4,2,5,5,5,4,5,4,3,3,3,0,1],"m":32,"sp":[[212,75],[41,29]],"pp":[163,65],"o":75,"d":60.84,"t":0.589,"s":"112230300211230012301120112212222211231221030003303333332223223002212300010"},
+{"r":"oo..oBB.o.c.oIoXo/oBIBIo..ooooIoBIB/oToo.ocoGoBo...oo/oo.......c.Boooo./ooB..J.ooo.oo.Jo./..oI.w...oI.o.oIo/...o.oBo.o.....o./o.o.ooooBoo...owo/...ooc...oo.Boo.I/Bcoo.oBo.ooccoooc/oc..oooIoo..o.oc./.Ioo.cIo.oIc.oooo/oPoo...o.ow..BXoo/ooc.o.coSoPooc.oo/oII.oo..oocoooooT/cooooooo.ow.oo...","sw":[[4,0],[5,0],[1,0],[3,2],[2,0],[0,0]],"br":[5,1,3,0,3,5,4,5,5,3,2,3,4,1,4],"m":41,"sp":[[256,49],[121,43]],"pp":[231,205],"o":75,"d":60.89,"t":0.561,"s":"111211000301222333030000000011112222000033332222222120233003012330123000011"},
+{"r":"oooco.o..oo.I.Bc/oooo.c.JoTooB.oo/...TooI.oocBoco./oooooocII.wI.ooI/.o.o.....ooo.o../IoooB.ooc..o.ooo/oooGcc..B..Booo./.o..oooPoo.ooooo/.ISow.cIcI.oB.../.ooo.c.oBBocIcBo/Boowo..cco.ooPow/.oo.oooI....o.o./coo.oo.Iocooooo./oooo.coI.oocowo./w...c.ooBJc.IocB/coooooco.oooooco","sw":[[5,0],[4,1],[1,2],[0,2],[2,0],[3,1]],"br":[5,1,5,0,5,0,3,5,1,4,1,2,3],"m":3,"sp":[[124,77],[2,194]],"pp":[173,119],"o":76,"d":61.22,"t":0.581,"s":"2301232123210003001112113112322201111232103000300003122221222100300333003303"},
+{"r":".Xo.o.ooooo.B..o./..BcoI..o..oIoI.c/ooo.c.......o.coo/oBooBoc...oGoBIw./I.ocwP.oo..oooo.o/oo..coo...o.oo.oo/c..oo....c..co.../.Ico..oc.oo..ooc./.o..o..I.o..o..cB/c.oooo.IoI.oSTo.J/oI..oo..BoBoo.ooo/o..ooBo.c.BTII..o/o.o..oooooII..o.B/..oooooo..ooocc../.w.oBooIPoJw.X.o./oBooBoo.o.o.oooBo","sw":[[3,2],[0,2],[4,2],[5,2],[1,0],[2,2]],"br":[1,2,3,4,4,1,2,5,0,4,2,4,1,3,3],"m":51,"sp":[[100,156],[145,255]],"pp":[246,73],"o":76,"d":61.43,"t":0.595,"s":"2322033322301211100103222110111211003033035554455455555445455565544747740003"},
+{"r":"cB..JBoc......oo/Icoo..oo.oooco.o/T.oo.ccooooIc.Bo/oo..ooIw.o...o../oooooooo..oooB../oooc.P..cBo.oG../.coIo..o.o.ooooo/.ooI.cowooooo.ow/.o.I.oIIBooco.co/.c.Ic..Ioo.coooo/wooo.I..c.o.oo../oooXJPTo..oBc.../c.o.ooco.I..B.../o.So.cBoXIcoo.o./.o.I..co.cIooo.o/oo..o.oo......oc","sw":[[3,0],[2,1],[0,2],[5,0],[4,1],[1,2]],"br":[1,0,1,5,2,0,4,1,3],"m":35,"sp":[[254,35],[57,170]],"pp":[181,85],"o":77,"d":61.48,"t":0.384,"s":"00313211101103223332112221103322333322222222111121100000001065555544444444452"},
+{"r":"...owc...oTXocccB/I...o.IcToc.o.ocI/.o.oB.owoooBoIo../o.oSooocJ..o.IcoB/oo.oco.IcooIoocco/ccI.cooBoI.I.o..o/.oG.I......oow..o/oooc.c.oB.BI.oIo./.ocP.w...o.I.oocB/Bo.ooo...o..co.o./oo.ooo.oooowcoocc/oc.o.o.ooo.oco.o./JoBB.o..ooocoIooo/o.ooB.cooooococo./o.oco.o.oo..o...o/B.co.ocB...BoPo.o","sw":[[3,1],[1,0],[4,0],[5,1],[2,0],[0,1]],"br":[2,0,5,2,2,5,2,1,4,0,4,4,5,0,3],"m":53,"sp":[[229,84],[62,120]],"pp":[268,139],"o":77,"d":61.69,"t":0.579,"s":"11011233030022121103011032323011110333222222222117616172212223210321000103030"},
+{"r":"....ooooooBo.o.o/o..Joo.oc.ooo.co/oocIIo..Po.oo..B/oooIoo.oo.o.oo.o/oooo.Pooco..owoo/.w..occoo.oo.oBo/ooo.Boo..oI..ooc/o....STJ.B.I..B./oooc..oowoooI.Bo/o.w..oI..IB.BoB./.BocoooBoo.ooIow/coIo.oooooo.B.cI/.Iwoo..oBo.coTIo/oooI.Gcoooo.c..o/..oooc...o.o.o.I/..oBo...oooooo.o","sw":[[0,0],[5,1],[3,0],[1,0],[4,0],[2,1]],"br":[4,2,5,5,0,1,0,4,3,1,5,4,1,2,3],"m":26,"sp":[[13,5],[181,105]],"pp":[69,40],"o":78,"d":62.64,"t":0.609,"s":"000200321033210001111212213003033332223011230122232322122323032103332011112233"},
+{"r":".o..oc.c.BoIo..o./oc.ocoIoc.Io..cIc/oo.oXo....Ioo..o./.ooXcTXo.o.T.IBo./o..o....oJ.cooJoI/oo.oB....o.o..o.B/oo.o.ocBcocPoo..o/o..BG.oo.oocc...o/o..oo.oo..oco...o/oo.ooIBIo.Bocoo.P/oc.oB.o..o.oo...o/o.o.....co.ocoooo/.oooooowoIBo.ooc./oo.ooI....oSoBoI./oo.oBooIoXBI..B.o/oo..oooo..oIo.ow.","sw":[[4,1],[1,0],[0,0],[5,1],[2,0],[3,0]],"br":[0,5,2,1,3,1,5,3,2,4,5,3,3,4],"m":14,"sp":[[148,153],[196,206]],"pp":[169,113],"o":78,"d":62.69,"t":0.594,"s":"000301223010020021112333635252515151410000000333322233305545444444033332267770"},
+{"r":"oB.o..T..oB.ooo./B..oc..oc.o.o..o/.coo..B..co.ooB./o..o....IoXo...o/oBo.Iw.ooBcBIoB./Io.o.w.co.oooSc./.c.cJXooo.B.oIo./oocoII.oo.ocoooo/GII.cI.oo.ocoooo/JocoBI...o..co.c/c..oPo..c...c.oc/o.o.Booc.ococo../oIc.oX.c....Ioo./.ooo.coIB.oBooo./ooBoooIcoo.o.TPc/.....wo.o.cco...","sw":[[3,0],[1,0],[5,0],[2,0],[4,0],[0,1]],"br":[4,2,1,1,5,4,3,1,5,4,4,3,0,3,2],"m":56,"sp":[[210,246],[77,0]],"pp":[238,164],"o":80,"d":64.01,"t":0.634,"s":"23012323300002323210103223302110011212103303322332233032101122022103012303303200"},
+{"r":".o.w....Bo...cooo/oPooS.oo.oc.oJooo/..o..o.o.o.o..o.o/BcoXoI.ccIocc.oo./BooB..o......oo../ooooIooowococooo./oo.I.c...o.o.o.oo/.Boc.oBcIowccc.../B..oIco...oooc..o/.o.ooo..oB.Ioo.../ooo.cIJo..ooc.co./cwBcIIco.BcIcwoBo/oc..Io.B.o.Io..oo/oo.TocoooocBPo..o/oocG.cI...o..oIBT/.....oo.oooB..o..","sw":[[0,0],[2,2],[5,2],[1,1],[4,1],[3,2]],"br":[1,1,5,4,2,5,0,0,1,0,2,4,3,0,5],"m":63,"sp":[[139,41],[31,99]],"pp":[233,18],"o":79,"d":64.06,"t":0.611,"s":"3333333000030003211111122123011232211122227272333333323333333332221230323323211"},
+{"r":".c.BIoX.oBoo.o../o.ocoo.o.o.Goooc/.ooB...Io.o.coB./.ooooooPoBoo.o.o/II.c..oooco.cooo/oIoo..o.oo.oIo.o/o.oBoXocco..oo../o.oo..oo.oooo..o/w..ooTBBcoJ.oIBc/..oT..IoooooIo.B/o.cIc.BB.S..ooBo/Bo...ooooo.wI.cI/o.o.oc.oocooIoo./ocoo.I..oc..ooJ./oooow...o.ocIo.o/..c.oPoo.Xocoooo","sw":[[4,2],[5,0],[1,2],[2,1],[0,2],[3,1]],"br":[2,3,0,1,0,5,5,2,5,0,4,3,1,4],"m":51,"sp":[[114,33],[244,63]],"pp":[245,55],"o":79,"d":64.11,"t":0.613,"s":"0011222232311010302330303211230300031121111112222011111151525140010035544454403"}
 ];
 </script>
 <script>
@@ -571,15 +598,17 @@ var SFX = {
   win: function(){ noise(0.8, 0.12, 'lowpass', 400); var ch=[523,659,784,1047]; for (var i=0;i<ch.length;i++) tone(ch[i], 0.9-i*0.1, 'triangle', 0.13, null, 0.25+i*0.09); tone(1568, 0.6, 'sine', 0.06, null, 0.7); },
   bump: function(){ tone(110, 0.08, 'sine', 0.12); },
   ui: function(){ tone(620, 0.05, 'sine', 0.08); },
-  star: function(i){ tone(880*Math.pow(1.19,i), 0.2, 'sine', 0.12); }
+  star: function(i){ tone(880*Math.pow(1.19,i), 0.2, 'sine', 0.12); },
+  jump: function(){ tone(260, 0.22, 'triangle', 0.16, 780); tone(130, 0.08, 'sine', 0.2, 90); },
+  slide: function(){ noise(0.35, 0.16, 'highpass', 3200); tone(1400, 0.3, 'sine', 0.03, 900); },
+  port: function(arrive){ for (var i=0;i<3;i++) tone((arrive?660:990)*Math.pow(arrive?1.19:0.84,i), 0.16, 'sine', 0.08, null, i*0.05); }
 };
 
 /* ---------------- game state ---------------- */
 var levelN = 1, L = null, S = null, hist = [], falls = 0, status = 'title';
-var anim = null, queued = null, activeCell = -1, hintsLeft = 3, hint = null, demo = null, tutMoves = 0;
+var anim = null, inq = [], activeCell = -1, hintsLeft = 3, hint = null, demo = null, tutMoves = 0;
 var bridgeVis = null, swGlow = null, brokenCell = -1, flash = [], particles = [], shake = 0, landT = 0, landPiece = -1;
 var cam = { s: 24, ox: 0, oy: 0 }, floorCv = document.createElement('canvas'), floorCtx = floorCv.getContext('2d'), floorDirty = true;
-var solCache = {};
 var clouds = [], stars = [];
 for (var ci=0;ci<16;ci++) clouds.push({ x: Math.random(), y: Math.random(), r: 0.08+Math.random()*0.12, sp: 0.004+Math.random()*0.01, layer: ci%3, ph: Math.random()*6 });
 for (var si=0;si<90;si++) stars.push({ x: Math.random(), y: Math.random()*0.75, r: Math.random()*1.3+0.3, tw: Math.random()*6 });
@@ -600,6 +629,7 @@ function layout(){
   var land = W > H && H < 520;
   var hud = $('hud').getBoundingClientRect(), bot = $('bottom').getBoundingClientRect();
   var top = (hud.bottom || 60) + 6, bottom = land ? H - 8 : (bot.top || H - 80) - 6, left = 8, right = land ? (bot.left || W - 80) - 8 : W - 8;
+  if (land) bottom = H - 16 - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sab')) || 0);
   if (bottom - top < 120) { top = 60; bottom = H - 70; }
   var minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
   for (var c = 0; c < L.N; c++) if (L.kind[c]) {
@@ -623,22 +653,27 @@ function layout(){
   camFit.oy = top + ((bottom - top) - hU * s) / 2 + 2.1 * s - minY * s * 0.5;
   camFit.cx = (left + right) / 2; camFit.cy = (top + bottom) / 2;
   camFit.canZoom = s < 30;
+  // follow scale: at least 1.75x, and on a tall portrait screen enough for the board to use most of the height
+  camFit.zs = Math.min(42, Math.max(s * 1.75, Math.min(s * (bottom - top) / (hU * s) * 0.9, 30)));
   $('bZoom').classList.toggle('hidden', !camFit.canZoom || status !== 'play' && status !== 'paused');
-  zoom = camFit.canZoom && (opts.zoom === undefined ? s < 12.5 : !!opts.zoom); $('bZoom').classList.toggle('on', zoom); $('bZoom').setAttribute('aria-pressed', zoom ? 'true' : 'false');
+  zoom = camFit.canZoom && (opts.zoom === undefined ? s < 16 : !!opts.zoom); zoomUi();
   var t = camTarget(); cam.s = t.s; cam.ox = t.ox; cam.oy = t.oy;
 }
+function zoomUi(){ var b = $('bZoom'); b.classList.toggle('on', zoom); b.setAttribute('aria-pressed', zoom ? 'true' : 'false'); $('zLbl').textContent = zoom ? '跟隨' : '全圖'; }
+var overviewT = 0; // seconds left of the whole-board view at the start of a level, before the follow camera moves in
 var camFit = { s: 24, ox: 0, oy: 0, cx: 0, cy: 0, canZoom: false }, zoom = false;
 function camTarget(){
-  if (!zoom || !S) return camFit;
-  var s = Math.min(42, camFit.s * 1.75), pc = pieceCenter();
+  if (!zoom || !S || overviewT > 0) return camFit;
+  var s = camFit.zs || Math.min(42, camFit.s * 1.75), pc = pieceCenter();
   var px = pc ? pc[0] : L.w / 2, py = pc ? pc[1] : L.h / 2;
   return { s: s, ox: camFit.cx - (px - py) * s, oy: camFit.cy - (px + py) * s * 0.5 + s * 0.6 };
 }
 function stepCam(dt){
-  var t = camTarget(), k = 1 - Math.exp(-dt * 7);
+  if (overviewT > 0 && status === 'play') overviewT = Math.max(0, overviewT - dt);
+  var t = camTarget(), k = 1 - Math.exp(-dt * 5);
   var ds = t.s - cam.s, dx = t.ox - cam.ox, dy = t.oy - cam.oy;
-  if (Math.abs(ds) < 0.01 && Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3) { if (ds || dx || dy) { cam.s = t.s; cam.ox = t.ox; cam.oy = t.oy; floorDirty = true; } return; }
-  cam.s += ds * k; cam.ox += dx * k; cam.oy += dy * k; floorDirty = true;
+  if (Math.abs(ds) < 0.01 && Math.abs(dx) < 0.3 && Math.abs(dy) < 0.3) { cam.s = t.s; cam.ox = t.ox; cam.oy = t.oy; return; }
+  cam.s += ds * k; cam.ox += dx * k; cam.oy += dy * k; // the floor image is moved / scaled, not redrawn, while the camera glides
 }
 function P(x, y, z){ return [cam.ox + (x - y) * cam.s, cam.oy + (x + y) * cam.s * 0.5 - z * cam.s]; }
 function toWorld(px, py){ var a = (px - cam.ox) / cam.s, b = (py - cam.oy) / (cam.s * 0.5); return [(a + b) / 2, (b - a) / 2]; }
@@ -646,7 +681,7 @@ function toWorld(px, py){ var a = (px - cam.ox) / cam.s, b = (py - cam.oy) / (ca
 /* ---------------- colors ---------------- */
 function hash(c){ var h = (c * 2654435761) >>> 0; h ^= h >>> 15; return (h % 1000) / 1000; }
 function shadeHex(hex, k){ var n = parseInt(hex.slice(1), 16), r = (n>>16)&255, g = (n>>8)&255, b = n&255; return 'rgb(' + Math.min(255, Math.round(r*k)) + ',' + Math.min(255, Math.round(g*k)) + ',' + Math.min(255, Math.round(b*k)) + ')'; }
-var COL = { floor:'#8f8a80', frag:'#e08a3c', bridge:'#7d8fa3', goal:'#2a2418' };
+var COL = { floor:'#8f8a80', frag:'#e08a3c', bridge:'#7d8fa3', goal:'#2a2418', ice:'#9fd3e6' };
 
 /* ---------------- tile drawing ---------------- */
 function tilePath(g, x, y, z){ var a = P(x,y,z), b = P(x+1,y,z), c = P(x+1,y+1,z), d = P(x,y+1,z); g.beginPath(); g.moveTo(a[0],a[1]); g.lineTo(b[0],b[1]); g.lineTo(c[0],c[1]); g.lineTo(d[0],d[1]); g.closePath(); }
@@ -662,7 +697,7 @@ function drawTile(g, c){
   var x = c % L.w, y = (c / L.w) | 0, hv = hash(c);
   if (k === 4) { drawBridge(g, c, x, y); return; }
   if (c === brokenCell) return;
-  var top = k === 2 ? COL.frag : COL.floor;
+  var top = k === 2 ? COL.frag : k === 9 ? COL.ice : COL.floor;
   var vary = 0.94 + hv * 0.1;
   // sides (only where nothing hides them)
   var rx = x + 1 < L.w ? c + 1 : -1, dy = y + 1 < L.h ? c + L.w : -1;
@@ -687,13 +722,27 @@ function drawTile(g, c){
     g.lineWidth = 1.2 / cam.s; g.strokeStyle = 'rgba(212,167,44,0.7)';
     for (var i = 0; i < 4; i++) { var u = 0.2 + i*0.2; g.beginPath(); g.moveTo(u, 0.04); g.lineTo(u+0.06, 0.09); g.stroke(); g.beginPath(); g.moveTo(0.04, u); g.lineTo(0.09, u+0.06); g.stroke(); }
   }
-  if (k === 5 || k === 6) {
-    g.fillStyle = 'rgba(40,30,10,0.25)'; g.beginPath(); g.arc(0.5, 0.5, 0.36, 0, 6.3); g.fill();
-    g.strokeStyle = '#e6bd4a'; g.lineWidth = 2.4 / cam.s; g.beginPath(); g.arc(0.5, 0.5, 0.33, 0, 6.3); g.stroke();
-    if (k === 5) { g.fillStyle = '#e6bd4a'; g.beginPath(); g.arc(0.5, 0.5, 0.13, 0, 6.3); g.fill(); }
-    else { g.lineWidth = 4 / cam.s; g.beginPath(); g.moveTo(0.32,0.32); g.lineTo(0.68,0.68); g.moveTo(0.68,0.32); g.lineTo(0.32,0.68); g.stroke(); }
+  if (k === 5 || k === 6) { // marks stay readable on small late-level boards: line widths never drop below a share of the tile
+    g.fillStyle = 'rgba(40,30,10,0.25)'; g.beginPath(); g.arc(0.5, 0.5, 0.38, 0, 6.3); g.fill();
+    g.strokeStyle = '#e6bd4a'; g.lineWidth = Math.max(2.4 / cam.s, 0.1); g.beginPath(); g.arc(0.5, 0.5, 0.33, 0, 6.3); g.stroke();
+    if (k === 5) { g.fillStyle = '#e6bd4a'; g.beginPath(); g.arc(0.5, 0.5, 0.16, 0, 6.3); g.fill(); }
+    else { g.lineWidth = Math.max(4 / cam.s, 0.13); g.beginPath(); g.moveTo(0.33,0.33); g.lineTo(0.67,0.67); g.moveTo(0.67,0.33); g.lineTo(0.33,0.67); g.stroke(); }
     var md = L.mode[c];
-    if (md) { g.fillStyle = md === 1 ? '#7fd6a8' : '#ff8a7a'; g.beginPath(); g.arc(0.84, 0.16, 0.09, 0, 6.3); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1.4 / cam.s; g.beginPath(); g.moveTo(0.79,0.16); g.lineTo(0.89,0.16); if (md === 1) { g.moveTo(0.84,0.11); g.lineTo(0.84,0.21); } g.stroke(); }
+    if (md) { g.fillStyle = md === 1 ? '#7fd6a8' : '#ff8a7a'; g.beginPath(); g.arc(0.8, 0.2, 0.19, 0, 6.3); g.fill(); g.strokeStyle = 'rgba(20,10,0,0.75)'; g.lineWidth = Math.max(1.6 / cam.s, 0.07); g.beginPath(); g.moveTo(0.69,0.2); g.lineTo(0.91,0.2); if (md === 1) { g.moveTo(0.8,0.09); g.lineTo(0.8,0.31); } g.stroke(); }
+  }
+  if (k === 8) { // portal: violet rings
+    g.fillStyle = 'rgba(60,20,110,0.55)'; g.beginPath(); g.arc(0.5, 0.5, 0.38, 0, 6.3); g.fill();
+    g.strokeStyle = '#c9a6ff'; g.lineWidth = Math.max(2.2 / cam.s, 0.08); g.beginPath(); g.arc(0.5, 0.5, 0.36, 0, 6.3); g.stroke();
+    g.beginPath(); g.arc(0.5, 0.5, 0.22, 0.4, 5.6); g.stroke(); g.fillStyle = '#efe2ff'; g.beginPath(); g.arc(0.5, 0.5, 0.08, 0, 6.3); g.fill();
+  }
+  if (k === 9) { // ice: glossy streaks
+    g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = Math.max(1.6 / cam.s, 0.05); g.beginPath();
+    g.moveTo(0.2, 0.62); g.lineTo(0.62, 0.2); g.moveTo(0.42, 0.8); g.lineTo(0.8, 0.42); g.stroke();
+  }
+  if (k === 10) { // spring stone: red pad with a coil
+    g.fillStyle = '#c8553d'; g.fillRect(0.18, 0.18, 0.64, 0.64);
+    g.strokeStyle = '#ffe1b8'; g.lineWidth = Math.max(2 / cam.s, 0.08); g.beginPath();
+    g.moveTo(0.28, 0.3); g.lineTo(0.72, 0.38); g.lineTo(0.28, 0.5); g.lineTo(0.72, 0.62); g.lineTo(0.28, 0.72); g.stroke();
   }
   if (k === 7) {
     g.strokeStyle = '#7ad3e8'; g.lineWidth = 2.2 / cam.s; g.beginPath(); g.arc(0.5, 0.5, 0.34, 0, 6.3); g.stroke();
@@ -744,18 +793,29 @@ function order(){ // draw order of cells by depth
   arr.sort(function(a, b){ return ((a % L.w) + ((a / L.w) | 0)) - ((b % L.w) + ((b / L.w) | 0)) || a - b; });
   L.order = arr; return arr;
 }
-function bridgesAnimating(){ if (floorDirty && camMoving()) return true; for (var c = 0; c < L.N; c++) if (L.kind[c] === 4) { var t = (S.m >> L.grp[c]) & 1; if (Math.abs(bridgeVis[c] - t) > 0.001) return true; } return false; }
+function bridgesAnimating(){ for (var c = 0; c < L.N; c++) if (L.kind[c] === 4) { var t = (S.m >> L.grp[c]) & 1; if (Math.abs(bridgeVis[c] - t) > 0.001) return true; } return false; }
 function camMoving(){ var t = camTarget(); return Math.abs(t.s - cam.s) > 0.01 || Math.abs(t.ox - cam.ox) > 0.3 || Math.abs(t.oy - cam.oy) > 0.3; }
+// The floor is drawn once into an image of the whole board at the camera's scale and then only moved (and briefly
+// scaled while the zoom glides): a camera move costs one drawImage instead of redrawing every tile.
+var floorAt = null;
 function drawFloor(){
   var ord = order();
   if (bridgesAnimating() || brokenCell >= 0) { for (var i = 0; i < ord.length; i++) drawTile(ctx, ord[i]); return; }
-  if (floorDirty) {
-    floorCv.width = cv.width; floorCv.height = cv.height;
-    floorCtx.setTransform(DPR, 0, 0, DPR, 0, 0); floorCtx.clearRect(0, 0, W, H);
+  if (floorDirty || !floorAt || floorAt.L !== L || (Math.abs(floorAt.s - cam.s) > 1e-6 && !camMoving())) {
+    var x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (var c = 0; c < L.N; c++) if (L.kind[c]) { var cx = c % L.w, cy = (c / L.w) | 0; x0 = Math.min(x0, cx - cy - 1); x1 = Math.max(x1, cx - cy + 1); y0 = Math.min(y0, cx + cy); y1 = Math.max(y1, cx + cy + 2); }
+    var m = cam.s, ox = cam.ox, oy = cam.oy, left = ox + x0 * cam.s - m, topY = oy + y0 * cam.s * 0.5 - m;
+    var cw = (x1 - x0) * cam.s + 2 * m, chh = (y1 - y0) * cam.s * 0.5 + SLAB * cam.s + 2 * m;
+    floorCv.width = Math.ceil(cw * DPR); floorCv.height = Math.ceil(chh * DPR);
+    cam.ox = ox - left; cam.oy = oy - topY;
+    floorCtx.setTransform(DPR, 0, 0, DPR, 0, 0); floorCtx.clearRect(0, 0, cw, chh);
     for (var j = 0; j < ord.length; j++) drawTile(floorCtx, ord[j]);
-    floorDirty = false;
+    cam.ox = ox; cam.oy = oy;
+    floorAt = { L: L, s: cam.s, ox: ox - left, oy: oy - topY, w: cw, h: chh };
+    floorDirty = false; floorDraws++;
   }
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(floorCv, 0, 0); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  var k = cam.s / floorAt.s;
+  ctx.drawImage(floorCv, 0, 0, floorCv.width, floorCv.height, cam.ox - floorAt.ox * k, cam.oy - floorAt.oy * k, floorAt.w * k, floorAt.h * k);
 }
 function drawTileFx(t){
   // goal glow + switch glow
@@ -862,11 +922,21 @@ function drawClouds(t, layer){
 }
 
 /* ---------------- moves ---------------- */
-var ROLL = 0.16;
+var ROLL = 0.16, ROLL_FAST = 0.1, FALL = 0.3, QMAX = 8;
+// Every input that arrives while something is on screen (a roll, a slide, a fall, the split) waits its turn in this
+// first-in-first-out queue and runs the moment the board is free: swipes, 切換, a tap on a cube, 悔棋 and 提示 alike.
+// A fall empties what was queued before it (those moves were aimed at a path that no longer exists); input made while
+// the slab is falling is kept and runs right after it is put back.
+function enqueue(a){ if (inq.length < QMAX) inq.push(a); wake(); }
+function busyBoard(){ return !!anim || inq.length > 0; }
 function tryMove(d){
   if (demo && !demo.running) return;
-  if (anim) { if (queued == null && status === 'play') queued = d; return; }
   if (status !== 'play') return;
+  if (anim && anim.kind === 'win') return;
+  if (busyBoard()) { enqueue({ t: 'mv', d: d }); return; }
+  startRoll(d);
+}
+function startRoll(d){
   audio();
   var which = 0;
   if (!S.s) which = activeCell === S.b ? 1 : 0;
@@ -874,29 +944,52 @@ function tryMove(d){
   var r = doMove(L, S, mv);
   hint = null; tutMoves++;
   hist.push({ S: S, active: activeCell, mv: mv });
-  var from = S;
-  var box, rot;
+  var box;
   if (S.s) box = boxOf(S.p, S.o); else box = cubeBox(which ? S.b : S.a);
-  anim = { kind: 'roll', t: 0, dur: ROLL, d: d, box: box, from: from, r: r, which: which };
+  anim = { kind: 'roll', t: 0, dur: inq.length ? ROLL_FAST : ROLL, d: d, box: box, from: S, r: r, which: which };
   updateHud();
+}
+function runQueue(){
+  while (inq.length && !anim && status === 'play' && !(demo && demo.running)) {
+    var a = inq.shift();
+    if (a.t === 'mv') startRoll(a.d);
+    else if (a.t === 'swap') doSwap();
+    else if (a.t === 'sel') doSelect(a);
+    else if (a.t === 'undo') doUndo();
+    else if (a.t === 'hint') doHint();
+  }
+  updateHud();
+}
+// after the roll itself: the spring throw, the ice slide and the portal jump are shown as extra steps of the same move
+function glideFor(ev, R){
+  var segs = [], land = ev.port != null ? ev.port : ev.split ? ev.splitFrom : ev.win ? L.goal : R.p;
+  if (ev.jump != null) segs.push({ k: 'jump', from: ev.jump, to: land, o: 0, dur: 0.3 });
+  if (ev.slide) segs.push({ k: 'slide', from: ev.slideFrom, to: R.p, o: R.o, dur: Math.min(0.5, 0.06 + 0.06 * ev.slide) });
+  if (ev.port != null) segs.push({ k: 'port', from: ev.port, to: R.p, o: 0, dur: 0.32 });
+  return segs.length ? { kind: 'glide', t: 0, dur: segs[0].dur, segs: segs, i: 0 } : null;
 }
 function finishRoll(a){
   var r = a.r, ev = r.ev;
   if (ev.fail) {
-    // tumble or drop
-    var drop = ev.fail === 'break' || ev.fired.length > 0;
+    inq.length = 0; // queued moves were planned for the path that just ended in the clouds
+    var drop = ev.fail === 'break' || ev.fired.length > 0 || ev.slide > 0 || ev.jump != null;
     if (ev.fail === 'break') { brokenCell = r.S.p; SFX.glass(); vib([30, 30, 60]); burst(r.S.p % L.w + 0.5, ((r.S.p / L.w) | 0) + 0.5, 0, 22, ['#e08a3c', '#f2b070', '#9a5420'], 2.4); }
     else SFX.fall();
     if (ev.fired.length) { S = { s: r.S.s, p: r.S.p, o: r.S.o, a: r.S.a, b: r.S.b, m: r.S.m }; fxFired(ev); }
     vib(40);
     var moved = a.from.s ? -1 : (r.S.mover ? r.S.b : r.S.a);
-    if (drop) anim = { kind: 'drop', t: 0, dur: 0.65, box: a.from.s ? boxOf(r.S.p, r.S.o) : cubeBox(moved), from: a.from, which: a.which };
-    else anim = { kind: 'tumble', t: 0, dur: 0.65, d: a.d, box: a.box, from: a.from, which: a.which };
+    var dbox = !a.from.s ? cubeBox(moved) : ev.slide > 0 ? boxOf(ev.slideLast, r.S.o) : ev.jump != null && ev.fail !== 'break' ? boxOf(ev.jump, 0) : boxOf(r.S.p, r.S.o);
+    if (drop) anim = { kind: 'drop', t: 0, dur: FALL, box: dbox, from: a.from, which: a.which };
+    else anim = { kind: 'tumble', t: 0, dur: FALL, d: a.d, box: a.box, from: a.from, which: a.which };
     return;
+  }
+  if (!a.glided) {
+    var g = glideFor(ev, r.S);
+    if (g) { g.roll = a; anim = g; SFX.knock(false); if (ev.jump != null) SFX.jump(); else if (ev.slide) SFX.slide(); else SFX.port(); return; }
   }
   S = r.S;
   landT = 0.2;
-  if (ev.cube !== undefined) { SFX.cube(); } else SFX.knock(a.from.s && r.S.s && r.S.o === 0);
+  if (ev.cube !== undefined) { SFX.cube(); } else if (ev.port != null) SFX.port(true); else SFX.knock(a.from.s && r.S.s && r.S.o === 0);
   vib(8);
   var pc = occupied(L, S);
   for (var i = 0; i < pc.length && S.s; i++) dust(pc[i] % L.w + 0.5, ((pc[i] / L.w) | 0) + 0.5);
@@ -916,6 +1009,7 @@ function finishRoll(a){
   }
   if (ev.merge) { SFX.merge(); vib(20); var mp = occupied(L, S); flash.push({ c: mp, t: 0.5 }); burst(mp[0] % L.w + 1, ((mp[0] / L.w) | 0) + 0.5, 0.5, 14, ['#7ad3e8', '#e6bd4a'], 1.2); activeCell = -1; }
   if (ev.win) {
+    inq.length = 0;
     anim = { kind: 'win', t: 0, dur: 1.1 }; SFX.win(); vib([20, 40, 20, 40, 60]);
     updateHud(); return;
   }
@@ -924,7 +1018,7 @@ function finishRoll(a){
 }
 function afterMove(){
   if (demo && demo.running) { demo.wait = 0.2; return; }
-  if (queued != null) { var q = queued; queued = null; tryMove(q); }
+  runQueue();
 }
 function fxFired(ev){
   for (var i = 0; i < ev.fired.length; i++) {
@@ -936,48 +1030,48 @@ function fxFired(ev){
 }
 function endFail(){
   // rewind to the state before the fatal move; the failed roll still counts as a move
-  var h = hist.pop(); S = h.S; activeCell = h.active; falls++; brokenCell = -1; anim = null; queued = null;
+  var h = hist.pop(); S = h.S; activeCell = h.active; falls++; brokenCell = -1; anim = null;
   floorDirty = true;
   if (demo) { endDemo(''); return; }
   toast('掉進雲海了！已退回上一步（計 1 步）');
   updateHud(); saveGame();
-}
-// Finish a running roll (or split) right now, so a tap on 悔棋 / 提示 / 切換 during the 0.16 s roll is acted on
-// instead of silently dropped. Returns false when nothing more should happen: the roll fell (and was already
-// stepped back, which is what 悔棋 wanted anyway) or it reached the goal.
-function settleAnim(){
-  queued = null;
-  for (var guard = 0; anim && guard < 4; guard++) {
-    var a = anim;
-    if (a.kind === 'roll') { anim = null; finishRoll(a); }
-    else if (a.kind === 'split') { anim = null; if (a.merge) activeCell = -1; updateHud(); }
-    else if (a.kind === 'tumble' || a.kind === 'drop') { endFail(); return false; }
-    else return false;
-  }
-  return !anim;
+  runQueue();
 }
 function undo(){
   if (status !== 'play') return;
   if (interruptDemo()) return;
-  if (anim && !settleAnim()) return;
+  if (anim && (anim.kind === 'tumble' || anim.kind === 'drop')) { endFail(); return; } // the fall already steps back: that is the undo
+  if (busyBoard()) { enqueue({ t: 'undo' }); return; }
+  doUndo();
+}
+function doUndo(){
   if (!hist.length) return;
   var h = hist.pop(); S = h.S; activeCell = h.active; hint = null; SFX.ui(); floorDirty = true; updateHud(); saveGame();
 }
 function restart(){
   if (status !== 'play') return;
   demo = null; // 重來 during a demo starts the level over (no restore of the pre-demo position)
-  S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; activeCell = -1; brokenCell = -1;
+  S = initState(L); hist = []; falls = 0; anim = null; inq.length = 0; hint = null; activeCell = -1; brokenCell = -1;
   syncBridges(true); SFX.ui(); updateHud(); saveGame();
 }
 function syncBridges(instant){ for (var c = 0; c < L.N; c++) if (L.kind[c] === 4 && instant) bridgeVis[c] = (S.m >> L.grp[c]) & 1; floorDirty = true; }
 function swapCube(){
   if (status !== 'play' || !S) return;
   if (interruptDemo()) return;
-  if (anim && !settleAnim()) return;
+  if (busyBoard()) { enqueue({ t: 'swap' }); return; }
+  doSwap();
+}
+function doSwap(){
   if (S.s) return;
   activeCell = activeCell === S.a ? S.b : S.a; SFX.ui(); vib(8);
   var c = activeCell; flash.push({ c: [c], t: 0.35 });
   saveGame();
+}
+// a tap on a cube: {c} = that cell, or {mover:1} = the cube that was rolling when it was tapped (it is selected anyway)
+function doSelect(a){
+  if (S.s) return;
+  var c = a.mover ? activeCell : a.c;
+  if ((c === S.a || c === S.b) && c !== activeCell) { activeCell = c; SFX.ui(); vib(8); flash.push({ c: [c], t: 0.35 }); saveGame(); }
 }
 
 /* ---------------- particles ---------------- */
@@ -993,14 +1087,32 @@ function drawParticles(){
 }
 
 /* ---------------- frame ---------------- */
-var last = 0, tAll = 0, raf = 0, running = true;
+var last = 0, tAll = 0, raf = 0, idleT = 0, running = true, frames = 0, floorDraws = 0;
 function frame(ts){
   raf = 0;
   if (!running) return;
   var dt = Math.min(0.05, last ? (ts - last) / 1000 : 0.016); last = ts; tAll += dt;
-  update(dt); render();
-  raf = requestAnimationFrame(frame);
+  update(dt); render(); frames++;
+  schedule();
 }
+// Full frame rate only while something moves; a still board (or a menu over it) is redrawn 5 times a second so the
+// clouds and the goal's glow keep drifting without keeping the GPU busy. Any touch, key or state change wakes it.
+function lively(){
+  if (status === 'title') return true;
+  if (status !== 'play' && status !== 'won') return false;
+  if (anim || inq.length || particles.length || flash.length || shake > 0 || landT > 0 || hint || demo || Object.keys(ptrs).length) return true;
+  if (levelN === 1 && tutMoves < 4) return true;
+  if (L && S && (camMoving() || overviewT > 0)) return true;
+  for (var k in swGlow) if (swGlow[k] > 0) return true;
+  if (L && S) for (var c = 0; c < L.N; c++) if (L.kind[c] === 4 && bridgeVis[c] !== ((S.m >> L.grp[c]) & 1)) return true;
+  return false;
+}
+function schedule(){
+  if (raf || idleT || !running) return;
+  if (lively()) raf = requestAnimationFrame(frame);
+  else idleT = setTimeout(function(){ idleT = 0; if (running && !raf) raf = requestAnimationFrame(frame); }, 200);
+}
+function wake(){ if (idleT) { clearTimeout(idleT); idleT = 0; } if (running && !raf) raf = requestAnimationFrame(frame); }
 function update(dt){
   stepParticles(dt);
   if (L && S && (status === 'play' || status === 'won')) stepCam(dt);
@@ -1014,11 +1126,14 @@ function update(dt){
     if (anim.t >= anim.dur) {
       var a = anim;
       if (a.kind === 'roll') { anim = null; finishRoll(a); }
+      else if (a.kind === 'glide') { if (a.i + 1 < a.segs.length) { a.i++; a.t = 0; a.dur = a.segs[a.i].dur; if (a.segs[a.i].k === 'port') SFX.port(); } else { anim = null; a.roll.glided = true; finishRoll(a.roll); } }
       else if (a.kind === 'tumble' || a.kind === 'drop') { endFail(); }
       else if (a.kind === 'split') { anim = null; if (a.merge) { SFX.merge(); activeCell = -1; } updateHud(); afterMove(); }
       else if (a.kind === 'win') { anim = null; onWin(); }
     }
   }
+  // input queued while the game was paused (or behind a card) runs once play resumes
+  if (!anim && inq.length && status === 'play' && !(demo && demo.running)) runQueue();
   if (demo && demo.running && !anim && status === 'play') {
     demo.wait -= dt;
     if (demo.wait <= 0) {
@@ -1037,7 +1152,7 @@ function render(){
   if (lowPiece) drawPieces(true);
   drawFloor();
   drawTileFx(tAll);
-  if (!lowPiece) drawPieces(false);
+  if (!lowPiece) { drawPieces(false); drawBehind(); }
   drawHint();
   drawParticles();
   drawTutorial();
@@ -1077,6 +1192,14 @@ function drawPieces(low){
       drawBox(bx, null, { glow: 0.4 * (1 - u3) }); }
     return;
   }
+  if (a && a.kind === 'glide') {
+    var sg = a.segs[a.i], ug = Math.min(1, a.t / a.dur), fx0 = sg.from % L.w, fy0 = (sg.from / L.w) | 0, tx0 = sg.to % L.w, ty0 = (sg.to / L.w) | 0;
+    var gb = boxOf(sg.from, sg.o), al2 = 1;
+    if (sg.k === 'port') { if (ug >= 0.5) { gb = boxOf(sg.to, 0); } al2 = Math.abs(ug - 0.5) * 2; gb.z = (1 - al2) * 0.6; }
+    else { var eg = sg.k === 'slide' ? ug : ug; gb.x = fx0 + (tx0 - fx0) * eg; gb.y = fy0 + (ty0 - fy0) * eg; if (sg.k === 'jump') gb.z = Math.sin(ug * Math.PI) * 1.6; }
+    drawShadow(gb, null, 0.5 * al2); drawBox(gb, null, { alpha: Math.max(0.05, al2), glow: sg.k === 'port' ? 0.5 * (1 - al2) : 0 });
+    return;
+  }
   var bounce = landT > 0 ? Math.sin((0.2 - landT) / 0.2 * Math.PI) * 0.06 : 0;
   if (a && a.kind === 'roll') {
     var u = a.t / a.dur, ang = Math.PI / 2 * (u * u * 0.55 + u * 0.45);
@@ -1096,6 +1219,24 @@ function drawPieces(low){
     var A2 = S.a, B2 = S.b, ka = (A2 % L.w) + ((A2 / L.w) | 0), kb = (B2 % L.w) + ((B2 / L.w) | 0);
     if (ka <= kb) { drawCube(A2, activeCell === A2, 1); drawCube(B2, activeCell === B2, 1); } else { drawCube(B2, activeCell === B2, 1); drawCube(A2, activeCell === A2, 1); }
   }
+}
+// a standing slab hides 2-3 tiles behind it: trace their outlines over it (the goal's in gold) so nothing is hidden
+function drawBehind(){
+  if (!S || anim || status !== 'play') return;
+  var occ = occupied(L, S), reach = S.s && S.o === 0 ? 3 : 1, seen = {};
+  ctx.save(); ctx.lineWidth = Math.max(1.2, cam.s * 0.06); ctx.setLineDash([Math.max(3, cam.s * 0.2), Math.max(2, cam.s * 0.12)]);
+  for (var i = 0; i < occ.length; i++) {
+    var qx = occ[i] % L.w, qy = (occ[i] / L.w) | 0;
+    for (var dy = -reach; dy <= 0; dy++) for (var dx = -reach; dx <= 0; dx++) {
+      var dep = -(dx + dy), x = qx + dx, y = qy + dy, c = y * L.w + x;
+      if (dep < 1 || dep > reach || Math.abs(dx - dy) > 1 || x < 0 || y < 0 || seen[c] || !L.kind[c] || occ.indexOf(c) >= 0) continue;
+      seen[c] = 1;
+      if (L.kind[c] === 4 && !((S.m >> L.grp[c]) & 1)) continue;
+      ctx.strokeStyle = c === L.goal ? 'rgba(255,214,110,0.95)' : L.kind[c] === 2 ? 'rgba(255,170,100,0.8)' : 'rgba(255,255,255,0.6)';
+      tilePath(ctx, x, y, 0); ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 function flashOn(c){ for (var i = 0; i < flash.length; i++) if (flash[i].c.indexOf(c) >= 0) return flash[i].t; return 0; }
 function drawCube(c, active, al){
@@ -1147,6 +1288,7 @@ function drawTitleScene(){
 
 /* ---------------- HUD / UI ---------------- */
 function updateHud(){
+  wake();
   if (!L) return;
   $('hLevel').textContent = '第 ' + levelN + ' 關';
   var dn = diffN(levelN); $('hDiffN').textContent = dn;
@@ -1164,14 +1306,17 @@ function toast(msg, ms){
 }
 function toastOnce(key, msg){ if (introSeen['t_' + key]) return; introSeen['t_' + key] = 1; sset('intro', introSeen); toast(msg, 3200); }
 var SCREENS = ['title', 'select', 'pause', 'win', 'help', 'settings', 'intro', 'shareov'];
-function showOnly(id){ for (var i = 0; i < SCREENS.length; i++) $(SCREENS[i]).classList.toggle('hidden', SCREENS[i] !== id); }
+function showOnly(id){ wake(); for (var i = 0; i < SCREENS.length; i++) $(SCREENS[i]).classList.toggle('hidden', SCREENS[i] !== id); }
 function showGameUi(on){ $('bZoom').classList.toggle('hidden', !(on && camFit.canZoom)); $('hud').classList.toggle('hidden', !on); $('bottom').classList.toggle('hidden', !on); $('pad').classList.toggle('hidden', !(on && opts.pad)); $('bPadT').classList.toggle('on', !!opts.pad); $('bPadT').setAttribute('aria-pressed', opts.pad ? 'true' : 'false'); }
 
 var MECH = [
   { lv: 8, key: 'switch', name: '符文開關與石橋', kinds: [5, 6, 4], desc: '<b>圓形輕開關</b>：石碑任何姿態壓上去都會觸發。<br><b>X 形重開關</b>：石碑必須<b>直立</b>壓上才會觸發。<br>觸發後，對應的<b>藍灰石橋</b>會翻起或收起。' },
   { lv: 15, key: 'frag', name: '易碎陶磚', kinds: [2], desc: '橘色陶磚承受不住直立石碑的重量，<b>直立踩上就會碎裂</b>！躺著滾過去則沒問題。' },
   { lv: 20, key: 'mode', name: '單向開關', kinds: [5], desc: '開關角落有<b>綠色＋</b>的只會打開石橋；有<b>紅色－</b>的只會收起石橋，再踩也收不回來，小心走進死路！' },
-  { lv: 40, key: 'split', name: '分裂傳送陣', kinds: [7], desc: '石碑<b>直立</b>踩上青色傳送陣，會分裂成兩個小方塊，分別送到兩處。<br>點「切換」或點方塊來換手操控；兩個小方塊<b>相鄰時自動合體</b>。小方塊只能觸發圓形開關。' }
+  { lv: 40, key: 'split', name: '分裂傳送陣', kinds: [7], desc: '石碑<b>直立</b>踩上青色傳送陣，會分裂成兩個小方塊，分別送到兩處。<br>點「切換」或點方塊來換手操控；兩個小方塊<b>相鄰時自動合體</b>。小方塊只能觸發圓形開關。' },
+  { lv: 55, key: 'portal', name: '紫晶石門', kinds: [8, 1, 8], desc: '石碑<b>直立</b>落在紫色石門上，會被送到另一扇石門，仍然直立。躺著壓過去不會傳送；小方塊也不會。' },
+  { lv: 70, key: 'ice', name: '冰面', kinds: [9, 9, 9], desc: '石碑<b>躺著</b>而且兩半都在冰面上時，會朝翻滾的方向<b>一直滑</b>，直到有一半離開冰面；滑出邊緣就會掉下去。直立的石碑不會滑。' },
+  { lv: 85, key: 'spring', name: '彈跳石', kinds: [10], desc: '石碑<b>直立</b>落在紅色彈跳石上，會順著翻滾方向<b>再往前彈 2 格</b>，仍然直立落地。落點懸空會掉下去，落在易碎陶磚上會碎。' }
 ];
 
 /* ---------------- in-level save ----------------
@@ -1210,7 +1355,7 @@ function hasSave(n){ var g = isInt(n, 1, NL) && loadSave(n, parseLevel(LEVELS[n-
 
 function startLevel(n, fresh){
   levelN = n; L = getLevel(n); L.hinge = {}; for (var c = 0; c < L.N; c++) if (L.kind[c] === 4) L.hinge[c] = hingeOf(c);
-  S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; hintsLeft = 3; activeCell = -1; brokenCell = -1; tutMoves = 0;
+  S = initState(L); hist = []; falls = 0; anim = null; inq.length = 0; hint = null; hintsLeft = 3; activeCell = -1; brokenCell = -1; tutMoves = 0;
   bridgeVis = new Float32Array(L.N); swGlow = {}; particles.length = 0; flash.length = 0; demo = null;
   var g = fresh ? null : loadSave(n, L);
   if (g) { S = g.S; hist = g.hist; falls = g.falls; hintsLeft = g.hl; activeCell = g.active; tutMoves = 4; }
@@ -1218,12 +1363,14 @@ function startLevel(n, fresh){
   status = 'play';
   sset('last', n);
   showOnly(null); showGameUi(true);
-  layout(); updateHud();
+  overviewT = 0; layout(); updateHud();
+  if (zoom) { overviewT = 1.2; var t0 = camTarget(); cam.s = t0.s; cam.ox = t0.ox; cam.oy = t0.oy; } // the whole board first, then the follow camera moves in
   if (g) { toast('接續上次進度：第 ' + n + ' 關・已走 ' + moveCount() + ' 步'); return; }
+  if (zoom && !introSeen.t_zoom) { introSeen.t_zoom = 1; sset('intro', introSeen); setTimeout(function(){ if (status === 'play') toast('地圖較大：鏡頭會跟著石碑。右上角「跟隨／全圖」可切換', 3200); }, 1300); }
   saveGame();
   var m = null; for (var i = 0; i < MECH.length; i++) if (MECH[i].lv === n) m = MECH[i];
   if (m && !introSeen[m.key]) { introSeen[m.key] = 1; sset('intro', introSeen); showIntro(m); }
-  else if (n === 1) toast('在畫面任意處滑動，讓石碑朝該方向翻滾', 3000);
+  else if (n === 1) toast('在畫面任意處斜著滑（↗ ↘ ↙ ↖），石碑就朝那個方向翻滾', 3400);
   else toast('第 ' + n + ' 關・最少 ' + L.opt + ' 步');
 }
 function mechHtml(m){ return '<div class="mech"><canvas data-kinds="' + m.kinds.join(',') + '" width="120" height="104"></canvas><div><b>' + m.name + '</b><br>' + m.desc + '</div></div>'; }
@@ -1232,9 +1379,9 @@ function paintMechCanvases(root){
   for (var i = 0; i < cs.length; i++) {
     var c = cs[i], kinds = c.getAttribute('data-kinds').split(',').map(Number), g = c.getContext('2d');
     var save = { s: cam.s, ox: cam.ox, oy: cam.oy }, sL = L, sBV = bridgeVis, sDPR = DPR, sBC = brokenCell;
-    var row = kinds.map(function(k){ return k === 5 ? 'w' : k === 6 ? 'X' : k === 2 ? 'c' : k === 4 ? 'B' : k === 7 ? 'T' : 'o'; }).join('');
-    var def = { r: row, sw: [], br: [], sp: [], m: 1 };
-    row.split('').forEach(function(ch){ if (ch === 'w' || ch === 'X') def.sw.push([0, 0]); if (ch === 'B') def.br.push(0); if (ch === 'T') def.sp.push([0, 0]); });
+    var row = kinds.map(function(k){ return k === 5 ? 'w' : k === 6 ? 'X' : k === 2 ? 'c' : k === 4 ? 'B' : k === 7 ? 'T' : k === 8 ? 'P' : k === 9 ? 'I' : k === 10 ? 'J' : 'o'; }).join('');
+    var def = { r: row, sw: [], br: [], sp: [], pp: [], m: 1 };
+    row.split('').forEach(function(ch){ if (ch === 'w' || ch === 'X') def.sw.push([0, 0]); if (ch === 'B') def.br.push(0); if (ch === 'T') def.sp.push([0, 0]); if (ch === 'P') def.pp.push(0); });
     try {
       L = parseLevel(def); L.hinge = {}; for (var q = 0; q < L.N; q++) if (L.kind[q] === 4) L.hinge[q] = 3;
       bridgeVis = new Float32Array(L.N).fill(1); DPR = 2; brokenCell = -1;
@@ -1253,9 +1400,9 @@ function showIntro(m){
 }
 function buildHelp(){
   var h = '<p>操控長方石碑在雲端石板路上翻滾，最後必須<b>直立</b>落進金框洞口。</p>' +
-    '<p><b>操作</b>：在畫面任意處滑動，石碑往該斜向翻滾（右上＝北、右下＝東、左下＝南、左上＝西）。也可開啟右下角方向鍵；桌機用方向鍵／WASD，空白鍵切換小方塊，Z 悔棋，R 重來，H 提示。</p>' +
+    '<p><b>操作</b>：在畫面任意處<b>斜著滑</b>，石碑往該斜向翻滾（右上＝北、右下＝東、左下＝南、左上＝西）。翻滾中繼續滑也會依序執行。也可開啟右下角方向鍵；桌機用方向鍵／WASD，空白鍵切換小方塊，Z 悔棋，R 重來，H 提示。</p>' +
     '<p><b>掉落</b>：石碑任何一格懸空就會掉進雲海，會自動退回上一步並多計 1 步。</p>' +
-    '<p><b>評星</b>：步數 ≤ 最少步數 ★★★；≤ 最少 ×1.5 ★★；其他 ★。每關可用 3 次提示。</p>' +
+    '<p><b>評星</b>：步數 ≤ 最少步數 ★★★；≤ 最少 ×1.5 ★★；其他 ★。每關可用 3 次提示；看過示範的那一局最多 ★。</p>' +
     '<p><b>存檔</b>：每一步都會自動保存，關掉再打開可以從同一步接著玩；看示範不會弄亂你的進度。</p>';
   var m = MECH.map(mechHtml).join('');
   $('helpBody').innerHTML = h + m; paintMechCanvases($('helpBody'));
@@ -1304,7 +1451,8 @@ function stars3(moves){ return moves <= L.opt ? 3 : moves <= Math.floor(L.opt * 
 function onWin(){
   if (demo) { endDemo('示範完成！換你試試看'); return; }
   status = 'won'; clearSave(levelN);
-  var mv = moveCount(), st = stars3(mv), pr = prog[levelN] || { s: 0, b: 0 };
+  var mv = moveCount(), st = stars3(mv), pr = prog[levelN] || { s: 0, b: 0 }, capped = !!demoSeen[levelN] && st > 1;
+  if (demoSeen[levelN]) { if (capped) st = 1; delete demoSeen[levelN]; sset('demoSeen', demoSeen); }
   var newBest = !pr.b || mv < pr.b;
   prog[levelN] = { s: Math.max(pr.s || 0, st), b: pr.b ? Math.min(pr.b, mv) : mv };
   sset('progress', prog);
@@ -1313,40 +1461,62 @@ function onWin(){
   $('wStars').innerHTML = ss;
   for (var j = 0; j < st; j++) (function(j){ setTimeout(function(){ SFX.star(j); }, 180 + j * 180); })(j);
   $('wMoves').textContent = mv; $('wOpt').textContent = L.opt; $('wBest').textContent = prog[levelN].b;
-  var msg = st === 3 ? '以最少步數完成，神殿為你點亮！' : st === 2 ? '再少 ' + (mv - L.opt) + ' 步就能拿到三星。' : '試著用 ' + Math.floor(L.opt * 1.5) + ' 步以內完成拿兩星。';
+  var msg = capped ? '看過示範的這一局最多 1 星。不看示範再挑戰一次，' + L.opt + ' 步完成就有三星。' : st === 3 ? '以最少步數完成，神殿為你點亮！' : st === 2 ? '再少 ' + (mv - L.opt) + ' 步就能拿到三星。' : '試著用 ' + Math.floor(L.opt * 1.5) + ' 步以內完成拿兩星。';
   if (newBest && pr.b) msg += '　新的最佳紀錄！';
   if (totalStars() >= 300) msg += '　✦ 全關三星達成！';
   $('wMsg').textContent = msg;
   $('wNext').classList.toggle('hidden', levelN >= NL);
   setTimeout(function(){ if (status === 'won') showOnly('win'); }, 250);
 }
-function restartQuiet(){ S = initState(L); hist = []; falls = 0; anim = null; queued = null; hint = null; activeCell = -1; brokenCell = -1; syncBridges(true); updateHud(); }
+function restartQuiet(){ S = initState(L); hist = []; falls = 0; anim = null; inq.length = 0; hint = null; activeCell = -1; brokenCell = -1; syncBridges(true); updateHud(); }
 
 /* ---------------- hints & demo ---------------- */
 var hintMemo = {};
-// what the game looks like right now; a hint or demo whose search finishes after this changed is thrown away
+// what the game looks like right now; a hint whose search finishes after this changed is thrown away
 function sig(){ return levelN + '|' + status + '|' + hist.length + '|' + falls + '|' + (S ? stateKey(L, S) : '') + '|' + (anim ? 1 : 0) + '|' + (demo ? 1 : 0); }
-function solutionFrom(cb){
-  if (solCache[levelN]) { cb(solCache[levelN]); return; }
-  toast('神殿推算中…', 900);
-  var n = levelN, L0 = L;
-  setTimeout(function(){
-    if (levelN !== n || L !== L0) return;
-    var r = solve(L0, null, { limit: 2500000 });
-    if (r && r.len > 0) solCache[n] = r;
-    cb(r);
-  }, 40);
+// every level ships with its shortest solution (LEVELS[n].s), so the demo and on-path hints need no search at all
+function levelSol(n){ var d = LEVELS[n-1]; if (!d._sol) { d._sol = String(d.s || '').split('').map(Number); if (!d._sol.length) { var r = solve(parseLevel(d)); d._sol = r.len > 0 ? r.sol : []; } } return d._sol; }
+function pathKeys(){
+  if (!L.pk) { var s0 = initState(L), sol = levelSol(levelN), m = new Map(); m.set(stateKey(L, s0), 0);
+    for (var i = 0; i < sol.length - 1; i++) { s0 = doMove(L, s0, sol[i]).S; var k0 = stateKey(L, s0); if (!m.has(k0)) m.set(k0, i + 1); }
+    L.pk = m; }
+  return L.pk;
 }
-// index of the current position on the cached shortest path from the start (-1 when off it)
-function pathIndex(r){
-  if (!r.keys) { var s = initState(L); r.keys = [stateKey(L, s)]; for (var i = 0; i < r.sol.length - 1; i++) { s = doMove(L, s, r.sol[i]).S; r.keys.push(stateKey(L, s)); } }
-  return r.keys.indexOf(stateKey(L, S));
+// Off the stored path: breadth-first search from here until any position on the path (or the goal) is reached.
+// It runs in slices of about 8 ms between frames, so the board never freezes while it thinks.
+function rejoin(S0, done){
+  var LL = L, sol = levelSol(levelN), pk = pathKeys(), sg = sig();
+  var keys = new Map(), st = [S0], par = [-1], pmv = [-1], head = 0;
+  keys.set(stateKey(LL, S0), 0);
+  function finish(h, mv, rest){ var first = mv, c = h, depth = 0; while (par[c] >= 0) { first = pmv[c]; c = par[c]; depth++; } done(first, depth + rest); }
+  function step(){
+    if (sig() !== sg || L !== LL) return; // the player moved meanwhile: no hint for a stale position, nothing charged
+    var t0 = performance.now();
+    while (head < st.length) {
+      var Sx = st[head], ms = movesOf(Sx);
+      for (var j = 0; j < ms.length; j++) {
+        var r = doMove(LL, Sx, ms[j]); if (r.ev.fail) continue;
+        if (r.ev.win) { finish(head, ms[j], 1); return; }
+        var kk = stateKey(LL, r.S), pi = pk.get(kk);
+        if (pi !== undefined) { finish(head, ms[j], 1 + sol.length - pi); return; }
+        if (!keys.has(kk)) { keys.set(kk, st.length); st.push(r.S); par.push(head); pmv.push(ms[j]); if (st.length > 2500000) { done(-2); return; } }
+      }
+      head++;
+      if ((head & 127) === 0 && performance.now() - t0 > 8) { setTimeout(step, 0); return; }
+    }
+    done(-1);
+  }
+  setTimeout(step, 0);
 }
 function cloneS(s){ return { s: s.s, p: s.p, o: s.o, a: s.a, b: s.b, m: s.m }; }
 function useHint(){
   if (status !== 'play' || hintsLeft <= 0) return;
   interruptDemo();
-  if (anim && !settleAnim()) return;
+  if (busyBoard()) { enqueue({ t: 'hint' }); return; }
+  doHint();
+}
+function doHint(){
+  if (status !== 'play' || hintsLeft <= 0) return;
   audio(); SFX.ui();
   var k = stateKey(L, S);
   // the arrow is already showing for this exact position: point at it again instead of charging a second hint
@@ -1357,39 +1527,37 @@ function useHint(){
     toast('照箭頭方向翻滾（剩 ' + hintsLeft + ' 次提示，還需 ' + len + ' 步）', 2600);
     updateHud(); saveGame();
   };
-  var c = solCache[levelN], i = c ? pathIndex(c) : -1;
-  if (i >= 0) { give(c.sol[i], c.len - i); return; }
+  var sol = levelSol(levelN), i = pathKeys().get(k);
+  if (i !== undefined) { give(sol[i], sol.length - i); return; }
   var mk = levelN + ':' + k;
   if (hintMemo[mk]) { give(hintMemo[mk].mv, hintMemo[mk].len); return; }
   toast('神殿推算中…', 900);
-  var sg = sig();
-  setTimeout(function(){
-    if (sig() !== sg) return; // the player moved meanwhile: no hint for a stale position, nothing charged
-    var r = solve(L, cloneS(S), { limit: 2500000 });
-    if (sig() !== sg) return;
-    if (r.len === -2) toast('這個局面太複雜，推算不出來；悔棋幾步再試（沒有扣提示）', 2800);
-    else if (r.len < 0) toast('這個局面已經走不到終點了，試試悔棋或重來（沒有扣提示）', 2800);
-    else { hintMemo[mk] = { mv: r.sol[0], len: r.len }; give(r.sol[0], r.len); }
-  }, 40);
+  rejoin(cloneS(S), function(mv, len){
+    if (mv === -2) toast('這個局面太複雜，推算不出來；悔棋幾步再試（沒有扣提示）', 2800);
+    else if (mv < 0) toast('這個局面已經走不到終點了，試試悔棋或重來（沒有扣提示）', 2800);
+    else { hintMemo[mk] = { mv: mv, len: len }; give(mv, len); }
+  });
 }
+// 看過示範的那一局最多 1 星 (kept per level until that level is next cleared, so leaving and coming back doesn't reset it)
+var demoSeen = sget('demoSeen', {}); if (!isObj(demoSeen)) demoSeen = {};
+function markDemo(n){ demoSeen[n] = 1; sset('demoSeen', demoSeen); }
 // 看示範 from the pause menu keeps the player's own position and puts it back when the demo ends or is stopped,
 // so a demo can neither wipe a half-played level nor be finished by the player for stars.
 function startDemo(){
   var snap = status === 'paused' && (hist.length || falls) ? { S: S, hist: hist.slice(), falls: falls, active: activeCell, hl: hintsLeft } : null;
   hint = null; demo = null;
   status = 'play'; showOnly(null); showGameUi(true); layout();
-  var n = levelN;
-  solutionFrom(function(r){
-    if (levelN !== n || status !== 'play' || demo) return;
-    if (!r || r.len <= 0) { toast('示範暫時無法使用'); return; }
-    restartQuiet();
-    demo = { sol: r.sol, i: 0, wait: 0.5, running: true, snap: snap };
-    toast('示範中：最短 ' + r.len + ' 步（點畫面可停止）', 2500);
-  });
+  var sol = levelSol(levelN);
+  if (!sol.length) { toast('示範暫時無法使用'); return; }
+  restartQuiet();
+  demo = { sol: sol, i: 0, wait: 0.5, running: true, snap: snap };
+  markDemo(levelN);
+  toast('示範中：最短 ' + sol.length + ' 步（點畫面可停止）・看過示範，這一局最多 1 星', 2800);
+  wake();
 }
 function endDemo(msg){
   var d = demo; if (!d) return false;
-  demo = null; anim = null; queued = null; hint = null; brokenCell = -1;
+  demo = null; anim = null; inq.length = 0; hint = null; brokenCell = -1;
   if (d.snap) { S = d.snap.S; hist = d.snap.hist; falls = d.snap.falls; activeCell = d.snap.active; hintsLeft = d.snap.hl; syncBridges(true); updateHud(); }
   else restartQuiet();
   if (msg) toast(msg + (d.snap ? '（已回到你原本的位置）' : ''));
@@ -1424,9 +1592,13 @@ function mapSwipe(dx, dy){
   if (opts.rot) { if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 1 : 3; return dy < 0 ? 0 : 2; }
   if (dx >= 0 && dy < 0) return 0; if (dx >= 0 && dy >= 0) return 1; if (dx < 0 && dy >= 0) return 2; return 3;
 }
-var SWIPE = 24;
+var SWIPE = 24, TAN10 = 0.1763, axisTold = false;
+// a swipe within 10° of straight up/down/left/right sits on the border of two directions of the 45° board; it still
+// rolls (every swipe counts), and the first time it happens the game explains to swipe diagonally
+function nearAxis(dx, dy){ if (opts.rot) return false; var ax = Math.abs(dx), ay = Math.abs(dy); return Math.min(ax, ay) < Math.max(ax, ay) * TAN10; }
+function swipeMove(dx, dy){ if (nearAxis(dx, dy) && !axisTold) { axisTold = true; toast('小提醒：斜著滑最準（↗ 北、↘ 東、↙ 南、↖ 西）；接近正上下左右時容易翻錯方向', 3400); } tryMove(mapSwipe(dx, dy)); }
 cv.addEventListener('pointerdown', function(e){
-  audio();
+  audio(); wake();
   if (status !== 'play') return;
   e.preventDefault();
   // a touch that stops the demo only stops it: it doesn't also roll the slab
@@ -1436,8 +1608,8 @@ cv.addEventListener('pointerdown', function(e){
 });
 cv.addEventListener('pointermove', function(e){
   var p = ptrs[e.pointerId]; if (!p || p.done) return;
-  var dx = e.clientX - p.x, dy = e.clientY - p.y;
-  if (dx * dx + dy * dy >= SWIPE * SWIPE) { p.done = true; tryMove(mapSwipe(dx, dy)); }
+  var dx = e.clientX - p.x, dy = e.clientY - p.y, d2 = dx * dx + dy * dy;
+  if (d2 >= SWIPE * SWIPE) { p.done = true; swipeMove(dx, dy); }
   e.preventDefault();
 });
 cv.addEventListener('pointerup', function(e){
@@ -1445,23 +1617,30 @@ cv.addEventListener('pointerup', function(e){
   delete ptrs[e.pointerId];
   if (p.done || status !== 'play') return;
   var dx = e.clientX - p.x, dy = e.clientY - p.y;
-  if (dx * dx + dy * dy >= SWIPE * SWIPE) { tryMove(mapSwipe(dx, dy)); return; }
-  if (!S || S.s || demo) return;
-  // tap a cube to select it (also right after a cube's roll: the roll is finished first instead of the tap being lost)
-  if (anim && anim.kind !== 'roll' && anim.kind !== 'split') return;
-  if (anim && !settleAnim()) return;
-  if (S.s) return;
-  var w = toWorld(e.clientX, e.clientY + cam.s * 0.5), best = -1, bd = 1.6;
-  [S.a, S.b].forEach(function(c){ var d = Math.hypot(c % L.w + 0.5 - w[0], ((c / L.w) | 0) + 0.5 - w[1]); if (d < bd) { bd = d; best = c; } });
-  if (best >= 0 && best !== activeCell) { activeCell = best; SFX.ui(); vib(8); flash.push({ c: [best], t: 0.35 }); saveGame(); }
+  if (dx * dx + dy * dy >= SWIPE * SWIPE) { swipeMove(dx, dy); return; }
+  if (demo) return;
+  // tap a cube to select it; during a roll the tap waits in the queue instead of being lost
+  var sel = pickCube(e.clientX, e.clientY); if (!sel) return;
+  if (busyBoard()) enqueue(sel); else doSelect(sel);
 });
+// nearest cube to a tap, measured on screen with a generous radius (cubes are small on big boards)
+function pickCube(px, py){
+  var a = anim, cands = [];
+  if (a && a.kind === 'roll' && !a.from.s) {
+    var oth = a.which ? a.from.a : a.from.b; cands.push({ c: oth }); cands.push({ c: a.which ? a.from.b : a.from.a, mover: 1 });
+    if (!a.r.ev.fail && !a.r.S.s) cands.push({ c: a.r.S.a === oth ? a.r.S.b : a.r.S.a, mover: 1 });
+  } else if (S && !S.s) { cands.push({ c: S.a }); cands.push({ c: S.b }); }
+  var best = null, bd = Math.max(cam.s * 1.6, 34);
+  for (var i = 0; i < cands.length; i++) { var c = cands[i].c, q = P(c % L.w + 0.5, ((c / L.w) | 0) + 0.5, 0.5), d = Math.hypot(q[0] - px, q[1] - py); if (d < bd) { bd = d; best = cands[i]; } }
+  return best ? (best.mover ? { t: 'sel', mover: 1 } : { t: 'sel', c: best.c }) : null;
+}
 cv.addEventListener('pointercancel', function(e){ delete ptrs[e.pointerId]; });
 var padBtns = document.querySelectorAll('#pad button');
 for (var pb = 0; pb < padBtns.length; pb++) (function(b){
-  b.addEventListener('pointerdown', function(e){ e.preventDefault(); if (status !== 'play' || interruptDemo()) return; tryMove(+b.getAttribute('data-d')); });
+  b.addEventListener('click', function(){ if (status !== 'play' || interruptDemo()) return; tryMove(+b.getAttribute('data-d')); });
 })(padBtns[pb]);
 window.addEventListener('keydown', function(e){
-  var k = e.key;
+  var k = e.key; wake();
   if (status === 'play') {
     var map = { ArrowUp: 0, w: 0, W: 0, ArrowRight: 1, d: 1, D: 1, ArrowDown: 2, s: 2, S: 2, ArrowLeft: 3, a: 3, A: 3 };
     if (map[k] !== undefined) { e.preventDefault(); if (e.repeat && anim) return; if (interruptDemo()) return; tryMove(map[k]); return; }
@@ -1479,6 +1658,45 @@ function pauseGame(){
   showOnly('pause');
 }
 function resume(){ status = 'play'; showOnly(null); showGameUi(true); layout(); }
+/* Buttons fire from pointerup, tracked per pointerId, when the finger is released on the same button: it moved less
+   than 10 px, or it lifts inside the button's box grown by 16 px (the browser itself aims taps just outside an edge at the
+   button). So taps work while another finger is on the board, and a tap that changes the screen can't fire whatever
+   appears under the finger. The press's pointerdown is preventDefault-ed so no compatibility mousedown / focus follows;
+   the tap layer's own click is the only one that runs for a tap. Any other click counts as keyboard activation only right
+   after an Enter/Space keydown on that same element; a pointer-made click (detail > 0) is swallowed, and so is a detail-0
+   click on an element the tap layer fired within the last 800 ms (Chromium 141 sends the tap's follow-up click with detail 0
+   when pointerdown was preventDefault-ed). Scoped per element, so other controls and direct taps are never blocked. */
+var downOn = {};
+(function(){
+  var SLACK = 16;
+  function ctl(t){ return t && t.closest ? t.closest('button') : null; }
+  document.addEventListener('pointerdown', function(e){
+    wake();
+    var b = ctl(e.target);
+    if (!b) { delete downOn[e.pointerId]; return; }
+    if (!b.disabled) downOn[e.pointerId] = { b: b, x: e.clientX, y: e.clientY };
+    if (e.cancelable) e.preventDefault();
+    var ae = document.activeElement; if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) ae.blur();
+  }, true);
+  document.addEventListener('pointerup', function(e){
+    var r = downOn[e.pointerId]; delete downOn[e.pointerId]; if (!r) return;
+    var b = r.b; if (b.disabled || !b.isConnected || !b.getClientRects().length) return;
+    var bx = b.getBoundingClientRect(), x = e.clientX, y = e.clientY;
+    var still = Math.hypot(x - r.x, y - r.y) < 10;
+    var inside = x >= bx.left - SLACK && x <= bx.right + SLACK && y >= bx.top - SLACK && y <= bx.bottom + SLACK;
+    if (still || inside) { firing = b; try { b.click(); } finally { firing = null; } b.__tapAt = performance.now(); }
+  }, true);
+  document.addEventListener('pointercancel', function(e){ delete downOn[e.pointerId]; }, true);
+  var firing = null, keyEl = null, keyAt = 0;
+  document.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { keyEl = ctl(e.target); keyAt = performance.now(); } }, true);
+  document.addEventListener('click', function(e){
+    var b = ctl(e.target);
+    if (b && b === firing) return; // the tap layer's own click
+    if (b && b === keyEl && performance.now() - keyAt < 1000) { keyEl = null; return; } // keyboard activation
+    var recent = b && b.__tapAt && performance.now() - b.__tapAt < 800;
+    if (e.detail > 0 || recent) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
 function on(id, fn){ $(id).addEventListener('click', function(e){ audio(); fn(e); }); }
 on('tPlay', function(){ SFX.ui(); startLevel(playTarget()); });
 // 繼續冒險 goes back to a half-played level first, else to the first level not yet cleared
@@ -1500,7 +1718,7 @@ on('bUndo', function(){ undo(); });
 on('bRestart', function(){ restart(); });
 on('bHint', function(){ useHint(); });
 on('bSwap', function(){ swapCube(); });
-on('bZoom', function(){ zoom = !zoom; opts.zoom = zoom; saveOpts(); $('bZoom').classList.toggle('on', zoom); $('bZoom').setAttribute('aria-pressed', zoom ? 'true' : 'false'); SFX.ui(); });
+on('bZoom', function(){ zoom = !zoom; opts.zoom = zoom; overviewT = 0; saveOpts(); zoomUi(); SFX.ui(); toast(zoom ? '鏡頭：放大跟隨石碑（再點一次看全圖）' : '鏡頭：顯示整張地圖（再點一次放大跟隨）', 1800); });
 on('bPadT', function(){ opts.pad = !opts.pad; saveOpts(); showGameUi(true); SFX.ui(); layout(); });
 on('pResume', function(){ SFX.ui(); resume(); });
 on('pRestart', function(){ resume(); restart(); });
@@ -1524,15 +1742,17 @@ on('oOk', function(){ SFX.ui(); if (settingsBack === 'pause') { showOnly('pause'
 window.addEventListener('resize', function(){ layout(); });
 window.addEventListener('pagehide', function(){ saveGame(); });
 document.addEventListener('visibilitychange', function(){
-  if (document.hidden) { saveGame(); running = false; if (raf) cancelAnimationFrame(raf); raf = 0; if (status === 'play' && !anim) pauseGame(); }
-  else { running = true; last = 0; if (!raf) raf = requestAnimationFrame(frame); }
+  if (document.hidden) { saveGame(); running = false; if (raf) cancelAnimationFrame(raf); raf = 0; if (idleT) clearTimeout(idleT); idleT = 0; if (status === 'play' && !anim) pauseGame(); }
+  else { running = true; last = 0; wake(); }
 });
 
 /* ---------------- test hooks ---------------- */
 window.__game = {
-  state: function(){ return { status: status, level: levelN, moves: moveCount(), animating: !!anim, split: !!(S && !S.s), active: S && !S.s ? (activeCell === S.b ? 1 : 0) : 0, cubes: S && !S.s ? [S.a, S.b] : null, opt: L ? L.opt : 0 }; },
+  state: function(){ return { status: status, level: levelN, moves: moveCount(), animating: !!anim || inq.length > 0, queue: inq.length, split: !!(S && !S.s), active: S && !S.s ? (activeCell === S.b ? 1 : 0) : 0, cubes: S && !S.s ? [S.a, S.b] : null, opt: L ? L.opt : 0 }; },
   center: function(c){ var p = P(c % L.w + 0.5, ((c / L.w) | 0) + 0.5, 0.5); return { x: p[0], y: p[1] }; },
-  more: function(){ return { falls: falls, hints: hintsLeft, hint: hint ? hint.d : -1, hintCube: hint ? hint.cube : -1, demo: !!demo, hist: hist.map(function(h){ return h.mv; }), key: S ? stateKey(L, S) : -1, activeCell: activeCell, zoom: zoom }; },
+  more: function(){ return { falls: falls, hints: hintsLeft, hint: hint ? hint.d : -1, anim: anim ? anim.kind : '', frames: frames, floorDraws: floorDraws, cam: { s: cam.s, fit: camFit.s }, overview: overviewT, demoSeen: !!demoSeen[levelN], lively: lively(), hintCube: hint ? hint.cube : -1, demo: !!demo, hist: hist.map(function(h){ return h.mv; }), key: S ? stateKey(L, S) : -1, activeCell: activeCell, zoom: zoom }; },
+  setRoll: function(sec){ ROLL = sec; ROLL_FAST = Math.min(sec, 0.1); },
+  consts: function(){ return { ROLL: ROLL, FALL: FALL, QMAX: QMAX }; },
   // screen box of the whole board (top faces) under the settled camera
   board: function(){ var t = camTarget(), x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (var c = 0; c < L.N; c++) if (L.kind[c]) for (var k = 0; k < 4; k++) { var x = c % L.w + (k & 1), y = ((c / L.w) | 0) + (k >> 1), px = t.ox + (x - y) * t.s, py = t.oy + (x + y) * t.s * 0.5; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } return { l: x0, r: x1, t: y0, b: y1, s: t.s }; }
 };

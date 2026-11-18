@@ -2,7 +2,7 @@
 let STAMP = null, PAR = null, PMV = null, Q = null, stampV = 0, CAP = 0;
 function ensure(n) { if (n > CAP) { CAP = n; STAMP = new Int32Array(n); PAR = new Int32Array(n); PMV = new Int8Array(n); stampV = 0; } }
 function fastSolve(L, limit, wantTrap) {
-  const w = L.w, h = L.h, N = L.N, kind = L.kind, grp = L.grp, mode = L.mode, spA = L.spA, spB = L.spB, goal = L.goal;
+  const w = L.w, h = L.h, N = L.N, kind = L.kind, grp = L.grp, mode = L.mode, spA = L.spA, spB = L.spB, pp = L.pp, goal = L.goal;
   const MB = 1 << L.nG, K = (3 * N + N * N) * MB;
   ensure(K); stampV++;
   if (stampV > 2e9) { STAMP.fill(0); stampV = 1; }
@@ -35,9 +35,24 @@ function fastSolve(L, limit, wantTrap) {
         else { if (d & 1) nx = x + (d === 1 ? 1 : -1); else { no = 0; ny = d === 2 ? y + 2 : y - 1; } }
         const ex = nx + (no === 1 ? 1 : 0), ey = ny + (no === 2 ? 1 : 0);
         if (nx < 0 || ny < 0 || ex >= w || ey >= h) continue;
-        const c1 = ny * w + nx, c2 = no === 0 ? -1 : no === 1 ? c1 + 1 : c1 + w;
+        let c1 = ny * w + nx, c2 = no === 0 ? -1 : no === 1 ? c1 + 1 : c1 + w;
         if (!solid(c1, m) || (c2 >= 0 && !solid(c2, m))) continue;
         if (no === 0 && kind[c1] === 2) continue;
+        if (no === 0 && kind[c1] === 10) {
+          const jx = nx + 2 * (d === 1 ? 1 : d === 3 ? -1 : 0), jy = ny + 2 * (d === 2 ? 1 : d === 0 ? -1 : 0);
+          if (jx < 0 || jy < 0 || jx >= w || jy >= h) continue;
+          c1 = jy * w + jx; if (!solid(c1, m) || kind[c1] === 2) continue;
+        } else if (no !== 0 && kind[c1] === 9 && kind[c2] === 9) {
+          const ddx = d === 1 ? 1 : d === 3 ? -1 : 0, ddy = d === 2 ? 1 : d === 0 ? -1 : 0;
+          let cx = nx, cy = ny, bad = false;
+          while (kind[c1] === 9 && kind[c2] === 9) {
+            cx += ddx; cy += ddy;
+            if (cx < 0 || cy < 0 || cx + (no === 1 ? 1 : 0) >= w || cy + (no === 2 ? 1 : 0) >= h) { bad = true; break; }
+            c1 = cy * w + cx; c2 = no === 1 ? c1 + 1 : c1 + w;
+            if (!solid(c1, m) || !solid(c2, m)) { bad = true; break; }
+          }
+          if (bad) continue;
+        }
         let m2 = fire1(c1, no === 0, m); if (c2 >= 0) m2 = fire1(c2, false, m2);
         if (!solid(c1, m2) || (c2 >= 0 && !solid(c2, m2))) continue;
         if (no === 0 && c1 === goal) { if (winKey < 0) { winKey = key; winMv = d; } winners.push(key); if (!wantTrap) break; continue; }
@@ -46,7 +61,8 @@ function fastSolve(L, limit, wantTrap) {
           const a = spA[c1], b = spB[c1];
           if (!solid(a, m2) || !solid(b, m2)) continue;
           nk = mergeKey(Math.min(a, b), Math.max(a, b), m2);
-        } else nk = (c1 * 3 + no) * MB + m2;
+        } else if (no === 0 && kind[c1] === 8) nk = (pp[c1] * 3) * MB + m2;
+        else nk = (c1 * 3 + no) * MB + m2;
         if (!visit(key, nk, d)) return { len: -2, states: qn };
       }
     } else {

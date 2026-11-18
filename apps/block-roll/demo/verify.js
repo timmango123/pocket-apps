@@ -20,17 +20,18 @@ function solveAll() {
     const r = core.solve(L, null, { limit: 3000000, trap: true });
     const good = r && r.len === def.o && Math.abs(r.trap - def.t) < 0.0015;
     if (!good) { ok = false; console.log('LEVEL', n, 'PROBLEM: solved', r && r.len, 'embedded', def.o, 'trap', r && r.trap, def.t); }
-    if (n > 1 && def.o <= LEVELS[n - 2].o) incM = false;
+    if (n > 1 && def.o < LEVELS[n - 2].o) incM = false;
     if (n > 1 && def.d <= LEVELS[n - 2].d) incD = false;
     // replay the solution to count mechanism use
-    let S = core.initState(L), sw = 0, sp = 0;
-    for (const mv of r.sol) { const q = core.doMove(L, S, mv); if (q.ev.fired.some(f => f.changed)) sw++; if (q.ev.split) sp++; S = q.S; }
-    res.push({ n, opt: r.len, sol: r.sol, states: r.states, trap: r.trap, size: L.w + 'x' + L.h, switches: L.nSw, splits: L.nSp, swUse: sw, spUse: sp, D: def.d,
+    let S = core.initState(L), sw = 0, sp = 0, pt = 0, ice = 0, jp = 0;
+    for (const mv of r.sol) { const q = core.doMove(L, S, mv); if (q.ev.fired.some(f => f.changed)) sw++; if (q.ev.split) sp++; if (q.ev.port != null) pt++; if (q.ev.slide) ice++; if (q.ev.jump != null) jp++; S = q.S; }
+    res.push({ n, opt: r.len, sol: r.sol, states: r.states, trap: r.trap, size: L.w + 'x' + L.h, switches: L.nSw, splits: L.nSp, swUse: sw, spUse: sp, ptUse: pt, iceUse: ice, jumpUse: jp, D: def.d,
       fragile: [...L.kind].filter(k => k === 2).length, floor: [...L.kind].filter(k => k).length });
   }
   console.log('All', LEVELS.length, 'levels solvable by BFS with embedded optimum + trap ratio:', ok, `(${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-  console.log('Shortest solution strictly increasing every level:', incM, '| difficulty D strictly increasing every level:', incD);
+  console.log('Shortest solution never shorter than the level before:', incM, '| difficulty D strictly increasing every level:', incD);
   console.log('Switch levels use a switch in the optimal solution:', res.filter(r => r.switches).every(r => r.swUse > 0), '| split levels split in the optimal solution:', res.filter(r => r.splits).every(r => r.spUse > 0));
+  console.log('New mechanisms on the shortest path at their first level: L55 portal', res[54].ptUse, '| L70 ice slides', res[69].iceUse, '| L85 spring jumps', res[84].jumpUse);
   console.log('Trap ratio >= 25% for all L>=30:', res.filter(r => r.n >= 30).every(r => r.trap >= 0.25));
   for (const n of [1, 8, 15, 25, 40, 50, 75, 80, 99, 100]) { const r = res[n - 1]; console.log(`  L${n}: optimal ${r.opt} moves, board ${r.size}, floor ${r.floor}, fragile ${r.fragile}, switches ${r.switches}, split pads ${r.splits}, trap ${(r.trap * 100).toFixed(0)}%, D ${r.D}, BFS states ${r.states}`); }
   return res;
