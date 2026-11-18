@@ -109,10 +109,31 @@ for (const [name, fen, exp] of [
     C.setFen(fen); const L = ucis(); if (!L.includes(key)) { bad.push(i + 1 + ':illegal key'); continue; }
     const r = C.handleMsg({ id: 1, cmd: 'pz', op: 'check', fen, moves: [key], left: N - 1, reset: true, key });
     if (!(N === 1 ? r.mate === true : r.ok === true && r.reply)) bad.push(i + 1 + ':key rejected');
+    if (i % 4) continue; // a wrong first move costs a 400 ms search for the reply: every 4th puzzle (uniqueness itself is proven by verify.js)
     const alt = L.find(u => u !== key), r2 = C.handleMsg({ id: 1, cmd: 'pz', op: 'check', fen, moves: [alt], left: N - 1, reset: false, key });
     if (r2.ok) bad.push(i + 1 + ':alt accepted');
   }
-  ok(bad.length === 0, 'all 100 puzzles: key accepted, other first move fails ' + bad.join(' '));
+  ok(bad.length === 0, 'all 100 puzzles: key accepted; other first move fails (every 4th) ' + bad.join(' '));
+}
+// --- r1 item 3: 學徒 (Lv1) is beatable: it often leaves a free knight alone, Lv2 hardly ever does ---
+{
+  const FEN = 'k7/8/8/3n4/4P3/8/8/K7 w - - 0 1', took = lv => { let n = 0; for (let i = 0; i < 24; i++) if (C.handleMsg({ id: 1, cmd: 'think', fen: FEN, moves: [], level: lv }).move === 'e4d5') n++; return n; };
+  const t1 = took(1), t2 = took(2); ok(t1 >= 3 && t1 <= 21, 'Lv1 takes a free knight only some of the time (' + t1 + '/24)'); ok(t2 >= 18, 'Lv2 takes it nearly always (' + t2 + '/24)');
+}
+// --- r1 item 7: puzzle replays come mirrored / colour-swapped; every variant keeps a legal, accepted key move ---
+{
+  const V = new Function(html.match(/(function pzVariant[\s\S]*?\n}\n)function pzSrc/)[1] + 'return pzVariant;')();
+  let bad = [], n = 0;
+  for (let i = 0; i < PUZ.length; i++) for (const v of (i % 5 ? [3] : [1, 2, 3])) {
+    const [fen0, N, , , key0] = PUZ[i], o = V(fen0, key0, v); if (fen0.split(' ')[2] !== '-') { if (o.v !== 0 || o.fen !== fen0) bad.push(i + 1 + ':castling puzzle changed'); continue; }
+    n++; if (o.fen === fen0 && v !== 1) bad.push(i + 1 + ':v' + v + ' unchanged');
+    if (!C.setFen(o.fen)) { bad.push(i + 1 + ':v' + v + ' bad fen'); continue; }
+    if (!ucis().includes(o.key)) { bad.push(i + 1 + ':v' + v + ' key illegal'); continue; }
+    const r = C.handleMsg({ id: 1, cmd: 'pz', op: 'check', fen: o.fen, moves: [o.key], left: N - 1, reset: true, key: o.key });
+    if (!(N === 1 ? r.mate === true : r.ok === true && r.reply)) bad.push(i + 1 + ':v' + v + ' key rejected');
+  }
+  ok(bad.length === 0 && n > 100, 'puzzle variants (' + n + '): ' + bad.join(' '));
+  ok(V('8/8/8/8/8/8/8/K6k w - - 0 1', '', 2).fen === 'k6K/8/8/8/8/8/8/8 b - - 0 1' && V('4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1', 'd4e3', 3).fen === '3k4/8/8/3pP3/8/8/8/3K4 w - d6 0 1' && V('4k3/8/8/8/3pP3/8/8/4K3 b - e3 0 1', 'd4e3', 3).key === 'e5d6', 'variant transform of squares, side and ep');
 }
 console.log('engine: ' + pass + ' passed, ' + fail + ' failed');
 
@@ -127,9 +148,9 @@ async function open(vp, o = {}) {
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
   // seed once per context (the flag lives in localStorage: sessionStorage of a file:// page is sometimes empty again after a reload)
   if (o.ls) await ctx.addInitScript(ls => { if (!localStorage.getItem('test.seeded')) { localStorage.clear(); localStorage.setItem('test.seeded', 1); for (const k in ls) localStorage.setItem(k, ls[k]); } }, o.ls);
-  const page = await ctx.newPage(), errors = [];
-  page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(PAGE_URL); await page.waitForFunction(() => window.__game);
+  const page = await ctx.newPage(), errors = [], warns = [];
+  page.on('pageerror', e => errors.push(String(e))); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); else if (m.type() === 'warning') warns.push(m.text()); });
+  await page.goto(PAGE_URL + (o.hash || '')); await page.waitForFunction(() => window.__game);
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: tid }] });
   const tap = async (x, y, hold = 40) => { tid++; await touch('touchStart', x, y); await sleep(hold); await touch('touchEnd'); };
@@ -142,7 +163,13 @@ async function open(vp, o = {}) {
   const humanReady = () => page.waitForFunction(() => { const s = window.__game.state(); return s && !s.busy && !s.over && s.side === s.human; }, null, { timeout: 20000 });
   const vis = id => page.evaluate(id => !document.getElementById(id).classList.contains('hidden'), id);
   const ls = k => page.evaluate(k => { try { return JSON.parse(localStorage.getItem('chess.' + k)); } catch (e) { return 'BAD'; } }, k);
-  return { ctx, page, errors, tap, tapSel, st, tapSq, dragSq, humanReady, vis, ls, close: () => ctx.close() };
+  // a finger that stays down while others tap (CDP touchEnd releases only the points it lists)
+  const ctr = async sel => { const b = await page.locator(sel).first().boundingBox(); if (!b) throw new Error('not visible: ' + sel); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+  const hold = async p => { const h = { x: p.x, y: p.y, id: ++tid }; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [h] }); await sleep(30); return h; };
+  const release = async h => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [h] }); await sleep(120); };
+  const cardsStill = () => page.waitForFunction(() => [].every.call(document.querySelectorAll('.card'), c => c.getAnimations().every(a => a.playState !== 'running')), null, { timeout: 5000 }).catch(() => {});
+  const tapWhile = async (h, p, ms = 60) => { await cardsStill(); const f = { x: p.x, y: p.y, id: ++tid }; await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [h, f] }); await sleep(ms); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [f] }); await sleep(150); };
+  return { ctx, page, errors, warns, tap, tapSel, st, tapSq, dragSq, humanReady, vis, ls, ctr, hold, release, tapWhile, center, close: () => ctx.close() };
 }
 const LV = lv => JSON.stringify({ level: lv, color: 'w', clock: 0 });
 async function newAI(s, lv) { await s.tapSel('#tAI'); await s.tapSel('#ngLv button[data-v="' + lv + '"]'); await s.tapSel('#ngColor button[data-v="w"]'); await s.tapSel('#ngGo'); await s.humanReady(); }
@@ -157,7 +184,7 @@ async function browserTests() {
   console.log('Page (mobile Chromium, touch)');
   try {
     await at('short screens: board squares >= 44px (375x500 used to be 29px), board and tools on screen, nothing overlaps; landscape toast stays small', async () => {
-      for (const [w, h, minSq, tier] of [[375, 500, 44, 2], [390, 610, 44, 1], [430, 740, 44, 0], [390, 844, 44, 0], [844, 390, 44, 0]]) {
+      await Promise.all([[375, 500, 44, 2], [390, 610, 44, 1], [430, 740, 44, 0], [390, 844, 44, 0], [844, 390, 44, 0]].map(async ([w, h, minSq, tier]) => { // independent pages, run side by side
         const s = await open({ width: w, height: h });
         await newAI(s, 1);
         const g = await s.st(), box = await s.page.evaluate(() => { const r = e => { const b = document.querySelector(e).getBoundingClientRect(); return [b.top, b.bottom, b.left, b.right]; }; return { board: r('#board'), tools: r('#tools'), me: r('#meBar'), opp: r('#oppBar'), toast: r('#toast') }; });
@@ -167,7 +194,7 @@ async function browserTests() {
         else ok(box.toast[1] - box.toast[0] < 60, `${w}x${h}: landscape toast is one line high (${box.toast[1] - box.toast[0]}px)`);
         if (tier === 2) { await s.tapSel('#tools [data-t="menu"]'); ok(await s.vis('menu'), 'compact: 選單 in the tool row opens the menu'); await s.tapSel('#mResume'); await s.tapSel('#tools [data-t="list"]'); ok(await s.page.evaluate(() => document.getElementById('sheet').classList.contains('open')), 'compact: 棋譜 opens the move list'); }
         ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
-      }
+      }));
     });
     await at('tap-tap and drag moves; taps while the computer thinks are ignored and the UI keeps drawing (Lv5 thinks 3 s in a worker)', async () => {
       const FEN = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'; // not in the opening book: the computer has to search
@@ -208,15 +235,15 @@ async function browserTests() {
       await s.page.reload(); await s.page.waitForFunction(() => window.__game && !document.getElementById('tResume').classList.contains('hidden'), null, { timeout: 4000 }).catch(() => {});
       ok(await s.vis('tResume'), 'title offers 繼續對局 ' + s.errors.join(' | ')); await s.tapSel('#tResume'); await s.humanReady();
       ok((await s.st()).moves.join() === before.join(), 'same moves after reload'); ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
-      for (const [k, v] of [['chess.game', '{"mode":"ai","startFen":"x","moves":[]}'], ['chess.game', '{"mode":"ai","startFen":"' + START + '","moves":["e2e4"],"level":9,"human":0}'], ['chess.game', '{bad json'],
-        ['chess.game', '{"mode":"ai","startFen":"' + START + '","moves":["e2e5"],"level":2,"human":0}']]) {
+      await Promise.all([['chess.game', '{"mode":"ai","startFen":"x","moves":[]}'], ['chess.game', '{"mode":"ai","startFen":"' + START + '","moves":["e2e4"],"level":9,"human":0}'], ['chess.game', '{bad json'],
+        ['chess.game', '{"mode":"ai","startFen":"' + START + '","moves":["e2e5"],"level":2,"human":0}']].map(async ([k, v]) => { // independent pages, side by side
         const c = await open({ width: 390, height: 844 }, { ls: { [k]: v, 'chess.stats': '{"lv":7,"games":"x"}', 'chess.settings': '{"skin":"lava","sound":"yes"}', 'chess.progress': '{"done":[1,2],"cur":-4}', 'chess.lastOpts': '{"level":0}' } });
         ok(!(await c.vis('tResume')), 'corrupt save not offered: ' + v);
         await c.tapSel('#tStats'); ok(await c.vis('stats'), 'stats open with corrupt stats'); await c.tapSel('#stOk');
         await c.tapSel('#tPuzzle'); ok(await c.vis('select'), 'level select with corrupt progress'); await c.tapSel('#sBack');
         await newAI(c, 2); await c.tapSq('e2'); await c.tapSq('e4'); await c.humanReady();
         ok(c.errors.length === 0, 'errors: ' + c.errors.join(' | ')); await c.close();
-      }
+      }));
     });
     await at('a win is recorded once: 悔棋 after mating and mating again does not count twice; undo is off before your first move', async () => {
       const save = JSON.stringify({ mode: 'ai', startFen: START, moves: ['e2e4', 'e7e5', 'f1c4', 'b8c6', 'd1h5', 'g8f6'], human: 0, level: 1, clock: null, undos: 0, flipped: false });
@@ -255,6 +282,87 @@ async function browserTests() {
       ok(await s.vis('tResumePz') && /21/.test(await s.page.textContent('#tResumePz')), 'title offers the puzzle');
       await s.tapSel('#tResumePz'); const g = await s.st();
       ok(g.n === 21 && g.k === 1 && g.moves.join() === before.moves.join() && g.tries === 2, 'resumed mid-puzzle: ' + JSON.stringify([g.n, g.k, g.moves, g.tries]));
+      ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
+    });
+    await at('r1 veto: HTML buttons fire once from pointerup, also while another finger is down (60 ms / 0.6 s / 1 s); a detail-0 click after a tap is swallowed; Enter still works; no ghost tap on the next screen', async () => {
+      const s = await open({ width: 390, height: 844 }, { ls: { 'chess.lastOpts': LV(1) } });
+      const fired = () => s.page.evaluate(() => TAP.fired), vflip = () => s.page.evaluate(() => flipped);
+      // title: a finger resting on the artwork
+      let h = await s.hold(await s.ctr('#hero'));
+      await s.tapWhile(h, await s.ctr('#tHelp')); ok(await s.vis('help'), 'title 說明 with a finger down');
+      await s.tapWhile(h, await s.ctr('#hOk'), 600); ok(!(await s.vis('help')), '知道了 (0.6 s) with a finger down');
+      await s.release(h); ok(!(await s.vis('help')), 'lifting the resting finger fires nothing');
+      await newAI(s, 1);
+      for (const rest of ['#oppName', 'e5']) {
+        h = await s.hold(rest[0] === '#' ? await s.ctr(rest) : await s.center(rest));
+        for (const ms of [60, 600, 1000]) {
+          const f0 = await vflip(), n0 = await fired(); await s.tapWhile(h, await s.ctr('#tools [data-t="flip"]'), ms);
+          ok((await vflip()) === !f0 && (await fired()) === n0 + 1, `翻轉 (${ms} ms) toggles exactly once while a finger rests on ${rest}`);
+        }
+        const snd = await s.page.evaluate(() => SET.sound); await s.tapWhile(h, await s.ctr('#bSound'));
+        ok((await s.page.evaluate(() => SET.sound)) === !snd, '音效 toggles with a finger on ' + rest);
+        await s.tapWhile(h, await s.ctr('#bMenu'), 600); ok(await s.vis('menu'), '選單 opens with a finger on ' + rest);
+        await s.tapWhile(h, await s.ctr('#mResume')); ok(!(await s.vis('menu')), '繼續 closes the menu with a finger on ' + rest);
+        const n1 = await fired(), f1 = await vflip(); await s.release(h); await sleep(200);
+        ok((await fired()) === n1 && (await vflip()) === f1, 'lifting the resting finger adds nothing');
+      }
+      if (await vflip()) { await s.tapSel('#tools [data-t="flip"]'); }
+      await s.tapSq('e2'); await s.tapSq('e4'); await s.humanReady();
+      h = await s.hold(await s.ctr('#oppName')); await s.tapWhile(h, await s.ctr('#tools [data-t="undo"]'));
+      await s.humanReady(); ok((await s.st()).moves.length === 0, '悔棋 with a finger down: ' + (await s.st()).moves); await s.release(h);
+      // detail-0 click right after a tap (what Chromium 141 sends after a prevented pointerdown), and a stray detail-1 click: both ignored
+      let f0 = await vflip(); await s.tapSel('#tools [data-t="flip"]');
+      await s.page.evaluate(() => { const b = document.querySelector('#tools [data-t="flip"]'); b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })); b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })); });
+      await sleep(100); ok((await vflip()) === !f0, 'tap + replayed detail-0 / detail-1 click = one flip');
+      await sleep(900); f0 = await vflip();
+      await s.page.focus('#tools [data-t="flip"]'); await s.page.keyboard.press('Enter'); ok((await vflip()) === !f0, 'Enter on a focused button still activates it');
+      await s.page.keyboard.press(' '); ok((await vflip()) === f0, 'Space too'); await s.page.evaluate(() => document.activeElement.blur());
+      // a tap that changes the screen fires nothing on the new screen
+      await s.tapSel('#bMenu'); const n2 = await fired(); await s.tapSel('#mNew'); await sleep(300);
+      ok((await fired()) === n2 + 1 && (await s.vis('newGame')) && (await s.page.evaluate(() => lastOpts.level === 1 && lastOpts.color === 'w')), '新對局 opened the card and nothing under the finger fired');
+      ok(await s.page.evaluate(() => document.activeElement === document.body), 'no control or field took focus: ' + await s.page.evaluate(() => document.activeElement.tagName));
+      await s.tapSel('#ngBack');
+      // promotion picked while a finger rests at the bottom of the screen
+      await s.page.evaluate(() => importText('7k/P7/8/8/8/8/8/K7 w - - 0 1')); await sleep(300);
+      h = await s.hold(await s.ctr('#meBar')); await s.tapWhile(h, await s.center('a7')); await s.tapWhile(h, await s.center('a8'));
+      ok(await s.vis('promo'), 'promotion asks with a finger down'); await s.tapWhile(h, await s.ctr('#promoRow button[aria-label="馬"]'));
+      ok((await s.st()).moves[0] === 'a8=N' && !(await s.vis('promo')), 'knight chosen with a finger down: ' + (await s.st()).moves); await s.release(h);
+      ok(!s.warns.some(w => /willReadFrequently/.test(w)), 'no willReadFrequently warning: ' + s.warns.join(' | '));
+      ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
+    });
+    await at('r1 toFix 3-6: toast beside the board (844x390, 360x640, ...); board off the 360px edges; bars hug the board at 390x844; stats fit with 關閉 on screen and close outside; bad #fen link says so', async () => {
+      await Promise.all([[844, 390, 'ai'], [360, 640, 'pz'], [390, 844, 'ai'], [375, 500, 'pz']].map(async ([w, h, mode]) => {
+        const s = await open({ width: w, height: h }, { hash: mode === 'pz' && w === 360 ? '#fen=7k%2F8%2F5Q2%2F8%2F8%2F8%2F8%2FK7%20w%20-%20-%200%201' : '' });
+        if (w === 360) { await s.page.waitForFunction(() => !document.getElementById('toast').classList.contains('hidden'), null, { timeout: 3000 }).catch(() => {}); ok(/連結中的局面無法讀取/.test(await s.page.textContent('#toast')), 'bad #fen link: ' + await s.page.textContent('#toast')); }
+        { const sz = w, hgt = h;
+          await s.tapSel('#tStats'); const sb = await s.page.evaluate(() => { const r = document.getElementById('stOk').getBoundingClientRect(), b = document.getElementById('statBody'); return { top: r.top, bottom: r.bottom, over: b.scrollHeight - b.clientHeight }; });
+          ok(sb.top >= 0 && sb.bottom <= hgt && (w !== 390 || sb.over <= 1), `${sz}x${hgt}: stats 關閉 on screen without scrolling ${JSON.stringify(sb)}`);
+          await s.tap(4, hgt / 2); await sleep(200); ok(!(await s.vis('stats')), `${sz}x${hgt}: a tap outside the stats card closes it`);
+        }
+        if (mode === 'ai') await newAI(s, 1); else { await s.page.evaluate(() => startPuzzle(21)); }
+        await s.page.waitForFunction(() => !document.getElementById('toast').classList.contains('hidden'), null, { timeout: 3000 });
+        const r = await s.page.evaluate(() => { const r = q => { const b = document.querySelector(q).getBoundingClientRect(); return { t: b.top, b: b.bottom, l: b.left, r: b.right }; }; return { board: r('#boardWrap'), toast: r('#toast'), top: r('.top'), opp: r('#oppBar'), me: r('#meBar'), txt: document.getElementById('toast').textContent }; });
+        const apart = r.toast.b <= r.board.t + 0.5 || r.toast.t >= r.board.b - 0.5 || r.toast.r <= r.board.l + 0.5 || r.toast.l >= r.board.r - 0.5;
+        ok(apart, `${w}x${h} ${mode}: toast "${r.txt}" off the board ${JSON.stringify([r.board, r.toast])}`);
+        if (w === 360) ok(r.board.l >= 6 && r.board.r <= w - 6, '360: board keeps off the screen edges ' + JSON.stringify(r.board));
+        if (w === 390) ok(r.opp.b <= r.board.t + 0.5 && r.board.t - r.opp.b < 1 && r.me.t - r.board.b < 1 && r.opp.t - r.top.b <= 25, '390x844: bars hug the board, title bar gap <= 24px ' + JSON.stringify(r));
+        ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
+      }));
+    });
+    await at('r1 toFix 7: a lost game names the blunder and 檢視失誤手 shows it; a solved puzzle replays as a variant (mirrored / colours swapped) that still mates', async () => {
+      const save = JSON.stringify({ mode: 'ai', startFen: START, moves: ['e2e4', 'e7e5', 'd1h5', 'b8c6', 'h5e5', 'c6e5'], human: 0, level: 1, clock: null, undos: 0, flipped: false });
+      const s = await open({ width: 390, height: 844 }, { ls: { 'chess.game': save } });
+      await s.tapSel('#tResume'); await s.humanReady(); await s.tapSel('#bMenu'); await s.tapSel('#mResign'); await s.tapSel('#cYes');
+      await s.page.waitForFunction(() => window.__game.state().result, null, { timeout: 5000 });
+      const rr = await s.page.textContent('#rRes'); ok(/失誤手第 3 回合 Qxe5\+ 之後子力 −8/.test(rr), 'recap names the blunder: ' + rr);
+      await s.tapSel('#rReview'); ok(await s.page.evaluate(() => G.view === 5), '檢視失誤手 shows the position after it');
+      // puzzle 1 solved, then 再玩一次
+      await s.page.evaluate(() => startPuzzle(1)); await sleep(200);
+      const solve = async () => { const g = await s.page.evaluate(() => ({ key: G.pz.key, fen: G.startFen, v: G.pz.v })); await s.tapSq(g.key.slice(0, 2)); await s.tapSq(g.key.slice(2, 4)); await s.page.waitForFunction(() => window.__game.state().result === '將死！', null, { timeout: 6000 }); return g; };
+      const a = await solve(); await s.tapSel('#rAlt'); const g2 = await s.page.evaluate(() => ({ v: G.pz.v, fen: G.startFen, n: G.pz.n }));
+      ok(g2.n === 1 && g2.v > 0 && g2.fen !== a.fen, 'replay is a variant: ' + JSON.stringify(g2));
+      const sv = await s.ls('pz'); ok(sv && sv.v === g2.v, 'the variant is saved for a reload: ' + JSON.stringify(sv));
+      const b = await solve(); ok(b.v === g2.v, 'the variant is solved by its own key ' + b.key);
       ok(s.errors.length === 0, 'errors: ' + s.errors.join(' | ')); await s.close();
     });
     await at('board coordinates readable on every skin (>= 3:1)', async () => {
