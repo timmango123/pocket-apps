@@ -11,6 +11,7 @@ const APP = path.resolve(__dirname, '..', 'index.html');
 const OUT = __dirname;
 const html = fs.readFileSync(APP, 'utf8');
 const Core = new Function(html.match(/\/\*CORE-START\*\/([\s\S]*?)\/\*CORE-END\*\//)[1] + '\nreturn Core;')();
+const LVTAB = JSON.parse(html.match(/var LVTAB = (\[[^;]*\]);/)[1]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const PACE = 220;
 
@@ -27,7 +28,7 @@ async function tapSel(cdp, page, sel){
 const st = page => page.evaluate(() => window.__game.state());
 
 async function playLevel(browser, n){
-  const L = Core.genAll()[n-1];
+  const L = Core.genAll(LVTAB)[n-1];
   const bot = Core.botSolve(L, 12);
   const vdir = path.join(OUT, '_vid' + n); fs.mkdirSync(vdir, {recursive:true});
   const ctx = await browser.newContext({viewport:{width:390, height:844}, deviceScaleFactor:2, hasTouch:true, isMobile:true, recordVideo:{dir:vdir, size:{width:390, height:844}}});

@@ -1,6 +1,6 @@
 // Headless verification for 菇菇守城 (tower-defense) using the game's own core (extracted between CORE-START/CORE-END).
 // For every one of the 100 levels it:
-//   1) regenerates the level and checks it matches the page's embedded LVTAB (bump steps + difficulty D),
+//   1) builds the level from the page's embedded LVTAB ([HP bump steps, displayed difficulty D, seed variant], made by calibrate.js),
 //   2) checks difficulty D is strictly increasing,
 //   3) runs the greedy + local-search bot (placement by path coverage x tower DPS, spending all spores before each wave)
 //      through the full deterministic simulation and requires a win with >= 1 life,
@@ -13,7 +13,7 @@ const Core = new Function(coreSrc + '\nreturn Core;')();
 const LVTAB = JSON.parse(html.match(/var LVTAB = (\[[^;]*\]);/)[1]);
 
 function checkLevel(n){
-  const L = Core.genAll()[n-1];
+  const L = Core.genAll(LVTAB)[n-1];
   const t0 = Date.now(); const r = Core.botSolve(L, 12);
   const s = Core.newGame(L, {}); while (s.phase !== 'won' && s.phase !== 'lost'){ if (s.phase === 'build') Core.callWave(s, false); Core.step(s); }
   const st = Core.levelStats(L);
@@ -28,9 +28,9 @@ if (process.argv[2] === '--child'){
   let jobs = 4; const ji = args.indexOf('--jobs'); if (ji >= 0){ jobs = +args[ji+1]; args.splice(ji, 2); }
   const levels = args.length ? args.map(Number) : Array.from({length:100}, (_, i) => i+1);
   // 1+2: table + monotonic difficulty
-  const all = Core.genAll(); let tableOK = true, mono = true;
-  all.forEach((L, i) => { if (LVTAB[i][0] !== L.bk || LVTAB[i][1] !== L.D) tableOK = false; if (i && L.D <= all[i-1].D) mono = false; });
-  console.log('Levels:', all.length, '| embedded LVTAB matches generator:', tableOK, '| difficulty D strictly increasing:', mono, '| D range', all[0].D, '->', all[99].D);
+  const all = Core.genAll(LVTAB); let tableOK = all.length === 100, mono = true;
+  all.forEach((L, i) => { if (i && L.D <= all[i-1].D) mono = false; });
+  console.log('Levels:', all.length, '| difficulty D strictly increasing:', mono, '| D range', all[0].D, '->', all[99].D);
   const res = [];
   await new Promise(done => {
     let left = jobs;
