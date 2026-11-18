@@ -28,7 +28,9 @@ const facing = () => [...document.querySelectorAll('.spin')].map(s => { const m 
     // idle = landed and past the short guard after landing (a tap inside it is treated as part of a double tap)
     const idle = () => p.waitForFunction(() => !__cf.flipping && performance.now() >= __cf.readyAt, null, { timeout: 10000 });
     const flips = () => p.evaluate(() => __cf.session.h + __cf.session.t + __cf.session.seq.filter(f => f === 'e').length);
-    return { ctx, p, touch, tap, center, idle, flips };
+    // multi-finger: each point is [x, y, id]; touchEnd releases only the points it lists
+    const send = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(q => ({ x: q[0], y: q[1], id: q[2] })) });
+    return { ctx, p, touch, send, tap, center, idle, flips };
   }
   const RMopt = { reducedMotion: 'reduce' };
 
@@ -286,6 +288,105 @@ const facing = () => [...document.querySelectorAll('.spin')].map(s => { const m 
         return { btn: b.bottom <= innerHeight && b.top >= 0, side: s.right <= b.left, coins: c.every(k => k.top >= s.top && k.bottom <= s.bottom && k.left >= s.left - 1 && k.right <= s.right + 1) }; });
       eq(r, { btn: true, side: true, coins: true }, `${w}×${h} ${n} 枚：按鈕在畫面內、硬幣在左側舞台內`);
     }
+    await t.ctx.close();
+  }
+
+  // 11. 觸控層：另一指停在畫面上時第二指照樣點得到；雙人重疊出拳都算；點完補發的 detail-0 click 不會再執行一次；鍵盤照常
+  {
+    const t = await open();
+    const rest = await t.center('h1'), R = [rest[0], rest[1], 1];
+    const tap2 = async q => { await t.send('touchStart', [R]); await t.send('touchStart', [R, [q[0], q[1], 2]]); await t.send('touchEnd', [[q[0], q[1], 2]]); await t.send('touchEnd', [R]); };
+    const s0 = await t.p.evaluate(() => __cf.settings.sound);
+    const snd = await t.center('#btn-sound');
+    for (let i = 0; i < 4; i++) await tap2(snd);
+    eq(await t.p.evaluate(() => __cf.settings.sound), s0, '一指按住標題、另一指點「音效」4 次：切換 4 次（回到原狀）');
+    await tap2(snd); eq(await t.p.evaluate(() => __cf.settings.sound), !s0, '…第 5 次切換成相反');
+    await tap2(snd);
+    await tap2(await t.center('#btn-flip')); await t.p.waitForFunction(() => __cf.flipping); await t.idle();
+    eq(await t.flips(), 1, '一指按住標題、另一指點「擲硬幣」：擲出');
+    // 2. right after landing the button looks disabled for exactly the guard window
+    const g = await t.p.evaluate(async () => { const p = __cf.flip(.3); await p; const b = document.getElementById('btn-flip'); const at = [b.disabled, performance.now() < __cf.readyAt];
+      await new Promise(r => { const k = () => b.disabled ? setTimeout(k, 10) : r(); k(); }); return [...at, performance.now() >= __cf.readyAt - 5]; });
+    eq(g, [true, true, true], '落地後 250ms 防連點期間「擲硬幣」維持停用外觀，結束才恢復');
+    // 3. count buttons are disabled while coins are in the air
+    const c5 = await t.center('#cnt-5');
+    await t.p.evaluate(() => { __cf.flip(.5); });
+    eq(await t.p.$$eval('#pane-coin .seg button', bs => bs.map(b => b.disabled)), [true, true, true], '飛行中 1／3／5 枚按鈕顯示停用');
+    await t.tap(c5); await t.idle();
+    eq(await t.p.evaluate(() => [document.querySelectorAll('.coin').length, document.getElementById('cnt-5').getAttribute('aria-pressed'), document.getElementById('cnt-5').disabled]), [1, 'false', false], '飛行中點 5 枚：不改變，落地後按鈕恢復可按');
+    await t.tap(c5); eq(await t.p.evaluate(() => document.querySelectorAll('.coin').length), 5, '落地後點 5 枚：換成 5 枚');
+    await t.tap(await t.center('#cnt-1'));
+    // detail-0 replay: Chromium 141 follows a tap with a detail-0 click and no pointerType; it must not run the action again
+    for (const sel of ['#btn-sound', '#btn-theme']) {
+      const k = sel === '#btn-sound' ? 'sound' : 'theme', v0 = await t.p.evaluate(k => __cf.settings[k], k);
+      await t.tap(await t.center(sel));
+      const v1 = await t.p.evaluate(k => __cf.settings[k], k);
+      await t.p.evaluate(s => document.querySelector(s).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 })), sel);
+      const v2 = await t.p.evaluate(k => __cf.settings[k], k);
+      assert(v1 !== v0 && v2 === v1, `點 ${sel} 後補發 detail-0 click：只執行一次（${v0}→${v1}→${v2}）`);
+    }
+    // keyboard: Enter on a focused button still works once, a detail-0 click right after Enter counts as keyboard
+    await t.p.waitForTimeout(850);
+    const k0 = await t.p.evaluate(() => __cf.settings.sound);
+    await t.p.focus('#btn-sound'); await t.p.keyboard.press('Enter');
+    eq(await t.p.evaluate(() => __cf.settings.sound), !k0, '鍵盤 Enter 在「音效」上：切換一次');
+    await t.p.keyboard.press('Space');
+    eq(await t.p.evaluate(() => __cf.settings.sound), k0, '鍵盤空白鍵在「音效」上：切換一次');
+    await t.p.evaluate(() => document.activeElement.blur());
+    // rps: second finger on 剪刀
+    await t.tap(await t.center('#tab-rps'));
+    await tap2(await t.center('#pick-0'));
+    await t.p.waitForFunction(() => document.getElementById('sr').textContent.includes('你出剪刀'), null, { timeout: 5000 });
+    eq(await t.p.evaluate(() => { const r = __cf.stats.rps; return r.win + r.lose + r.draw; }), 1, '一指按住標題、另一指點「剪刀」：出拳一次');
+    await t.p.waitForFunction(() => !document.getElementById('pick-0').disabled);
+    // 5. keyboard hints hidden on touch
+    eq(await t.p.evaluate(() => [matchMedia('(pointer: coarse)').matches, getComputedStyle(document.querySelector('#pick-0 small')).display]), [true, 'none'], '觸控裝置上出拳鈕下的鍵盤數字 1／2／3 隱藏');
+    // duo: P1 holds ✊, P2 taps ✊, then P1 lets go: both count
+    await t.tap(await t.center('#mode-duo'));
+    const p1 = await t.center('#duo-area .pick[data-p="1"][data-m="1"]'), p2 = await t.center('#duo-area .pick[data-p="2"][data-m="1"]');
+    const A = [p1[0], p1[1], 1], B = [p2[0], p2[1], 2];
+    await t.send('touchStart', [A]); await t.send('touchStart', [A, B]); await t.send('touchEnd', [B]); await t.send('touchEnd', [A]);
+    await t.p.waitForFunction(() => document.getElementById('duo-msg').textContent.startsWith('平手'), null, { timeout: 3000 });
+    eq(await t.p.evaluate(() => [document.getElementById('cover-1').textContent, document.getElementById('cover-2').textContent]), ['✊', '✊'], '雙人：玩家一按住✊、玩家二點✊、再放開玩家一 → 兩人都算（平手）');
+    await t.p.waitForFunction(() => document.getElementById('duo-msg').textContent === '各自出拳', null, { timeout: 4000 });
+    const q1 = await t.center('#duo-area .pick[data-p="1"][data-m="0"]'), q2 = await t.center('#duo-area .pick[data-p="2"][data-m="2"]');
+    await t.send('touchStart', [[q1[0], q1[1], 1], [q2[0], q2[1], 2]]); await t.send('touchEnd', []);
+    await t.p.waitForFunction(() => document.getElementById('duo-msg').textContent.startsWith('玩家一'), null, { timeout: 3000 });
+    eq(await t.p.evaluate(() => [document.getElementById('duo-s1').textContent, document.getElementById('duo-s2').textContent]), ['1', '0'], '雙人：兩人同時出拳（兩指同時按下放開）都算');
+    await t.ctx.close();
+  }
+
+  // 12. 只有「立起來」的紀錄、記住分頁、歸零後可以復原
+  {
+    const t = await open(390, 844, RMopt);
+    await t.p.evaluate(async () => { const real = crypto.getRandomValues.bind(crypto); __cf.settings.edge = true; crypto.getRandomValues = a => { a[0] = 0; return a; }; await __cf.flip(); crypto.getRandomValues = real; __cf.settings.edge = false; });
+    eq(await t.p.textContent('#a-ratio'), '立起來 1 次，還沒有正反紀錄', '第一次就立起來：累計列不再寫「還沒有紀錄，立起來 1 次」');
+    await t.idle(); await t.tap(await t.center('#btn-flip')); await t.idle();
+    assert(/^共 1 次，正 (0|100)\.0%，另有立起來 1 次$/.test(await t.p.textContent('#a-ratio')), '有正反後：' + await t.p.textContent('#a-ratio'));
+    // undo after 歸零 (coin)
+    await t.p.evaluate(() => document.getElementById('btn-reset-coin').scrollIntoView({ block: 'center' }));
+    await t.tap(await t.center('#btn-reset-coin')); await t.tap(await t.center('#yes-coin'));
+    eq(await t.p.evaluate(() => [__cf.stats.coin.heads + __cf.stats.coin.tails + __cf.stats.coin.edge, document.getElementById('toast-undo') && !document.getElementById('toast').hidden]), [0, true], '硬幣歸零後出現「復原」');
+    await t.tap(await t.center('#toast-undo'));
+    eq(await t.p.evaluate(() => [__cf.stats.coin.heads + __cf.stats.coin.tails, __cf.stats.coin.edge, JSON.parse(localStorage.getItem('coin-flip:v1:stats')).coin.edge]), [1, 1, 1], '按「復原」：硬幣累計回來並存起來');
+    // undo after 歸零 (rps)
+    await t.p.evaluate(() => scrollTo(0, 0)); await t.p.waitForFunction(() => scrollY === 0);
+    await t.tap(await t.center('#tab-rps'));
+    await t.tap(await t.center('#pick-1')); await t.p.waitForFunction(() => __cf.stats.rps.win + __cf.stats.rps.lose + __cf.stats.rps.draw === 1 && !document.getElementById('pick-1').disabled);
+    await t.p.evaluate(() => document.getElementById('btn-reset-rps').scrollIntoView({ block: 'center' }));
+    await t.tap(await t.center('#btn-reset-rps')); await t.tap(await t.center('#yes-rps'));
+    eq(await t.p.evaluate(() => [__cf.stats.rps.win + __cf.stats.rps.lose + __cf.stats.rps.draw, !!document.getElementById('toast-undo')]), [0, true], '猜拳戰績歸零後出現「復原」');
+    await t.tap(await t.center('#toast-undo'));
+    eq(await t.p.evaluate(() => [__cf.stats.rps.win + __cf.stats.rps.lose + __cf.stats.rps.draw, JSON.parse(localStorage.getItem('coin-flip:v1:rpsHistory')).length]), [1, 1], '按「復原」：猜拳戰績與出拳紀錄回來');
+    // without undo the reset sticks once the toast is gone
+    await t.tap(await t.center('#btn-reset-rps')); await t.tap(await t.center('#yes-rps'));
+    await t.p.waitForFunction(() => document.getElementById('toast').hidden, null, { timeout: 9000 });
+    eq(await t.p.evaluate(() => JSON.parse(localStorage.getItem('coin-flip:v1:stats')).rps.win + JSON.parse(localStorage.getItem('coin-flip:v1:stats')).rps.lose + JSON.parse(localStorage.getItem('coin-flip:v1:stats')).rps.draw), 0, '不按復原：提示消失後維持歸零');
+    // remembered tab
+    await t.p.reload(); await t.p.waitForFunction(() => window.__cfReady);
+    eq(await t.p.evaluate(() => [document.getElementById('tab-rps').getAttribute('aria-selected'), document.getElementById('pane-rps').hidden, document.getElementById('pane-coin').hidden]), ['true', false, true], '重新整理後回到上次的「猜拳」分頁');
+    await t.p.evaluate(() => scrollTo(0, 0)); await t.tap(await t.center('#tab-coin')); await t.p.reload(); await t.p.waitForFunction(() => window.__cfReady);
+    eq(await t.p.evaluate(() => document.getElementById('tab-coin').getAttribute('aria-selected')), 'true', '切回「硬幣」後重新整理：停在硬幣');
     await t.ctx.close();
   }
 

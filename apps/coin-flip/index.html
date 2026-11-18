@@ -70,7 +70,8 @@ button,input,select{font:inherit;color:inherit}
 .result.multi{font-size:28px}
 .major{text-align:center;font-size:15px;color:var(--muted);min-height:22px;margin:0}
 .flip-btn{display:block;width:100%;min-height:58px;margin-top:10px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-ink);font-weight:800;font-size:18px;letter-spacing:.2em;cursor:pointer}
-.flip-btn:disabled{opacity:.6}
+.flip-btn:disabled{opacity:.6;cursor:default}
+.seg button:disabled{opacity:.55;cursor:default}
 .hint{font-size:12.5px;color:var(--muted);text-align:center;margin:6px 0 0}
 .stats{background:var(--surface);border-radius:12px;padding:12px;margin-top:12px}
 .stats h3{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:700;display:flex;justify-content:space-between;align-items:center}
@@ -124,7 +125,9 @@ details.set summary{min-height:48px;padding:0 12px;display:flex;align-items:cent
 .half .cover{font-size:46px;font-weight:900;font-family:var(--serif);min-height:64px;display:grid;place-items:center}
 .mid{display:flex;align-items:center;justify-content:center;gap:12px;font-weight:800;min-height:44px;font-variant-numeric:tabular-nums}
 .mid .msg{font-family:var(--serif);font-size:20px}
-.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:10px;padding:10px 16px;font-size:14px;z-index:30;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);border-radius:10px;padding:10px 16px;font-size:14px;z-index:30;max-width:calc(100% - 32px);display:flex;align-items:center;gap:12px}
+.toast[hidden]{display:none}
+.toast button{min-height:44px;min-width:56px;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;font-weight:800;padding:0 12px;cursor:pointer;flex:none}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (hover:hover){.pick:not(:disabled):hover{border-color:var(--accent)}.btn:hover,.icon-btn:hover{border-color:var(--accent)}}
 .warn{color:var(--lose)!important}
@@ -138,7 +141,7 @@ details.set summary{min-height:48px;padding:0 12px;display:flex;align-items:cent
   #pane-coin>.major{grid-area:major}#pane-coin>.flip-btn{grid-area:btn}#pane-coin>.hint{grid-area:hint}#pane-coin>.stats{grid-area:stats}#pane-coin>details{grid-area:set}
   .stage.n1 .coin{--d:min(42vh,170px)}.stage.n3 .coin{--d:min(20vw,96px,26vh)}.stage.n5 .coin{--d:min(14vw,80px,24vh)}
 }
-@media (pointer:coarse){.kbd{display:none}}
+@media (pointer:coarse){.kbd,.pick small{display:none}}
 @media (max-width:370px){.pick{width:76px;height:76px;font-size:34px}.tabs button{min-width:54px}}
 @media (prefers-reduced-motion:reduce){.shake{animation:none}*{transition:none!important}}
 </style>
@@ -246,7 +249,12 @@ function randInt(n) {
 }
 // screen-reader announcement; cleared first so the same result twice in a row is read again
 let srT; function say(m) { const s = $('sr'); s.textContent = ''; clearTimeout(srT); srT = setTimeout(() => { s.textContent = m; }, 60); }
-let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2200); }
+// toast(m) shows a short note; toast(m, undo) adds a 復原 button and stays a little longer
+let toastT; function toast(m, undo) {
+  const t = $('toast'); t.replaceChildren(Object.assign(document.createElement('span'), { textContent: m }));
+  if (undo) { const b = Object.assign(document.createElement('button'), { type: 'button', id: 'toast-undo', textContent: '復原' }); b.addEventListener('click', () => { clearTimeout(toastT); t.hidden = true; undo(); }, { once: true }); t.append(b); }
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; t.replaceChildren(); }, undo ? 6000 : 2200);
+}
 const vibrate = p => { if (!settings.vibe) return; try { navigator.vibrate && navigator.vibrate(p); } catch {} };
 
 /* ---------- settings / theme / sound ---------- */
@@ -259,7 +267,7 @@ function loadSettings() {
   const str = v => typeof v === 'string' ? v.slice(0, 12) : '';
   return { faces: { h: str(f.h), t: str(f.t) }, sound: o.sound !== false, vibe: o.vibe !== false, learnMode: o.learnMode === true,
     bestOf: [1, 3, 5].includes(o.bestOf) ? o.bestOf : 1, edge: o.edge === true, theme: THEMES.includes(o.theme) ? o.theme : 'auto',
-    count: [1, 3, 5].includes(o.count) ? o.count : 1, mode: o.mode === 'duo' ? 'duo' : 'cpu' };
+    count: [1, 3, 5].includes(o.count) ? o.count : 1, mode: o.mode === 'duo' ? 'duo' : 'cpu', tab: o.tab === 'rps' ? 'rps' : 'coin' };
 }
 function loadStats() {
   const o = isObj(store.get('stats')) ? store.get('stats') : {}, c = isObj(o.coin) ? o.coin : {}, r = isObj(o.rps) ? o.rps : {};
@@ -304,7 +312,7 @@ const beep = (hi) => tone(hi ? 880 : 520, .12, 'triangle', .14);
 /* ---------- tabs ---------- */
 function setTab(t) {
   for (const k of ['coin', 'rps']) { const b = $('tab-' + k); b.setAttribute('aria-selected', t === k); b.tabIndex = t === k ? 0 : -1; $('pane-' + k).hidden = t !== k; }
-  activeTab = t; if (t === 'coin') reserveResult();
+  activeTab = t; if (settings.tab !== t) { settings.tab = t; saveSettings(); } if (t === 'coin') reserveResult();
 }
 let activeTab = 'coin';
 $('tab-coin').addEventListener('click', () => setTab('coin'));
@@ -317,7 +325,9 @@ document.querySelector('.tabs').addEventListener('keydown', e => {
 /* =============== COIN =============== */
 const stats = loadStats();
 const session = { h: 0, t: 0, streak: 0, last: '', seq: [] };
-let coins = [], flipping = false, pending = null, readyAt = 0;
+let coins = [], flipping = false, pending = null, readyAt = 0, guardT = 0;
+// 1/3/5 can't change while coins are in the air: shown disabled instead of silently ignoring the tap
+const setCountLock = on => document.querySelectorAll('#pane-coin .seg button').forEach(b => { b.disabled = on; });
 const graphemes = s => { try { return [...new Intl.Segmenter('zh-Hant', { granularity: 'grapheme' }).segment(s)].map(x => x.segment); } catch { return [...s]; } };
 function faceText(side) {
   const raw = (settings.faces[side] || '').trim(); if (!raw) return side === 'h' ? '正' : '反';
@@ -380,7 +390,7 @@ function animateCoin(c, face, force, delay = 0) {
 // Returns false when the flip was ignored (one already in the air).
 async function flip(force = .55) {
   if (flipping) return false;
-  flipping = true; $('btn-flip').disabled = true;
+  flipping = true; $('btn-flip').disabled = true; clearTimeout(guardT); setCountLock(true);
   ensureAudio(); ping(); vibrate(15);
   force = Math.max(0, Math.min(1, force));
   const faces = coins.map(() => decideFace()), p = pending = { faces, done: false };
@@ -391,7 +401,9 @@ async function flip(force = .55) {
   showCoinResult(faces);
   vibrate([20, 40, 20]);
   readyAt = performance.now() + 250;   // a double tap that lands just after a short (reduced-motion) flip is not a second flip
-  flipping = false; pending = null; $('btn-flip').disabled = false;
+  flipping = false; pending = null; setCountLock(false);
+  // the button stays visibly disabled for exactly that guard, so it never looks ready while it ignores taps
+  guardT = setTimeout(() => { if (!flipping) $('btn-flip').disabled = false; }, 250);
   return true;
 }
 // taps, swipes and keys go through here; flip() itself only refuses while a coin is in the air
@@ -441,7 +453,8 @@ function renderCoinStats() {
   $('s-h-l').textContent = faceText('h'); $('s-t-l').textContent = faceText('t');
   $('a-h').textContent = stats.coin.heads; $('a-t').textContent = stats.coin.tails; $('a-best').textContent = stats.coin.best;
   const tot = stats.coin.heads + stats.coin.tails;
-  $('a-ratio').textContent = (tot ? `共 ${tot} 次，${faceText('h')} ${(stats.coin.heads / tot * 100).toFixed(1)}%` : '還沒有紀錄') + (stats.coin.edge ? `，立起來 ${stats.coin.edge} 次` : '');
+  const e = stats.coin.edge;
+  $('a-ratio').textContent = tot ? `共 ${tot} 次，${faceText('h')} ${(stats.coin.heads / tot * 100).toFixed(1)}%` + (e ? `，另有立起來 ${e} 次` : '') : e ? `立起來 ${e} 次，還沒有正反紀錄` : '還沒有紀錄';
   const sq = $('seq'); sq.textContent = '';
   for (const f of session.seq) { const i = document.createElement('i'); i.className = f; i.textContent = f === 'e' ? '立' : graphemes(faceText(f))[0]; sq.append(i); }
   sq.setAttribute('aria-label', session.seq.length ? `最近 ${session.seq.length} 次：` + session.seq.map(f => f === 'e' ? '立' : faceText(f)).join('、') : '最近 20 次：還沒有紀錄');
@@ -469,7 +482,12 @@ $('btn-flip').addEventListener('click', () => userFlip(.45 + randInt(21) / 100))
 }
 $('btn-reset-coin').addEventListener('click', () => { $('confirm-coin').hidden = false; });
 $('no-coin').addEventListener('click', () => { $('confirm-coin').hidden = true; });
-$('yes-coin').addEventListener('click', () => { stats.coin = { heads: 0, tails: 0, edge: 0, streak: 0, best: 0, last: '' }; store.set('stats', stats); $('confirm-coin').hidden = true; renderCoinStats(); toast('硬幣累計已歸零'); });
+$('yes-coin').addEventListener('click', () => {
+  const before = { ...stats.coin };
+  stats.coin = { heads: 0, tails: 0, edge: 0, streak: 0, best: 0, last: '' }; store.set('stats', stats); $('confirm-coin').hidden = true; renderCoinStats();
+  // undo puts back what was there and adds anything flipped since the reset
+  toast('硬幣累計已歸零', () => { const c = stats.coin; for (const k of ['heads', 'tails', 'edge']) c[k] += before[k]; c.best = Math.max(c.best, before.best); if (!c.last) { c.last = before.last; c.streak = before.streak; } store.set('stats', stats); renderCoinStats(); toast('已復原硬幣累計'); });
+});
 $('face-h').value = settings.faces.h || ''; $('face-t').value = settings.faces.t || '';
 for (const s of ['h', 't']) $('face-' + s).addEventListener('input', e => { settings.faces[s] = e.target.value; saveSettings(); updateFaces(); reserveResult(); });
 $('edge-egg').checked = !!settings.edge;
@@ -542,7 +560,12 @@ $('best-of').value = String(settings.bestOf);
 $('best-of').addEventListener('change', e => { settings.bestOf = +e.target.value; saveSettings(); match = { me: 0, cpu: 0, over: false }; duo.s1 = duo.s2 = 0; duo.over = false; renderDuo(); $('match-msg').textContent = settings.bestOf > 1 ? '新的一場開始' : ''; });
 $('btn-reset-rps').addEventListener('click', () => { $('confirm-rps').hidden = false; });
 $('no-rps').addEventListener('click', () => { $('confirm-rps').hidden = true; });
-$('yes-rps').addEventListener('click', () => { stats.rps = { win: 0, lose: 0, draw: 0, best: 0, cur: 0 }; rpsHist = []; store.set('rpsHistory', rpsHist); store.set('stats', stats); $('confirm-rps').hidden = true; renderRps(); toast('猜拳戰績已歸零'); });
+$('yes-rps').addEventListener('click', () => {
+  const before = { ...stats.rps }, hist = rpsHist.slice();
+  stats.rps = { win: 0, lose: 0, draw: 0, best: 0, cur: 0 }; rpsHist = []; store.set('rpsHistory', rpsHist); store.set('stats', stats); $('confirm-rps').hidden = true; renderRps();
+  toast('猜拳戰績已歸零', () => { const r = stats.rps, played = r.win + r.lose + r.draw; for (const k of ['win', 'lose', 'draw']) r[k] += before[k]; if (!played) r.cur = before.cur; r.best = Math.max(r.best, before.best, r.cur);
+    rpsHist = hist.concat(rpsHist).slice(-50); store.set('rpsHistory', rpsHist); store.set('stats', stats); renderRps(); toast('已復原猜拳戰績'); });
+});
 
 // two players on one phone
 const duo = { p1: null, p2: null, s1: 0, s2: 0, over: false, lock: false };
@@ -588,6 +611,58 @@ async function duoPick(p, m) {
 document.querySelectorAll('#duo-area .pick').forEach(b => b.addEventListener('click', () => duoPick(+b.dataset.p, +b.dataset.m)));
 $('duo-reset').addEventListener('click', () => { Object.assign(duo, { p1: null, p2: null, s1: 0, s2: 0, over: false, lock: false }); renderDuo('各自出拳'); });
 
+/* ---------- touch: buttons fire on release ----------
+   Each pointerId remembers the control it went down on; released on that control (moved < 10 px, or inside its box grown by 16 px)
+   it fires once. With another finger already on the screen Chrome sends no click at all, so clicks can't be relied on.
+   Browser-made clicks are swallowed page-wide in the capture phase. Chromium 141 sends the click that follows a
+   preventDefault'ed pointerdown with detail 0 and no pointerType, so detail 0 is not taken as keyboard: only a click right after
+   Enter/Space is. The coin stage has its own pointer handling and is not part of this. */
+const TAP_SEL = 'button, summary, label';
+const downs = new Map();
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const t = e.target; if (!(t instanceof Element) || t.closest('input[type=text], select, textarea')) return;   // native focus / picker
+  const el = t.closest(TAP_SEL);
+  if (!el || el.disabled) return;
+  downs.set(e.pointerId, { el, x: e.clientX, y: e.clientY });
+  e.preventDefault();   // no compatibility mousedown / focus, so nothing on a changed screen grabs focus
+});
+document.addEventListener('pointerup', e => {
+  const d = downs.get(e.pointerId); if (!d) return;
+  downs.delete(e.pointerId);
+  const el = d.el; if (!el.isConnected || el.disabled) return;
+  const r = el.getBoundingClientRect(), m = 16;
+  const still = Math.hypot(e.clientX - d.x, e.clientY - d.y) < 10;
+  const inBox = e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
+  if (!still && !inBox) return;
+  const a = document.activeElement;   // pointerdown's preventDefault also stopped the native blur
+  if (a && a !== el && !el.contains(a) && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio)$/.test(a.type)))) a.blur();
+  fired = { el, t: performance.now() };
+  if (el.tagName === 'LABEL' && el.control && !/^(checkbox|radio)$/.test(el.control.type)) el.control.focus();
+  else { firing = true; try { el.click(); } finally { firing = false; } }
+});
+document.addEventListener('pointercancel', e => downs.delete(e.pointerId));
+let fired = null, firing = false, lastUp = -1e9, lastKey = -1e9;
+addEventListener('pointerup', () => { lastUp = performance.now(); }, true);
+addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') lastKey = performance.now(); }, true);
+addEventListener('keyup', e => { if (e.key === ' ') lastKey = performance.now(); }, true);   // Space clicks on keyup
+const nearFired = t => {
+  if (!fired || performance.now() - fired.t > 800 || !(t instanceof Element)) return false;
+  const f = fired.el; if (f.contains(t) || t.contains(f)) return true;
+  const a = f.getBoundingClientRect(), b = t.getBoundingClientRect(), m = 16;
+  return b.right >= a.left - m && b.left <= a.right + m && b.bottom >= a.top - m && b.top <= a.bottom + m;
+};
+addEventListener('click', e => {
+  if (firing) return;   // the tap layer's own el.click()
+  const t = e.target;
+  if (!(t instanceof Element) || t.closest('input[type=text], select, textarea')) return;
+  const now = performance.now(), keyed = now - lastKey < 600;
+  if (!e.isTrusted) { if (!keyed && nearFired(t)) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+  if (keyed && !e.detail) return;
+  if (e.detail > 0 || e.pointerType || nearFired(t) || now - lastUp < 800) { e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('button, summary, label, .stage')) e.preventDefault(); });
+
 /* ---------- keyboard ---------- */
 document.addEventListener('keydown', e => {
   if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -598,7 +673,7 @@ document.addEventListener('keydown', e => {
 
 /* ---------- boot ---------- */
 document.querySelectorAll('#pane-coin .seg button').forEach(x => x.setAttribute('aria-pressed', +x.dataset.n === settings.count));
-buildCoins(settings.count); renderCoinStats(); renderRps(); setMode(settings.mode); renderDuo(); reserveResult();
+buildCoins(settings.count); renderCoinStats(); renderRps(); setMode(settings.mode); renderDuo(); setTab(settings.tab); reserveResult();
 { let w = innerWidth; addEventListener('resize', () => { if (innerWidth !== w && !flipping) { w = innerWidth; reserveResult(); } }); }
 if (document.fonts) document.fonts.ready.then(() => { if (!flipping) reserveResult(); });
 window.__cf = { flip, userFlip, decideFace, randInt, planSpin, stats, session, settings, get flipping() { return flipping; }, get lastFaces() { return lastFaces; }, get readyAt() { return readyAt; } };
